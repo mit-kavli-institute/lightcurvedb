@@ -1,0 +1,24 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+sqlalchemy = "*"
+astropy = "*"
+pytest = "*"
+hypothesis = "*"
+numpy = "*"
+tox = "*"
+pylint = "*"
+click = "*"
+psycopg2 = "*"
+hypothesis-sqlalchemy = "*"
+factory-boy = "*"
+autopep8 = "*"
+hypothesis-fspaths = "*"
+
+[requires]
+python_version = "3.8"

@@ -1,0 +1,8 @@
+pytest
+hypothesis
+hypothesis[numpy]
+hypothesis-fspaths
+factory_boy
+astropy
+sqlalchemy
+psycopg2
