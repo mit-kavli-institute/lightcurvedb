@@ -19,6 +19,7 @@ hypothesis-sqlalchemy = "*"
 factory-boy = "*"
 autopep8 = "*"
 hypothesis-fspaths = "*"
+decorator = "*"
 
 [requires]
 python_version = "3.8"

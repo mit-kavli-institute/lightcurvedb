@@ -1,4 +1,5 @@
 pytest
+decorator
 hypothesis
 hypothesis[numpy]
 hypothesis-fspaths

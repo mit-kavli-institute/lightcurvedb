@@ -70,7 +70,8 @@ def orbit(draw, **overrides):
 @composite
 def frame_type(draw, **overrides):
     frame_type=models.FrameType(
-        name=draw(overrides.pop('name', postgres_text))
+        name=draw(overrides.pop('name', postgres_text)),
+        description=draw(overrides.pop('description', postgres_text))
     )
     return frame_type
 

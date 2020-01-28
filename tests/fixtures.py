@@ -1,4 +1,6 @@
 import pytest
+import sys
+import decorator
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.base_model import QLPModel
 from .constants import CONFIG_PATH
@@ -18,11 +20,3 @@ def db_session(db_conn):
     db_conn.session.begin_nested()
     yield db_conn
     db_conn.session.rollback()
-
-
-def clean_db(f):
-    def wrapped(*args, **kwargs):
-        with db_from_config(CONFIG_PATH) as db:
-            db.session.begin_nested()
-            f(db, *args, **kwargs)
-            db.session.rollback()
