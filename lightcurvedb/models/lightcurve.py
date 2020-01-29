@@ -80,31 +80,67 @@ class OrbitLightcurve(QLPDataProduct):
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
     orbit = relationship('Orbit', back_populates='lightcurves')
 
+    def __repr__(self):
+        return '<Lightcurve orbit-{} {}>'.format(
+            self.orbit.orbit_number,
+            self.lightcurve_type.name)
+
+    def __len__(self):
+        """Return the length of the lightcurve (number of cadence points)"""
+        return len(self.cadences)
 
     @hybrid_property
     def cadences(self):
         return self._cadences
 
+    @cadences.setter
+    def cadences(self, value):
+        self._cadences = value
+
     @hybrid_property
     def bjd(self):
         return self._bjd
+
+    @bjd.setter
+    def bjd(self, value):
+        self._bjd = value
 
     @hybrid_property
     def flux(self):
         return self._flux
 
+    @flux.setter
+    def flux(self, value):
+        self._flux = value
+
     @hybrid_property
     def flux_err(self):
         return self._flux_err
+
+    @flux_err.setter
+    def flux_err(self, value):
+        self._flux_err = value
 
     @hybrid_property
     def x_centroids(self):
         return self._x_centroids
 
+    @x_centroids.setter
+    def x_centroids(self, value):
+        self._x_centroids = value
+
     @hybrid_property
     def y_centroids(self):
         return self._y_centroids
 
+    @y_centroids.setter
+    def y_centroids(self, value):
+        self._y_centroids = value
+
     @hybrid_property
     def meta(self):
         return self._meta
+
+    @meta.setter
+    def meta(self, value):
+        self._meta = value

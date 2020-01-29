@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name='lightcurvedb',
-    version='0.0.1',
+    version='0.0.2',
     author='William Fong',
     author_email='willfong@mit.edu',
     long_description=long_description,

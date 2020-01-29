@@ -40,7 +40,11 @@ class DB(object):
             username, password, db_name, db_host, db_type, port
         )
 
-        self._engine = create_engine(self.uri, pool_size=20, max_overflow=48)
+        self._engine = create_engine(
+            self.uri,
+            pool_size=20,
+            max_overflow=48,
+            client_encoding='utf8')
         listens_for(self._engine, 'connect', connect)
         listens_for(self._engine, 'checkout', checkout)
 

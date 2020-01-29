@@ -1,4 +1,6 @@
+import numpy as np
 from hypothesis import assume
+from hypothesis.extra import numpy as np_st
 from hypothesis.strategies import floats, text, composite, characters, integers, booleans
 from hypothesis_fspaths import fspaths
 from lightcurvedb.core.base_model import QLPModel
@@ -10,11 +12,19 @@ from .constants import CONFIG_PATH, PSQL_INT_MAX
 
 define_strategy = lambda f: f
 
-postgres_text = text(alphabet=characters(
-    blacklist_categories=('Cc', 'Cs'),
-    blacklist_characters=[u'\x00', u'\u0000']),
-    min_size=1,
-    max_size=64)
+@define_strategy
+@composite
+def postgres_text(draw, **text_args):
+    t = draw(
+        text(
+            alphabet=characters(
+                blacklist_categories=('C')),
+                #blacklist_characters=[u'\x00', u'\u0000']),
+            min_size=text_args.get('min_size', 1),
+            max_size=text_args.pop('max_size', 64)
+        )
+    )
+    return t
 
 celestial_degrees = floats(
     min_value=0,
@@ -27,7 +37,7 @@ celestial_degrees = floats(
 @define_strategy
 @composite
 def aperture(draw, save=False):
-    name=draw(postgres_text)
+    name=draw(postgres_text())
     star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
@@ -62,7 +72,7 @@ def orbit(draw, **overrides):
         quaternion_z=draw(overrides.get('quaternion_z', floats(allow_infinity=False))),
         quaternion_q=draw(overrides.get('quaternion_q', floats(allow_infinity=False))),
         crm_n=draw(overrides.get('crm_n', integers(min_value=0, max_value=1))),
-        basename=draw(overrides.get('basename', postgres_text))
+        basename=draw(overrides.get('basename', postgres_text()))
     )
     return orbit
 
@@ -70,10 +80,19 @@ def orbit(draw, **overrides):
 @composite
 def frame_type(draw, **overrides):
     frame_type=models.FrameType(
-        name=draw(overrides.pop('name', postgres_text)),
-        description=draw(overrides.pop('description', postgres_text))
+        name=draw(overrides.pop('name', postgres_text())),
+        description=draw(overrides.pop('description', postgres_text()))
     )
     return frame_type
+
+@define_strategy
+@composite
+def lightcurve_type(draw, **overrides):
+    lightcurve_type = models.lightcurve.LightcurveType(
+        name=draw(overrides.pop('name', postgres_text())),
+        description=draw(overrides.pop('description', postgres_text()))
+    )
+    return lightcurve_type
 
 @define_strategy
 @composite
@@ -89,8 +108,37 @@ def frame(draw, **overrides):
         end_tjd=(draw(overrides.pop('end_tjd', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
         exp_time=(draw(overrides.pop('exp_time', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
         quality_bit=(draw(overrides.pop('quality_bit', booleans()))),
-        file_path=(draw(overrides.pop('file_path', fspaths()))),
+        file_path=(draw(overrides.pop('file_path', postgres_text()))),
         orbit=(draw(overrides.pop('orbit', orbit()))),
         frame_type=(draw(overrides.pop('frame_type', frame_type())))
     )
     return frame
+
+@define_strategy
+@composite
+def orbit_lightcurve(draw, **overrides):
+    length = draw(overrides.pop('length', integers(min_value=1, max_value=100)))
+    cadences = draw(overrides.pop('cadences', np_st.arrays(np.int32, length, unique=True)))
+    bjd = draw(overrides.pop('bjd', np_st.arrays(np.float, length)))
+    flux = draw(overrides.pop('flux', np_st.arrays(np.float, length)))
+    flux_err = draw(overrides.pop('flux_err', np_st.arrays(np.float, length)))
+    x_centroids = draw(overrides.pop('x_centroids', np_st.arrays(np.float, length)))
+    y_centroids = draw(overrides.pop('y_centroids', np_st.arrays(np.float, length)))
+    meta = draw(overrides.pop('meta', np_st.arrays(np.int32, length)))
+
+    lc = models.OrbitLightcurve(
+        tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
+        cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
+        lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
+        orbit=draw(overrides.pop('orbit', orbit())),
+        aperture=draw(overrides.pop('aperture', aperture())),
+        cadences=cadences,
+        bjd=bjd,
+        flux=flux,
+        flux_err=flux_err,
+        x_centroids=x_centroids,
+        y_centroids=y_centroids,
+        meta=meta
+    )
+
+    return lc
