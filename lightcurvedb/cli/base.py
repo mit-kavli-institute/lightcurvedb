@@ -2,7 +2,7 @@ import click
 from .types import Database
 
 @click.group()
-@click.option('--dbconf', Database(), help='Specify a database config for connections')
+@click.option('--dbconf', type=Database(), help='Specify a database config for connections')
 @click.option('--dryrun/--wetrun', default=False, help='If dryrun, no changes will be commited, recommended for first runs')
 def lcdbcli(dbconf, dryrun):
     """Master command for all lightcurve database commandline interaction"""

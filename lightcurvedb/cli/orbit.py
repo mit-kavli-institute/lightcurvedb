@@ -25,7 +25,7 @@ def group_fits(files, field='ORBIT_ID'):
 
 @ingest.command()
 @click.pass_context
-@click.argument('poc-orbit-path', click.Path(file_okay=False, exists=True))
+@click.argument('poc-orbit-path', type=click.Path(file_okay=False, exists=True))
 @click.option('--orbit', '-o', multiple=True, type=int, help='Specified orbits, if nothing is provided orbits will be inferred from FITS files')
 @click.option('--allow-multiple', is_flag=True, help='Allow multiple orbits to be ingested')
 def ingest_orbit(ctx, poc_orbit_path, orbit, allow_multiple):
