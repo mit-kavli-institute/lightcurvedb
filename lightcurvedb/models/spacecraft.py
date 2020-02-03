@@ -1,13 +1,13 @@
 from sqlalchemy import Column, ForeignKey, Float, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.schema import UniqueConstraint
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
 
 class SpacecraftEphemeris(QLPReference):
     __tablename__ = 'spacecraftephemeris'
 
-    jdtdb = Column(Float, index=True)
-    tdb = Column(DateTime, index=True)
+    barycentric_dynamical_time = Column(Float, index=True, unique=True)
     x_coordinate = high_precision_column()
     y_coordinate = high_precision_column()
     z_coordinate = high_precision_column()

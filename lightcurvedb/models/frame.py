@@ -19,9 +19,10 @@ class Frame(QLPDataProduct):
     __tablename__ = 'frames'
 
     # Model attributes
-    cadence_type = Column(SmallInteger, index=True)
-    camera = Column(SmallInteger, index=True)
-    cadence = Column(Integer, index=True)
+    cadence_type = Column(SmallInteger, index=True, nullable=False)
+    camera = Column(SmallInteger, index=True, nullable=False)
+    ccd = Column(SmallInteger, index=True, nullable=True)
+    cadence = Column(Integer, index=True, nullable=False)
 
     gps_time = high_precision_column(nullable=False)
     start_tjd = high_precision_column(nullable=False)
