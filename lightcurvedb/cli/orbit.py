@@ -3,7 +3,7 @@ import os
 from collections import Counter, defaultdict
 from glob import glob
 from astropy.io import fits
-from .base import ingest
+from .base import lcdbcli
 
 
 def check_congruence(headers, field):
@@ -23,7 +23,7 @@ def group_fits(files, field='ORBIT_ID'):
 
     return grouped
 
-@ingest.command()
+@lcdbcli.command()
 @click.pass_context
 @click.argument('poc-orbit-path', type=click.Path(file_okay=False, exists=True))
 @click.option('--orbit', '-o', multiple=True, type=int, help='Specified orbits, if nothing is provided orbits will be inferred from FITS files')

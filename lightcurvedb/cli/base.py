@@ -10,15 +10,3 @@ def lcdbcli(dbconf, dryrun):
         click.echo(click.style('Running in dryrun mode', fg='green'))
     else:
         click.echo(click.style('Running in wetrun mode!', fg='red'))
-
-@lcdbcli.group()
-@click.pass_context
-def create(ctx):
-    """Master command for all creation commands"""
-    pass
-
-@lcdbcli.group()
-@click.pass_context
-def ingest():
-    """Master command for all ingest commands"""
-    pass
