@@ -5,9 +5,13 @@ with open('README.md', 'r') as fh:
 
 setuptools.setup(
     name='lightcurvedb',
-    version='0.0.2',
+    version='0.0.3',
     author='William Fong',
     author_email='willfong@mit.edu',
+    entry_points='''
+    [console_scripts]
+    lcdb=lightcurvedb.cli.base:lcdbcli
+    ''',
     long_description=long_description,
     long_description_content_type='text/markdown',
     packages=setuptools.find_packages(),
