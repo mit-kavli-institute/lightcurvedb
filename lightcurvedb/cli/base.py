@@ -52,10 +52,10 @@ def ingest_orbit(ctx, poc_orbit_paths, sector, orbit):
     orbit_groups = group_fits(fits_files)
 
     with ctx.obj['dbconf'] as db:
+        to_add = []
+        to_update = []
         for orbit_id, headers in orbit_groups.items():
             ingestor = OrbitIngestor(context_kwargs={'sector': sector})
-            to_add = []
-            to_update = []
             for orbit in ingestor.ingest(headers):
                 check = db.orbits.filter_by(orbit_number=orbit.orbit_number).one_or_none()
                 if check is not None:
@@ -81,5 +81,5 @@ def ingest_orbit(ctx, poc_orbit_paths, sector, orbit):
         if not ctx.obj['dryrun']:
             # Commit changes to the database
             prompt = click.style('Do these changes look ok?', bold=True)
-            click.prompt(prompt, abort=True)
+            click.confirm(prompt, abort=True)
             db.commit()
