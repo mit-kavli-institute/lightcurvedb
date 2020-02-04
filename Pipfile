@@ -22,6 +22,7 @@ hypothesis-fspaths = "*"
 decorator = "*"
 pandas = "*"
 cython = "*"
+alembic = "*"
 
 [requires]
 python_version = "3.8"
