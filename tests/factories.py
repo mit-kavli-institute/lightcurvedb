@@ -71,7 +71,7 @@ def orbit(draw, **overrides):
         quaternion_y=draw(overrides.get('quaternion_y', floats(allow_infinity=False))),
         quaternion_z=draw(overrides.get('quaternion_z', floats(allow_infinity=False))),
         quaternion_q=draw(overrides.get('quaternion_q', floats(allow_infinity=False))),
-        crm_n=draw(overrides.get('crm_n', integers(min_value=0, max_value=1))),
+        crm=draw(overrides.get('crm', booleans())),
         basename=draw(overrides.get('basename', postgres_text()))
     )
     return orbit
@@ -116,7 +116,7 @@ def frame(draw, **overrides):
 
 @define_strategy
 @composite
-def orbit_lightcurve(draw, **overrides):
+def lightcurve(draw, **overrides):
     length = draw(overrides.pop('length', integers(min_value=1, max_value=100)))
     cadences = draw(overrides.pop('cadences', np_st.arrays(np.int32, length, unique=True)))
     bjd = draw(overrides.pop('bjd', np_st.arrays(np.float, length)))
@@ -126,7 +126,7 @@ def orbit_lightcurve(draw, **overrides):
     y_centroids = draw(overrides.pop('y_centroids', np_st.arrays(np.float, length)))
     meta = draw(overrides.pop('meta', np_st.arrays(np.int32, length)))
 
-    lc = models.OrbitLightcurve(
+    lc = models.Lightcurve(
         tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
         cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
         lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),

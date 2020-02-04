@@ -3,19 +3,19 @@ from hypothesis import given, note
 from lightcurvedb.models.lightcurve import Lightcurve
 
 from .fixtures import db_conn
-from .factories import orbit_lightcurve as orbit_lightcurve_st
+from .factories import lightcurve as lightcurve_st
 
-@given(orbit_lightcurve_st())
-def test_orbit_lightcurve_instantiation(orbit_lightcurve):
-    length = len(orbit_lightcurve)
+@given(lightcurve_st())
+def test_orbit_lightcurve_instantiation(lightcurve):
+    length = len(lightcurve)
     attrs = [
-        orbit_lightcurve.cadences,
-        orbit_lightcurve.bjd,
-        orbit_lightcurve.flux,
-        orbit_lightcurve.flux_err,
-        orbit_lightcurve.x_centroids,
-        orbit_lightcurve.y_centroids,
-        orbit_lightcurve.meta
+        lightcurve.cadences,
+        lightcurve.bjd,
+        lightcurve.flux,
+        lightcurve.flux_err,
+        lightcurve.x_centroids,
+        lightcurve.y_centroids,
+        lightcurve.meta
     ]
 
     for attr in attrs:
