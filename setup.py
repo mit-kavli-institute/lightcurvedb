@@ -8,6 +8,7 @@ setuptools.setup(
     version='0.0.3',
     author='William Fong',
     author_email='willfong@mit.edu',
+    install_package_data=True,
     entry_points='''
     [console_scripts]
     lcdb=lightcurvedb.cli.base:lcdbcli

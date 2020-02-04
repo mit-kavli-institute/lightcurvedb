@@ -18,13 +18,13 @@ class LightcurveType(QLPDataSubType):
     """Describes the numerous lightcurve types"""
     __tablename__ = 'lightcurvetypes'
 
-    lightcurves = relationship('OrbitLightcurve', back_populates='lightcurve_type')
+    lightcurves = relationship('Lightcurve', back_populates='lightcurve_type')
 
 
 class LightcurveFrameMap(QLPModel):
     __tablename__ = 'lightcurveframemapping'
     lightcurve_type_id = Column(
-        ForeignKey('orbitlightcurves.id', ondelete='CASCADE'),
+        ForeignKey('lightcurves.id', ondelete='CASCADE'),
         primary_key=True,
     )
     frame_id = Column(
@@ -33,19 +33,19 @@ class LightcurveFrameMap(QLPModel):
     )
 
     lightcurve = relationship(
-        'OrbitLightcurve',
+        'Lightcurve',
         backref=backref('lightcurveframemapping', cascade='all, delete-orphan'))
     frame = relationship('Frame')
 
 
-class OrbitLightcurve(QLPDataProduct):
+class Lightcurve(QLPDataProduct):
     """
         Provides ORM implementation of a lightcurve used by QLP
 
         These lightcurves are per orbit and are returned in batches
     """
 
-    __tablename__ = 'orbitlightcurves'
+    __tablename__ = 'lightcurves'
 
     # Constraints
     __table_args__ = (

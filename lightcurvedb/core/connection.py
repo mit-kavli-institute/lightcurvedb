@@ -99,6 +99,10 @@ class DB(object):
     def is_active(self):
         return self._active
 
+    @property
+    def orbits(self):
+        return self.session.query(models.Orbit)
+
     def commit(self):
         self._session.commit()
 

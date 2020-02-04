@@ -28,3 +28,17 @@ class Ingestor(ABC):
     def translate(self, **emission_kwargs):
         instance = self.EmissionModel(**emission_kwargs)
         return instance
+
+class PyObjIngestor(Ingestor):
+
+    @abstractmethod
+    def parse(self, obj):
+        pass
+
+    def ingest(self, obj):
+        self.preingesthook()
+        objs = obj
+        parsed = self.parse(objs)
+        for parsed_info in parsed:
+            yield self.translate(**parsed_info)
+        self.postingesthook()

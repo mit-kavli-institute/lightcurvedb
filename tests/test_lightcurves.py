@@ -1,6 +1,6 @@
 from hypothesis import strategies as st
 from hypothesis import given, note
-from lightcurvedb.models.lightcurve import OrbitLightcurve
+from lightcurvedb.models.lightcurve import Lightcurve
 
 from .fixtures import db_conn
 from .factories import orbit_lightcurve as orbit_lightcurve_st
