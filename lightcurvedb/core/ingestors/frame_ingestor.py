@@ -1,10 +1,10 @@
 from astropy.io import fits
 from glob import glob
-from .base import Ingestor
+from .base import MultiIngestor
 from lightcurvedb.models.frame import Frame
 
 
-class FrameIngestor(Ingestor):
+class FrameIngestor(MultiIngestor):
 
     EmissionModel = Frame
 
@@ -38,6 +38,5 @@ class FrameIngestor(Ingestor):
 
             for key, mapped_key in self.POC_fits_mapper.items():
                 frame_kwargs[mapped_key] = header[key]
-
 
         yield frame_kwargs

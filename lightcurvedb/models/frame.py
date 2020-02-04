@@ -1,5 +1,6 @@
 from sqlalchemy import Column, ForeignKey, Integer, SmallInteger, BigInteger, String, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.schema import UniqueConstraint, CheckConstraint
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
 
@@ -18,6 +19,19 @@ class Frame(QLPDataProduct):
 
     __tablename__ = 'frames'
 
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint(
+            'frame_type_id',
+            'orbit_id',
+            'cadence',
+            'camera',
+            'ccd',
+            name='unique_frame'),
+        CheckConstraint('camera BETWEEN 1 and 4', name='physical_camera_constraint'),
+        CheckConstraint('(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)', name='physical_ccd_constraint'),
+    )
+
     # Model attributes
     cadence_type = Column(SmallInteger, index=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
@@ -32,7 +46,7 @@ class Frame(QLPDataProduct):
 
     quality_bit = Column(Boolean, nullable=False)
 
-    file_path = Column(String, nullable=False)
+    file_path = Column(String, nullable=False, unique=True)
 
     # Foreign Keys
     orbit_id = Column(Integer, ForeignKey('orbits.id', ondelete='RESTRICT'))

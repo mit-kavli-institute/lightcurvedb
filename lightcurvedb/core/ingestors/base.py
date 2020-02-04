@@ -29,6 +29,14 @@ class Ingestor(ABC):
         instance = self.EmissionModel(**emission_kwargs)
         return instance
 
+class MultiIngestor(Ingestor):
+    def ingest(self, files, mode='rt'):
+        self.preingesthook()
+        for f in files:
+            for parsed_info in self.parse(f):
+                yield self.translate(**parsed_info)
+        self.postingesthook()
+
 class PyObjIngestor(Ingestor):
 
     @abstractmethod
