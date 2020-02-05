@@ -71,6 +71,7 @@ def orbit(draw, **overrides):
         quaternion_y=draw(overrides.get('quaternion_y', floats(allow_infinity=False))),
         quaternion_z=draw(overrides.get('quaternion_z', floats(allow_infinity=False))),
         quaternion_q=draw(overrides.get('quaternion_q', floats(allow_infinity=False))),
+        crm_n=draw(overrides.get('crm_n', integers(min_value=0, max_value=PSQL_INT_MAX))),
         crm=draw(overrides.get('crm', booleans())),
         basename=draw(overrides.get('basename', postgres_text()))
     )
@@ -125,21 +126,20 @@ def lightcurve(draw, **overrides):
     flux_err = draw(overrides.pop('flux_err', np_st.arrays(np.float, length)))
     x_centroids = draw(overrides.pop('x_centroids', np_st.arrays(np.float, length)))
     y_centroids = draw(overrides.pop('y_centroids', np_st.arrays(np.float, length)))
-    meta = draw(overrides.pop('meta', np_st.arrays(np.int32, length)))
+    quality_flags = draw(overrides.pop('quality_flags', np_st.arrays(np.int32, length)))
 
     lc = models.Lightcurve(
         tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
         cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
         lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
-        orbit=draw(overrides.pop('orbit', orbit())),
         aperture=draw(overrides.pop('aperture', aperture())),
+        quality_flags=quality_flags,
         cadences=cadences,
         bjd=bjd,
         flux=flux,
         flux_err=flux_err,
         x_centroids=x_centroids,
         y_centroids=y_centroids,
-        meta=meta
     )
 
     return lc

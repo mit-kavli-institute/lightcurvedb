@@ -30,7 +30,6 @@ class Orbit(QLPReference):
 
     # Relationships
     frames = relationship('Frame', back_populates='orbit')
-    lightcurves = relationship('Lightcurve', back_populates='orbit')
 
     def __repr__(self):
         return 'Orbit-{} Sector-{} ({:.3f}, {:.3f}, {:.3f}) {}'.format(

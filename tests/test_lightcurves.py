@@ -15,7 +15,7 @@ def test_orbit_lightcurve_instantiation(lightcurve):
         lightcurve.flux_err,
         lightcurve.x_centroids,
         lightcurve.y_centroids,
-        lightcurve.meta
+        lightcurve.quality_flags,
     ]
 
     for attr in attrs:

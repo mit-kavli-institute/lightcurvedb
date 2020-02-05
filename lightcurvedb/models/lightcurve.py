@@ -55,7 +55,7 @@ class Lightcurve(QLPDataProduct):
         array_congruence('flux_err'),
         array_congruence('x_centroids'),
         array_congruence('y_centroids'),
-        array_congruence('meta'),
+        array_congruence('quality_flags'),
     )
 
     tic_id = Column(BigInteger, index=True)
@@ -67,22 +67,19 @@ class Lightcurve(QLPDataProduct):
     _flux_err = Column('flux_err', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _meta = Column('meta', ARRAY(Integer, dimensions=1), nullable=False)
-    
+    _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
+
     # Foreign Keys
     lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
     aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-    orbit_id = Column(ForeignKey('orbits.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
 
     # Relationships
     lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
-    orbit = relationship('Orbit', back_populates='lightcurves')
 
     def __repr__(self):
-        return '<Lightcurve orbit-{} {}>'.format(
-            self.orbit.orbit_number,
+        return '<Lightcurve {}>'.format(
             self.lightcurve_type.name)
 
     def __len__(self):
@@ -138,9 +135,9 @@ class Lightcurve(QLPDataProduct):
         self._y_centroids = value
 
     @hybrid_property
-    def meta(self):
-        return self._meta
+    def quality_flags(self):
+        return self._quality_flags
 
-    @meta.setter
-    def meta(self, value):
-        self._meta = value
+    @quality_flags.setter
+    def quality_flags(self, value):
+        self._quality_flags = value
