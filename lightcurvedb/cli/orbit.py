@@ -7,7 +7,7 @@ from .utils import find_fits, group_fits
 from . import lcdbcli
 
 
-@lcdbcli.command('ingest_orbit')
+@lcdbcli.command()
 @click.pass_context
 @click.argument('poc-orbit-paths', nargs=-1, type=click.Path(file_okay=False, exists=True))
 @click.argument('sector', type=int)

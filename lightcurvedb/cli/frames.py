@@ -39,7 +39,7 @@ def create_frametype(ctx, frametype_name):
             if check:
                 click.echo(click.style('Update on: {}'.format(check), fg='yellow'))
             else:
-                clich.echo(click.style('Inserting {}'.format(new_type), fg='green'))
+                click.echo(click.style('Inserting {}'.format(new_type), fg='green'))
             prompt = click.style('Do these changes look ok?', bold=True)
             click.confirm(prompt, abort=True)
 
