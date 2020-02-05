@@ -8,7 +8,6 @@ from glob import glob
 
 def find_fits(*paths, allow_compressed=True):
     exts = ['*.fits.gz', '*.fits'] if allow_compressed else ['*.fits']
-    
     # To avoid duplication of frames strip out the file extensions and
     # keep track of which files we've seen (and skip).
 
