@@ -40,8 +40,10 @@ def create_frametype(ctx, frametype_name):
                 click.echo(click.style('Update on: {}'.format(check), fg='yellow'))
             else:
                 click.echo(click.style('Inserting {}'.format(new_type), fg='green'))
+                db.add(new_type)
             prompt = click.style('Do these changes look ok?', bold=True)
             click.confirm(prompt, abort=True)
+            db.commit()
 
 
 @lcdbcli.command()

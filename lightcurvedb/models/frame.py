@@ -11,6 +11,9 @@ class FrameType(QLPDataSubType):
 
     frames = relationship('Frame', back_populates='frame_type')
 
+    def __repr__(self):
+        return 'FrameType(name="{}", description="{}")'.format(self.name, self.description)
+
 
 class Frame(QLPDataProduct):
     """
