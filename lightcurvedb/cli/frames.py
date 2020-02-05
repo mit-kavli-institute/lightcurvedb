@@ -51,10 +51,11 @@ def create_frametype(ctx, frametype_name):
 @click.argument('frame-subdir', type=str)
 @click.argument('orbits', nargs=-1, type=int)
 @click.option('--frame-type', default='raw-poc', type=str)
+@click.option('--cadence-type', default=30, type=int)
 @click.option('--allow-compressed', is_flag=True)
 @click.option('--base-dir', default='/pdo/poc-data/orbits/', type=click.Path(exists=True, file_okay=False))
 @click.option('--orbit-dir-prefix', default='orbit-', type=str)
-def ingest_frames_by_orbit(ctx, frame_subdir, orbits, frame_type, allow_compressed, base_dir, orbit_dir_prefix):
+def ingest_frames_by_orbit(ctx, frame_subdir, orbits, frame_type, cadence_type, allow_compressed, base_dir, orbit_dir_prefix):
     with ctx.obj['dbconf'] as db:
         # Check that the specified frame type and orbit exists
         frame_type = db.session.query(FrameType).filter_by(name=frame_type).one()
@@ -65,8 +66,7 @@ def ingest_frames_by_orbit(ctx, frame_subdir, orbits, frame_type, allow_compress
             orbit = db.session.query(Orbit).filter_by(orbit_number=orbit).one()
             ingestor = FrameIngestor(
                     context_kwargs={
-                        'orbit': orbit,
-                        'frame_type': frame_type
+                        'cadence_type': cadence_type,
                         }
                     )
             data_dir = os.path.join(
@@ -74,27 +74,33 @@ def ingest_frames_by_orbit(ctx, frame_subdir, orbits, frame_type, allow_compress
                 '{}{}'.format(orbit_dir_prefix, orbit.orbit_number),
                 frame_subdir
             )
+            click.echo('Looking for frames in {}'.format(data_dir))
             fits_paths = find_fits(data_dir, allow_compressed=allow_compressed)
-            for frame in ingestor.ingest(fits_paths):
-                check = db.session.query(Frame).filter_by(
-                    orbit_id=orbit.id,
-                    frame_type_id=frame_type.id,
-                    cadence=frame.cadence).one_or_none()
-                if check:
-                    # Update
-                    to_update.append(frame)
-                else:
-                    to_add.append(frame)
+            with click.progressbar(fits_paths, label='Ingesting frames for {}'.format(orbit)) as paths:
+                for frame in ingestor.ingest(paths):
+                    check = db.session.query(Frame).filter_by(
+                        orbit_id=orbit.id,
+                        frame_type_id=frame_type.id,
+                        camera=frame.camera,
+                        ccd=frame.ccd,
+                        cadence_type=frame.cadence_type,
+                        cadence=frame.cadence).one_or_none()
+                    if check:
+                        # Update
+                        check.copy(frame)
+                        to_update.append(check)
+                        db.add(check)
+                    else:
+                        frame.orbit = orbit
+                        frame.frame_type = frame_type
+                        to_add.append(frame)
+                        db.add(frame)
 
         if len(to_add) > 0:
-            click.echo(click.style('--Will Add--', bold=True, fg='green'))
-            for frame in to_add:
-                click.echo(frame)
+            click.echo(click.style('Will add {} frames'.format(len(to_add)), bold=True, fg='green'))
 
         if len(to_update) > 0:
-            click.echo(click.style('--Will Update--', bold=True, fg='yellow'))
-            for frame in to_update:
-                click.echo(frame)
+            click.echo(click.style('Will update {} frames'.format(len(to_update)), bold=True, fg='yellow'))
 
         if not ctx.obj['dryrun']:
             # Commit changes to the database
