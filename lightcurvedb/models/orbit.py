@@ -24,7 +24,8 @@ class Orbit(QLPReference):
     quaternion_z = high_precision_column(nullable=False)
     quaternion_q = high_precision_column(nullable=False)
 
-    crm = Column(Boolean, nullable=False)  # Cosmic Ray Mitigation
+    crm = Column(Boolean, nullable=False) # Has been correct for CRM
+    crm_n = Column(Integer, nullable=False)  # Cosmic Ray Mitigation Number
     basename = Column(String(256), nullable=False)
 
     # Relationships

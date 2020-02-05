@@ -53,7 +53,7 @@ class OrbitIngestor(PyObjIngestor):
         qx, qy, qz, qq = self.check_congruence(
             headers, 'SC_QUATX', 'SC_QUATY', 'SC_QUATZ', 'SC_QUATQ'
         )
-        crm = self.check_congruence(headers, 'CRM')
+        crm, crm_n = self.check_congruence(headers, 'CRM', 'CRM_N')
 
         basename = self.extract_basename(headers)
         yield {
@@ -67,6 +67,7 @@ class OrbitIngestor(PyObjIngestor):
             'quaternion_z': qz,
             'quaternion_q': qq,
             'crm': crm,
+            'crm_n': crm_n,
             'basename': basename
         }
         
