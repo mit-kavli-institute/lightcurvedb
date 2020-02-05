@@ -1,7 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none
 from hypothesis_fspaths import fspaths
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.connection import db_from_config
@@ -101,6 +101,7 @@ def frame(draw, **overrides):
         cadence_type=draw(overrides.pop('orbit_number', integers(min_value=1, max_value=32767))),
         camera=draw(overrides.pop('camera', integers(min_value=1, max_value=4))),
         cadence=draw(overrides.pop('cadence', integers(min_value=0, max_value=PSQL_INT_MAX))),
+        ccd=draw(overrides.pop('ccd', one_of(integers(min_value=1, max_value=4), none()))),
 
         gps_time=draw(overrides.pop('gps_time', floats(allow_infinity=False, allow_nan=False))),
         start_tjd=(draw(overrides.pop('start_tjd', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
