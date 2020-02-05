@@ -88,6 +88,8 @@ def ingest_frames_by_orbit(ctx, frame_subdir, orbits, frame_type, cadence_type, 
                     if check:
                         # Update
                         check.copy(frame)
+                        check.orbit = orbit
+                        check.frame_type = frame_type
                         to_update.append(check)
                         db.add(check)
                     else:
