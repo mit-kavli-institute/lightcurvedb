@@ -23,6 +23,7 @@ decorator = "*"
 pandas = "*"
 cython = "*"
 alembic = "*"
+h5py = "*"
 
 [requires]
 python_version = "3.8"

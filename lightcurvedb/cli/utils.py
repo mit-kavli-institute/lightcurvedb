@@ -34,6 +34,13 @@ def find_fits(*paths, allow_compressed=True):
     return fits_files
 
 
+def find_h5(*paths):
+    for path in paths:
+        query = glob(os.path.join(path, '*.h5'))
+        for result in query:
+            yield result
+
+
 def group_fits(files, field='ORBIT_ID'):
     headers = []
     with click.progressbar(files) as all_files:
