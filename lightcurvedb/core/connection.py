@@ -14,6 +14,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
 from lightcurvedb.util.uri import construct_uri
+from lightcurvedb.en_masse import MassQuery
 
 
 def connect(dbapi_connection, connection_record):
@@ -102,6 +103,23 @@ class DB(object):
     @property
     def orbits(self):
         return self.session.query(models.Orbit)
+
+    @property
+    def apertures(self):
+        return self.session.query(models.Aperture)
+
+    def lightcurves_by_tics(self, tics, **kw_filters):
+        pk_type = models.Lightcurve.tic_id.type
+        mq = MassQuery(
+            self.session,
+            models.Lightcurve,
+            models.Lightcurve.tic_id,
+            Column(pk_type, name='tic_id', primary_key=True, index=True),
+            **kw_filters
+        )
+        for tic in tics:
+            mq.insert(tic_id=tic)
+        return mq.execute()
 
     def commit(self):
         self._session.commit()

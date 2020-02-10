@@ -22,10 +22,26 @@ def ingest_h5(ctx, orbit, path):
         target_orbit = db.orbits.filter_by(orbit_number=orbit).one()
         apertures = None
         lc_files = list(find_h5(path))
-        with click.progressbar(lc_files) as files:
-            ingestor = LightcurveH5Ingestor(context_kwargs={
+        ingestor = LightcurveH5Ingestor(context_kwargs={
                 'db': db
-            })
+        })
+        found_lightcurves = {}
+        with click.progressbar(lc_files) as files:
             for h5 in files:
-                for lc in ingestor.ingest(h5):
-                    click.echo('Ingested {}'.format(lc))
+                for lc in ingestor.ingest(h5, mode='rb'):
+                    found_lightcurves[lc.tic_id] = lc
+
+        click.echo(
+            click.style(
+                'Found {} lightcurves'.format(len(found_lightcurves)),
+                bold=True
+            )
+        )
+
+        # Merge with existing lightcurves
+        tics = found_lightcurves.keys()
+        mq = db.lightcurves_by_tics(tics)
+        for lc_batch in mq.yield_per(1000):
+            for lc in lc_batch:
+                to_merge = found_lightcurves.pop(lc.tic_id)
+

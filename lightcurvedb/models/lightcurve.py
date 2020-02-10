@@ -86,6 +86,31 @@ class Lightcurve(QLPDataProduct):
         """Return the length of the lightcurve (number of cadence points)"""
         return len(self.cadences)
 
+    def merge_with(self, other):
+        assert other.tic_id == self.tic_id
+
+    @property
+    def matrix(self):
+        return np.array([
+            self._cadences,
+            self._bjd,
+            self._flux,
+            self._flux_err,
+            self._x_centroids,
+            self._y_centorids,
+            self._quality_flags
+        ])
+
+    def from_matrix(self, matrix):
+        self.cadences = matrix[0]
+        self.bjd = matrix[1]
+        self._flux = matrix[2]
+        self._flux_err = matrix[3]
+        self._x_centroids = matrix[4]
+        self._y_centroids = matrix[5]
+        self._quality_flags = matrix[6]
+
+
     @hybrid_property
     def cadences(self):
         return self._cadences
