@@ -10,7 +10,7 @@ class MassQuery(object):
         self.Model = TargetModel
         self.name = '{}_massquery_{}'.format(TargetModel.__table__.name, os.getpid())
         temp_table = Table(
-            self.name
+            self.name,
             QLPModel.metadata,
             *cols,
             prefixes=['TEMPORARY']  #Sets temp table
