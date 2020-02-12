@@ -6,13 +6,16 @@ from .fixtures import db_conn
 from .factories import lightcurve as lightcurve_st
 
 @given(lightcurve_st())
-def test_orbit_lightcurve_instantiation(lightcurve):
+def test_orbit_lightcurve_instantiation(db_conn, lightcurve):
+    db_conn.session.begin_nested()
+    db_conn.add(lightcurve)
+    note(lightcurve)
     length = len(lightcurve)
     attrs = [
         lightcurve.cadences,
         lightcurve.bjd,
-        lightcurve.flux,
-        lightcurve.flux_err,
+        lightcurve.values,
+        lightcurve.errors,
         lightcurve.x_centroids,
         lightcurve.y_centroids,
         lightcurve.quality_flags,
@@ -22,3 +25,5 @@ def test_orbit_lightcurve_instantiation(lightcurve):
         note(attr)
 
     assert all(len(attr) == length for attr in attrs)
+
+    db_conn.session.rollback()

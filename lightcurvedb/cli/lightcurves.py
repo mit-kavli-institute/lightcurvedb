@@ -1,11 +1,14 @@
 import click
 import os
+import itertools
+from multiprocessing import Pool, cpu_count
 from lightcurvedb.models import Aperture, Orbit
-from lightcurvedb.core.ingestors.lightcurve_ingestors import LightcurveH5Ingestor
+from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
 from glob import glob
 from h5py import File as H5File
 from .base import lcdbcli
 from .utils import find_h5
+from .types import CommaList
 
 
 @lcdbcli.group()
@@ -13,35 +16,57 @@ from .utils import find_h5
 def lightcurve(ctx):
     pass
 
+def determine_orbit_path(orbit, orbit_dir, cam, ccd):
+    orbit_name = 'orbit-{}'.orbit.orbit_number
+    cam_name = 'cam{}'.format(cam)
+    ccd_name = 'ccd{}'.format(ccd)
+    return os.path.join(orbit_dir, orbit_name, 'ffi', cam_name, ccd_name, 'LC')
+
+def yield_raw_h5(filepath):
+    return list(h5_to_matricies(filepath))
+
+def extr_tic(filepath):
+    return int(os.path.basename(filepath).split('.')[0])
+
+
 @lightcurve.command()
 @click.pass_context
-@click.argument('orbit', type=int)
-@click.argument('path', type=click.Path(file_okay=False, exists=True))
-def ingest_h5(ctx, orbit, path):
+@click.argument('orbits', type=int, nargs=-1)
+@click.option('--n-process', type=int, default=-1, help='Number of cores. <= 0 will use all cores available')
+@click.option('--cameras', type=CommaList(int), default='1,2,3,4')
+@click.option('--ccds', type=CommaList(int), default='1,2,3,4')
+@click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
+def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir):
     with ctx.obj['dbconf'] as db:
-        target_orbit = db.orbits.filter_by(orbit_number=orbit).one()
-        apertures = None
-        lc_files = list(find_h5(path))
-        ingestor = LightcurveH5Ingestor(context_kwargs={
-                'db': db
-        })
-        found_lightcurves = {}
-        with click.progressbar(lc_files) as files:
-            for h5 in files:
-                for lc in ingestor.ingest(h5, mode='rb'):
-                    found_lightcurves[lc.tic_id] = lc
+        orbits = db.orbits.filter(Orbit.orbit_number.in_(orbits)).all()
+        orbit_numbers = [o.orbit_number for o in orbits]
+        apertures = db.apertures.all()
 
         click.echo(
-            click.style(
-                'Found {} lightcurves'.format(len(found_lightcurves)),
-                bold=True
-            )
+            'Ingesting {} orbits with {} apertures'.format(len(orbits), len(apertures))
         )
 
-        # Merge with existing lightcurves
-        tics = found_lightcurves.keys()
-        mq = db.lightcurves_by_tics(tics)
-        for lc_batch in mq.yield_per(1000):
-            for lc in lc_batch:
-                to_merge = found_lightcurves.pop(lc.tic_id)
+        if not n_process:
+            n_process = cpu_count()
 
+        click.echo(
+            'Utilizing {} cores'.format(click.style(n_process, bold=True))
+        )
+
+        path_iterators = []
+        for cam, ccd, orbit in itertools.product(cameras, ccds, orbits):
+            lc_path = determine_orbit_path(orbit_dir, orbit, cam, ccd)
+            path_iterators.append(find_h5(lc_path))
+
+        all_files = list(itertools.chain(*path_iterators))
+        tics = set()
+
+        # Load defined tics
+        click.echo('Extracting defined tics')
+        with Pool(n_process) as p:
+            for tic in p.map(extr_tic, all_files):
+                tics.add(tic)
+        click.echo('Found {} unique tics'.format(len(tics)))
+
+        with Pool(n_process) as p:
+            pass

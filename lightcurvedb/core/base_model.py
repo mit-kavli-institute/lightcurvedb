@@ -65,7 +65,7 @@ class QLPDataSubType(QLPModel, DynamicIdMixin('qlpdatasubtypes')):
     __table_args__ = (
         UniqueConstraint('subtype', 'name'),
     )
-        
+
     @declared_attr
     def __mapper_args__(cls):
         if cls.__name__ == 'QLPDataSubType':

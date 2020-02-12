@@ -1,5 +1,5 @@
 from h5py import File as H5File
-from lightcurvedb.models import Aperture, LightcurveType, Lightcurve
+from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Lightpoint
 import numpy as np
 import numba as nb
 import os
@@ -20,65 +20,45 @@ def quality_flag_extr(qflags):
             accept[i] = 0
     return accept
 
+# Def: KEY -> Has error field
+H5_LC_TYPES = {
+    'KSPMagnitude': False,
+    'RawMagnitude': True
+}
 
-class LightcurveH5Ingestor(Ingestor):
+def h5_to_matrices(filepath):
+    with H5File(filepath, 'r') as h5in:
+        # Iterate and yield extracted h5 interior data
+        lc = h5in['LightCurve']
+        tic = int(os.path.basename(filepath).split('.')[0])
+        cadences = lc['Cadence'][()]
+        bjd = lc['BJD'][()]
 
-    EmissionModel = Lightcurve
-    apertures = None
-    lightcurve_types = ['KSPMagnitude', 'RawMagnitude']
+        apertures = lc['AperturePhotometry'].keys()
+        for aperture in apertures:
+            compound_lc = lc['AperturePhotometry'][aperture]
+            x_centroids = compound_lc['X'][()]
+            y_centroids = compound_lc['Y'][()]
+            quality_flags_extr(compound_lc['QualityFlag'][()])
+            for lc_type, has_error in H5_LC_TYPES.items():
+                result = {
+                    'lc_type': lc_type,
+                    'aperture': aperture,
+                    'tic': tic,
+                }
+                values = compound_lc[lc_type][()]
 
-    def __init__(self, *args, **kwargs):
-        super(LightcurveH5Ingestor, self).__init__(*args, **kwargs)
-        lc_type_q = self.context['db'].session.query(LightcurveType).filter(LightcurveType.name.in_(self.lightcurve_types))
+                if has_error:
+                    errors = compound_lc['{}Error'.format(lc_type)][()]
 
+                result['data'] = np.array([
+                    cadences,
+                    bjd,
+                    values,
+                    errors,
+                    x_centroids,
+                    y_centroids,
+                    quality_flags
+                ])
 
-        self.type_cache = {t.name: t for t in lc_type_q.all()}
-        print(self.type_cache)
-
-
-    def load_apertures(self, h5_lc):
-        # Check if we've already loaded aperture contexts
-        if self.apertures:
-            return
-        # No apertures have been defined
-        aperture_names = h5_lc['AperturePhotometry'].keys()
-        q = self.context['db'].apertures.filter(Aperture.name.in_(aperture_names))
-
-        self.apertures = {aperture.name: aperture for aperture in q.all()}
-
-    def parse(self, descriptor):
-        with H5File(descriptor, 'r') as h5in:
-            # Check
-            h5_lc = h5in['LightCurve']
-            self.load_apertures(h5_lc)
-            filename = os.path.basename(descriptor.name).split('.')[0]
-            tic_id = int(filename)
-
-            # Load common attributes that are independent of aperture phot.
-            cadences = h5_lc['Cadence'][()]
-            bjd = h5_lc['BJD'][()]
-
-            for aperture_name, aperture in self.apertures.items():
-                compound_lc = h5_lc['AperturePhotometry'][aperture_name]
-                x_centroids = compound_lc['X'][()]
-                y_centroids = compound_lc['Y'][()]
-                quality_flags = quality_flag_extr(compound_lc['QualityFlag'][()])
-                # Two types of lightcurves, KSPMagnitude and RawMagnitude
-                for type_name, lc_type in self.type_cache.items():
-                    flux = compound_lc[type_name][()]
-                    try:
-                        flux_err = compound_lc['{}Error'.format(type_name)]
-                    except KeyError:
-                        flux_err = np.zeros(len(flux))
-                    yield {
-                        'tic_id': tic_id,
-                        'aperture_id': aperture.id,
-                        'lightcurve_type_id': lc_type.id,
-                        'cadences': cadences,
-                        'bjd': bjd,
-                        'flux': flux,
-                        'flux_err': flux_err,
-                        'x_centroids': x_centroids,
-                        'y_centroids': y_centroids,
-                        'quality_flags': quality_flags
-                    }
+                yield result

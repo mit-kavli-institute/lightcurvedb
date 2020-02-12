@@ -1,7 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, lists
 from hypothesis_fspaths import fspaths
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.connection import db_from_config
@@ -118,28 +118,31 @@ def frame(draw, **overrides):
 
 @define_strategy
 @composite
+def lightpoint(draw, **overrides):
+    lightpoint = models.Lightpoint(
+        cadence=draw(overrides.pop('cadence', integers(min_value=1, max_value=PSQL_INT_MAX))),
+        barycentric_julian_date=draw(overrides.pop('bjd', floats(allow_nan=False, allow_infinity=False))),
+        value=draw(overrides.pop('value', floats())),
+        error=draw(overrides.pop('error', floats())),
+        x_centroid=draw(overrides.pop('x_centroid', floats(allow_nan=False, allow_infinity=False))),
+        y_centroid=draw(overrides.pop('x_centroid', floats(allow_nan=False, allow_infinity=False))),
+        quality_flag=draw(overrides.pop('quality_flag', integers(min_value=1, max_value=PSQL_INT_MAX)))
+    )
+
+    return lightpoint
+
+
+@define_strategy
+@composite
 def lightcurve(draw, **overrides):
-    length = draw(overrides.pop('length', integers(min_value=1, max_value=100)))
-    cadences = draw(overrides.pop('cadences', np_st.arrays(np.int32, length, unique=True)))
-    bjd = draw(overrides.pop('bjd', np_st.arrays(np.float, length)))
-    flux = draw(overrides.pop('flux', np_st.arrays(np.float, length)))
-    flux_err = draw(overrides.pop('flux_err', np_st.arrays(np.float, length)))
-    x_centroids = draw(overrides.pop('x_centroids', np_st.arrays(np.float, length)))
-    y_centroids = draw(overrides.pop('y_centroids', np_st.arrays(np.float, length)))
-    quality_flags = draw(overrides.pop('quality_flags', np_st.arrays(np.int32, length)))
+    points = draw(lists(lightpoint(), unique_by=lambda lp: lp.cadence))
 
     lc = models.Lightcurve(
         tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
         cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
+        lightpoints=points,
         lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
-        aperture=draw(overrides.pop('aperture', aperture())),
-        quality_flags=quality_flags,
-        cadences=cadences,
-        bjd=bjd,
-        flux=flux,
-        flux_err=flux_err,
-        x_centroids=x_centroids,
-        y_centroids=y_centroids,
+        aperture=draw(overrides.pop('aperture', aperture()))
     )
 
     return lc

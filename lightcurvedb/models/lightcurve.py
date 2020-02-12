@@ -1,17 +1,16 @@
-from sqlalchemy import Column, Integer, String, SmallInteger, ForeignKey, BigInteger
-from sqlalchemy.orm import relationship, backref
-from sqlalchemy.schema import UniqueConstraint, CheckConstraint
+from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
+                                          QLPModel)
+from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
+                        String, inspect, cast)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.associationproxy import association_proxy
-from lightcurvedb.core.base_model import QLPDataProduct, QLPModel, QLPDataSubType
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import backref, relationship
+from sqlalchemy.orm.collections import collection
+from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+from sqlalchemy.sql import select
 
-
-def array_congruence(target_array_field, cmp_field='cadences'):
-    return CheckConstraint(
-        'array_length({}, 1) = array_length({}, 1)'.format(target_array_field, cmp_field),
-        name='{}_congruence'.format(target_array_field)
-    )
+from .lightpoint import LOOKUP, Lightpoint
 
 
 class LightcurveType(QLPDataSubType):
@@ -50,24 +49,10 @@ class Lightcurve(QLPDataProduct):
     # Constraints
     __table_args__ = (
         UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
-        array_congruence('barycentric_julian_date'),
-        array_congruence('flux'),
-        array_congruence('flux_err'),
-        array_congruence('x_centroids'),
-        array_congruence('y_centroids'),
-        array_congruence('quality_flags'),
     )
 
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
-
-    _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
-    _bjd = Column('barycentric_julian_date', ARRAY(Integer, dimensions=1), nullable=False)
-    _flux = Column('flux', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _flux_err = Column('flux_err', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
 
     # Foreign Keys
     lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
@@ -75,94 +60,78 @@ class Lightcurve(QLPDataProduct):
 
     # Relationships
     lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
+    lightpoints = relationship(
+        'Lightpoint',
+        back_populates='lightcurve',
+        order_by='Lightpoint.barycentric_julian_date',
+        lazy='dynamic')
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
+
+    def __init__(self, *args, **kwargs):
+        super(Lightcurve, self).__init__(*args, **kwargs)
+
+        # We want to cache lightpoint attributes to avoid hitting
+        # the database with expensive queries
+        self._lightpoint_cache = {}
+
+    def __len__(self):
+        return self.len
+
+    def _get_attr_array(self, attr):
+        q = select(
+            [attr]
+        ).where(
+            Lightpoint.lightcurve_id == self.id
+        )
+        session = inspect(self).session
+        return list(session.execute(q))
+
+    def _get_from_cache(self, attr):
+        if not attr in self._lightpoint_cache:
+            col = LOOKUP[attr]
+            attr_v = self._get_attr_array(col)
+            self._lightpoint_cache[attr] = attr_v
+        return self._lightpoint_cache[attr]
+
+    @hybrid_property
+    def len(self):
+        return self.lightpoints.count()
+
+    # Getters
+    @hybrid_property
+    def cadences(self):
+        return self._get_from_cache('cadence')
+
+    @hybrid_property
+    def bjd(self):
+        return self._get_from_cache('bjd')
+
+    @hybrid_property
+    def values(self):
+        return self._get_from_cache('value')
+
+    @hybrid_property
+    def errors(self):
+        return self._get_from_cache('error')
+
+    @hybrid_property
+    def x_centroids(self):
+        return self._get_from_cache('x_centroid')
+
+    @hybrid_property
+    def y_centroids(self):
+        return self._get_from_cache('y_centroid')
+
+    @hybrid_property
+    def quality_flags(self):
+        return self._get_from_cache('quality_flag')
+
+    # Setters
+    @cadences.update_expression
+    def cadences(self, value):
+        raise NotImplemented
 
     def __repr__(self):
         return '<Lightcurve {}>'.format(
             self.lightcurve_type.name)
-
-    def __len__(self):
-        """Return the length of the lightcurve (number of cadence points)"""
-        return len(self.cadences)
-
-    def merge_with(self, other):
-        assert other.tic_id == self.tic_id
-
-    @property
-    def matrix(self):
-        return np.array([
-            self._cadences,
-            self._bjd,
-            self._flux,
-            self._flux_err,
-            self._x_centroids,
-            self._y_centorids,
-            self._quality_flags
-        ])
-
-    def from_matrix(self, matrix):
-        self.cadences = matrix[0]
-        self.bjd = matrix[1]
-        self._flux = matrix[2]
-        self._flux_err = matrix[3]
-        self._x_centroids = matrix[4]
-        self._y_centroids = matrix[5]
-        self._quality_flags = matrix[6]
-
-
-    @hybrid_property
-    def cadences(self):
-        return self._cadences
-
-    @cadences.setter
-    def cadences(self, value):
-        self._cadences = value
-
-    @hybrid_property
-    def bjd(self):
-        return self._bjd
-
-    @bjd.setter
-    def bjd(self, value):
-        self._bjd = value
-
-    @hybrid_property
-    def flux(self):
-        return self._flux
-
-    @flux.setter
-    def flux(self, value):
-        self._flux = value
-
-    @hybrid_property
-    def flux_err(self):
-        return self._flux_err
-
-    @flux_err.setter
-    def flux_err(self, value):
-        self._flux_err = value
-
-    @hybrid_property
-    def x_centroids(self):
-        return self._x_centroids
-
-    @x_centroids.setter
-    def x_centroids(self, value):
-        self._x_centroids = value
-
-    @hybrid_property
-    def y_centroids(self):
-        return self._y_centroids
-
-    @y_centroids.setter
-    def y_centroids(self, value):
-        self._y_centroids = value
-
-    @hybrid_property
-    def quality_flags(self):
-        return self._quality_flags
-
-    @quality_flags.setter
-    def quality_flags(self, value):
-        self._quality_flags = value
