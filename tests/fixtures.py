@@ -8,6 +8,7 @@ from .constants import CONFIG_PATH
 @pytest.yield_fixture(scope='session')
 def db_conn():
     db = db_from_config(CONFIG_PATH)
+    QLPModel.metadata.create_all(db._engine)
     try:
         yield db.open()
     except Exception:
