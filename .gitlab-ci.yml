@@ -7,10 +7,10 @@ variables:
     POSTGRES_PASSWORD: ""
     
 before_script:
-    apt-get update -qy
-    apt-get install postgresql
-    apt-get install python-dev python-pip
-    pip install -r testrequirements.txt
+    - apt-get update -qy
+    - apt-get install postgresql
+    - apt-get install python-dev python-pip
+    - pip install -r testrequirements.txt
 
 run-test:
     script:
