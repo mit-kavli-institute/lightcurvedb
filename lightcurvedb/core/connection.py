@@ -67,7 +67,7 @@ class DB(object):
 
     def open(self):
         if self._session is None:
-            self._session = self.SessionClass()
+            self._session = scoped_session(self.session_factory)
             self._active = True
         else:
             warnings.warn(
@@ -78,10 +78,8 @@ class DB(object):
 
     def close(self):
         if self._session is not None:
-
-            self._session.close()
+            self._session.remove()
             self._session = None
-            self.SessionClass.remove()
             self._active = False
         else:
             warnings.warn(

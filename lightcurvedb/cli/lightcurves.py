@@ -22,17 +22,20 @@ logger = make_logger('H5 Ingestor')
 def lightcurve(ctx):
     pass
 
+
 def determine_orbit_path(orbit_dir, orbit, cam, ccd):
     orbit_name = 'orbit-{}'.format(orbit)
     cam_name = 'cam{}'.format(cam)
     ccd_name = 'ccd{}'.format(ccd)
     return os.path.join(orbit_dir, orbit_name, 'ffi', cam_name, ccd_name, 'LC')
 
+
 def yield_raw_h5(filepath):
     results = []
     for h5_result in h5_to_matrices(filepath):
         results.append(h5_result)
     return results
+
 
 def extr_tic(filepath):
     return int(os.path.basename(filepath).split('.')[0])
@@ -47,12 +50,13 @@ def map_new_lightcurves(new_lc):
         tic_id=tic
     )
 
+
 def expand(x):
     return (
         (
             x.cadence_type,
             x.lightcurve_type_id,
-            x.aperture_id, 
+            x.aperture_id,
             x.tic_id
         ),
         x
@@ -212,7 +216,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
                 new_lightcurves = p.map(map_new_lightcurves, resultant)
                 click.echo('\tInserting new lightcurves...')
     
-                batch = chunkify(100000, new_lightcurves)
+                batch = chunkify(new_lightcurves, 100000)
                 config = db._config
                 inserted_batches = p.starmap(
                     insert_lightcurves,
@@ -239,7 +243,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             
             click.echo('\tInserting points...')
 
-            for chunk in chunkify(n_lp_insert, to_insert):
+            for chunk in chunkify(to_insert, n_lp_insert):
                 ok_lps = list(filter(lambda x: x, chunk))
                 click.echo('\t\tInserting {} points'.format(len(ok_lps)))
                 db.session.bulk_insert_mappings(

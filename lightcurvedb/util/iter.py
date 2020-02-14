@@ -7,6 +7,39 @@ else:
     from itertools import izip_longest as zip
 
 
-def chunkify(chunksize, iterable, fillvalue=None):
-    args = [iter(iterable)] * chunksize
-    return zip(*args, fillvalue=fillvalue)
+def chunkify(iterable, chunksize, fillvalue=None):
+    chunk = []
+    if chunksize < 1:
+        raise ValueError(
+            'Chunkify command cannot have a chunksize < 1'
+        )
+    for item in iterable:
+        chunk.append(item)
+        if len(chunk) >= chunksize:
+            yield chunk
+            chunk = []
+
+    # Cleanup
+    if len(chunk) > 0:
+        yield chunk
+
+def enumerated_chunkify(iterable, chunksize, offset=0, fillvalue=None):
+    """
+    Chunkify's an iterable and provides the nth iteration to each chunk
+    element. This can be offset by the :start_id: value.
+    """
+    chunk = []
+    if chunksize < 1:
+        raise ValueError(
+            'Chunkify command cannot have a chunksize < 1'
+        )
+    for ith, item in enumerate(iterable):
+        chunk.append((ith+offset, item))
+        if len(chunk) >= chunksize:
+            yield chunk
+            chunk = []
+
+    # Cleanup
+    if len(chunk) > 0:
+        yield chunk
+
