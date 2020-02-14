@@ -1,6 +1,6 @@
 from lightcurvedb.core.base_model import QLPModel, DynamicIdMixin
 from sqlalchemy import BigInteger, Column, ForeignKey, Integer
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
@@ -45,6 +45,25 @@ class Lightpoint(QLPModel, DynamicIdMixin('lightpoints')):
     @hybrid_property
     def y(self):
         return self.y_centroid
+
+    @classmethod
+    def bulk_upsert_stmt(cls, values):
+        cols = [
+            'barycentric_julian_date',
+            'value',
+            'error',
+            'x_centroid',
+            'y_centroid',
+            'quality_flag'
+        ]
+        stmt = insert(cls).values(values)
+        stmt = stmt.on_conflict_do_update(
+            constraint='lc_cadence_unique',
+            set_={
+                c: getattr(stmt.excluded, c) for c in cols
+            }
+        )
+        return stmt
 
 
 LOOKUP = {

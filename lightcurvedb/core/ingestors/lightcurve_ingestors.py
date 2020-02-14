@@ -5,15 +5,9 @@ import numba as nb
 import os
 from .base import Ingestor
 
-QFLAG_IN_TYPE =  nb.typeof(np.array([b'G']))
-QFLAG_OUT_TYPE = nb.typeof(np.array([123]))
-QFLAG_SIG = QFLAG_OUT_TYPE(QFLAG_IN_TYPE)
-
-
-@nb.njit(QFLAG_SIG, cache=True, parallel=True)
 def quality_flag_extr(qflags):
     accept = np.ones(qflags.shape[0], dtype=np.int64)
-    for i in nb.prange(qflags.shape[0]):
+    for i in range(qflags.shape[0]):
         if qflags[i] == b'G':
             accept[i] = 1
         else:
@@ -39,7 +33,7 @@ def h5_to_matrices(filepath):
             compound_lc = lc['AperturePhotometry'][aperture]
             x_centroids = compound_lc['X'][()]
             y_centroids = compound_lc['Y'][()]
-            quality_flags_extr(compound_lc['QualityFlag'][()])
+            quality_flags = quality_flag_extr(compound_lc['QualityFlag'][()])
             for lc_type, has_error in H5_LC_TYPES.items():
                 result = {
                     'lc_type': lc_type,
@@ -50,6 +44,8 @@ def h5_to_matrices(filepath):
 
                 if has_error:
                     errors = compound_lc['{}Error'.format(lc_type)][()]
+                else:
+                    errors = np.full_like(cadences, np.nan, dtype=np.double)
 
                 result['data'] = np.array([
                     cadences,

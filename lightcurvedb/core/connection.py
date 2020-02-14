@@ -43,8 +43,8 @@ class DB(object):
 
         self._engine = create_engine(
             self.uri,
-            pool_size=20,
-            max_overflow=48,
+            pool_size=48,
+            max_overflow=128,
             client_encoding='utf8')
         listens_for(self._engine, 'connect', connect)
         listens_for(self._engine, 'checkout', checkout)
@@ -53,9 +53,9 @@ class DB(object):
         self.SessionClass = scoped_session(self.session_factory)
 
         # Create any models which are not in the current PSQL schema
-        QLPModel.metadata.create_all(self._engine)
         self._session = None
         self._active = False
+        self._config = None
 
     def __enter__(self):
         """Enter into the contejmxt of a SQLAlchemy open session"""
@@ -78,8 +78,10 @@ class DB(object):
 
     def close(self):
         if self._session is not None:
-            self.SessionClass.remove()
+
+            self._session.close()
             self._session = None
+            self.SessionClass.remove()
             self._active = False
         else:
             warnings.warn(
@@ -107,6 +109,14 @@ class DB(object):
     @property
     def apertures(self):
         return self.session.query(models.Aperture)
+
+    @property
+    def lightcurves(self):
+        return self.session.query(models.Lightcurve)
+
+    @property
+    def lightcurve_types(self):
+        return self.session.query(models.LightcurveType)
 
     def lightcurves_by_tics(self, tics, **kw_filters):
         pk_type = models.Lightcurve.tic_id.type
@@ -146,4 +156,6 @@ def db_from_config(config_path):
         'port': parser.get('Credentials', 'database_port'),
     }
 
-    return DB(**kwargs)
+    db =  DB(**kwargs)
+    db._config = config_path
+    return db
