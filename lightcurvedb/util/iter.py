@@ -43,3 +43,20 @@ def enumerated_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     if len(chunk) > 0:
         yield chunk
 
+def pop_chunkify(listlike, chunksize):
+    if chunksize < 1:
+        raise ValueError(
+            'Chunkify command cannot have a chunksize < 1'
+        )
+    starting_len = len(listlike)
+    chunk = []
+    for _ in range(starting_len):
+        next_item = listlike.pop()
+        chunk.append(next_item)
+        if len(chunk) >= chunksize:
+            yield chunk
+            chunk = []
+
+    # Cleanup
+    if len(chunk) > 0:
+        yield chunk
