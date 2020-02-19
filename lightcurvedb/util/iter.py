@@ -23,7 +23,8 @@ def chunkify(iterable, chunksize, fillvalue=None):
     if len(chunk) > 0:
         yield chunk
 
-def enumerated_chunkify(iterable, chunksize, offset=0, fillvalue=None):
+
+def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     """
     Chunkify's an iterable and provides the nth iteration to each chunk
     element. This can be offset by the :start_id: value.
@@ -43,3 +44,8 @@ def enumerated_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     if len(chunk) > 0:
         yield chunk
 
+
+def flatten(nested_iterable):
+    for i in nested_iterable:
+        for j in i:
+            yield j

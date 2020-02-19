@@ -1,13 +1,23 @@
 import click
 import os
 import itertools
-from sqlalchemy.dialects.postgresql import insert
-from collections import defaultdict
+import sys
+import numpy as np
+from random import sample
+from functools import partial
+from sqlalchemy import Sequence, Column, BigInteger, Integer
+from sqlalchemy.sql import func, text
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
+from sqlalchemy.exc import InvalidRequestError
+from collections import OrderedDict
 from multiprocessing import Pool, cpu_count
+from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Lightpoint
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
+from lightcurvedb.core.ingestors.lightpoint import get_raw_h5
 from lightcurvedb.util.logging import make_logger
-from lightcurvedb.util.iter import chunkify
+from lightcurvedb.util.iter import chunkify, enumerate_chunkify
+from lightcurvedb.util.lightpoint_util import map_existing_lightcurves, create_lightpoint_tmp_table
 from lightcurvedb.core.connection import db_from_config
 from glob import glob
 from h5py import File as H5File
@@ -16,6 +26,33 @@ from .utils import find_h5
 from .types import CommaList
 
 logger = make_logger('H5 Ingestor')
+
+def update_query(tablename):
+    return f"""
+        UPDATE lightpoints
+        SET
+            barycentric_julian_date = {tablename}.barycentric_julian_date,
+            value = {tablename}.value,
+            error = {tablename}.error,
+            x_centroid = {tablename}.x_centroid,
+            y_centroid = {tablename}.y_centroid,
+            quality_flag = {tablename}.quality_flag
+        FROM {tablename}
+        WHERE
+            lightpoints.lightcurve_id = {tablename}.lightcurve_id
+            AND
+            lightpoints.cadence = {tablename}.cadence
+        """
+
+def insert_query(tablename):
+    return f"""
+        INSERT INTO lightpoints (id, cadence, barycentric_julian_date, value, error, x_centroid, y_centroid, quality_flag, lightcurve_id)
+        SELECT nextval('lightpoints_pk_table'), l.cadence, l.barycentric_julian_date, l.value, l.error, l.x_centroid, l.y_centroid, l.quality_flag, l.lightcurve_id
+        FROM {tablename} l
+        LEFT JOIN lightpoints r
+            ON l.lightcurve_id = r.lightcurve_id AND l.cadence = r.cadence
+            WHERE r.lightcurve_id IS NULL AND r.cadence IS NULL
+"""
 
 @lcdbcli.group()
 @click.pass_context
@@ -28,14 +65,6 @@ def determine_orbit_path(orbit_dir, orbit, cam, ccd):
     cam_name = 'cam{}'.format(cam)
     ccd_name = 'ccd{}'.format(ccd)
     return os.path.join(orbit_dir, orbit_name, 'ffi', cam_name, ccd_name, 'LC')
-
-
-def yield_raw_h5(filepath):
-    results = []
-    for h5_result in h5_to_matrices(filepath):
-        results.append(h5_result)
-    return results
-
 
 def extr_tic(filepath):
     return int(os.path.basename(filepath).split('.')[0])
@@ -74,20 +103,48 @@ def lightpoint_dict(T, lc_id):
         'lightcurve_id': lc_id
     }
 
+def yield_lightpoint_caches(lightpoint_map, cache_id_offset=1):
+    current_id = cache_id_offset
+    for lightcurve_id, lightpoint_array in lightpoint_map.items():
+        for lightpoint in lightpoint_array.T:
+            
+            kwarg = lightpoint_dict(lightpoint, lightcurve_id)
+            kwarg['cache_id'] = current_id
+            current_id += 1
+            yield kwarg
+
+def extr_for_lightpoint(cache_tuple):
+    lightcurve_id = cache_tuple[0]
+    points = []
+    for lightpoint in cache_tuple[1].T:
+        kwarg = lightpoint_dict(lightpoint, lightcurve_id)
+        points.append(kwarg)
+    return points
+
 
 def yield_lightpoints(collection, lc_id_map, merging=False):
-    if not merging:
-        for key, lcs in collection.items():
-            lc_id = lc_id_map[key]
-            for lc in lcs:
-                for lp in lc['data'].T:
-                    yield lightpoint_dict(lp, lc_id)
-    else:
         for lc_id, lcs in collection.items():
             for lc in lcs:
                 for lp in lc.T:
                     yield lightpoint_dict(lp, lc_id)
 
+
+def extract_lightpoints(lightcurves):
+    for lightcurve, lightpoint_arr in lightcurves.items():
+        lightpoints = []
+        for lightpoint in lightpoint_arr.T:
+            kwarg = lightpoint_dict(lightpoint, lightcurve.id)
+            kwarg['id'] = Sequence('lightpoints_pk_table')
+            lightpoints.append(lightpoint)
+        yield lightpoints
+
+
+def insert_lightpoints(config, lightpoint_kwargs):
+    with db_from_config(config) as db:
+        db.session.bulk_insert_mappings(
+            Lightpoint,
+            lightpoint_kwargs
+        )
 
 def insert_lightcurves(config, lightcurves):
     with db_from_config(config) as db:
@@ -104,7 +161,43 @@ def make_merge_stmt(points):
     ).on_confict_do_update(
         constraint='lc_cadence_unique'
     )
-    return q;
+    return q
+
+
+def merge_lightpoints(config, dict_items):
+    pid = os.getpid()
+    with db_from_config(config) as db:
+        values = []
+        cache_id = 1
+        for lightcurve_id, data in dict_items:
+            for lp in data.T:
+                values.append(lightpoint_dict(lp, lightcurve_id))
+                values[-1]['cache_id'] = cache_id
+                cache_id += 1
+        table = create_lightpoint_tmp_table('lp_cache')
+        table.create(bind=db.session.bind)
+        logger.info(f'{pid} created tmp table {table.name}')
+        db.commit()
+        db.session.execute(text(f'ANALYZE {table.name}'))
+        db.commit()
+        for v in values:
+            v['cache_id'] = cache_id
+            cache_id += 1
+        q = table.insert().values(values)
+        db.commit()
+        db.session.execute(q)
+        q = text(
+            update_query(table.name)
+        )
+        db.session.execute(q)
+        logger.info(f'{pid} updated database')
+        q = text(
+            insert_query(table.name)
+        )
+        db.session.execute(q)
+        db.commit()
+        logger.info(f'{pid} inserted into database')
+        return len(values)
 
 
 @lightcurve.command()
@@ -156,51 +249,63 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             'Extracting defined tics from {} files'.format(str(len(all_files)))
         )
         with Pool(n_process) as p:
-            for tic in p.map(extr_tic, all_files):
+            for tic in p.imap_unordered(extr_tic, all_files):
                 tics.add(tic)
 
         click.echo('Found {} unique tics'.format(len(tics)))
 
-        # Since we allow multi-orbit ingestions keys are not unique
-        resultant = defaultdict(list)
+        click.echo('Performing join on existing lightcurves')
+        # Get a mapping of (cadence, type, aperture, tic) -> pk
+        lightcurve_id_map = map_existing_lightcurves(db, tics)
+
+
+        new_lightcurves = OrderedDict()
+        old_lightcurves = dict()
 
         with Pool(n_process) as p:
             with click.progressbar(all_files, label='Reading H5 files') as file_iter:
-                for result in p.imap_unordered(yield_raw_h5, file_iter):
+                for result in p.imap_unordered(get_raw_h5, file_iter):
                     for raw_lc in result:
                         type_id = lc_type_map[raw_lc['lc_type']]
-                        aperture_id = aperture_map[raw_lc['aperture']]
+                        aperture_id  = aperture_map[raw_lc['aperture']]
                         tic = raw_lc['tic']
                         key = (cadence_type, type_id, aperture_id, tic)
-                        resultant[key].append(raw_lc['data'])
+                        try:
+                            existing_lc_id = lightcurve_id_map[key]
+                            if existing_lc_id not in old_lightcurves:
+                                old_lightcurves[existing_lc_id] = raw_lc['data']
+                            else:
+                                old_lightcurves[existing_lc_id] = np.concatenate(
+                                    [
+                                        old_lightcurves[existing_lc_id],
+                                        raw_lc['data']
+                                    ],
+                                    axis=1
+                                )
 
-        # Load lightcurves
-        existing_lightcurves = db.lightcurves_by_tics(tics).all()
+                        except KeyError:
+                            # Key does not exist, lightcurve must be new
+                            if key not in new_lightcurves:
+                                new_lightcurves[key] = raw_lc['data']
+                            else:
+                                new_lightcurves[key] = np.concatenate(
+                                    [
+                                        new_lightcurves[key],
+                                        raw_lc['data']
+                                    ],
+                                    axis=1
+                                )
 
-        # Merge
-        to_merge = {}
-        click.echo('Determining merges for {} lightcurves'.format(len(existing_lightcurves)))
-
-        for lc in existing_lightcurves:
-            key = (cadence_type, lc.lightcurve_type_id, lc.aperture_id, lc.tic_id)
-            try:
-                raw_lcs = resultant.pop(key)
-                to_merge[lc.id] = raw_lcs
-            except KeyError:
-                # Nothing to merge with, ignore
-                continue
-
-        # resultant collection now only contains new lightcurves
         click.echo(
             click.style(
-                'Will merge {} lightcurves'.format(len(to_merge)),
+                'Will merge {} lightcurves'.format(len(old_lightcurves)),
                 fg='yellow',
                 bold=True
             )
         )
         click.echo(
             click.style(
-                'Will insert {} lightcurves'.format(len(resultant)),
+                'Will insert {} lightcurves'.format(len(new_lightcurves)),
                 fg='green',
                 bold=True
             )
@@ -210,53 +315,58 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             prompt = click.style('Do these changes look ok?', bold=True)
             click.confirm(prompt, abort=True)
             click.echo('\tBeginning interpretation of new lightcurves')
+        config = ctx.obj['dbconf']._config
 
-            with Pool(n_process) as p:
-                click.echo('\tMapping new lightcurves')
-                new_lightcurves = p.map(map_new_lightcurves, resultant)
-                click.echo('\tInserting new lightcurves...')
-    
-                batch = chunkify(new_lightcurves, 100000)
-                config = db._config
-                inserted_batches = p.starmap(
-                    insert_lightcurves,
-                    itertools.product(
-                        [config],
-                        batch
-                    )
+        # Numpy array representing the full lightcurve are now in
+        # new and old lightcurve dictionaries
+        click.echo('Mapping new lightcurves into Lightcurve Object instances')
+        with Pool(n_process) as p:
+            lightcurves = p.map(map_new_lightcurves, new_lightcurves.keys()) # Remap lightcurves to the new_lightcurve dictionary
+            lightcurve_batches = chunkify(lightcurves, 100000)
+            click.echo('\tInserting lightcurve instances into Database')
+            func = partial(insert_lightcurves, ctx.obj['dbconf']._config)
+            lightcurves = p.imap(
+                func,
+                lightcurve_batches
+            )
+            new_lightcurves = dict(zip(lightcurves, new_lightcurves.values()))
+
+            click.echo('\tInserted new lightcurves')
+
+            # Insert lightpoints
+            click.echo('\tInserting lightpoints')
+            # get iterator over lightpoints
+            # creating a list would result in duplicate memory usage
+            func = partial(insert_lightpoints, ctx.obj['dbconf'])
+            lp_with_id = extract_lightpoints(new_lightcurves)
+            p.imap_unordered(func, lp_with_id, chunksize=10000)
+
+        # Update lightpoint PK sequence
+
+        click.echo('Inserted, now determining merging strategy')
+        with Pool(n_process) as p:
+            # Load a Temporary Table with lightcurves to merge
+            # Perform query of relevant existing lightpoints
+            click.echo('\tInserting conflicting lightpoints into a TEMP tables')
+            #lightpoint_iter = p.imap_unordered(
+            #        extr_for_lightpoint,
+            #        old_lightcurves.items()
+            #)
+            #lightpoint_iter = itertools.chain.from_iterable(
+            #    lightpoint_iter
+            #)
+            lightpoint_iter = chunkify(old_lightcurves.items(), 10**2)
+            func = partial(merge_lightpoints, str(ctx.obj['dbconf']._config))
+            click.echo('Delegating merge operations to processes')
+            result_iterator = p.imap_unordered(
+                func,
+                lightpoint_iter,
+            )
+            insertions = [x for x in result_iterator]
+            result = sum(insertions)
+            click.echo(
+                'Inserted {} lightpoints'.format(
+                    click.style(str(result), bold=True)
                 )
-                new_lightcurves = itertools.chain(inserted_batches)
-
-                click.echo('\tInserted')
-
-                lc_id_map = {
-                    id: value for id, value in p.imap_unordered(
-                        expand,
-                        new_lightcurves
-                    )
-                }
-
-            points = []
-            click.echo('\tSerializing points')
-            to_insert = yield_lightpoints(resultant, lc_id_map, merging=False)
-            to_potentially_merge = yield_lightpoints(to_merge, None, merging=True)
-            
-            click.echo('\tInserting points...')
-
-            for chunk in chunkify(to_insert, n_lp_insert):
-                ok_lps = list(filter(lambda x: x, chunk))
-                click.echo('\t\tInserting {} points'.format(len(ok_lps)))
-                db.session.bulk_insert_mappings(
-                    Lightpoint,
-                    ok_lps
-                )
-
-            click.echo('\tMerging points...')
-            for chunk in chunkify(n_lp_insert, to_potentially_merge):
-                ok_lps = list(filter(lambda x: x, chunk))
-                click.echo('\t\tMerging {} points'.format(len(ok_lps)))
-                q = Lightpoint.bulk_upsert_stmt(chunk)
-                db.session.execute(q)
-
-            db.session.commit()
+            )
         click.echo('Done')

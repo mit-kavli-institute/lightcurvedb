@@ -4,6 +4,15 @@ from lightcurvedb.core.base_model import QLPModel
 import os
 
 
+class TempTable(object):
+    def __init__(self, name, *columns):
+        self.name = name
+        self._sql_table = Table(
+            name,
+            QLPModel.metadata
+        )
+
+
 class MassQuery(object):
     def __init__(self, session, TargetModel, pk_col, *cols, **additional_filters):
         self.session = session

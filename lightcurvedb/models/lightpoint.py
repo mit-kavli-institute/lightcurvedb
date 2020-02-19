@@ -16,7 +16,7 @@ class Lightpoint(QLPModel, DynamicIdMixin('lightpoints')):
         UniqueConstraint('lightcurve_id', 'cadence', name='lc_cadence_unique'),
     )
 
-    cadence = Column(Integer, nullable=False)
+    cadence = Column(Integer, nullable=False, index=True)
     barycentric_julian_date = Column(DOUBLE_PRECISION, nullable=False, index=True)
 
     # To maintain flux<->magnitude agnosticism just consider this
