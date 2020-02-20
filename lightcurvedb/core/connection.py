@@ -43,8 +43,7 @@ class DB(object):
 
         self._engine = create_engine(
             self.uri,
-            pool_size=48,
-            max_overflow=128,
+            pool_size=0,
             client_encoding='utf8')
         listens_for(self._engine, 'connect', connect)
         listens_for(self._engine, 'checkout', checkout)

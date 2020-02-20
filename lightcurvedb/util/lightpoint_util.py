@@ -47,13 +47,13 @@ def map_existing_lightcurves(db, tics):
     return lightcurve_map
 
 
-def create_lightpoint_tmp_table(basename):
+def create_lightpoint_tmp_table(basename, metadata):
     pid = os.getpid()
     time = str(datetime.now()).replace(':', '_').replace('.','_').replace(' ', '_').replace('-','_')
-    name = '{}_{}_{}'.format(basename, pid, time)
+    name = '{}_{}'.format(basename, pid)
     tmp_table = Table(
         name,
-        QLPModel.metadata,
+        metadata,
         Column('cache_id', BigInteger, primary_key=True),
         Column('lightcurve_id', BigInteger, index=True),
         Column('cadence', Integer, index=True),
