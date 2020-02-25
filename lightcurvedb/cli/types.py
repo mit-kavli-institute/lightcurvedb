@@ -28,4 +28,8 @@ class Database(click.ParamType):
     def convert(self, value, param, ctx):
         if not value:
             value = os.path.expanduser('~/.config/lightcurvedb/db.conf')
-        return db_from_config(value)
+        return db_from_config(
+                value,
+                executemany_mode='values',
+                executemany_values_page_size=10000,
+                executemany_batch_page_size=500)

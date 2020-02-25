@@ -3,10 +3,13 @@ import os
 import itertools
 import sys
 import numpy as np
+import tempfile
+import csv
+import datetime
 from random import sample
 from functools import partial
 from sqlalchemy import Sequence, Column, BigInteger, Integer
-from sqlalchemy.sql import func, text
+from sqlalchemy.sql import func, text, insert
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.exc import InvalidRequestError
 from collections import OrderedDict
@@ -87,220 +90,165 @@ def map_new_lightcurves(new_lc):
     )
 
 
-def expand(x):
-    return (
-        (
-            x.cadence_type,
-            x.lightcurve_type_id,
-            x.aperture_id,
-            x.tic_id
-        ),
-        x
-    )
-
-def lightpoint_dict(T, lc_id):
-    return {
-        'cadence': T[0],
-        'barycentric_julian_date': T[1],
-        'value': T[2],
-        'error': T[3],
-        'x_centroid': T[4],
-        'y_centroid': T[5],
-        'quality_flag': T[6],
-        'lightcurve_id': lc_id
-    }
-
-def extr_for_lightpoint(cache_tuple):
-    lightcurve_id = cache_tuple[0]
-    points = []
-    for lightpoint in cache_tuple[1].T:
-        kwarg = lightpoint_dict(lightpoint, lightcurve_id)
-        points.append(kwarg)
-    return points
-
-
-def yield_lightpoints(collection, lc_id_map, merging=False):
-        for lc_id, lcs in collection.items():
-            for lc in lcs:
-                for lp in lc.T:
-                    yield lightpoint_dict(lp, lc_id)
-
-
-def extract_lightpoints(lightcurves):
-    for lightcurve, lightpoint_arr in lightcurves.items():
-        lightpoints = []
-        for lightpoint in lightpoint_arr.T:
-            kwarg = lightpoint_dict(lightpoint, lightcurve.id)
-            kwarg['id'] = Sequence('lightpoints_pk_table')
-            lightpoints.append(lightpoint)
-        yield lightpoints
-
-
-def insert_lightpoints(config, lightpoint_kwargs):
-    with db_from_config(config) as db:
-        db.session.bulk_insert_mappings(
-            Lightpoint,
-            lightpoint_kwargs
-        )
-
-def insert_lightcurves(config, lightcurves):
-    with db_from_config(config) as db:
-        for lc in lightcurves:
-            if lc is None:
-                continue
-            db.add(lc)
-        db.commit()
-    return lightcurves
-
-def make_merge_stmt(points):
-    q = insert(Lightcurve).values(
-        points
-    ).on_confict_do_update(
-        constraint='lc_cadence_unique'
-    )
-    return q
-
-
-def ingest_files(config, cadence_type, lc_type_map, aperture_map, files):
+def ingest_files(config, cadence_type, lc_type_map, aperture_map, table, seq, files):
     pid = os.getpid()
     with db_from_config(config) as db:
+        table = QLPModel.metadata.tables[table]
+        seq = Sequence(seq)
         tics = {extr_tic(f) for f in files}
-        lightcurve_id_map = map_existing_lightcurves(db, tics)
-    logger.info(f'Mapped {len(tics)} tics to {len(lightcurve_id_map)} ids')
+        lightcurves = db.lightcurves_from_tics(tics)
 
-    new_lightcurves = OrderedDict()
-    old_lightcurves = dict()
-    for f in files:
-        h5 = get_raw_h5(f)
-        for raw_lc in h5:
-            type_id = lc_type_map[raw_lc['lc_type']]
-            aperture_id = aperture_map[raw_lc['aperture']]
-            tic = raw_lc['tic']
-            key = (cadence_type, type_id, aperture_id, tic)
-            try:
-                id = lightcurve_id_map[key]
-                if id not in old_lightcurves:
-                    old_lightcurves[id] = raw_lc['data']
+        lightcurve_id_map = {
+            (lc.cadence_type, lc.lightcurve_type_id, lc.aperture_id, lc.tic_id): lc.id for lc in lightcurves
+        }
+        total_points = 0
+        for f in files:
+            values = []
+            new_lightcurves = OrderedDict()
+            old_lightcurves = dict()
+            h5 = get_raw_h5(f)
+            for raw_lc in h5:
+                type_id = lc_type_map[raw_lc['lc_type']]
+                aperture_id = aperture_map[raw_lc['aperture']]
+                tic = raw_lc['tic']
+                key = (cadence_type, type_id, aperture_id, tic)
+                id = lightcurve_id_map.get(key, None)
+
+                if not id:
+                    target = new_lightcurves
                 else:
-                    old_lightcurves[id] = np.concatenate(
-                        [
-                            old_lightcurves[id],
-                            raw_lc['data']
-                        ],
+                    target = old_lightcurves
+                    key = id
+
+                if not key in target:
+                    target[key] = raw_lc['data']
+                else:
+                    target[key] = np.concatenate(
+                        target[key],
+                        raw_lc['data'],
                         axis=1
                     )
-
-            except KeyError as e:
-                # Key does not exist, lightcurve must be new
-                if key not in new_lightcurves:
-                    new_lightcurves[key] = raw_lc['data']
-                else:
-                    new_lightcurves[key] = np.concatenate(
-                        [
-                            new_lightcurves[key],
-                            raw_lc['data']
-                        ],
-                        axis=1
-                    )
-    logger.info(f'{pid} loaded files')
-
-    with db_from_config(config) as db:
-        merge_table = create_lightpoint_tmp_table('merge_cache', QLPModel.metadata)
-        insert_table = create_lightpoint_tmp_table('insert_cache', QLPModel.metadata)
-
-        merge_table.create(bind=db.session.bind)
-        insert_table.create(bind=db.session.bind)
-        db.session.commit()
-        logger.info(f'{pid} created temporary tables')
-
-        cache_id = 1
-        insert_id = 1
-        logger.info(f'{pid} loading merge table...')
-        merge_values = []
-
-        ids = set(old_lightcurves.keys())
-        for id in ids:
-            lightpoint_arr = old_lightcurves.pop(id)
-            for kwarg in insert_lightpoints_tmp(id, lightpoint_arr):
-                kwarg['cache_id'] = cache_id
-                cache_id += 1
-                merge_values.append(kwarg)
-
-            if len(merge_values) >= 5 * 10**5:
-                q = merge_table.insert()
-                db.session.execute(q, merge_values)
-                db.session.flush()
-                merge_values = []
-
-        old_lightcurves = {}
-
-        if len(merge_values) > 0:
-            q = merge_table.insert().values(merge_values)
+            to_insert = [map_new_lightcurves(key) for key in new_lightcurves.keys()]
+            db.session.add_all(to_insert)
+            if len(to_insert) > 0:
+                db.commit()
+            # Remap new lightcurves to use new ids
+            # outside of session context manager to not hold lock any longer than we need to
+            for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
+                for lp in lightpoints.T:
+                    cache_id = db.session.execute(seq)
+                    val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], lightcurve.id)
+                    logger.info(val)
+                    values.append(val)
+            for id, lightpoints in old_lightcurves.items():
+                for lp in lightpoints.T:
+                    cache_id = db.session.execute(seq)
+                    val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], id)
+                    values.append(val)
+            logger.info(f'Worker-{pid} inserting {len(values)} into TMP')
+            q = insert(table).values(values)
             db.session.execute(q)
-            db.session.flush()
-            merge_values = []
+            db.session.commit()
+            total_points += len(values)
+        return total_points
 
-        db.commit()
-        
-        logger.info(f'{pid} creating lightcurve objects')
-        to_insert = [map_new_lightcurves(key) for key in new_lightcurves.keys()]
-        db.session.add_all(to_insert)
-        db.commit()
-        logger.info(f'{pid} inserted {len(to_insert)} lightcurves')
+    #with db_from_config(config, executemany_mode='values') as db:
+    #    merge_table = create_lightpoint_tmp_table('merge_cache', QLPModel.metadata)
+    #    insert_table = create_lightpoint_tmp_table('insert_cache', QLPModel.metadata)
 
-        logger.info(f'{pid} loading insert table')
-        #  Lightcurve objects now had ids associated with them
-        insert_values = []
-        for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
-            id = lightcurve.id
-            for kwarg in insert_lightpoints_tmp(id, lightpoints):
-                kwarg['cache_id'] = insert_id
-                insert_id += 1
-                insert_values.append(kwarg)
+    #    merge_table.create(bind=db.session.bind)
+    #    insert_table.create(bind=db.session.bind)
+    #    db.session.commit()
+    #    logger.info(f'{pid} created temporary tables')
 
-                if len(insert_values) >= 5 * 10**5:
-                    q = insert_table.insert()
-                    db.session.execute(q, insert_values)
-                    db.session.flush()
-                    insert_values = []
-        
-        if len(insert_values) > 0:
-            q = insert_table.insert().values(insert_values)
-            db.session.execute(q)
-            db.session.flush()
-            insert_values = []
-        
-        db.commit()
-        logger.info(f'{pid} loaded {insert_id + cache_id - 1} new lightpoints into TMP')
-        # All lightpoints have been committed to tables
-        db.session.execute(text(f'ANALYZE {insert_table.name}'))
-        db.session.execute(text(f'ANALYZE {merge_table.name}'))
-        db.commit()
-        logger.info(f'{pid} analyzed TMP tables')
+    #    cache_id = 1
+    #    insert_id = 1
+    #    logger.info(f'{pid} loading merge table...')
+    #    merge_values = []
 
-        insertion_q = text(
-            insert_query(insert_table.name)
-        )
-        db.session.execute(insertion_q)
-        db.commit()
-        logger.info(f'{pid} inserted new lightpoints')
+    #    ids = set(old_lightcurves.keys())
+    #    for id in ids:
+    #        lightpoint_arr = old_lightcurves.pop(id)
+    #        for kwarg in insert_lightpoints_tmp(id, lightpoint_arr):
+    #            kwarg['cache_id'] = cache_id
+    #            cache_id += 1
+    #            merge_values.append(kwarg)
 
-        missing_q = text(
-            update_query(merge_table.name),
-        )
-        db.session.execute(missing_q)
-        db.commit()
-        logger.info('f{pid} merged new lighpoints')
+    #        if len(merge_values) >= 5 * 10**5:
+    #            q = merge_table.insert()
+    #            db.session.execute(q, merge_values)
+    #            db.session.flush()
+    #            merge_values = []
 
-        merge_q = text(
-            update_query(merge_table.name)
-        )
-        db.session.execute(merge_q)
-        logger.info('f{pid} updated lightpoints')
+    #    old_lightcurves = {}
 
-        db.commit()
-        logger.info(f'{pid} finished execution')
-    return insert_id + cache_id - 1
+    #    if len(merge_values) > 0:
+    #        q = merge_table.insert().values(merge_values)
+    #        db.session.execute(q)
+    #        db.session.flush()
+    #        merge_values = []
+
+    #    db.commit()
+    #    
+    #    logger.info(f'{pid} creating lightcurve objects')
+    #    to_insert = [map_new_lightcurves(key) for key in new_lightcurves.keys()]
+    #    db.session.add_all(to_insert)
+    #    db.commit()
+    #    logger.info(f'{pid} inserted {len(to_insert)} lightcurves')
+
+    #    logger.info(f'{pid} loading insert table')
+    #    #  Lightcurve objects now had ids associated with them
+    #    insert_values = []
+    #    for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
+    #        id = lightcurve.id
+    #        for kwarg in insert_lightpoints_tmp(id, lightpoints):
+    #            kwarg['cache_id'] = insert_id
+    #            insert_id += 1
+    #            insert_values.append(kwarg)
+
+    #            if len(insert_values) >= 5 * 10**5:
+    #                q = insert_table.insert()
+    #                db.session.execute(q, insert_values)
+    #                db.session.flush()
+    #                insert_values = []
+    #    
+    #    if len(insert_values) > 0:
+    #        q = insert_table.insert().values(insert_values)
+    #        db.session.execute(q)
+    #        db.session.flush()
+    #        insert_values = []
+    #    
+    #    db.commit()
+    #    logger.info(f'{pid} loaded {insert_id + cache_id - 1} new lightpoints into TMP')
+    #    # All lightpoints have been committed to tables
+    #    db.session.execute(text(f'ANALYZE {insert_table.name}'))
+    #    db.session.execute(text(f'ANALYZE {merge_table.name}'))
+    #    db.commit()
+    #    logger.info(f'{pid} analyzed TMP tables')
+
+    #    insertion_q = text(
+    #        insert_query(insert_table.name)
+    #    )
+    #    db.session.execute(insertion_q)
+    #    db.commit()
+    #    logger.info(f'{pid} inserted new lightpoints')
+
+    #    missing_q = text(
+    #        update_query(merge_table.name),
+    #    )
+    #    db.session.execute(missing_q)
+    #    db.commit()
+    #    logger.info('f{pid} merged new lighpoints')
+
+    #    merge_q = text(
+    #        update_query(merge_table.name)
+    #    )
+    #    db.session.execute(merge_q)
+    #    logger.info(f'{pid} updated lightpoints')
+
+    #    db.commit()
+    #    logger.info(f'{pid} finished execution')
+    #return insert_id + cache_id - 1
         
 
 def insert_lightpoints_tmp(lightcurve_id, nparray):
@@ -363,7 +311,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
 
         click.echo('Found {} unique tics'.format(len(tics)))
 
-        file_partitions = list(partition(all_files, n_process))
+        file_partitions = list(partition(all_files, n_process - 1))
         click.echo(
             'Will create {} job partitions:'.format(
                 click.style(str(len(file_partitions)), bold=True)
@@ -383,20 +331,91 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
         else:
             return
 
+        tmp_table = create_lightpoint_tmp_table('updater', QLPModel.metadata)
+        seq = Sequence('cache_id_seq', cache=10**9)
+        seq.create(bind=db.session.bind)
+        tmp_table.create(bind=db.session.bind)
+        db.session.commit()
+
         func = partial(
             ingest_files,
             ctx.obj['dbconf']._config,
             cadence_type,
             lc_type_map,
-            aperture_map
+            aperture_map,
+            tmp_table.name,
+            seq.name
         )
-        with Pool(n_process) as p:
-            results = p.imap_unordered(
-                func,
-                file_partitions
-            )
-            results = [result for result in results]
-            total = sum(results)
-            click.echo(
-                click.style(f'Inserted {total} points', bold=True)
-            )
+        try:
+            with Pool(n_process) as p:
+                results = p.imap_unordered(
+                    func,
+                    file_partitions
+                )
+                values = []
+                click.echo(f'Loading temp table: {tmp_table.name}')
+                cache_id = 1
+                total_points = []
+                for result in results:
+                    total_points.append(result)
+                click.echo('Parsed {sum(total_points)} lightpoints')
+                #for result in results:
+                #    for lp in result:
+                #        cadence, bjd, value, error, x, y, q, lightcurve_id = lp
+                #        val = (now, cache_id, lightcurve_id, cadence, bjd, value, error, x, y, q)
+                #        values.append(val)
+                #        cache_id += 1
+                #    if len(values) > 10**6:
+                #        click.echo(f'Batch loading {len(values)} lightpoints...')
+                #        q = tmp_table.insert().values(values)
+                #        db.session.execute(q)
+                #        db.session.flush()
+                #        values = []
+                ## Flush any remaining values
+                #if len(values) > 0:
+                #    click.echo(f'Batch loading {len(values)} lightpoints...')
+                #    q = tmp_table.insert().values(values)
+                #    db.session.execute(q)
+                #    db.session.flush()
+            click.echo('Analyzing cache table')
+            db.session.execute(f'ANALYZE {tmp_table.name}')
+            db.session.commit()
+            click.echo('Performing MERGE')
+            # Perform updates to lightcurve database
+            merge_q = merge_query(tmp_table.name)
+            db.session.execute(merge_q)
+            db.session.commit()
+            click.echo('Done')
+        except:
+            tmp_table.drop(bind=db.session.bind)
+            seq.drop(bind=db.session.bind)
+            db.session.commit()
+            raise
+
+            #with tempfile.NamedTemporaryFile(mode='w', dir=ctx.obj['scratch']) as csv_out:
+            #    click.echo(f'Serializing to csv {csv_out.name}')
+            #    writer = csv.writer(csv_out, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
+            #    writer.writerow(
+            #        ['created',
+            #        'cadence',
+            #        'barycentric_julian_date',
+            #        'value',
+            #        'error',
+            #        'x_centroid',
+            #        'y_centroid',
+            #        'quality_flag',
+            #        'lightcurve_id',
+            #        'id']
+            #    )
+            #    for result in results:
+            #        for lp in result:
+            #            val = (now, *lp, current_lightpoint_id)
+            #            writer.writerow(val)
+            #            current_lightpoint_id += 1
+
+            #    fullpath = csv_out.name
+            #    click.echo('Performing COPY psql command...')
+            #    resultant = db.session.execute(
+            #        text('COPY lightcurves FROM \'{fullpath}\' WITH HEADER')
+            #    )
+            #    click.echo(f'Done: {resultant}')
