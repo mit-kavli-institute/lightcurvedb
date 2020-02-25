@@ -2,12 +2,14 @@ from hypothesis import strategies as st
 from hypothesis import given
 import pytest
 
-from lightcurvedb.util.iter import chunkify, enumerated_chunkify
+from lightcurvedb.util.iter import chunkify, enumerated_chunkify, pop_chunkify
+
 
 @given(st.integers(min_value=1), st.iterables(st.just(None)))
 def test_chunkify(chunksize, iterable):
     chunks = chunkify(iterable, chunksize)
     assert all(len(chunk) <= chunksize for chunk in chunks)
+
 
 @given(st.integers(max_value=0), st.iterables(st.just(None)))
 def test_invalid_chunkify(chunksize, iterable):
@@ -31,6 +33,7 @@ def test_enumerated_chunkify(chunksize, offset, iterable):
             assert nth not in seen_indices
             seen_indices.add(nth)
 
+
 @given(st.integers(min_value=1), st.integers(), st.lists(st.just(None)))
 def test_enumerated_chunkify_w_list(chunksize, offset, iterable):
     chunks = enumerated_chunkify(iterable, chunksize, offset=offset)
@@ -41,3 +44,12 @@ def test_enumerated_chunkify_w_list(chunksize, offset, iterable):
             assert nth not in seen_indices
             assert nth >= offset
             seen_indices.add(nth)
+
+
+@given(st.integers(min_value=1), st.lists(st.just(None)))
+def test_pop_chunkify(chunksize, listlike):
+    chunks = pop_chunkify(listlike, chunksize)
+    assert all(len(chunk) <= chunksize for chunk in chunks)
+
+    # Assert that chunkify has consumed the list
+    assert len(listlike) == 0

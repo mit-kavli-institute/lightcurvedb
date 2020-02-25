@@ -13,20 +13,34 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
-from lightcurvedb.util.uri import construct_uri
+from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.en_masse import MassQuery
 
+CONFIG_PATH = '~/.config/lightcurvedb/db.conf'
 
+ENGINE = create_engine(
+    uri_from_config(os.path.expanduser(CONFIG_PATH)),
+    pool_size=48,
+    pool_pre_ping=True,
+    executemany_mode='values',
+    executemany_values_page_size=10000,
+    executemany_batch_page_size=500
+)
+FACTORY = sessionmaker(bind=ENGINE)
+Session = scoped_session(FACTORY)
+
+@listens_for(ENGINE, 'connect')
 def connect(dbapi_connection, connection_record):
     connection_record.info['pid'] = os.getpid()
 
+@listens_for(ENGINE, 'checkout')
 def checkout(dbabi_connection, connection_record, connection_proxy):
     pid = os.getpid()
     if connection_record.info['pid'] != pid:
         warnings.warn(
             'Parent process {} forked {} with an open database connection, '
             'which is being discarded and remade'.format(
-                connection_record['pid'], pid
+                connection_record.info['pid'], pid
             )
         )
         connection_record.connection = connection_proxy.connection = None
@@ -36,21 +50,13 @@ def checkout(dbabi_connection, connection_record, connection_proxy):
 class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
-    def __init__(self, username, password, db_name, db_host, db_type='postgresql', port=5432):
+    def __init__(self, username, password, db_name, db_host, db_type='postgresql', port=5432, **engine_kwargs):
         self._uri = construct_uri(
             username, password, db_name, db_host, db_type, port
         )
+        self._engine = ENGINE
 
-        self._engine = create_engine(
-            self.uri,
-            pool_size=48,
-            max_overflow=128,
-            client_encoding='utf8')
-        listens_for(self._engine, 'connect', connect)
-        listens_for(self._engine, 'checkout', checkout)
-
-        self.session_factory = sessionmaker(bind=self._engine)
-        self.SessionClass = scoped_session(self.session_factory)
+        self.SessionClass = Session
 
         # Create any models which are not in the current PSQL schema
         self._session = None
@@ -59,6 +65,7 @@ class DB(object):
 
     def __enter__(self):
         """Enter into the contejmxt of a SQLAlchemy open session"""
+        self._engine.dispose()
         return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -67,7 +74,7 @@ class DB(object):
 
     def open(self):
         if self._session is None:
-            self._session = scoped_session(self.session_factory)
+            self._session = self.SessionClass()
             self._active = True
         else:
             warnings.warn(
@@ -78,7 +85,7 @@ class DB(object):
 
     def close(self):
         if self._session is not None:
-            self._session.remove()
+            self.SessionClass.remove()
             self._session = None
             self._active = False
         else:
@@ -116,7 +123,7 @@ class DB(object):
     def lightcurve_types(self):
         return self.session.query(models.LightcurveType)
 
-    def lightcurves_by_tics(self, tics, **kw_filters):
+    def lightcurves_from_tics(self, tics, **kw_filters):
         pk_type = models.Lightcurve.tic_id.type
         mq = MassQuery(
             self.session,
@@ -142,7 +149,7 @@ class DB(object):
         self._session.delete(model_inst, synchronize_session=synchronize_session)
 
 
-def db_from_config(config_path):
+def db_from_config(config_path, **engine_kwargs):
     parser = ConfigParser()
     parser.read(config_path)
 
@@ -154,6 +161,6 @@ def db_from_config(config_path):
         'port': parser.get('Credentials', 'database_port'),
     }
 
-    db =  DB(**kwargs)
+    db =  DB(**kwargs, **engine_kwargs)
     db._config = config_path
     return db

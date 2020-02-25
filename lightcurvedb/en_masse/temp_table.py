@@ -2,6 +2,7 @@ from sqlalchemy import Table
 from sqlalchemy.inspection import inspect
 from lightcurvedb.core.base_model import QLPModel
 import os
+from datetime import datetime
 
 
 class TempTable(object):
@@ -17,12 +18,15 @@ class MassQuery(object):
     def __init__(self, session, TargetModel, pk_col, *cols, **additional_filters):
         self.session = session
         self.Model = TargetModel
-        self.name = '{}_massquery_{}'.format(TargetModel.__table__.name, os.getpid())
+
+        time = str(datetime.now()).replace(':', '_').replace('.','_').replace(' ', '_').replace('-','_')
+        name = '{}_{}'.format(os.getpid(), time)
+        self.name = '{}_massquery_{}'.format(TargetModel.__table__.name, name)
         temp_table = Table(
             self.name,
             QLPModel.metadata,
             *cols,
-            prefixes=['TEMPORARY']  #Sets temp table
+            prefixes=['TEMPORARY'],  #Sets temp table,
         )
         temp_table.create(bind=session.bind)
         self.session.commit()
