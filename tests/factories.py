@@ -43,18 +43,13 @@ def aperture(draw, save=False):
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
 
     assume(inner_radius < outer_radius)
+
     aperture = models.Aperture(
         name=name,
         star_radius=star_radius,
         inner_radius=inner_radius,
         outer_radius=outer_radius
     )
-
-    if save:
-        with db_from_config(CONFIG_PATH).open() as db:
-            db.add(aperture)
-            db.commit()
-            db.session.refresh(aperture)
 
     return aperture
 

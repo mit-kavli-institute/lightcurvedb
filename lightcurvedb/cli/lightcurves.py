@@ -99,7 +99,7 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, table, seq, fi
         lightcurves = db.lightcurves_from_tics(tics)
 
         lightcurve_id_map = {
-            (lc.cadence_type, lc.lightcurve_type_id, lc.aperture_id, lc.tic_id): lc.id for lc in lightcurves
+            (lc.cadence_type, lc.lightcurve_type_id, lc.aperture_id, lc.tic_id): lc for lc in lightcurves
         }
         total_points = 0
         for f in files:
@@ -112,13 +112,13 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, table, seq, fi
                 aperture_id = aperture_map[raw_lc['aperture']]
                 tic = raw_lc['tic']
                 key = (cadence_type, type_id, aperture_id, tic)
-                id = lightcurve_id_map.get(key, None)
+                lc = lightcurve_id_map.get(key, None)
 
                 if not id:
                     target = new_lightcurves
                 else:
                     target = old_lightcurves
-                    key = id
+                    key = lc.id
 
                 if not key in target:
                     target[key] = raw_lc['data']
