@@ -13,6 +13,17 @@ from sqlalchemy.sql import select
 from .lightpoint import LOOKUP, Lightpoint
 
 
+class LightpointsMap(object):
+    __emulates__ = list
+
+    def __init__(self):
+        self.data = []
+
+    @collection.appender
+    def append_lightpoint(self, lightpoint):
+        self.data.append(lightpoint)
+
+
 class LightcurveType(QLPDataSubType):
     """Describes the numerous lightcurve types"""
     __tablename__ = 'lightcurvetypes'
@@ -63,8 +74,7 @@ class Lightcurve(QLPDataProduct):
     lightpoints = relationship(
         'Lightpoint',
         back_populates='lightcurve',
-        order_by='Lightpoint.barycentric_julian_date',
-        lazy='dynamic')
+        order_by='Lightpoint.barycentric_julian_date')
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 

@@ -54,25 +54,25 @@ def test_lightcurve_query(db_conn, lightcurves):
         raise
 
 
-@given(lightcurve_st())
-def test_orbit_lightcurve_instantiation(db_conn, lightcurve):
-    db_conn.session.begin_nested()
-    db_conn.add(lightcurve)
-    note(lightcurve)
-    length = len(lightcurve)
-    attrs = [
-        lightcurve.cadences,
-        lightcurve.bjd,
-        lightcurve.values,
-        lightcurve.errors,
-        lightcurve.x_centroids,
-        lightcurve.y_centroids,
-        lightcurve.quality_flags,
-    ]
+@given(st.lists(lightcurve_st(), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+def test_load_from_db(db_conn, lightcurves):
+    try:
+        db_conn.session.begin_nested()
+        db_conn.session.add_all(lightcurves)
 
-    for attr in attrs:
-        note(attr)
+        ids = db_conn.load_from_db(
+            cadence_types=[l.cadence_type for l in lightcurves]
+        )
 
-    assert all(len(attr) == length for attr in attrs)
+        if ids is None:
+            ids = []
+        else:
+            ids = [l.id for l in ids]
+        note(ids)
+        assert set(ids) == set(l.id for l in lightcurves)
 
-    db_conn.session.rollback()
+        db_conn.session.rollback()
+    except:
+        note(lightcurves)
+        db_conn.session.rollback()
+        raise
