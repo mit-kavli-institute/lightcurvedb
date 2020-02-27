@@ -2,7 +2,7 @@ from hypothesis import strategies as st
 from hypothesis import given
 import pytest
 
-from lightcurvedb.util.iter import chunkify, enumerated_chunkify, pop_chunkify
+from lightcurvedb.util.iter import chunkify, enumerate_chunkify, pop_chunkify
 
 
 @given(st.integers(min_value=1), st.iterables(st.just(None)))
@@ -24,8 +24,8 @@ def test_chunkify_w_list(chunksize, list_like):
 
 
 @given(st.integers(min_value=1), st.integers(), st.iterables(st.just(None)))
-def test_enumerated_chunkify(chunksize, offset, iterable):
-    chunks = enumerated_chunkify(iterable, chunksize, offset=offset)
+def test_enumerate_chunkify(chunksize, offset, iterable):
+    chunks = enumerate_chunkify(iterable, chunksize, offset=offset)
     seen_indices = set()
     for chunk in chunks:
         assert len(chunk) <= chunksize
@@ -35,8 +35,8 @@ def test_enumerated_chunkify(chunksize, offset, iterable):
 
 
 @given(st.integers(min_value=1), st.integers(), st.lists(st.just(None)))
-def test_enumerated_chunkify_w_list(chunksize, offset, iterable):
-    chunks = enumerated_chunkify(iterable, chunksize, offset=offset)
+def test_enumerate_chunkify_w_list(chunksize, offset, iterable):
+    chunks = enumerate_chunkify(iterable, chunksize, offset=offset)
     seen_indices = set()
     for chunk in chunks:
         assert len(chunk) <= chunksize

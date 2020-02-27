@@ -14,6 +14,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
 from lightcurvedb.util.uri import construct_uri, uri_from_config
+from lightcurvedb.comparators.types import qlp_type_check
 from lightcurvedb.en_masse import MassQuery
 
 CONFIG_PATH = '~/.config/lightcurvedb/db.conf'
@@ -123,6 +124,23 @@ class DB(object):
     def lightcurve_types(self):
         return self.session.query(models.LightcurveType)
 
+
+    def load_from_db(apertures=None, types=None, cadence_types=[30]):
+        raise NotImplementedError
+
+
+    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30):
+        lc_type_check = qlp_type_check(models.LightcurveType, lightcurve_type)
+        aperture_check = qlp_type_check(models.Aperture, aperture)
+
+        return self.lightcurves.filter(
+            models.Lightcurve.tic_id == tic,
+            models.Lightcurve.cadence_type == cadence_type,
+            lc_type_check,
+            aperture_check
+        ).one()
+
+
     def lightcurves_from_tics(self, tics, **kw_filters):
         pk_type = models.Lightcurve.tic_id.type
         mq = MassQuery(
@@ -161,6 +179,12 @@ def db_from_config(config_path, **engine_kwargs):
         'port': parser.get('Credentials', 'database_port'),
     }
 
-    db =  DB(**kwargs, **engine_kwargs)
+    db = DB(
+        parser.get('Credentials', 'username'),
+        parser.get('Credentials', 'password'),
+        parser.get('Credentials', 'database_name'),
+        parser.get('Credentials', 'database_host'),
+        parser.get('Credentials', 'database_port'),
+        **engine_kwargs)
     db._config = config_path
     return db

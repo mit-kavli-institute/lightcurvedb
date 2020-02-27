@@ -26,7 +26,7 @@ class MassQuery(object):
             self.name,
             QLPModel.metadata,
             *cols,
-            prefixes=['TEMPORARY'],  #Sets temp table,
+            prefixes=['TEMPORARY']  #Sets temp table,
         )
         temp_table.create(bind=session.bind)
         self.session.commit()
