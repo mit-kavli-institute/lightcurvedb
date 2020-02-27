@@ -29,6 +29,31 @@ def test_retrieval_of_full_lightcurve(db_conn, lightcurve):
         db_conn.session.rollback()
         raise
 
+@given(st.lists(lightcurve_st(), unique_by=lambda l: l.id))
+def test_lightcurve_query(db_conn, lightcurves):
+    try:
+        db_conn.session.begin_nested()
+        db_conn.session.add_all(lightcurves)
+
+        ids = db_conn.query_lightcurves(
+            cadence_types=[l.cadence_type for l in lightcurves]
+            ).value(Lightcurve.id)
+
+        note(ids)
+        if ids is None:
+            assert len(lightcurves) == 0
+        elif len(lightcurves) == 1:
+            assert ids == lightcurves[0].id
+        else:
+            assert set(ids) == set(l.id for l in lightcurves)
+
+        db_conn.session.rollback()
+    except:
+        note(lightcurves)
+        db_conn.session.rollback()
+        raise
+
+
 @given(lightcurve_st())
 def test_orbit_lightcurve_instantiation(db_conn, lightcurve):
     db_conn.session.begin_nested()
