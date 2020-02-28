@@ -8,7 +8,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
-from sqlalchemy.sql import select
+from sqlalchemy.sql import select, func
 
 from .lightpoint import LOOKUP, Lightpoint
 
@@ -108,6 +108,27 @@ class Lightcurve(QLPDataProduct):
     def len(self):
         return self.lightpoints.count()
 
+    @hybrid_property
+    def max_cadence(self):
+        return self.lightpoints[-1].cadence
+
+    @max_cadence.expression
+    def max_cadence(cls):
+        return select(
+            [func.max(Lightpoint.cadence)]
+        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('max_cadence').as_scalar()
+
+    @hybrid_property
+    def min_cadence(self):
+        return self.lightpoints[0].cadence
+
+    @min_cadence.expression
+    def min_cadence(cls):
+        return select(
+            [func.min(Lightpoint.cadence)],
+            from_obj=Lightpoint
+        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('min_cadence').as_scalar()
+
     # Getters
     @hybrid_property
     def cadences(self):
@@ -149,5 +170,6 @@ class Lightcurve(QLPDataProduct):
         raise NotImplemented
 
     def __repr__(self):
-        return '<Lightcurve {}>'.format(
+        return '<Lightcurve {} {}>'.format(
+            self.tic_id,
             self.lightcurve_type.name)

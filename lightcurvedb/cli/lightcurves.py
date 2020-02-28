@@ -10,11 +10,11 @@ import io
 from random import sample
 from functools import partial
 from sqlalchemy import Sequence, Column, BigInteger, Integer
-from sqlalchemy.sql import func, text, insert
+from sqlalchemy.sql import func, text, insert, select, func
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.exc import InvalidRequestError
-from collections import OrderedDict
-from multiprocessing import Pool, cpu_count
+from collections import OrderedDict, defaultdict
+from multiprocessing import Pool, cpu_count, SimpleQueue, Manager
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Lightpoint
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
@@ -94,14 +94,17 @@ def map_new_lightcurves(new_lc):
 def ingest_files(config, cadence_type, lc_type_map, aperture_map, queue, files):
     pid = os.getpid()
     with db_from_config(config) as db:
-        table = QLPModel.metadata.tables[table]
-        seq = Sequence(seq)
         tics = {extr_tic(f) for f in files}
-        lightcurves = db.lightcurves_from_tics(tics)
+        lightcurves = db.yield_from_db(1000, tics=tics)
 
         lightcurve_id_map = {
             (lc.cadence_type, lc.lightcurve_type_id, lc.aperture_id, lc.tic_id): lc for lc in lightcurves
         }
+        lightcurve_map = {
+            lc.id: lc for _, lc in lightcurve_id_map
+        }
+        lightcurve_cadence_map = defaultdict(set)
+
         total_points = 0
         for f in files:
             values = []
@@ -115,11 +118,12 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, queue, files):
                 key = (cadence_type, type_id, aperture_id, tic)
                 lc = lightcurve_id_map.get(key, None)
 
-                if not id:
+                if lc is None:
                     target = new_lightcurves
                 else:
                     target = old_lightcurves
                     key = lc.id
+                    lightcurve_cadence_map[key] = set(lp.cadence for lp in lc.lightpoints)
 
                 if not key in target:
                     target[key] = raw_lc['data']
@@ -129,27 +133,54 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, queue, files):
                         raw_lc['data'],
                         axis=1
                     )
+
+            logger.info(f'Worker-{pid} found {len(new_lightcurves)} new lightcurves')
             to_insert = [map_new_lightcurves(key) for key in new_lightcurves.keys()]
             db.session.add_all(to_insert)
             if len(to_insert) > 0:
                 db.commit()
             # Remap new lightcurves to use new ids
             # outside of session context manager to not hold lock any longer than we need to
-            for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
-                for lp in lightpoints.T:
-                    cache_id = db.session.execute(seq)
-                    val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], lightcurve.id)
-                    #values.append(val)
-                    queue.put(val)
-                    total_points += 1
+                logger.info(f'Worker-{pid} inserting new lightpoints')
+                for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
+                    for lp in lightpoints.T:
+                        val = {
+                            'cadence': lp[0],
+                            'barycentric_julian_date': lp[1],
+                            'value': lp[2],
+                            'error': lp[3],
+                            'x_centroid': lp[4],
+                            'y_centroid': lp[5],
+                            'quality_flag': lp[6],
+                            'lightcurve_id': lightcurve.id
+                        }
+                        lightcurve_cadence_map[id].add(val['cadence'])
+                        queue.put(val)
+                        total_points += 1
 
+            logger.info(f'Worker-{pid} merging points')
+            # Merge, ignore any lightpoints which exist
             for id, lightpoints in old_lightcurves.items():
+                lightcurve = lightcurve_map[id]
+                ignored = 0
                 for lp in lightpoints.T:
-                    cache_id = db.session.execute(seq)
-                    val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], id)
-                    #values.append(val)
+                    if lp[0] in lightcurve_cadence_map[id]:
+                        ignored += 1
+                        continue
+                    val = {
+                        'cadence': lp[0],
+                        'barycentric_julian_date': lp[1],
+                        'value': lp[2],
+                        'error': lp[3],
+                        'x_centroid': lp[4],
+                        'y_centroid': lp[5],
+                        'quality_flag': lp[6],
+                        'lightcurve_id': id
+                    }
+                    lightcurve_cadence_map[id].add(val['cadence'])
                     queue.put(val)
                     total_points += 1
+                logger.info(f'Merged {lightcurve}, ignored {ignored} points')
         return total_points
 
 
@@ -184,6 +215,9 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             lt.name: lt.id for lt in lc_types
         }
 
+
+
+
         click.echo(
             'Ingesting {} orbits with {} apertures'.format(len(orbits), len(apertures))
         )
@@ -212,83 +246,100 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
                 tics.add(tic)
 
         click.echo('Found {} unique tics'.format(len(tics)))
+        click.echo('Determining merge pattern')
+        lc_map_q = select(
+            Lightcurve.id,
+            Lightcurve.min_cadence,
+            Lightcurve.max_cadence
+        ).where(Lightcurve.tic_id.in_(tics))
 
-        file_partitions = list(partition(all_files, n_process - 1))
-        click.echo(
-            'Will create {} job partitions:'.format(
-                click.style(str(len(file_partitions)), bold=True)
-            )
-        )
+        lc_map = {}
+        for chunk in db.session.execute(lc_map_q).yield_per(1000):
+            for lc in chunk:
+                click.echo(lc)
 
-        for i, p in enumerate(file_partitions):
-            click.echo('\tPartition {} of length {}'.format(
-                click.style('{:4}'.format(i), bold=True, fg='green'),
-                click.style('{}'.format(len(p)), bold=True)
-            ))
+        #file_partitions = list(partition(all_files, n_process - 1))
+        #click.echo(
+        #    'Will create {} job partitions:'.format(
+        #        click.style(str(len(file_partitions)), bold=True)
+        #    )
+        #)
 
-        if not ctx.obj['dryrun']:
-            prompt = click.style('Does this information look ok?', bold=True)
-            click.confirm(prompt, abort=True)
-            click.echo('\tBeginning interpretation of new lightcurves')
-        else:
-            return
+        #for i, p in enumerate(file_partitions):
+        #    click.echo('\tPartition {} of length {}'.format(
+        #        click.style('{:4}'.format(i), bold=True, fg='green'),
+        #        click.style('{}'.format(len(p)), bold=True)
+        #    ))
 
-        tmp_table = create_lightpoint_tmp_table('updater', QLPModel.metadata)
-        seq = Sequence('cache_id_seq', cache=10**9)
-        seq.create(bind=db.session.bind)
-        tmp_table.create(bind=db.session.bind)
-        db.session.commit()
+        #if not ctx.obj['dryrun']:
+        #    prompt = click.style('Does this information look ok?', bold=True)
+        #    click.confirm(prompt, abort=True)
+        #    click.echo('\tBeginning interpretation of new lightcurves')
+        #else:
+        #    return
 
-        func = partial(
-            ingest_files,
-            ctx.obj['dbconf']._config,
-            cadence_type,
-            lc_type_map,
-            aperture_map,
-            result_queue
-        )
+        #tmp_table = create_lightpoint_tmp_table('updater', QLPModel.metadata)
+        #seq = Sequence('cache_id_seq', cache=10**9)
+        #seq.create(bind=db.session.bind)
+        #tmp_table.create(bind=db.session.bind)
+        #db.session.commit()
 
-        result_queue = mp.SimpleQueue()
-        try:
-            with Pool(n_process) as p:
-                results = p.map_async(
-                    func,
-                    file_partitions
-                )
-                cache_id = 1
-                click.echo('Analyzing queue')
-                click.echo(f'Serializing to temporary csv file')
-                buf = io.StringIO()
-                fieldnames = [
-                    'cache_id',
-                    'lightcurve_id',
-                    'cadence',
-                    'barycentric_julian_date',
-                    'value',
-                    'error',
-                    'x_centroid',
-                    'y_centroid',
-                    'quality_flag']
-                writer = csv.DictWriter(buf, fieldnames, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
-                writer.writeheader()
-                cache_id = 1
-                while not (result_queue.empty() and result.ready()):
-                    lightpoint_kwargs = result_queue.get()
-                    lightpoint_kwargs['cache_id'] = cache_id
-                    writer.writerow(lightpoint_kwargs)
-                    cache_id += 1
-                click.echo('Wrote csv, ingesting')
-                raw_conn = db._engine.raw_connection()
-                cursor = raw_conn.cursor()
-                cursor.copy_from(buf, tmp_table.name, columns=fieldnames)
-                cursor.close()
-                raw_conn.close()
-            click.echo('Done')
-        except:
-            tmp_table.drop(bind=db.session.bind)
-            seq.drop(bind=db.session.bind)
-            db.session.commit()
-            raise
+        #manager = Manager()
+        #result_queue = manager.Queue()
+        #func = partial(
+        #    ingest_files,
+        #    ctx.obj['dbconf']._config,
+        #    cadence_type,
+        #    lc_type_map,
+        #    aperture_map,
+        #    result_queue
+        #)
+        #total_points = 0
+        #try:
+        #    with Pool(n_process) as p:
+        #        results = p.imap_unordered(
+        #            func,
+        #            file_partitions
+        #        )
+        #        cache_id = 1
+        #        click.echo('Analyzing queue')
+        #        click.echo(f'Serializing to temporary csv file')
+        #        buf = io.StringIO()
+        #        fieldnames = [
+        #            'cache_id',
+        #            'lightcurve_id',
+        #            'cadence',
+        #            'barycentric_julian_date',
+        #            'value',
+        #            'error',
+        #            'x_centroid',
+        #            'y_centroid',
+        #            'quality_flag']
+        #        writer = csv.DictWriter(buf, fieldnames, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
+
+        #        cache_id = 1
+        #        for result in results:
+
+        #            click.echo('Writing results')
+        #            while not result_queue.empty():
+        #                lightpoint_kwargs = result_queue.get()
+        #                lightpoint_kwargs['cache_id'] = cache_id
+        #                writer.writerow(lightpoint_kwargs)
+        #                cache_id += 1
+        #                total_points += results
+
+        #        click.echo(f'Wrote csv with {total_points} points, ingesting')
+        #        raw_conn = db._engine.raw_connection()
+        #        cursor = raw_conn.cursor()
+        #        cursor.copy_from(buf, tmp_table.name, columns=fieldnames)
+        #        cursor.close()
+        #        raw_conn.close()
+        #    click.echo('Done')
+        #except:
+        #    tmp_table.drop(bind=db.session.bind)
+        #    seq.drop(bind=db.session.bind)
+        #    db.session.commit()
+        #    raise
 
             #with tempfile.NamedTemporaryFile(mode='w', dir=ctx.obj['scratch']) as csv_out:
             #    click.echo(f'Serializing to csv {csv_out.name}')

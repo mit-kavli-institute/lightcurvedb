@@ -157,7 +157,7 @@ class DB(object):
         ).one()
 
 
-    def lightcurves_from_tics(self, tics, **kw_filters):
+    def lightcurves_from_tics(self, tics, w_lightpoints=False, **kw_filters):
         pk_type = models.Lightcurve.tic_id.type
         mq = MassQuery(
             self.session,
@@ -168,6 +168,8 @@ class DB(object):
         )
         for tic in tics:
             mq.insert(tic_id=tic)
+        if w_lightpoints:
+            return mq.execute().options(joinedload('lightpoints'))
         return mq.execute()
 
     def commit(self):
