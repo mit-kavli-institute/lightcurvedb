@@ -6,6 +6,7 @@ import numpy as np
 import tempfile
 import csv
 import datetime
+import io
 from random import sample
 from functools import partial
 from sqlalchemy import Sequence, Column, BigInteger, Integer
@@ -90,7 +91,7 @@ def map_new_lightcurves(new_lc):
     )
 
 
-def ingest_files(config, cadence_type, lc_type_map, aperture_map, table, seq, files):
+def ingest_files(config, cadence_type, lc_type_map, aperture_map, queue, files):
     pid = os.getpid()
     with db_from_config(config) as db:
         table = QLPModel.metadata.tables[table]
@@ -138,118 +139,19 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, table, seq, fi
                 for lp in lightpoints.T:
                     cache_id = db.session.execute(seq)
                     val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], lightcurve.id)
-                    logger.info(val)
-                    values.append(val)
+                    #values.append(val)
+                    queue.put(val)
+                    total_points += 1
+
             for id, lightpoints in old_lightcurves.items():
                 for lp in lightpoints.T:
                     cache_id = db.session.execute(seq)
                     val = (cache_id, lp[0], lp[1], lp[2], lp[3], lp[4], lp[5], lp[6], id)
-                    values.append(val)
-            logger.info(f'Worker-{pid} inserting {len(values)} into TMP')
-            q = insert(table).values(values)
-            db.session.execute(q)
-            db.session.commit()
-            total_points += len(values)
+                    #values.append(val)
+                    queue.put(val)
+                    total_points += 1
         return total_points
 
-    #with db_from_config(config, executemany_mode='values') as db:
-    #    merge_table = create_lightpoint_tmp_table('merge_cache', QLPModel.metadata)
-    #    insert_table = create_lightpoint_tmp_table('insert_cache', QLPModel.metadata)
-
-    #    merge_table.create(bind=db.session.bind)
-    #    insert_table.create(bind=db.session.bind)
-    #    db.session.commit()
-    #    logger.info(f'{pid} created temporary tables')
-
-    #    cache_id = 1
-    #    insert_id = 1
-    #    logger.info(f'{pid} loading merge table...')
-    #    merge_values = []
-
-    #    ids = set(old_lightcurves.keys())
-    #    for id in ids:
-    #        lightpoint_arr = old_lightcurves.pop(id)
-    #        for kwarg in insert_lightpoints_tmp(id, lightpoint_arr):
-    #            kwarg['cache_id'] = cache_id
-    #            cache_id += 1
-    #            merge_values.append(kwarg)
-
-    #        if len(merge_values) >= 5 * 10**5:
-    #            q = merge_table.insert()
-    #            db.session.execute(q, merge_values)
-    #            db.session.flush()
-    #            merge_values = []
-
-    #    old_lightcurves = {}
-
-    #    if len(merge_values) > 0:
-    #        q = merge_table.insert().values(merge_values)
-    #        db.session.execute(q)
-    #        db.session.flush()
-    #        merge_values = []
-
-    #    db.commit()
-    #    
-    #    logger.info(f'{pid} creating lightcurve objects')
-    #    to_insert = [map_new_lightcurves(key) for key in new_lightcurves.keys()]
-    #    db.session.add_all(to_insert)
-    #    db.commit()
-    #    logger.info(f'{pid} inserted {len(to_insert)} lightcurves')
-
-    #    logger.info(f'{pid} loading insert table')
-    #    #  Lightcurve objects now had ids associated with them
-    #    insert_values = []
-    #    for lightcurve, lightpoints in zip(to_insert, new_lightcurves.values()):
-    #        id = lightcurve.id
-    #        for kwarg in insert_lightpoints_tmp(id, lightpoints):
-    #            kwarg['cache_id'] = insert_id
-    #            insert_id += 1
-    #            insert_values.append(kwarg)
-
-    #            if len(insert_values) >= 5 * 10**5:
-    #                q = insert_table.insert()
-    #                db.session.execute(q, insert_values)
-    #                db.session.flush()
-    #                insert_values = []
-    #    
-    #    if len(insert_values) > 0:
-    #        q = insert_table.insert().values(insert_values)
-    #        db.session.execute(q)
-    #        db.session.flush()
-    #        insert_values = []
-    #    
-    #    db.commit()
-    #    logger.info(f'{pid} loaded {insert_id + cache_id - 1} new lightpoints into TMP')
-    #    # All lightpoints have been committed to tables
-    #    db.session.execute(text(f'ANALYZE {insert_table.name}'))
-    #    db.session.execute(text(f'ANALYZE {merge_table.name}'))
-    #    db.commit()
-    #    logger.info(f'{pid} analyzed TMP tables')
-
-    #    insertion_q = text(
-    #        insert_query(insert_table.name)
-    #    )
-    #    db.session.execute(insertion_q)
-    #    db.commit()
-    #    logger.info(f'{pid} inserted new lightpoints')
-
-    #    missing_q = text(
-    #        update_query(merge_table.name),
-    #    )
-    #    db.session.execute(missing_q)
-    #    db.commit()
-    #    logger.info('f{pid} merged new lighpoints')
-
-    #    merge_q = text(
-    #        update_query(merge_table.name)
-    #    )
-    #    db.session.execute(merge_q)
-    #    logger.info(f'{pid} updated lightpoints')
-
-    #    db.commit()
-    #    logger.info(f'{pid} finished execution')
-    #return insert_id + cache_id - 1
-        
 
 def insert_lightpoints_tmp(lightcurve_id, nparray):
     values = []
@@ -343,48 +245,44 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             cadence_type,
             lc_type_map,
             aperture_map,
-            tmp_table.name,
-            seq.name
+            result_queue
         )
+
+        result_queue = mp.SimpleQueue()
         try:
             with Pool(n_process) as p:
-                results = p.imap_unordered(
+                results = p.map_async(
                     func,
                     file_partitions
                 )
-                values = []
-                click.echo(f'Loading temp table: {tmp_table.name}')
                 cache_id = 1
-                total_points = []
-                for result in results:
-                    total_points.append(result)
-                click.echo('Parsed {sum(total_points)} lightpoints')
-                #for result in results:
-                #    for lp in result:
-                #        cadence, bjd, value, error, x, y, q, lightcurve_id = lp
-                #        val = (now, cache_id, lightcurve_id, cadence, bjd, value, error, x, y, q)
-                #        values.append(val)
-                #        cache_id += 1
-                #    if len(values) > 10**6:
-                #        click.echo(f'Batch loading {len(values)} lightpoints...')
-                #        q = tmp_table.insert().values(values)
-                #        db.session.execute(q)
-                #        db.session.flush()
-                #        values = []
-                ## Flush any remaining values
-                #if len(values) > 0:
-                #    click.echo(f'Batch loading {len(values)} lightpoints...')
-                #    q = tmp_table.insert().values(values)
-                #    db.session.execute(q)
-                #    db.session.flush()
-            click.echo('Analyzing cache table')
-            db.session.execute(f'ANALYZE {tmp_table.name}')
-            db.session.commit()
-            click.echo('Performing MERGE')
-            # Perform updates to lightcurve database
-            merge_q = merge_query(tmp_table.name)
-            db.session.execute(merge_q)
-            db.session.commit()
+                click.echo('Analyzing queue')
+                click.echo(f'Serializing to temporary csv file')
+                buf = io.StringIO()
+                fieldnames = [
+                    'cache_id',
+                    'lightcurve_id',
+                    'cadence',
+                    'barycentric_julian_date',
+                    'value',
+                    'error',
+                    'x_centroid',
+                    'y_centroid',
+                    'quality_flag']
+                writer = csv.DictWriter(buf, fieldnames, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)
+                writer.writeheader()
+                cache_id = 1
+                while not (result_queue.empty() and result.ready()):
+                    lightpoint_kwargs = result_queue.get()
+                    lightpoint_kwargs['cache_id'] = cache_id
+                    writer.writerow(lightpoint_kwargs)
+                    cache_id += 1
+                click.echo('Wrote csv, ingesting')
+                raw_conn = db._engine.raw_connection()
+                cursor = raw_conn.cursor()
+                cursor.copy_from(buf, tmp_table.name, columns=fieldnames)
+                cursor.close()
+                raw_conn.close()
             click.echo('Done')
         except:
             tmp_table.drop(bind=db.session.bind)
