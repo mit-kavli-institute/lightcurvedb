@@ -74,7 +74,7 @@ class Lightcurve(QLPDataProduct):
     lightpoints = relationship(
         'Lightpoint',
         back_populates='lightcurve',
-        order_by='Lightpoint.barycentric_julian_date')
+        order_by='Lightpoint.cadence')
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 
@@ -86,7 +86,7 @@ class Lightcurve(QLPDataProduct):
         self._lightpoint_cache = {}
 
     def __len__(self):
-        return self.len
+        return self.length
 
     def _get_attr_array(self, attr):
         q = select(
@@ -105,8 +105,14 @@ class Lightcurve(QLPDataProduct):
         return self._lightpoint_cache[attr]
 
     @hybrid_property
-    def len(self):
-        return self.lightpoints.count()
+    def length(self):
+        return len(self.lightpoints)
+
+    @length.expression
+    def length(self):
+        return select(
+            [func.count(Lightpoint.id)]
+        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('length')
 
     @hybrid_property
     def max_cadence(self):
@@ -116,18 +122,17 @@ class Lightcurve(QLPDataProduct):
     def max_cadence(cls):
         return select(
             [func.max(Lightpoint.cadence)]
-        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('max_cadence').as_scalar()
+        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('max_cadence')
 
     @hybrid_property
     def min_cadence(self):
-        return self.lightpoints[0].cadence
+        return min(lp.cadence for lp in self.lightpoints)
 
     @min_cadence.expression
     def min_cadence(cls):
         return select(
-            [func.min(Lightpoint.cadence)],
-            from_obj=Lightpoint
-        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('min_cadence').as_scalar()
+            [func.min(Lightpoint.cadence)]
+        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('min_cadence')
 
     # Getters
     @hybrid_property

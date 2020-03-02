@@ -1,5 +1,5 @@
 from hypothesis import strategies as st
-from hypothesis import given, note
+from hypothesis import given, note, assume
 from lightcurvedb.models.lightcurve import Lightcurve, Lightpoint
 
 from .fixtures import db_conn
@@ -110,6 +110,7 @@ def test_x_centroid_mapping(db_conn, lightcurve):
 
 @given(lightcurve_st())
 def test_y_centroid_mapping(db_conn, lightcurve):
+    assume(len(lightcurve) > 0)
     try:
         db_conn.session.begin_nested()
         db_conn.add(lightcurve)
@@ -123,6 +124,25 @@ def test_y_centroid_mapping(db_conn, lightcurve):
         note(lightcurve.y_centroids)
 
         assert len(y_centroids) == db_count
+        db_conn.session.rollback()
+    except:
+        db_conn.session.rollback()
+        raise
+
+
+@given(lightcurve_st())
+def test_hybrid_min_cadence(db_conn, lightcurve):
+    assume(len(lightcurve) > 0)
+    try:
+        note(lightcurve.lightpoints)
+        db_conn.session.begin_nested()
+        db_conn.add(lightcurve)
+        db_conn.commit()
+
+        min_cadence = lightcurve.min_cadence
+        check = min([lp.cadence for lp in lightcurve.lightpoints])
+
+        assert min_cadence == check
         db_conn.session.rollback()
     except:
         db_conn.session.rollback()

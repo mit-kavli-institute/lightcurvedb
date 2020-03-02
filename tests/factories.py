@@ -130,7 +130,8 @@ def lightpoint(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    points = draw(lists(lightpoint(), unique_by=lambda lp: lp.cadence))
+
+    points = draw(lists(lightpoint(), max_size=10, unique_by=lambda lp: lp.cadence))
 
     lc = models.Lightcurve(
         tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),

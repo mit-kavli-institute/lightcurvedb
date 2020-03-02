@@ -18,7 +18,7 @@ from multiprocessing import Pool, cpu_count, SimpleQueue, Manager
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Lightpoint
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
-from lightcurvedb.core.ingestors.lightpoint import get_raw_h5
+from lightcurvedb.core.ingestors.lightpoint import get_raw_h5, get_cadence_info
 from lightcurvedb.util.logging import make_logger
 from lightcurvedb.util.iter import partition
 from lightcurvedb.util.lightpoint_util import map_existing_lightcurves, create_lightpoint_tmp_table
@@ -217,7 +217,6 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
 
 
 
-
         click.echo(
             'Ingesting {} orbits with {} apertures'.format(len(orbits), len(apertures))
         )
@@ -247,12 +246,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
 
         click.echo('Found {} unique tics'.format(len(tics)))
         click.echo('Determining merge pattern')
-        lc_map_q = select(
-            Lightcurve.id,
-            Lightcurve.min_cadence,
-            Lightcurve.max_cadence
-        ).where(Lightcurve.tic_id.in_(tics))
-
+        lc_map_q = get_cadence_info(tics)
         lc_map = {}
         for chunk in db.session.execute(lc_map_q).yield_per(1000):
             for lc in chunk:

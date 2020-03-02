@@ -7,3 +7,6 @@ factory_boy
 astropy
 sqlalchemy
 psycopg2
+h5py
+numba
+numpy
