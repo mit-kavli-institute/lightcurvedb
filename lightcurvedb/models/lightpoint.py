@@ -34,6 +34,9 @@ class Lightpoint(QLPModel, DynamicIdMixin('lightpoints')):
     lightcurve_id = Column(ForeignKey('lightcurves.id', ondelete='CASCADE', onupdate='CASCADE'), index=True, nullable=False)
     lightcurve = relationship('Lightcurve', back_populates='lightpoints')
 
+    def __repr__(self):
+        return '<{:<6} {:.3} {}>'.format(self.cadence, self.bjd, self.value)
+
     @hybrid_property
     def bjd(self):
         return self.barycentric_julian_date

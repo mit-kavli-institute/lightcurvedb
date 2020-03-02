@@ -1,33 +1,65 @@
 from __future__ import print_function, division
-from abc import abstractmethod, ABC
+import sys
 
-class Ingestor(ABC):
+if sys.version_info.major < 3:
+    from abc import abstractmethod, ABCMeta
+    class Ingestor(object):
+        __metaclass__ = ABCMeta
+        def __init__(self, context_kwargs={}):
+            self.context = context_kwargs
 
-    EmissionModel = None
+        @abstractmethod
+        def parse(self, descriptor):
+            pass
 
-    def __init__(self, context_kwargs={}):
-        self.context = context_kwargs
+        def preingesthook(self):
+            pass
 
-    @abstractmethod
-    def parse(self, descriptor):
-        pass
+        def postingesthook(self):
+            pass
 
-    def preingesthook(self):
-        pass
+        def ingest(self, file, mode='rt'):
+            self.preingesthook()
+            with open(file, mode) as file_in:
+                for parsed_info in self.parse(file_in):
+                    yield self.translate(**parsed_info)
+            self.postingesthook()
 
-    def postingesthook(self):
-        pass
+        def translate(self, **emission_kwargs):
+            instance = self.EmissionModel(**emission_kwargs)
+            return instance
 
-    def ingest(self, file, mode='rt'):
-        self.preingesthook()
-        with open(file, mode) as file_in:
-            for parsed_info in self.parse(file_in):
-                yield self.translate(**parsed_info)
-        self.postingesthook()
+else:
+    from abc import abstractmethod, ABC
 
-    def translate(self, **emission_kwargs):
-        instance = self.EmissionModel(**emission_kwargs)
-        return instance
+    class Ingestor(ABC):
+
+        EmissionModel = None
+
+        def __init__(self, context_kwargs={}):
+            self.context = context_kwargs
+
+        @abstractmethod
+        def parse(self, descriptor):
+            pass
+
+        def preingesthook(self):
+            pass
+
+        def postingesthook(self):
+            pass
+
+        def ingest(self, file, mode='rt'):
+            self.preingesthook()
+            with open(file, mode) as file_in:
+                for parsed_info in self.parse(file_in):
+                    yield self.translate(**parsed_info)
+            self.postingesthook()
+
+        def translate(self, **emission_kwargs):
+            instance = self.EmissionModel(**emission_kwargs)
+            return instance
+
 
 class MultiIngestor(Ingestor):
     def ingest(self, files, mode='rt'):

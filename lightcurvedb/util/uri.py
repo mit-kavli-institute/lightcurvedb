@@ -28,4 +28,4 @@ def uri_from_config(config_path):
         'db_host': parser.get('Credentials', 'database_host'),
         'port': parser.get('Credentials', 'database_port'),
     }
-    return construct_uri(db_type='postgres+psycopg2', **kwargs)
+    return construct_uri(db_type='postgresql+psycopg2', **kwargs)

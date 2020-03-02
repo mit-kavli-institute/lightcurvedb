@@ -9,11 +9,12 @@ from configparser import ConfigParser
 from sqlalchemy import Column, create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import scoped_session, sessionmaker, joinedload
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
 from lightcurvedb.util.uri import construct_uri, uri_from_config
+from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
 
 CONFIG_PATH = '~/.config/lightcurvedb/db.conf'
@@ -123,7 +124,40 @@ class DB(object):
     def lightcurve_types(self):
         return self.session.query(models.LightcurveType)
 
-    def lightcurves_from_tics(self, tics, **kw_filters):
+    def query_lightcurves(self, tics=None, apertures=None, types=None, cadence_types=[30]):
+        # Ensure lightcurves are JOINED with their lightpoints
+        q = self.lightcurves.options(joinedload('lightpoints'))
+        if apertures:
+            q = q.filter(qlp_type_multiple_check(Aperture, apertures))
+        if types:
+            q = q.filter(qlp_type_multiple_check(LightcurveType, apertures))
+        if cadence_types:
+            q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
+        if tics:
+            q = q.filter(models.Lightcurve.tic_id.in_(tics))
+        return q
+
+    def load_from_db(self, tics=None, apertures=None, types=None, cadence_types=[30]):
+        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
+        return q.all()
+
+    def yield_from_db(self, chunksize, tics=None, apertures=None, types=None, cadence_types=[30]):
+        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
+        return q.yield_per(chunksize)
+
+    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30):
+        lc_type_check = qlp_type_check(models.LightcurveType, lightcurve_type)
+        aperture_check = qlp_type_check(models.Aperture, aperture)
+
+        return self.lightcurves.filter(
+            models.Lightcurve.tic_id == tic,
+            models.Lightcurve.cadence_type == cadence_type,
+            lc_type_check,
+            aperture_check
+        ).one()
+
+
+    def lightcurves_from_tics(self, tics, w_lightpoints=False, **kw_filters):
         pk_type = models.Lightcurve.tic_id.type
         mq = MassQuery(
             self.session,
@@ -134,6 +168,8 @@ class DB(object):
         )
         for tic in tics:
             mq.insert(tic_id=tic)
+        if w_lightpoints:
+            return mq.execute().options(joinedload('lightpoints'))
         return mq.execute()
 
     def commit(self):
@@ -161,6 +197,12 @@ def db_from_config(config_path, **engine_kwargs):
         'port': parser.get('Credentials', 'database_port'),
     }
 
-    db =  DB(**kwargs, **engine_kwargs)
+    db = DB(
+        parser.get('Credentials', 'username'),
+        parser.get('Credentials', 'password'),
+        parser.get('Credentials', 'database_name'),
+        parser.get('Credentials', 'database_host'),
+        parser.get('Credentials', 'database_port'),
+        **engine_kwargs)
     db._config = config_path
     return db

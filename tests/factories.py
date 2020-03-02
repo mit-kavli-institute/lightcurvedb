@@ -43,18 +43,13 @@ def aperture(draw, save=False):
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
 
     assume(inner_radius < outer_radius)
+
     aperture = models.Aperture(
         name=name,
         star_radius=star_radius,
         inner_radius=inner_radius,
         outer_radius=outer_radius
     )
-
-    if save:
-        with db_from_config(CONFIG_PATH).open() as db:
-            db.add(aperture)
-            db.commit()
-            db.session.refresh(aperture)
 
     return aperture
 
@@ -135,7 +130,8 @@ def lightpoint(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    points = draw(lists(lightpoint(), unique_by=lambda lp: lp.cadence))
+
+    points = draw(lists(lightpoint(), max_size=10, unique_by=lambda lp: lp.cadence))
 
     lc = models.Lightcurve(
         tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
