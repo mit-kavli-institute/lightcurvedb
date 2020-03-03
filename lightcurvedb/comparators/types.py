@@ -1,10 +1,11 @@
 from lightcurvedb import models
 
 
-def qlp_type_check(Model, check):
+def qlp_type_check(db, Model, check):
     if isinstance(check, Model):
         return Model.id == check.id
-    return Model.name == check
+    x = db.session.query(Model).filter(Mode.name == check).one()
+    return Model.id == check.id
 
 
 def qlp_type_multiple_check(Model, checks):

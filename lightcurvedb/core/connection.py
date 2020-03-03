@@ -127,13 +127,13 @@ class DB(object):
     def query_lightcurves(self, tics=None, apertures=None, types=None, cadence_types=[30]):
         # Ensure lightcurves are JOINED with their lightpoints
         q = self.lightcurves.options(joinedload('lightpoints'))
-        if apertures:
+        if apertures is not None:
             q = q.filter(qlp_type_multiple_check(models.Aperture, apertures))
-        if types:
+        if types is not None:
             q = q.filter(qlp_type_multiple_check(models.LightcurveType, apertures))
-        if cadence_types:
+        if cadence_types is not None:
             q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
-        if tics:
+        if tics is not None:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
