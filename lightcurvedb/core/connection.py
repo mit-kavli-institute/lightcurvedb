@@ -130,7 +130,7 @@ class DB(object):
         if apertures is not None:
             q = q.filter(qlp_type_multiple_check(models.Aperture, apertures))
         if types is not None:
-            q = q.filter(qlp_type_multiple_check(models.LightcurveType, apertures))
+            q = q.filter(qlp_type_multiple_check(models.LightcurveType, types))
         if cadence_types is not None:
             q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
         if tics is not None:
