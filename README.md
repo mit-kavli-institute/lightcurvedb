@@ -20,7 +20,7 @@
 2. Adding or removing packages should be done via `pipenv install` or `pipenv uninstall` and
 not through `pip` as `pip` will not update the `Pipenv.lock` file.
 
-### Deployment
+### Deployment (From clean install)
 1. Ensure postgresql (>= 9.6) is installed
 2. Create a database (e.g `lightcurve`)
 3. Install `lightcurvedb` using `pip install .`
