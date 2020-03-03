@@ -147,27 +147,27 @@ class Lightcurve(QLPDataProduct):
 
     @hybrid_property
     def bjd(self):
-        return self._get_from_cache('bjd')
+        return [lp.barycentric_julian_date for lp in self.lightpoints]
 
     @hybrid_property
     def values(self):
-        return self._get_from_cache('value')
+        return [lp.value for lp in self.lightpoints]
 
     @hybrid_property
     def errors(self):
-        return self._get_from_cache('error')
+        return [lp.error for lp in self.lightpoints]
 
     @hybrid_property
     def x_centroids(self):
-        return self._get_from_cache('x_centroid')
+        return [lp.x_centroid for lp in self.lightpoints]
 
     @hybrid_property
     def y_centroids(self):
-        return self._get_from_cache('y_centroid')
+        return [lp.y_centroid for lp in self.lightpoints]
 
     @hybrid_property
     def quality_flags(self):
-        return self._get_from_cache('quality_flag')
+        return [lp.quality_flag for lp in self.lightpoints]
 
     # Setters
     @cadences.update_expression
