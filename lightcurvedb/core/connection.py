@@ -128,9 +128,9 @@ class DB(object):
         # Ensure lightcurves are JOINED with their lightpoints
         q = self.lightcurves.options(joinedload('lightpoints'))
         if apertures:
-            q = q.filter(qlp_type_multiple_check(Aperture, apertures))
+            q = q.filter(qlp_type_multiple_check(models.Aperture, apertures))
         if types:
-            q = q.filter(qlp_type_multiple_check(LightcurveType, apertures))
+            q = q.filter(qlp_type_multiple_check(models.LightcurveType, apertures))
         if cadence_types:
             q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
         if tics:
