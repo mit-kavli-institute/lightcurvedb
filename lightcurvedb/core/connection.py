@@ -149,12 +149,12 @@ class DB(object):
         q = self.lightcurves
 
         if isinstance(lightcurve_type, models.LightcurveType):
-            q = q.filter(models.LightcurveType.id == lightcurve_type.id)
+            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type.id)
         else:
             q = q.filter(models.LightcurveType.name == lightcurve_type)
 
         if isinstance(aperture, models.Aperture):
-            q = q.filter(models.Aperture.id == aperture.id)
+            q = q.filter(models.Lightcurve.aperture_id == aperture.id)
         else:
             q = q.filter(models.Aperture.name == aperture)
 
