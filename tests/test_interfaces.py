@@ -78,7 +78,7 @@ def test_load_from_db(db_conn, lightcurves):
         raise
 
 
-@given(st.lists(lightcurve_st(), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
 def test_get_lightcurve(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()

@@ -146,14 +146,21 @@ class DB(object):
         return q.yield_per(chunksize)
 
     def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30):
-        lc_type_check = qlp_type_check(models.LightcurveType, lightcurve_type)
-        aperture_check = qlp_type_check(models.Aperture, aperture)
+        q = self.lightcurves
 
-        return self.lightcurves.filter(
+        if isinstance(lightcurve_type, models.LightcurveType):
+            q = q.filter(models.LightcurveType.id == lightcurve_type.id)
+        else:
+            q = q.filter(models.LightcurveType.name == lightcurve_type)
+
+        if isinstance(aperture, models.Aperture):
+            q = q.filter(models.Aperture.id == aperture.id)
+        else:
+            q = q.filter(models.Aperture.name == aperture)
+
+        return q.filter(
             models.Lightcurve.tic_id == tic,
             models.Lightcurve.cadence_type == cadence_type,
-            lc_type_check,
-            aperture_check
         ).one()
 
 
