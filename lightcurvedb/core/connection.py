@@ -145,7 +145,7 @@ class DB(object):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.yield_per(chunksize)
 
-    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30):
+    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30, resolve=True):
         q = self.lightcurves
 
         if isinstance(lightcurve_type, models.LightcurveType):
@@ -158,10 +158,13 @@ class DB(object):
         else:
             q = q.filter(models.Aperture.name == aperture)
 
-        return q.filter(
-            models.Lightcurve.tic_id == tic,
-            models.Lightcurve.cadence_type == cadence_type,
-        ).one()
+        q = q.filter(
+                models.Lightcurve.tic_id == tic,
+                models.Lightcurve.cadence_type == cadence_type,
+            )
+        if resolve:
+            return q.one()
+        return q
 
 
     def lightcurves_from_tics(self, tics, w_lightpoints=False, **kw_filters):

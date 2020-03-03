@@ -6,28 +6,6 @@ from .fixtures import db_conn
 from .factories import lightcurve as lightcurve_st
 
 
-@given(lightcurve_st())
-def test_retrieval_of_full_lightcurve(db_conn, lightcurve):
-    try:
-        db_conn.session.begin_nested()
-        db_conn.add(lightcurve)
-
-        db_conn.commit()
-        note(lightcurve.id)
-
-        lc_obj = db_conn.get_lightcurve(
-            lightcurve.tic_id,
-            lightcurve.lightcurve_type,
-            lightcurve.aperture,
-            lightcurve.cadence_type
-        )
-
-        assert lc_obj.id == lightcurve.id
-        db_conn.session.rollback()
-    except:
-        note(lightcurve)
-        db_conn.session.rollback()
-        raise
 
 @given(st.lists(lightcurve_st(), unique_by=lambda l: l.id))
 def test_lightcurve_query(db_conn, lightcurves):
@@ -79,7 +57,7 @@ def test_load_from_db(db_conn, lightcurves):
 
 
 @given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
-def test_get_lightcurve(db_conn, lightcurves):
+def test_get_lightcurve_w_model(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()
         db_conn.session.add_all(lightcurves)
@@ -87,22 +65,47 @@ def test_get_lightcurve(db_conn, lightcurves):
 
         # Query by model
         for lightcurve in lightcurves:
-            result = db_conn.get_lightcurve(
+            q = db_conn.get_lightcurve(
                 lightcurve.tic_id,
                 lightcurve.lightcurve_type,
                 lightcurve.aperture,
-                lightcurve.cadence_type
+                lightcurve.cadence_type,
+                resolve=False
             )
 
+            note(str(q))
+            result = q.one()
+
+            assert result is not None
+
+        db_conn.session.rollback()
+    except:
+        db_conn.session.rollback()
+        raise
+
+
+@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+def test_get_lightcurve_w_str(db_conn, lightcurves):
+    try:
+        db_conn.session.begin_nested()
+        db_conn.session.add_all(lightcurves)
+        db_conn.commit()
+
+        # Query by model
+        for lightcurve in lightcurves:
             # Query by name
-            result2 = db_conn.get_lightcurve(
+            q = db_conn.get_lightcurve(
                 lightcurve.tic_id,
                 lightcurve.lightcurve_type.name,
                 lightcurve.aperture.name,
-                lightcurve.cadence_type
+                lightcurve.cadence_type,
+                resolve=False
             )
+
+            note(q)
+            result = q.one()
+
             assert result is not None
-            assert result2 is not None
 
         db_conn.session.rollback()
     except:
