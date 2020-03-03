@@ -76,3 +76,35 @@ def test_load_from_db(db_conn, lightcurves):
         note(lightcurves)
         db_conn.session.rollback()
         raise
+
+
+@given(st.lists(lightcurve_st(), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+def test_get_lightcurve(db_conn, lightcurves):
+    try:
+        db_conn.session.begin_nested()
+        db_conn.session.add_all(lightcurves)
+        db_conn.commit()
+
+        # Query by model
+        for lightcurve in lightcurves:
+            result = db_conn.get_lightcurve(
+                lightcurve.tic_id,
+                lightcurve.lightcurve_type,
+                lightcurve.aperture,
+                lightcurve.cadence_type
+            )
+
+            # Query by name
+            result2 = db_conn.get_lightcurve(
+                lightcurve.tic_id,
+                lightcurve.lightcurve_type.name,
+                lightcurve.aperture.name,
+                lightcurve.cadence_type
+            )
+            assert result is not None
+            assert result2 is not None
+
+        db_conn.session.rollback()
+    except:
+        db_conn.session.rollback()
+        raise
