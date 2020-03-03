@@ -246,9 +246,28 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
 
         click.echo('Found {} unique tics'.format(len(tics)))
         click.echo('Determining merge pattern')
-        lc_map_q = get_cadence_info(tics)
-        lc_map = {}
-        for chunk in db.session.execute(lc_map_q).yield_per(1000):
+
+        cadence_lookup = Table(
+            'tic_cache',
+            QLPModel.metadata,
+            Column('tic_id', BigInteger, primary_key=True),
+            prefixes=['TEMPORARY']
+        )
+        cadence_lookup.create(bind=db.session.bind)
+        cadence_lookup.insert().values(tics)
+        db.session.commit()
+
+        lc_map_q = select([
+            Lightcurve.id,
+            Lightcurve.tic_id,
+            Lightcurve.min_cadence,
+            Lightcurve.max_cadence
+        ]).join(
+            cadence_lookup,
+            cadence_lookup.c['tic_id'] == Lightcurve.tic_id
+        )
+
+        for chunk in db.session.execute(lc_map_q).yield_per(1000).enable_eagerloads(False):
             for lc in chunk:
                 click.echo(lc)
 
