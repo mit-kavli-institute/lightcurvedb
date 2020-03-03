@@ -125,15 +125,22 @@ class DB(object):
         return self.session.query(models.LightcurveType)
 
     def query_lightcurves(self, tics=None, apertures=None, types=None, cadence_types=[30]):
-        # Ensure lightcurves are JOINED with their lightpoints
-        q = self.lightcurves.options(joinedload('lightpoints'))
-        if apertures:
-            q = q.filter(qlp_type_multiple_check(Aperture, apertures))
-        if types:
-            q = q.filter(qlp_type_multiple_check(LightcurveType, apertures))
-        if cadence_types:
+        q = self.lightcurves
+        if apertures is not None:
+            q = q.filter(
+                models.Lightcurve.aperture_id.in_(
+                    qlp_type_multiple_check(self, models.Aperture, apertures)
+                )
+            )
+        if types is not None:
+            q = q.filter(
+                models.Lightcurve.lightcurve_type_id.in_(
+                    qlp_type_multiple_check(self, models.LightcurveType, types)
+                )
+            )
+        if cadence_types is not None:
             q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
-        if tics:
+        if tics is not None:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
@@ -145,16 +152,28 @@ class DB(object):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.yield_per(chunksize)
 
-    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30):
-        lc_type_check = qlp_type_check(models.LightcurveType, lightcurve_type)
-        aperture_check = qlp_type_check(models.Aperture, aperture)
+    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30, resolve=True):
+        q = self.lightcurves
 
-        return self.lightcurves.filter(
-            models.Lightcurve.tic_id == tic,
-            models.Lightcurve.cadence_type == cadence_type,
-            lc_type_check,
-            aperture_check
-        ).one()
+        if isinstance(lightcurve_type, models.LightcurveType):
+            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type.id)
+        else:
+            x = self.session.query(models.LightcurveType).filter(models.LightcurveType.name == lightcurve_type).one()
+            q = q.filter(models.Lightcurve.lightcurve_type_id == x.id)
+
+        if isinstance(aperture, models.Aperture):
+            q = q.filter(models.Lightcurve.aperture_id == aperture.id)
+        else:
+            x = self.session.query(models.Aperture).filter(models.Aperture.name == aperture).one()
+            q = q.filter(models.Lightcurve.aperture_id == x.id)
+
+        q = q.filter(
+                models.Lightcurve.tic_id == tic,
+                models.Lightcurve.cadence_type == cadence_type,
+            )
+        if resolve:
+            return q.one()
+        return q
 
 
     def lightcurves_from_tics(self, tics, w_lightpoints=False, **kw_filters):
