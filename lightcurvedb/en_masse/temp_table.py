@@ -1,5 +1,7 @@
-from sqlalchemy import Table
+from sqlalchemy.schema import Table, Column
+from sqlalchemy.orm import Query
 from sqlalchemy.inspection import inspect
+from sqlalchemy.sql import compiler
 from lightcurvedb.core.base_model import QLPModel
 import os
 from datetime import datetime
@@ -12,6 +14,18 @@ class TempTable(object):
             name,
             QLPModel.metadata
         )
+
+class TemporaryTableQuery(Query):
+    """Allows emission of a temporary table from a given query"""
+    def compile(self):
+        statement = self.statement
+        engine = self.session.get_bind()
+        dialect = engine.dialect
+        encoder = dialect.encoding
+        compiled = compiler.SQLCompiler(dialect, statement)
+
+        connection = engine.raw_connection().connection
+        raise NotImplementedError
 
 
 class MassQuery(object):
@@ -50,3 +64,12 @@ class MassQuery(object):
     def insert(self, **data):
         cmd = self.table.insert().values(**data)
         self.session.execute(cmd)
+
+
+    def mass_insert(self, values):
+        q = self.table.insert().values(values)
+        self.session.execute(q)
+
+
+
+

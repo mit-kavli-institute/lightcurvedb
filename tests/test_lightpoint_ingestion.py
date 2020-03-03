@@ -16,7 +16,7 @@ def test_cadence_annotation(db_conn, lightcurves):
 
         tics = {lc.tic_id for lc in lightcurves}
         reference = {lc.id: set(lc.cadences) for lc in lightcurves}
-        mapping = get_cadence_info(db_conn, tics)
+        mapping = db_conn.session.execute(get_cadence_info(tics))
 
         for mapped in mapping:
             note(mapped)

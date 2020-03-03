@@ -10,7 +10,7 @@ def get_raw_h5(filepath):
     return list(h5_to_matrices(filepath))
 
 
-def get_cadence_info(db, tics):
+def get_cadence_info(tics):
     lc_map_q = select(
         [
             Lightcurve.id,
@@ -19,7 +19,7 @@ def get_cadence_info(db, tics):
         ]
     ).where(Lightcurve.tic_id.in_(tics))
 
-    return db.session.execute(lc_map_q)
+    return lc_map_q
 
 
 def find_new_lightpoints(datablock, existing_lightcurve):
