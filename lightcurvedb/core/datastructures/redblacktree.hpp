@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <exception>
 
 template <typename T>
@@ -20,7 +21,7 @@ class Node {
             }
         };
 
-        Type value;
+        T value;
         Node *left;
         Node *right;
         Node *parent;
@@ -72,8 +73,7 @@ class TreeIterator {
             return this->dir;
         };
 
-    friend:
-        class RedblackTree<T, C>;
+    friend class RedblackTree<T, C>;
 
     private:
         Node<T>* current;

@@ -142,3 +142,30 @@ def lightcurve(draw, **overrides):
     )
 
     return lc
+
+@define_strategy
+@composite
+def array_lightcurve(draw, **overrides):
+    length = draw(overrides.pop('length', integers(min_value=0, max_value=100)))
+    cadences = draw(np_st.arrays(np.int32, length, unique=True))
+    bjd = draw(np_st.arrays(np.float32, length))
+    values = draw(np_st.arrays(np.float32, length))
+    errors = draw(np_st.arrays(np.float32, length))
+    x_centroids = draw(np_st.arrays(np.float32, length))
+    y_centroids = draw(np_st.arrays(np.float32, length))
+    quality_flags = draw(np_st.arrays(np.int32, length))
+
+    return models.LightcurveRevision(
+        cadences=cadences,
+        bjd=bjd,
+        values=values,
+        errors=errors,
+        x_centroids=x_centroids,
+        y_centroids=y_centroids,
+        quality_flags=quality_flags,
+        tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
+        cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
+        lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
+        aperture=draw(overrides.pop('aperture', aperture()))
+    )
+

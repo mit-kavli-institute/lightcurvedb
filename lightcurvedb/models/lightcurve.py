@@ -200,6 +200,9 @@ class LightcurveRevision(QLPDataProduct):
     _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
 
+    def __len__(self):
+        return len(self._cadences)
+
     @hybrid_property
     def to_np(self):
         return np.array([
@@ -222,7 +225,7 @@ class LightcurveRevision(QLPDataProduct):
 
     @hybrid_property
     def values(self):
-        return self._value
+        return self._values
 
     @hybrid_property
     def errors(self):
@@ -240,10 +243,40 @@ class LightcurveRevision(QLPDataProduct):
     def quality_flags(self):
         return self._quality_flags
 
+    # Setters
+    @cadences.setter
+    def cadences(self, value):
+        self._cadences = value
+
+    @bjd.setter
+    def bjd(self, value):
+        self._bjd = value
+
+    @values.setter
+    def values(self, value):
+        self._values = value
+
+    @errors.setter
+    def errors(self, value):
+        self._errors = value
+
+    @x_centroids.setter
+    def x_centroids(self, value):
+        self._x_centroids = value
+
+    @y_centroids.setter
+    def y_centroids(self, value):
+        self._y_centroids = value
+
+    @quality_flags.setter
+    def quality_flags(self, value):
+        self._quality_flags = value
+
+
     # Foreign Keys
     lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
     aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
 
     # Relationships
-    lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
-
+    lightcurve_type = relationship('LightcurveType')
+    aperture = relationship('Aperture')
