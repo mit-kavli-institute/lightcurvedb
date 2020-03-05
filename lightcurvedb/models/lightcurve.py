@@ -9,6 +9,7 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql import select, func
+import numpy as np
 
 from .lightpoint import LOOKUP, Lightpoint
 
@@ -178,3 +179,71 @@ class Lightcurve(QLPDataProduct):
         return '<Lightcurve {} {}>'.format(
             self.tic_id,
             self.lightcurve_type.name)
+
+
+class LightcurveRevision(QLPDataProduct):
+    """Revising lightcurve to use arrays"""
+    __tablename__ = 'lightcurve_revisions'
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
+    )
+
+    tic_id = Column(BigInteger, index=True)
+    cadence_type = Column(SmallInteger, index=True)
+
+    _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
+    _bjd = Column('barycentric_julian_date', ARRAY(Integer, dimensions=1), nullable=False)
+    _values = Column('values', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _errors = Column('errors', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
+
+    @hybrid_property
+    def to_np(self):
+        return np.array([
+            self.cadences,
+            self.bjd,
+            self.values,
+            self.errors,
+            self.x_centroids,
+            self.y_centroids,
+            self.quality_flags
+        ])
+
+    @hybrid_property
+    def cadences(self):
+        return self._cadences
+
+    @hybrid_property
+    def bjd(self):
+        return self._bjd
+
+    @hybrid_property
+    def values(self):
+        return self._value
+
+    @hybrid_property
+    def errors(self):
+        return self._errors
+
+    @hybrid_property
+    def x_centroids(self):
+        return self._x_centroids
+
+    @hybrid_property
+    def y_centroids(self):
+        return self._y_centroids
+
+    @hybrid_property
+    def quality_flags(self):
+        return self._quality_flags
+
+    # Foreign Keys
+    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+
+    # Relationships
+    lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
+
