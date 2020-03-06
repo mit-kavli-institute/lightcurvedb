@@ -1,5 +1,6 @@
 from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
+from lightcurvedb.util.merge import matrix_merge
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
                         String, inspect, cast)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
@@ -214,6 +215,17 @@ class LightcurveRevision(QLPDataProduct):
             self.y_centroids,
             self.quality_flags
         ])
+
+    def merge(self, *data):
+        compiled = matrix_merge(self.to_np, *data)
+        self.cadences = compiled[0]
+        self.bjd = compiled[1]
+        self.values = compiled[2]
+        self.errors = compiled[3]
+        self.x_centroids = compiled[4]
+        self.y_centroids = compiled[5]
+        self.quality_flags = compiled[6]
+
 
     @hybrid_property
     def cadences(self):
