@@ -1,5 +1,8 @@
 from h5py import File as H5File
+from datetime import datetime
+from sqlalchemy import Sequence
 from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Lightpoint
+from lightcurvedb.util.iter import chunkify
 import numpy as np
 import numba as nb
 import os
@@ -19,6 +22,24 @@ H5_LC_TYPES = {
     'KSPMagnitude': False,
     'RawMagnitude': True
 }
+
+def bulk_ingest_lightcurves(db, lightcurves, chunksize=10000):
+    id_seq = Sequence('qlpdataproducts_pk_table')
+    for chunk in chunkify(lightcurves, chunksize):
+        # We need to make a QLPDataproduct model for each one
+        qlpdataproducts = []
+        for lightcurve in chunk:
+            now = datetime.now()
+            qlpdp = {
+                'id': db.session.execute(id_seq),
+                'created_on': now,
+                'product_type': LightcurveRevision.__tablename__
+            }
+            qlpdataproducts.append(qlpdata)
+            lightcurve['id'] = qlpdp['id']
+        db.session.bulk_insert_mappings(QLPDataProduct, qlpdataproducts)
+        db.session.bulk_insert_mappings(LightcurveRevision, chunk)
+
 
 def h5_to_matrices(filepath):
     with H5File(filepath, 'r') as h5in:

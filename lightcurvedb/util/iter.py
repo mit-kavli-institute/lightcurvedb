@@ -91,3 +91,7 @@ def partition(listlike, n):
 
     max_partition_length = len(listlike) // n
     return split_every(max_partition_length, listlike)
+
+
+def partition_by(listlike, n, group_func):
+    raise NotImplementedError

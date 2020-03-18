@@ -1,5 +1,6 @@
 from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
+from lightcurvedb.util.merge import matrix_merge
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
                         String, inspect, cast)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
@@ -9,6 +10,7 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql import select, func
+import numpy as np
 
 from .lightpoint import LOOKUP, Lightpoint
 
@@ -178,3 +180,118 @@ class Lightcurve(QLPDataProduct):
         return '<Lightcurve {} {}>'.format(
             self.tic_id,
             self.lightcurve_type.name)
+
+
+class LightcurveRevision(QLPDataProduct):
+    """Revising lightcurve to use arrays"""
+    __tablename__ = 'lightcurve_revisions'
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
+    )
+
+    tic_id = Column(BigInteger, index=True)
+    cadence_type = Column(SmallInteger, index=True)
+
+    _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
+    _bjd = Column('barycentric_julian_date', ARRAY(Integer, dimensions=1), nullable=False)
+    _values = Column('values', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _errors = Column('errors', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
+    _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
+
+    def __len__(self):
+        return len(self._cadences)
+
+    def __repr__(self):
+        return '<Lightcurve {} {}>'.format(self.tic_id, self.id)
+
+    @hybrid_property
+    def to_np(self):
+        return np.array([
+            self.cadences,
+            self.bjd,
+            self.values,
+            self.errors,
+            self.x_centroids,
+            self.y_centroids,
+            self.quality_flags
+        ])
+
+    def merge(self, *data):
+        compiled = matrix_merge(self.to_np, *data)
+        self.cadences = compiled[0]
+        self.bjd = compiled[1]
+        self.values = compiled[2]
+        self.errors = compiled[3]
+        self.x_centroids = compiled[4]
+        self.y_centroids = compiled[5]
+        self.quality_flags = compiled[6]
+
+
+    @hybrid_property
+    def cadences(self):
+        return self._cadences
+
+    @hybrid_property
+    def bjd(self):
+        return self._bjd
+
+    @hybrid_property
+    def values(self):
+        return self._values
+
+    @hybrid_property
+    def errors(self):
+        return self._errors
+
+    @hybrid_property
+    def x_centroids(self):
+        return self._x_centroids
+
+    @hybrid_property
+    def y_centroids(self):
+        return self._y_centroids
+
+    @hybrid_property
+    def quality_flags(self):
+        return self._quality_flags
+
+    # Setters
+    @cadences.setter
+    def cadences(self, value):
+        self._cadences = value
+
+    @bjd.setter
+    def bjd(self, value):
+        self._bjd = value
+
+    @values.setter
+    def values(self, value):
+        self._values = value
+
+    @errors.setter
+    def errors(self, value):
+        self._errors = value
+
+    @x_centroids.setter
+    def x_centroids(self, value):
+        self._x_centroids = value
+
+    @y_centroids.setter
+    def y_centroids(self, value):
+        self._y_centroids = value
+
+    @quality_flags.setter
+    def quality_flags(self, value):
+        self._quality_flags = value
+
+
+    # Foreign Keys
+    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+
+    # Relationships
+    lightcurve_type = relationship('LightcurveType')
+    aperture = relationship('Aperture')

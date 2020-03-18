@@ -67,7 +67,7 @@ class MassQuery(object):
 
 
     def mass_insert(self, values):
-        q = self.table.insert().values(values)
+        q = self.table.insert().values([{'tic_id': value} for value in values])
         self.session.execute(q)
 
 
