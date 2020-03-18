@@ -118,7 +118,7 @@ class DB(object):
 
     @property
     def lightcurves(self):
-        return self.session.query(models.Lightcurve)
+        return self.session.query(models.LightcurveRevision)
 
     @property
     def lightcurve_types(self):
