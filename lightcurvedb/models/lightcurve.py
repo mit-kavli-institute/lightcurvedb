@@ -204,6 +204,9 @@ class LightcurveRevision(QLPDataProduct):
     def __len__(self):
         return len(self._cadences)
 
+    def __repr__(self):
+        return '<Lightcurve {} {}>'.format(self.tic_id, self.id)
+
     @hybrid_property
     def to_np(self):
         return np.array([
