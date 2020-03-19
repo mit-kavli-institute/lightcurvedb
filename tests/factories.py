@@ -1,10 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, lists
-from hypothesis_fspaths import fspaths
-from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb.core.connection import db_from_config
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX
@@ -36,7 +33,7 @@ celestial_degrees = floats(
 
 @define_strategy
 @composite
-def aperture(draw, save=False):
+def aperture(draw):
     name=draw(postgres_text())
     star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
@@ -130,22 +127,6 @@ def lightpoint(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-
-    points = draw(lists(lightpoint(), max_size=10, unique_by=lambda lp: lp.cadence))
-
-    lc = models.Lightcurve(
-        tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
-        cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
-        lightpoints=points,
-        lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
-        aperture=draw(overrides.pop('aperture', aperture()))
-    )
-
-    return lc
-
-@define_strategy
-@composite
-def array_lightcurve(draw, **overrides):
     length = draw(overrides.pop('length', integers(min_value=0, max_value=100)))
     cadences = draw(np_st.arrays(np.int32, length, unique=True))
     bjd = draw(np_st.arrays(np.float32, length))

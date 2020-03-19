@@ -12,18 +12,20 @@ def test_lightcurve_query(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()
         db_conn.session.add_all(lightcurves)
+        db_conn.session.commit()
 
-        ids = db_conn.query_lightcurves(
+        results = db_conn.query_lightcurves(
             cadence_types=[l.cadence_type for l in lightcurves]
-            ).value(Lightcurve.id)
+            )
+
+        ids = [result.id for result in results]
+
+        note(str(db_conn.query_lightcurves(
+            cadence_types=[l.cadence_type for l in lightcurves])
+        ))
 
         note(ids)
-        if ids is None:
-            assert len(lightcurves) == 0
-        elif len(lightcurves) == 1:
-            assert ids == lightcurves[0].id
-        else:
-            assert set(ids) == set(l.id for l in lightcurves)
+        assert set(ids) == set(l.id for l in lightcurves)
 
         db_conn.session.rollback()
     except:
@@ -37,10 +39,11 @@ def test_load_from_db(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()
         db_conn.session.add_all(lightcurves)
-
+        db_conn.session.commit()
         ids = db_conn.load_from_db(
             cadence_types=[l.cadence_type for l in lightcurves]
         )
+        note([l.cadence_type for l in lightcurves])
 
         if ids is None:
             ids = []

@@ -7,7 +7,6 @@ def test_connection_spawning():
     db = db_from_config(CONFIG_PATH)
 
     # Assert base connections are uninitialized
-    assert db.session is None
     assert not db.is_active
 
 def test_connection_enter_context():
@@ -17,5 +16,4 @@ def test_connection_enter_context():
         assert db.session is not None
         assert db.is_active
 
-    assert db.session is None
     assert not db.is_active

@@ -6,7 +6,7 @@ hypothesis-fspaths
 factory_boy
 astropy
 sqlalchemy
-psycopg2-binary
+psycopg2
 h5py
 numba
 numpy

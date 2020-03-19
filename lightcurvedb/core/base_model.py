@@ -4,6 +4,20 @@ from sqlalchemy.ext.declarative import declared_attr, as_declarative, has_inheri
 from sqlalchemy.orm import relationship
 from sqlalchemy import Column, String, DateTime, BigInteger, ForeignKey, Sequence
 from sqlalchemy.schema import UniqueConstraint
+import numpy as np
+from psycopg2.extensions import register_adapter, AsIs
+
+
+# Forward Declare Type mappings for psycopg2 to understand numpy types
+
+def __adapt_np__(np_type):
+    def __adaptor__(type_inst):
+        return AsIs(type_inst)
+
+register_adapter(np.int32, __adapt_np__(np.int32))
+register_adapter(np.int64, __adapt_np__(np.int64))
+register_adapter(np.float32, __adapt_np__(np.float32))
+register_adapter(np.float64, __adapt_np__(np.float64))
 
 
 @as_declarative()

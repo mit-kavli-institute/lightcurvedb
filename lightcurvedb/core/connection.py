@@ -17,24 +17,10 @@ from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
 
-CONFIG_PATH = '~/.config/lightcurvedb/db.conf'
 
-ENGINE = create_engine(
-    uri_from_config(os.path.expanduser(CONFIG_PATH)),
-    pool_size=48,
-    pool_pre_ping=True,
-    executemany_mode='values',
-    executemany_values_page_size=10000,
-    executemany_batch_page_size=500
-)
-FACTORY = sessionmaker(bind=ENGINE)
-Session = scoped_session(FACTORY)
-
-@listens_for(ENGINE, 'connect')
 def connect(dbapi_connection, connection_record):
     connection_record.info['pid'] = os.getpid()
 
-@listens_for(ENGINE, 'checkout')
 def checkout(dbabi_connection, connection_record, connection_proxy):
     pid = os.getpid()
     if connection_record.info['pid'] != pid:
@@ -55,7 +41,19 @@ class DB(object):
         self._uri = construct_uri(
             username, password, db_name, db_host, db_type, port
         )
-        self._engine = ENGINE
+        self._engine = create_engine(
+            self._uri,
+            pool_size=48,
+            pool_pre_ping=True,
+            executemany_mode='values',
+            executemany_values_page_size=10000,
+            executemany_batch_page_size=500
+        )
+        self.factory = sessionmaker(bind=self._engine)
+        Session = scoped_session(self.factory)
+
+        listens_for(self._engine, 'connect')(connect)
+        listens_for(self._engine, 'checkout')(checkout)
 
         self.SessionClass = Session
 
@@ -74,7 +72,7 @@ class DB(object):
         self.close()
 
     def open(self):
-        if self._session is None:
+        if self._session is None or not self._active:
             self._session = self.SessionClass()
             self._active = True
         else:
@@ -98,6 +96,9 @@ class DB(object):
 
     @property
     def session(self):
+        if not self._active:
+            raise RuntimeError(
+                'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
         return self._session
 
     @property
@@ -124,31 +125,32 @@ class DB(object):
     def lightcurve_types(self):
         return self.session.query(models.LightcurveType)
 
-    def query_lightcurves(self, tics=None, apertures=None, types=None, cadence_types=[30]):
+    def query_lightcurves(self, tics=[], apertures=[], types=[], cadence_types=[30]):
         q = self.lightcurves
-        if apertures is not None:
+        if len(apertures) > 0:
             q = q.filter(
-                models.Lightcurve.aperture_id.in_(
+                models.LightcurveRevision.aperture_id.in_(
                     qlp_type_multiple_check(self, models.Aperture, apertures)
                 )
             )
-        if types is not None:
+        if len(types) > 0:
             q = q.filter(
-                models.Lightcurve.lightcurve_type_id.in_(
+                models.LightcurveRevision.lightcurve_type_id.in_(
                     qlp_type_multiple_check(self, models.LightcurveType, types)
                 )
             )
-        if cadence_types is not None:
-            q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
-        if tics is not None:
-            q = q.filter(models.Lightcurve.tic_id.in_(tics))
+        if len(cadence_types) > 0:
+            q = q.filter(models.LightcurveRevision.cadence_type.in_(cadence_types))
+
+        if len(tics) > 0:
+            q = q.filter(models.LightcurveRevision.tic_id.in_(tics))
         return q
 
-    def load_from_db(self, tics=None, apertures=None, types=None, cadence_types=[30]):
+    def load_from_db(self, tics=[], apertures=[], types=[], cadence_types=[30]):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.all()
 
-    def yield_from_db(self, chunksize, tics=None, apertures=None, types=None, cadence_types=[30]):
+    def yield_from_db(self, chunksize, tics=[], apertures=[], types=[], cadence_types=[30]):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.yield_per(chunksize)
 
@@ -156,20 +158,20 @@ class DB(object):
         q = self.lightcurves
 
         if isinstance(lightcurve_type, models.LightcurveType):
-            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type.id)
+            q = q.filter(models.LightcurveRevision.lightcurve_type_id == lightcurve_type.id)
         else:
             x = self.session.query(models.LightcurveType).filter(models.LightcurveType.name == lightcurve_type).one()
-            q = q.filter(models.Lightcurve.lightcurve_type_id == x.id)
+            q = q.filter(models.LightcurveRevision.lightcurve_type_id == x.id)
 
         if isinstance(aperture, models.Aperture):
-            q = q.filter(models.Lightcurve.aperture_id == aperture.id)
+            q = q.filter(models.LightcurveRevision.aperture_id == aperture.id)
         else:
             x = self.session.query(models.Aperture).filter(models.Aperture.name == aperture).one()
-            q = q.filter(models.Lightcurve.aperture_id == x.id)
+            q = q.filter(models.LightcurveRevision.aperture_id == x.id)
 
         q = q.filter(
-                models.Lightcurve.tic_id == tic,
-                models.Lightcurve.cadence_type == cadence_type,
+                models.LightcurveRevision.tic_id == tic,
+                models.LightcurveRevision.cadence_type == cadence_type,
             )
         if resolve:
             return q.one()
@@ -212,13 +214,14 @@ def db_from_config(config_path, **engine_kwargs):
         'db_host': parser.get('Credentials', 'database_host'),
         'port': parser.get('Credentials', 'database_port'),
     }
+    if 'port' not in engine_kwargs:
+        engine_kwargs['port'] = kwargs['port']
 
     db = DB(
-        parser.get('Credentials', 'username'),
-        parser.get('Credentials', 'password'),
-        parser.get('Credentials', 'database_name'),
-        parser.get('Credentials', 'database_host'),
-        parser.get('Credentials', 'database_port'),
+        kwargs['username'],
+        kwargs['password'],
+        kwargs['db_name'],
+        kwargs['db_host'],
         **engine_kwargs)
     db._config = config_path
     return db
