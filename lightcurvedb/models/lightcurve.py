@@ -207,6 +207,36 @@ class LightcurveRevision(QLPDataProduct):
     def __repr__(self):
         return '<Lightcurve {} {}>'.format(self.tic_id, self.id)
 
+    def __getitem__(self, key):
+        key = key.lower()
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            # Attempt to fallback
+            if key in ('flux', 'mag', 'magnitude', 'value'):
+                return self.values
+            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+                return self.errors
+            elif key in ('x', 'y'):
+                return getattr(self, '{}_centroids'.format(key))
+            else:
+                raise
+
+    def __setitem__(self, key, value):
+        key = key.lower()
+        try:
+            setattr(self, key, value)
+        except AttributeError:
+            if key in ('flux', 'mag', 'magnitude', 'value'):
+                self.values = value
+            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+                self.errors = value
+            elif key in ('x', 'y'):
+                return setattr(self, '{}_centroids'.format(key))
+            else:
+                raise
+
+
     @hybrid_property
     def to_np(self):
         return np.array([
@@ -232,31 +262,31 @@ class LightcurveRevision(QLPDataProduct):
 
     @hybrid_property
     def cadences(self):
-        return self._cadences
+        return np.array(self._cadences)
 
     @hybrid_property
     def bjd(self):
-        return self._bjd
+        return np.array(self._bjd)
 
     @hybrid_property
     def values(self):
-        return self._values
+        return np.array(self._values)
 
     @hybrid_property
     def errors(self):
-        return self._errors
+        return np.array(self._errors)
 
     @hybrid_property
     def x_centroids(self):
-        return self._x_centroids
+        return np.array(self._x_centroids)
 
     @hybrid_property
     def y_centroids(self):
-        return self._y_centroids
+        return np.array(self._y_centroids)
 
     @hybrid_property
     def quality_flags(self):
-        return self._quality_flags
+        return np.array(self._quality_flags)
 
     # Setters
     @cadences.setter
