@@ -205,7 +205,7 @@ class LightcurveRevision(QLPDataProduct):
         return len(self._cadences)
 
     def __repr__(self):
-        return '<Lightcurve {} {}>'.format(self.tic_id, self.id)
+        return '<Lightcurve {} {} {}>'.format(self.lightcurve_type.name, self.tic_id, self.aperture.name)
 
     def __getitem__(self, key):
         key = key.lower()
