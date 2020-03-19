@@ -93,5 +93,10 @@ def partition(listlike, n):
     return split_every(max_partition_length, listlike)
 
 
-def partition_by(listlike, n, group_func):
-    raise NotImplementedError
+def partition_by(listlike, n, key=lambda x: x):
+    if n < 1:
+        raise ValueError(
+            'Cannot create partitions of size < 1'
+        )
+    groups = list(itertools.groupby(listlike, key=key))
+    return partition(groups, n)
