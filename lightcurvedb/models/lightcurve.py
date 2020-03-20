@@ -182,7 +182,7 @@ class Lightcurve(QLPDataProduct):
             self.lightcurve_type.name)
 
 
-class LightcurveRevision(QLPDataProduct):
+class LightcurveRevision(QLPModel):
     """Revising lightcurve to use arrays"""
     __tablename__ = 'lightcurve_revisions'
     # Constraints
@@ -190,11 +190,12 @@ class LightcurveRevision(QLPDataProduct):
         UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
     )
 
+    id = Column(BigInteger, primary_key=True)
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
 
     _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
-    _bjd = Column('barycentric_julian_date', ARRAY(Integer, dimensions=1), nullable=False)
+    _bjd = Column('barycentric_julian_date', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _values = Column('values', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _errors = Column('errors', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
     _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
