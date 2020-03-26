@@ -27,7 +27,6 @@ class QLPModel(object):
     """
     __abstract__ = True
 
-    created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
 def DynamicIdMixin(tablename):
     class HasIdMixin(object):
@@ -53,6 +52,7 @@ class QLPDataProduct(QLPModel, DynamicIdMixin('qlpdataproducts')):
     __tablename__ = 'qlpdataproducts'
 
     product_type = Column(String(255))
+    created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
     # This mapper setup allows polymoprhic behavior when querying on all data
     # products. (When requesting on Dataproducts heterogenous results are returned)
@@ -75,6 +75,7 @@ class QLPDataSubType(QLPModel, DynamicIdMixin('qlpdatasubtypes')):
     name = Column(String(64), index=True, nullable=False)
     description = Column(String)
     subtype = Column(String(255))
+    created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint('subtype', 'name'),
@@ -99,6 +100,7 @@ class QLPReference(QLPModel, DynamicIdMixin('qlpreferences')):
     """
     __tablename__ = 'qlpreferences'
     reference_type = Column(String(255))
+    created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
     @declared_attr
     def __mapper_args__(cls):

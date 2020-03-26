@@ -30,7 +30,7 @@ class LightcurveType(QLPDataSubType):
     """Describes the numerous lightcurve types"""
     __tablename__ = 'lightcurvetypes'
 
-    lightcurves = relationship('Lightcurve', back_populates='lightcurve_type')
+    lightcurves = relationship('LightcurveRevision', back_populates='lightcurve_type')
 
 
 class LightcurveFrameMap(QLPModel):
@@ -72,13 +72,10 @@ class Lightcurve(QLPDataProduct):
     aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
 
     # Relationships
-    lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
     lightpoints = relationship(
         'Lightpoint',
         back_populates='lightcurve',
         order_by='Lightpoint.cadence')
-    aperture = relationship('Aperture', back_populates='lightcurves')
-    frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 
     def __init__(self, *args, **kwargs):
         super(Lightcurve, self).__init__(*args, **kwargs)
@@ -193,6 +190,14 @@ class LightcurveRevision(QLPModel):
     id = Column(BigInteger, primary_key=True)
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
+
+    # Foreign Keys
+    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+
+    # Relationships
+    lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
+    aperture = relationship('Aperture', back_populates='lightcurves')
 
     _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
     _bjd = Column('barycentric_julian_date', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)

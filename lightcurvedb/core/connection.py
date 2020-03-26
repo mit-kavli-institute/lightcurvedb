@@ -7,6 +7,7 @@ from sys import version_info
 from configparser import ConfigParser
 
 from sqlalchemy import Column, create_engine
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
 from sqlalchemy.orm import scoped_session, sessionmaker, joinedload
@@ -37,25 +38,23 @@ def checkout(dbabi_connection, connection_record, connection_proxy):
 class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
-    def __init__(self, username, password, db_name, db_host, db_type='postgresql', port=5432, **engine_kwargs):
+    def __init__(self, username, password, db_name, db_host, db_type='postgresql+psycopg2', port=5432, **engine_kwargs):
         self._uri = construct_uri(
             username, password, db_name, db_host, db_type, port
         )
         self._engine = create_engine(
             self._uri,
             pool_size=48,
-            pool_pre_ping=True,
-            executemany_mode='values',
-            executemany_values_page_size=10000,
-            executemany_batch_page_size=500
+            max_overflow=16,
+            poolclass=QueuePool,
+            **engine_kwargs
         )
         self.factory = sessionmaker(bind=self._engine)
-        Session = scoped_session(self.factory)
+        self.SessionClass = scoped_session(self.factory)
 
         listens_for(self._engine, 'connect')(connect)
         listens_for(self._engine, 'checkout')(checkout)
 
-        self.SessionClass = Session
 
         # Create any models which are not in the current PSQL schema
         self._session = None
@@ -64,7 +63,6 @@ class DB(object):
 
     def __enter__(self):
         """Enter into the contejmxt of a SQLAlchemy open session"""
-        self._engine.dispose()
         return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -72,7 +70,7 @@ class DB(object):
         self.close()
 
     def open(self):
-        if self._session is None or not self._active:
+        if not self._active:
             self._session = self.SessionClass()
             self._active = True
         else:
@@ -83,7 +81,7 @@ class DB(object):
         return self
 
     def close(self):
-        if self._session is not None:
+        if self._active:
             self.SessionClass.remove()
             self._session = None
             self._active = False

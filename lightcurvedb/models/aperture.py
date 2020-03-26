@@ -25,7 +25,7 @@ class Aperture(QLPReference):
     outer_radius = Column(Numeric, nullable=False)
 
     # Relationships
-    lightcurves = relationship('Lightcurve', back_populates='aperture')
+    lightcurves = relationship('LightcurveRevision', back_populates='aperture')
 
     def __str__(self):
         return '{}:{}:{}'.format(

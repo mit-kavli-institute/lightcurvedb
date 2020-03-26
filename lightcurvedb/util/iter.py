@@ -98,5 +98,5 @@ def partition_by(listlike, n, key=lambda x: x):
         raise ValueError(
             'Cannot create partitions of size < 1'
         )
-    groups = list(itertools.groupby(listlike, key=key))
+    groups = [(k, list(g)) for k, g in itertools.groupby(listlike, key=key)]
     return partition(groups, n)
