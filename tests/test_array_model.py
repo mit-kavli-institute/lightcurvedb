@@ -28,6 +28,7 @@ def test_merging_unique(arr1, arr2):
     check = set(sort_ref)
     assert len(sort_ref) == len(check)
 
+
 #@settings(deadline=None)
 #@given(np_st.arrays(np.int32,(2, 100)), np_st.arrays(np.int32,(2, 100)))
 #def test_merging_priority(arr1, arr2):
