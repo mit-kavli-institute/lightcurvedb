@@ -18,7 +18,7 @@ from sqlalchemy.orm import noload
 from collections import OrderedDict, defaultdict
 from multiprocessing import Pool, cpu_count, SimpleQueue, Manager
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct
-from lightcurvedb.models import Aperture, Orbit, LightcurveType, LightcurveRevision
+from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
 from lightcurvedb.core.ingestors.lightpoint import get_raw_h5, get_cadence_info
 from lightcurvedb.util.logging import make_logger
@@ -63,8 +63,8 @@ def lc_to_dict(lc):
 
 
 def map_lightcurves(session, tics):
-    q = session.query(LightcurveRevision).filter(
-        LightcurveRevision.tic_id.in_(tics)
+    q = session.query(Lightcurve).filter(
+        Lightcurve.tic_id.in_(tics)
     ).execution_options(stream_results=True, max_row_buffer=len(tics)*10)
     return {
         make_lc_key(lc): lc for lc in q.all()
@@ -123,12 +123,16 @@ def ingest_files(config, cadence_type, lc_type_map, aperture_map, job):
                 {
                     'id': lc['id'],
                     'created_on': datetime.now(),
-                    'product_type': LightcurveRevision.__tablename__
+                    'product_type': Lightcurve.__tablename__
                 }
                 for lc in chunk
             ]
+            for kwargs in chunk:
+                for kwarg in ['cadences', 'barycentric_julian_date', 'values', 'errors', 'x_centroids', 'y_centroids', 'quality_flags']:
+                    kwarg[kwarg] = kwargs[kwarg].tolist()
+
             db.session.bulk_insert_mappings(QLPDataProduct, inheritance_mappings)
-            db.session.bulk_insert_mappings(LightcurveRevision, chunk)
+            db.session.bulk_insert_mappings(Lightcurve, chunk)
             logger.info(f'{worker_name}: Inserted {len(inhertiance_mappings)} QLPDataProducts')
             logger.info(f'{worker_name}: Inserted {len(chunk)} new lightcurves')
         db.session.commit()
@@ -217,7 +221,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
                 }
             )
             all_tics |= tics
-            
+
         click.echo(f'Made {len(jobs)} partitions')
         click.echo(f'Pool will process {len(tics)} tics')
 

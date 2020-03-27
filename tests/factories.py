@@ -127,7 +127,7 @@ def lightpoint(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    length = draw(overrides.pop('length', integers(min_value=0, max_value=100)))
+    length = draw(overrides.pop('length', integers(min_value=0, max_value=10)))
     cadences = draw(np_st.arrays(np.int32, length, unique=True))
     bjd = draw(np_st.arrays(np.float32, length))
     values = draw(np_st.arrays(np.float32, length))
