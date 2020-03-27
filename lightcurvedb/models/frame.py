@@ -1,5 +1,6 @@
 from sqlalchemy import Column, ForeignKey, Integer, SmallInteger, BigInteger, String, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.schema import UniqueConstraint, CheckConstraint
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
@@ -61,6 +62,7 @@ class Frame(QLPDataProduct):
     # Relationships
     orbit = relationship('Orbit', back_populates='frames')
     frame_type = relationship('FrameType', back_populates='frames')
+    lightcurves = association_proxy('lightcurveframemapping', 'lightcurve')
 
     def copy(self, other):
         self.cadence_type = other.cadence_type

@@ -15,9 +15,3 @@ def db_conn():
         db.close()
         raise
     db.close()
-
-@pytest.yield_fixture(scope='function')
-def db_session(db_conn):
-    db_conn.session.begin_nested()
-    yield db_conn
-    db_conn.session.rollback()

@@ -136,7 +136,7 @@ def lightcurve(draw, **overrides):
     y_centroids = draw(np_st.arrays(np.float32, length))
     quality_flags = draw(np_st.arrays(np.int32, length))
 
-    return models.LightcurveRevision(
+    return models.Lightcurve(
         cadences=cadences,
         bjd=bjd,
         values=values,

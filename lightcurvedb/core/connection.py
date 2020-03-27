@@ -17,22 +17,8 @@ from lightcurvedb import models
 from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
+from lightcurvedb.core.engines import init_engine
 
-
-def connect(dbapi_connection, connection_record):
-    connection_record.info['pid'] = os.getpid()
-
-def checkout(dbabi_connection, connection_record, connection_proxy):
-    pid = os.getpid()
-    if connection_record.info['pid'] != pid:
-        warnings.warn(
-            'Parent process {} forked {} with an open database connection, '
-            'which is being discarded and remade'.format(
-                connection_record.info['pid'], pid
-            )
-        )
-        connection_record.connection = connection_proxy.connection = None
-        raise DisconnectionError('Attempting to disassociate database connection')
 
 
 class DB(object):
@@ -42,18 +28,16 @@ class DB(object):
         self._uri = construct_uri(
             username, password, db_name, db_host, db_type, port
         )
-        self._engine = create_engine(
+        self._engine = init_engine(
             self._uri,
             pool_size=48,
             max_overflow=16,
             poolclass=QueuePool,
+            pool_pre_ping=True,
             **engine_kwargs
         )
         self.factory = sessionmaker(bind=self._engine)
         self.SessionClass = scoped_session(self.factory)
-
-        listens_for(self._engine, 'connect')(connect)
-        listens_for(self._engine, 'checkout')(checkout)
 
 
         # Create any models which are not in the current PSQL schema
@@ -117,7 +101,7 @@ class DB(object):
 
     @property
     def lightcurves(self):
-        return self.session.query(models.LightcurveRevision)
+        return self.session.query(models.Lightcurve)
 
     @property
     def lightcurve_types(self):
@@ -127,21 +111,21 @@ class DB(object):
         q = self.lightcurves
         if len(apertures) > 0:
             q = q.filter(
-                models.LightcurveRevision.aperture_id.in_(
+                models.Lightcurve.aperture_id.in_(
                     qlp_type_multiple_check(self, models.Aperture, apertures)
                 )
             )
         if len(types) > 0:
             q = q.filter(
-                models.LightcurveRevision.lightcurve_type_id.in_(
+                models.Lightcurve.lightcurve_type_id.in_(
                     qlp_type_multiple_check(self, models.LightcurveType, types)
                 )
             )
         if len(cadence_types) > 0:
-            q = q.filter(models.LightcurveRevision.cadence_type.in_(cadence_types))
+            q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
 
         if len(tics) > 0:
-            q = q.filter(models.LightcurveRevision.tic_id.in_(tics))
+            q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
     def load_from_db(self, tics=[], apertures=[], types=[], cadence_types=[30]):
@@ -156,20 +140,20 @@ class DB(object):
         q = self.lightcurves
 
         if isinstance(lightcurve_type, models.LightcurveType):
-            q = q.filter(models.LightcurveRevision.lightcurve_type_id == lightcurve_type.id)
+            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type.id)
         else:
             x = self.session.query(models.LightcurveType).filter(models.LightcurveType.name == lightcurve_type).one()
-            q = q.filter(models.LightcurveRevision.lightcurve_type_id == x.id)
+            q = q.filter(models.Lightcurve.lightcurve_type_id == x.id)
 
         if isinstance(aperture, models.Aperture):
-            q = q.filter(models.LightcurveRevision.aperture_id == aperture.id)
+            q = q.filter(models.Lightcurve.aperture_id == aperture.id)
         else:
             x = self.session.query(models.Aperture).filter(models.Aperture.name == aperture).one()
-            q = q.filter(models.LightcurveRevision.aperture_id == x.id)
+            q = q.filter(models.Lightcurve.aperture_id == x.id)
 
         q = q.filter(
-                models.LightcurveRevision.tic_id == tic,
-                models.LightcurveRevision.cadence_type == cadence_type,
+                models.Lightcurve.tic_id == tic,
+                models.Lightcurve.cadence_type == cadence_type,
             )
         if resolve:
             return q.one()
@@ -177,11 +161,11 @@ class DB(object):
 
 
     def lightcurves_from_tics(self, tics, **kw_filters):
-        pk_type = models.LightcurveRevision.tic_id.type
+        pk_type = models.Lightcurve.tic_id.type
         mq = MassQuery(
             self.session,
-            models.LightcurveRevision,
-            models.LightcurveRevision.tic_id,
+            models.Lightcurve,
+            models.Lightcurve.tic_id,
             Column(pk_type, name='tic_id', primary_key=True, index=True),
             **kw_filters
         )
