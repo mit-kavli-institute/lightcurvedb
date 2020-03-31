@@ -51,31 +51,29 @@ def test_lightcurve_add(db_conn, lightcurve):
         raise
 
 
-#@settings(deadline=None)
-#@given(np_st.arrays(np.int32,(2, 100)), np_st.arrays(np.int32,(2, 100)))
-#def test_merging_priority(arr1, arr2):
-#    # Prioritize later arrays
-#    arr1copy = np.copy(arr1)
-#    arr2copy = np.copy(arr2)
-#    result = matrix_merge(arr1copy, arr2copy)
-#
-#    #data = np.concatenate((arr1, arr2), axis=1)
-#    #ref_row = data[0]
-#    #path = np.argsort(ref_row)
-#    #check = np.concatenate((np.diff(ref_row[path]), [1]))
-#
-#    #result = data[:,path[check > 0]]
-#
-#    check = set(result[0])
-#    ref1 = set(arr1[0])
-#    ref2 = set(arr2[0])
-#
-#    #note(result)
-#    #note(check)
-#    #note(ref1)
-#    #note(ref2)
-#
-#    assert ref2 <= check
-#    assert ref1 <= check
-#
-#    #assert np.array_equal(what, result)
+@settings(deadline=None)
+@given(np_st.arrays(np.int32,(2, 100)), np_st.arrays(np.int32,(2, 100)))
+def test_merging_priority(arr1, arr2):
+    # Prioritize later arrays
+    result = matrix_merge(arr1, arr2)
+
+    #data = np.concatenate((arr1, arr2), axis=1)
+    #ref_row = data[0]
+    #path = np.argsort(ref_row)
+    #check = np.concatenate((np.diff(ref_row[path]), [1]))
+
+    #result = data[:,path[check > 0]]
+
+    check = set(result[0])
+    ref1 = set(arr1[0])
+    ref2 = set(arr2[0])
+
+    #note(result)
+    #note(check)
+    #note(ref1)
+    #note(ref2)
+
+    assert ref2 <= check
+    assert ref1 <= check
+
+    #assert np.array_equal(what, result)
