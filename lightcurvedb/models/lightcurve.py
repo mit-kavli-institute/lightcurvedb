@@ -11,6 +11,7 @@ from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql import select, func
 import numpy as np
+import pandas as pd
 
 
 class LightcurveType(QLPDataSubType):
@@ -113,15 +114,39 @@ class Lightcurve(QLPModel):
             self.quality_flags
         ])
 
-    def merge(self, *data):
-        compiled = matrix_merge(self.to_np, *data)
-        self.cadences = compiled[0]
-        self.bjd = compiled[1]
-        self.values = compiled[2]
-        self.errors = compiled[3]
-        self.x_centroids = compiled[4]
-        self.y_centroids = compiled[5]
-        self.quality_flags = compiled[6]
+    @property
+    def to_df(self):
+        df = pd.DataFrame(
+            index=self.cadences,
+            data={
+                'bjd': self.bjd,
+                'values': self.values,
+                'errors': self.errors,
+                'x_centroids': self.x_centroids,
+                'y_centroids': self.y_centroids,
+                'quality_flags': self.quality_flags
+                },
+        )
+        return df
+
+    def merge(self, *dataframes):
+
+        frames = [self.to_df]
+        frames += dataframes
+
+        current_data = pd.concat(frames)
+
+        # Remove duplicates
+        current_data = current_data[~current_data.index.duplicated(keep='last')]
+        current_data.sort_index(inplace=True)
+
+        self.cadences = current_data.index
+        self.bjd = current_data['bjd']
+        self.values = current_data['values']
+        self.errors = current_data['errors']
+        self.x_centroids = current_data['x_centroids']
+        self.y_centroids = current_data['y_centroids']
+        self.quality_flags = current_data['quality_flags']
 
 
     @hybrid_property
