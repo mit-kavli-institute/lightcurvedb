@@ -74,21 +74,11 @@ def test_merging_priority(lc_1, lc_2):
     lc_1.merge(merging_data)
     merged = lc_1.to_df
 
-    note('lc_1')
-    note(original_data)
-    note('lc_2')
-    note(merging_data)
-    note('merged')
-    note(merged)
-    note('pandas concat')
     raw_merged = pd.concat((original_data, merging_data))
     note(~raw_merged.index.duplicated(keep='last'))
     note(raw_merged[~raw_merged.index.duplicated(keep='last')])
 
     for index in intersecting_indices:
-        #merged_loc = merged.index.get_loc(index)
-        #orig_loc = original_data.index.get_loc(index)
-        #merging_loc = merging_data.index.get_loc(index)
 
         merged_value = merged.loc[index]['values']
         merging_value = merging_data.loc[index]['values']
