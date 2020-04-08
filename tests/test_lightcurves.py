@@ -1,12 +1,13 @@
 from hypothesis import strategies as st
-from hypothesis import given, note, assume
-from lightcurvedb.models.lightcurve import Lightcurve, Lightpoint
+from hypothesis import given, note, assume, HealthCheck, settings
+from lightcurvedb.models.lightcurve import Lightcurve
 
 import numpy as np
 from .fixtures import db_conn
 from .factories import lightcurve as lightcurve_st
 
 
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(lightcurve_st())
 def test_subscriptable(lightcurve):
     np.testing.assert_array_equal(lightcurve['cadences'], lightcurve.cadences)
@@ -17,6 +18,8 @@ def test_subscriptable(lightcurve):
     np.testing.assert_array_equal(lightcurve['y_centroids'], lightcurve.y_centroids)
     np.testing.assert_array_equal(lightcurve['quality_flags'], lightcurve.quality_flags)
 
+
+@settings(suppress_health_check=[HealthCheck.too_slow])
 @given(lightcurve_st())
 def test_subscriptable_set(lightcurve):
 

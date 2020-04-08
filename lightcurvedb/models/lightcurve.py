@@ -11,26 +11,14 @@ from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql import select, func
 import numpy as np
-
-from .lightpoint import LOOKUP, Lightpoint
-
-
-class LightpointsMap(object):
-    __emulates__ = list
-
-    def __init__(self):
-        self.data = []
-
-    @collection.appender
-    def append_lightpoint(self, lightpoint):
-        self.data.append(lightpoint)
+import pandas as pd
 
 
 class LightcurveType(QLPDataSubType):
     """Describes the numerous lightcurve types"""
     __tablename__ = 'lightcurvetypes'
 
-    lightcurves = relationship('LightcurveRevision', back_populates='lightcurve_type')
+    lightcurves = relationship('Lightcurve', back_populates='lightcurve_type')
 
 
 class LightcurveFrameMap(QLPModel):
@@ -50,138 +38,9 @@ class LightcurveFrameMap(QLPModel):
     frame = relationship('Frame')
 
 
-class Lightcurve(QLPDataProduct):
-    """
-        Provides ORM implementation of a lightcurve used by QLP
-
-        These lightcurves are per orbit and are returned in batches
-    """
-
-    __tablename__ = 'lightcurves'
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
-    )
-
-    tic_id = Column(BigInteger, index=True)
-    cadence_type = Column(SmallInteger, index=True)
-
-    # Foreign Keys
-    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-
-    # Relationships
-    lightpoints = relationship(
-        'Lightpoint',
-        back_populates='lightcurve',
-        order_by='Lightpoint.cadence')
-
-    def __init__(self, *args, **kwargs):
-        super(Lightcurve, self).__init__(*args, **kwargs)
-
-        # We want to cache lightpoint attributes to avoid hitting
-        # the database with expensive queries
-        self._lightpoint_cache = {}
-
-    def __len__(self):
-        return self.length
-
-    def _get_attr_array(self, attr):
-        q = select(
-            [attr]
-        ).where(
-            Lightpoint.lightcurve_id == self.id
-        )
-        session = inspect(self).session
-        return list(session.execute(q))
-
-    def _get_from_cache(self, attr):
-        if not attr in self._lightpoint_cache:
-            col = LOOKUP[attr]
-            attr_v = self._get_attr_array(col)
-            self._lightpoint_cache[attr] = attr_v
-        return self._lightpoint_cache[attr]
-
-    @hybrid_property
-    def length(self):
-        return len(self.lightpoints)
-
-    @length.expression
-    def length(self):
-        return select(
-            [func.count(Lightpoint.id)]
-        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('length')
-
-    @hybrid_property
-    def max_cadence(self):
-        return self.lightpoints[-1].cadence
-
-    @max_cadence.expression
-    def max_cadence(cls):
-        return select(
-            [func.max(Lightpoint.cadence)]
-        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('max_cadence')
-
-    @hybrid_property
-    def min_cadence(self):
-        return min(lp.cadence for lp in self.lightpoints)
-
-    @min_cadence.expression
-    def min_cadence(cls):
-        return select(
-            [func.min(Lightpoint.cadence)]
-        ).correlate(cls).where(Lightpoint.lightcurve_id == cls.id).label('min_cadence')
-
-    # Getters
-    @hybrid_property
-    def cadences(self):
-        return [lp.cadence for lp in self.lightpoints]
-
-    @cadences.expression
-    def cadences(cls):
-        return select([Lightpoint.cadence]).where(
-            Lightpoint.lightcurve_id == cls.id
-        ).as_scalar()
-
-    @hybrid_property
-    def bjd(self):
-        return [lp.barycentric_julian_date for lp in self.lightpoints]
-
-    @hybrid_property
-    def values(self):
-        return [lp.value for lp in self.lightpoints]
-
-    @hybrid_property
-    def errors(self):
-        return [lp.error for lp in self.lightpoints]
-
-    @hybrid_property
-    def x_centroids(self):
-        return [lp.x_centroid for lp in self.lightpoints]
-
-    @hybrid_property
-    def y_centroids(self):
-        return [lp.y_centroid for lp in self.lightpoints]
-
-    @hybrid_property
-    def quality_flags(self):
-        return [lp.quality_flag for lp in self.lightpoints]
-
-    # Setters
-    @cadences.update_expression
-    def cadences(self, value):
-        raise NotImplemented
-
-    def __repr__(self):
-        return '<Lightcurve {} {}>'.format(
-            self.tic_id,
-            self.lightcurve_type.name)
-
-
-class LightcurveRevision(QLPModel):
+class Lightcurve(QLPModel):
     """Revising lightcurve to use arrays"""
-    __tablename__ = 'lightcurve_revisions'
+    __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
         UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
@@ -255,15 +114,39 @@ class LightcurveRevision(QLPModel):
             self.quality_flags
         ])
 
-    def merge(self, *data):
-        compiled = matrix_merge(self.to_np, *data)
-        self.cadences = compiled[0]
-        self.bjd = compiled[1]
-        self.values = compiled[2]
-        self.errors = compiled[3]
-        self.x_centroids = compiled[4]
-        self.y_centroids = compiled[5]
-        self.quality_flags = compiled[6]
+    @property
+    def to_df(self):
+        df = pd.DataFrame(
+            index=self.cadences,
+            data={
+                'bjd': self.bjd,
+                'values': self.values,
+                'errors': self.errors,
+                'x_centroids': self.x_centroids,
+                'y_centroids': self.y_centroids,
+                'quality_flags': self.quality_flags
+                },
+        )
+        return df
+
+    def merge(self, *dataframes):
+
+        frames = [self.to_df]
+        frames += dataframes
+
+        current_data = pd.concat(frames)
+
+        # Remove duplicates
+        current_data = current_data[~current_data.index.duplicated(keep='last')]
+        current_data.sort_index(inplace=True)
+
+        self.cadences = current_data.index
+        self.bjd = current_data['bjd']
+        self.values = current_data['values']
+        self.errors = current_data['errors']
+        self.x_centroids = current_data['x_centroids']
+        self.y_centroids = current_data['y_centroids']
+        self.quality_flags = current_data['quality_flags']
 
 
     @hybrid_property
@@ -297,30 +180,44 @@ class LightcurveRevision(QLPModel):
     # Setters
     @cadences.setter
     def cadences(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._cadences = value
 
     @bjd.setter
     def bjd(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._bjd = value
 
     @values.setter
     def values(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._values = value
 
     @errors.setter
     def errors(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._errors = value
 
     @x_centroids.setter
     def x_centroids(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._x_centroids = value
 
     @y_centroids.setter
     def y_centroids(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._y_centroids = value
 
     @quality_flags.setter
     def quality_flags(self, value):
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
         self._quality_flags = value
 
 
@@ -331,3 +228,4 @@ class LightcurveRevision(QLPModel):
     # Relationships
     lightcurve_type = relationship('LightcurveType')
     aperture = relationship('Aperture')
+    frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')

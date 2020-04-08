@@ -5,3 +5,4 @@ astropy
 numpy
 numba
 h5py
+pandas

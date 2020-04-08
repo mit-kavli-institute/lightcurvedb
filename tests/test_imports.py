@@ -6,7 +6,6 @@ def test_import_models_module():
     from lightcurvedb import models
     assert models is not None
     assert models.Lightcurve is not None
-    assert models.Lightpoint is not None
     assert models.Aperture is not None
     assert models.LightcurveType is not None
     assert models.Frame is not None
