@@ -101,6 +101,9 @@ class Lightcurve(QLPModel):
             else:
                 raise
 
+    @hybrid_property
+    def type(self):
+        return self.lightcurve_type
 
     @hybrid_property
     def to_np(self):

@@ -83,7 +83,10 @@ def test_merging_priority(lc_1, lc_2):
         merged_value = merged.loc[index]['values']
         merging_value = merging_data.loc[index]['values']
 
-        assert merged_value == merging_value
+        if np.isnan(merged_value):
+            assert np.isnan(merging_value)
+        else:
+            assert merged_value == merging_value
 
 
 

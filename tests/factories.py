@@ -1,7 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX
@@ -16,7 +16,6 @@ def postgres_text(draw, **text_args):
         text(
             alphabet=characters(
                 blacklist_categories=('C')),
-                #blacklist_characters=[u'\x00', u'\u0000']),
             min_size=text_args.get('min_size', 1),
             max_size=text_args.pop('max_size', 64)
         )
@@ -34,7 +33,7 @@ celestial_degrees = floats(
 @define_strategy
 @composite
 def aperture(draw):
-    name=draw(postgres_text())
+    name = draw(from_regex(r'[aA]perture_[a-zA-Z0-9]+', fullmatch=True))
     star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
