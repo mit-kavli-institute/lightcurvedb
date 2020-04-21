@@ -11,6 +11,7 @@ from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
 from sqlalchemy.orm import scoped_session, sessionmaker, joinedload
+from sqlalchemy.engine.url import URL
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
@@ -25,11 +26,14 @@ class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
     def __init__(self, username, password, db_name, db_host, db_type='postgresql+psycopg2', port=5432, **engine_kwargs):
-        self._uri = construct_uri(
-            username, password, db_name, db_host, db_type, port
-        )
+        #self._uri = construct_uri(
+        #    username, password, db_name, db_host, db_type, port
+        #)
+        if password and len(password) == 0:
+            password = None
+        url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
         self._engine = init_engine(
-            self._uri,
+            url,
             pool_size=48,
             max_overflow=16,
             poolclass=QueuePool,

@@ -14,9 +14,15 @@ def construct_uri(username, password, db_name, db_host, db_type, port):
         'port': port,
     }
 
-    return '{db_type}://{username}:{password}@{db_host}:{port}/{db_name}'.format(
-        **kwargs
-    )
+    if password and len(password) > 0:
+        return '{db_type}://{username}:{password}@{db_host}:{port}/{db_name}'.format(
+            **kwargs
+        )
+    else:
+        kwargs.pop('password')
+        return '{db_type}://{username}@{db_host}:{port}/{db_name}'.format(
+            **kwargs
+        )
 
 def uri_from_config(config_path):
     parser = ConfigParser()
