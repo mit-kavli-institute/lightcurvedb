@@ -26,14 +26,11 @@ class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
     def __init__(self, username, password, db_name, db_host, db_type='postgresql+psycopg2', port=5432, **engine_kwargs):
-        #self._uri = construct_uri(
-        #    username, password, db_name, db_host, db_type, port
-        #)
         if password and len(password) == 0:
             password = None
-        url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
+        self._url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
         self._engine = init_engine(
-            url,
+            self._url,
             pool_size=48,
             max_overflow=16,
             poolclass=QueuePool,
@@ -42,7 +39,6 @@ class DB(object):
         )
         self.factory = sessionmaker(bind=self._engine)
         self.SessionClass = scoped_session(self.factory)
-
 
         # Create any models which are not in the current PSQL schema
         self._session = None
@@ -86,10 +82,6 @@ class DB(object):
             raise RuntimeError(
                 'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
         return self._session
-
-    @property
-    def uri(self):
-        return self._uri
 
     @property
     def is_active(self):

@@ -24,7 +24,6 @@ class QLPModel(object):
     """
         Common SQLAlchemy base model for all QLP Models
     """
-    #__abstract__ = True
 
 
 def DynamicIdMixin(tablename):

@@ -3,6 +3,7 @@ from hypothesis import strategies as st
 from .factories import lightcurve as lightcurve_st
 from .fixtures import db_conn
 from lightcurvedb.managers.lightcurve_query import LightcurveManager, LightcurveDaemon
+from lightcurvedb.models import Lightcurve
 
 
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
@@ -56,7 +57,31 @@ def test_grouping_by_aperture(lightcurves):
             assert filtered.pop().id == result.id
 
 
-@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much])
-@given(st.lists(lightcurve_st()))
-def test_async_obtaining_lightcurves(db_conn, lightcurves):
-    pass
+# @settings(
+#     suppress_health_check=[
+#         HealthCheck.too_slow,
+#         HealthCheck.filter_too_much
+#     ])
+# @given(st.lists(lightcurve_st()))
+# def test_async_retrieve_daemon(db_conn, lightcurves):
+#     manager = LightcurveDaemon(db_conn, max_queue=5)
+#     db_conn.session.begin_nested()
+#     try:
+#         db_conn.session.add_all(lightcurves)
+#         db_conn.commit()
+#         ids = {lc.id for lc in lightcurves}
+# 
+#         q = Lightcurve.__table__.select(Lightcurve.id)\
+#             .where(Lightcurve.id.in_(ids))
+#         manager.open()
+#         job_ref = manager.push(q)
+#         result = manager.get(job_ref)
+#         manager.close()
+# 
+#         # Assert that we don't do anything silly with the job itself,
+#         # that should remain untouched
+#         assert ids == db_conn.session.execute(q)
+# 
+#     except Exception:
+#         db_conn.session.rollback()
+#         raise
