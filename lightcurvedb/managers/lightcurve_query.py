@@ -41,6 +41,9 @@ class LightcurveManager(object):
             self.types
         )
 
+    def __repr__(self):
+        return '<LightcurveManager: {} lightcurves>'.format(len(self))
+
     def __getitem__(self, key):
         """__getitem__.
 
