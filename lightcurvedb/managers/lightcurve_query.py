@@ -12,8 +12,18 @@ def set_dict():
 
 
 class LightcurveManager(object):
+    """LightcurveManager. A class to help manager and keep track of
+    lists of lightcurve objects.
+    """
 
     def __init__(self, lightcurves):
+        """__init__.
+
+        Parameters
+        ----------
+        lightcurves :
+            An iterable collection of lightcurves to manage.
+        """
         self.tics = set_dict()
         self.apertures = set_dict()
         self.types = set_dict()
@@ -32,6 +42,17 @@ class LightcurveManager(object):
         )
 
     def __getitem__(self, key):
+        """__getitem__.
+
+        Parameters
+        ----------
+        key :
+            The key to search for
+        Raises
+        ------
+        KeyError
+            If the key is not found within the LightcurveManager
+        """
         for searchable in self.searchables:
             if key in searchable:
                 ids = searchable[key]
@@ -46,9 +67,15 @@ class LightcurveManager(object):
         )
 
     def __len__(self):
+        """__len__.
+        The length of the manager in terms of number of stored lightcurves.
+        """
         return len(self.id_map)
 
     def __iter__(self):
+        """__iter__.
+        Iterate over the stored lightcurves.
+        """
         return iter(self.id_map.values())
 
 
