@@ -2,8 +2,14 @@ from collections import defaultdict
 from functools import partial
 import os
 import multiprocessing as mp
-from .sql_worker import SQLWorker, make_job
+from multiprocessing.managers import SyncManager
+from .sql_worker import SQLWorker, Job
+from .locking import QLPBarrier
 from sqlalchemy.ext.serializer import dumps
+import logging
+
+
+logger = logging.getLogger('Manager')
 
 
 def set_dict():
@@ -110,9 +116,10 @@ class LightcurveDaemon(object):
                 )
             )
         self._session = session
+        self._sync = SyncManager()
         self._query_queue = mp.JoinableQueue(max_queue)
         self._n_psql_workers = n_psql_workers
-        self._resultant_queue = mp.Queue()
+        self._resultant_queue = None
         self._processes = []
 
         # Internal bookkeeping
@@ -126,6 +133,8 @@ class LightcurveDaemon(object):
         number of processes to consume SQL jobs.
         """
         pid = os.getpid()
+        self._sync.start()
+        self._resultant_queue = self._sync.dict()
         self._processes = [
             SQLWorker(
                 self._session._url,
@@ -140,6 +149,8 @@ class LightcurveDaemon(object):
         for p in self._processes:
             p.start()
 
+        logger.info('Manager started {} workers'.format(len(self._processes)))
+
     def close(self):
         """close.
         Signals the job queues that no more input will be given.
@@ -151,6 +162,17 @@ class LightcurveDaemon(object):
             p.join()
         self._processes = []
 
+    def _make_job(self, job_id, source_process, q):
+        serialized_q = dumps(q)
+        job = Job(
+            source_process,
+            job_id,
+            serialized_q,
+            self._sync.Event()
+        )
+        logger.info('Manager received {} from {}'.format(job, source_process))
+        return job
+
     def push(self, q):
         source_process = os.getpid()
         nth_job = self._process_map[source_process]
@@ -158,10 +180,10 @@ class LightcurveDaemon(object):
             nth_job,
             source_process
         )
-        job = make_job(
+        job = self._make_job(
             job_id,
             source_process,
-            dumps(q)
+            q
         )
         self._process_map[job_id] = job
         self.job_queue.put(job)
@@ -170,9 +192,9 @@ class LightcurveDaemon(object):
         return job.job_id
 
 
-    def get(self, job_reference, timeout=None):
+    def get(self, job_reference):
         result = self._process_map[job_reference]
-        result.is_done.wait(timeout=timeout)
+        result.is_done.wait()
         return self._process_map.pop(job_reference)
 
     @property

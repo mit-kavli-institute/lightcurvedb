@@ -4,13 +4,15 @@ from collections import namedtuple
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.ext.serializer import loads
 from multiprocessing import Process, Event
+from .locking import QLPBarrier
+import logging
 
-
+logger = logging.getLogger('SQLWorker')
 Job = namedtuple('Job', ['source_process', 'job_id', 'job', 'is_done'])
 
 
 def make_job(job_id, source_process, work_to_do):
-    done_event = Event()
+    done_event = QLPBarrier(2)
     return Job(
         source_process=source_process,
         job_id=job_id,
@@ -33,15 +35,15 @@ class SQLWorker(Process):
         Session = scoped_session(factory)
 
         session = Session()
+        logger.info('Starting')
         while not self._sql_queue.empty():
             try:
                 job = self._sql_queue.get()
 
                 # We need to unpickle query object
                 q = loads(job.job, QLPModel.metadata, session)
-                self._resultant_queue.put(
-                    q.all()
-                )
+                logger.info('Processing {}'.format(q))
+                self._resultant_queue[job.job_id] = q.all()
             except Exception:
                 # Cowardly reset database state since we don't
                 # know what went wrong in this scope

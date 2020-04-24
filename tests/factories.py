@@ -33,7 +33,7 @@ celestial_degrees = floats(
 @define_strategy
 @composite
 def aperture(draw):
-    name = draw(from_regex(r'[aA]perture_[a-zA-Z0-9]+', fullmatch=True))
+    name = draw(from_regex(r'[aA]perture_[a-zA-Z0-9]{1,63}', fullmatch=True))
     star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))

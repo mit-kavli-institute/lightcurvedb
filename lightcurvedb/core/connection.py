@@ -21,6 +21,17 @@ from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_engine
 
 
+def engine_overrides(**engine_kwargs):
+    if 'pool_size' not in engine_kwargs:
+        engine_kwargs['pool_size'] = 12
+    if 'max_overflow' not in engine_kwargs:
+        engine_kwargs['max_overflow'] = 32
+    if 'pool_pre_ping' not in engine_kwargs:
+        engine_kwargs['pool_pre_ping'] = True
+    if 'poolclass' not in engine_kwargs:
+        engine_kwargs['poolclass'] = QueuePool
+    return engine_kwargs
+
 
 class DB(object):
     """Wrapper for SQLAlchemy sessions."""
@@ -29,13 +40,10 @@ class DB(object):
         if password and len(password) == 0:
             password = None
         self._url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
+        kwargs = engine_overrides(**engine_kwargs)
         self._engine = init_engine(
             self._url,
-            pool_size=48,
-            max_overflow=16,
-            poolclass=QueuePool,
-            pool_pre_ping=True,
-            **engine_kwargs
+            **kwargs
         )
         self.factory = sessionmaker(bind=self._engine)
         self.SessionClass = scoped_session(self.factory)
