@@ -11,6 +11,7 @@ from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
 from sqlalchemy.orm import scoped_session, sessionmaker, joinedload
+from sqlalchemy.engine.url import URL
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
@@ -20,25 +21,32 @@ from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_engine
 
 
+def engine_overrides(**engine_kwargs):
+    if 'pool_size' not in engine_kwargs:
+        engine_kwargs['pool_size'] = 12
+    if 'max_overflow' not in engine_kwargs:
+        engine_kwargs['max_overflow'] = 32
+    if 'pool_pre_ping' not in engine_kwargs:
+        engine_kwargs['pool_pre_ping'] = True
+    if 'poolclass' not in engine_kwargs:
+        engine_kwargs['poolclass'] = QueuePool
+    return engine_kwargs
+
 
 class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
     def __init__(self, username, password, db_name, db_host, db_type='postgresql+psycopg2', port=5432, **engine_kwargs):
-        self._uri = construct_uri(
-            username, password, db_name, db_host, db_type, port
-        )
+        if password and len(password) == 0:
+            password = None
+        self._url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
+        kwargs = engine_overrides(**engine_kwargs)
         self._engine = init_engine(
-            self._uri,
-            pool_size=48,
-            max_overflow=16,
-            poolclass=QueuePool,
-            pool_pre_ping=True,
-            **engine_kwargs
+            self._url,
+            **kwargs
         )
         self.factory = sessionmaker(bind=self._engine)
         self.SessionClass = scoped_session(self.factory)
-
 
         # Create any models which are not in the current PSQL schema
         self._session = None
@@ -82,10 +90,6 @@ class DB(object):
             raise RuntimeError(
                 'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
         return self._session
-
-    @property
-    def uri(self):
-        return self._uri
 
     @property
     def is_active(self):

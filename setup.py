@@ -8,7 +8,7 @@ with open('requirements.txt', 'rt') as f:
 
 setuptools.setup(
     name='lightcurvedb',
-    version='0.0.5',
+    version='0.0.6',
     author='William Fong',
     author_email='willfong@mit.edu',
     install_package_data=True,

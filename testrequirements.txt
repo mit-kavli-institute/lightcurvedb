@@ -11,3 +11,5 @@ h5py
 numba
 numpy
 pandas
+flake8
+isort

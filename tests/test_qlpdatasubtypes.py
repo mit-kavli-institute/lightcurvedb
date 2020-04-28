@@ -30,9 +30,11 @@ def test_frame_type_insertion(db_conn, frame_type):
         db_conn.session.rollback()
         raise
 
+
 @given(lightcurve_type_st())
 def test_lightcurve_type_creation(lightcurve_type):
     assert lightcurve_type.subtype == LightcurveType.__tablename__
+
 
 @given(lightcurve_type_st())
 def test_lightcurve_type_insertion(db_conn, lightcurve_type):
