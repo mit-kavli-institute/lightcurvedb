@@ -122,12 +122,12 @@ class Lightcurve(QLPModel):
         df = pd.DataFrame(
             index=self.cadences,
             data={
-                'bjd': self.bjd,
-                'values': self.values,
-                'errors': self.errors,
+                'bjd': self._bjd,
+                'values': self._values,
+                'errors': self._errors,
                 'x_centroids': self.x_centroids,
                 'y_centroids': self.y_centroids,
-                'quality_flags': self.quality_flags
+                'quality_flags': self._quality_flags
                 },
         )
         return df

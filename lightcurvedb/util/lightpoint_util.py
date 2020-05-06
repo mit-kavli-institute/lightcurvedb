@@ -16,23 +16,3 @@ def map_existing_lightcurves(db, tics):
         lightcurve_map[key] = lc.id
 
     return lightcurve_map
-
-
-def create_lightpoint_tmp_table(basename, metadata):
-    pid = os.getpid()
-    time = str(datetime.now()).replace(':', '_').replace('.','_').replace(' ', '_').replace('-','_')
-    name = '{}_{}'.format(basename, pid)
-    tmp_table = Table(
-        name,
-        metadata,
-        Column('cache_id', BigInteger, primary_key=True),
-        Column('lightcurve_id', BigInteger, index=True),
-        Column('cadence', Integer, index=True),
-        Column('barycentric_julian_date', DOUBLE_PRECISION, index=True),
-        Column('value', DOUBLE_PRECISION),
-        Column('error', DOUBLE_PRECISION),
-        Column('x_centroid', DOUBLE_PRECISION),
-        Column('y_centroid', DOUBLE_PRECISION),
-        Column('quality_flag', Integer),
-    )
-    return tmp_table

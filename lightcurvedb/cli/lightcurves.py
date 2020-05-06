@@ -6,6 +6,7 @@ import numpy as np
 import datetime
 import io
 import logging
+import re
 from datetime import datetime
 from random import sample
 from functools import partial
@@ -21,10 +22,8 @@ from lightcurvedb.core.base_model import QLPModel, QLPDataProduct
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_matrices
 from lightcurvedb.core.ingestors.lightpoint import get_raw_h5, get_cadence_info
-from lightcurvedb.util.logging import make_logger
 from lightcurvedb.util.iter import partition, chunkify, partition_by
 from lightcurvedb.util.merge import matrix_merge
-from lightcurvedb.util.lightpoint_util import map_existing_lightcurves, create_lightpoint_tmp_table
 from lightcurvedb.reportings.lightcurve_ingest_report import IngestReport
 from lightcurvedb.core.connection import db_from_config
 from glob import glob
@@ -33,8 +32,9 @@ from .base import lcdbcli
 from .utils import find_h5
 from .types import CommaList
  
-logging.getLogger('sqlalchemy.dialects.postgresql').setLevel(logging.INFO)
-logger = make_logger('H5 Ingestor')
+logger = logging.getLogger(__name__)
+
+
 @lcdbcli.group()
 @click.pass_context
 def lightcurve(ctx):
@@ -46,6 +46,13 @@ def determine_orbit_path(orbit_dir, orbit, cam, ccd):
     cam_name = 'cam{}'.format(cam)
     ccd_name = 'ccd{}'.format(ccd)
     return os.path.join(orbit_dir, orbit_name, 'ffi', cam_name, ccd_name, 'LC')
+
+def determine_h5_path_components(h5path):
+    search = r'orbit-(?P<orbit>[1-9][0-9]*)/ffi/cam(?P<camera>[1-4])/ccd(?P<ccd>[1-4])/LC/(?P<tic>[1-9][0-9]*)\.h5$'
+    match = re.match(search, h5path)
+    if match:
+        return match.groupdict()
+    return None
 
 def extr_tic(filepath):
     return int(os.path.basename(filepath).split('.')[0])
@@ -67,77 +74,148 @@ def map_lightcurves(session, tics):
         Lightcurve.tic_id.in_(tics)
     ).execution_options(stream_results=True, max_row_buffer=len(tics)*10)
     return {
-        make_lc_key(lc): lc for lc in q.all()
+            make_lc_key(lc): {'__data': lc.to_df, '_id': lc.id} for lc in q.all()
     }
 
 def ingest_files(config, cadence_type, lc_type_map, aperture_map, job):
     pid = os.getpid()
-    new_lcs = {}
     tics = job['tics']
     files_by_tic = job['files_by_tic']
     worker_name = f'Worker-{pid}'
     qlp_id_seq = Sequence('qlpdataproducts_pk_table')
+    logger.info(f'Worker-{pid} initialized')
+    quality_flag_map = {}
+
+    n_inserted = 0
+    n_updated = 0
+
     with db_from_config(config, server_side_cursors=True) as db:
-        logger.info(f'{worker_name}: connected to db, preparing query for {len(tics)} tics')
-        lightcurve_map = map_lightcurves(db.session, tics)
-        logger.info(f'{worker_name}: created lightcurve_map with {len(lightcurve_map)} entries')
+        logger.info(f'{worker_name}: connected to db')
         logger.info(f'{worker_name}: processing files...')
-        for f in itertools.chain(*files_by_tic):
-            h5 = get_raw_h5(f)
-            for raw_lc in h5:
-                type_id = lc_type_map[raw_lc['lc_type']]
-                aperture_id = aperture_map[raw_lc['aperture']]
-                tic = raw_lc['tic']
-                data = raw_lc['data']
-                length = data.shape[1]
-                key = (tic, type_id, aperture_id, cadence_type)
+        for chunk_i, chunk in enumerate(chunkify(files_by_tic, 1000)):
+            tics = {extr_tic(f) for f in itertools.chain(*chunk)}
+            lightcurve_map = map_lightcurves(db.session, tics)
+            logger.info(f'Worker-{pid}: operating on chunk {chunk_i + 1} with length {len(chunk)}')
+            logger.info(f'{worker_name}: created lightcurve_map with {len(lightcurve_map)} entries')
+            new_lcs = {}
+            for f in itertools.chain(*chunk):
+                file_context = determine_h5_path_components(f)
+                if file_context is None:
+                    continue
+                orbit = file_context['orbit']
+                camera = file_context['camera']
+                ccd = file_context['ccd']
+                tic = file_context['tic']
 
-                if key in lightcurve_map:
-                    # Merge lightcurve
-                    prev_data = lightcurve_map[key]
-                    #merge_lc_dict(prev_data, data)
-                else:
-                    # Brand new lightcurve
-                    if key in new_lcs:
-                        merge_lc(new_lcs[key], data)
+                h5 = get_raw_h5(f)
+                qflag_key = (
+                    orbit, camera, ccd
+                )
+
+                try:
+                    quality_flags = quality_flag_map[(orbit, camera, ccd)]
+                except KeyError:
+                    quality_flags = pd.DataFrame(
+                        os.path.join(
+                            '/',
+                            'pdo',
+                            'qlp-data',
+                            f'orbit-{orbit}',
+                            'ffi',
+                            'run',
+                            f'cam{cam}ccd{ccd}_qflag.txt'
+                        ),
+                        sep=' ', header=0, names=['cadences', 'quality_flags'],
+                        index_col='cadences', dtype=int
+                    )
+                    quality_flag_map[(orbit, camera, ccd)] = quality_flags
+
+                for raw_lc in h5:
+                    type_id = lc_type_map[raw_lc['lc_type']]
+                    aperture_id = aperture_map[raw_lc['aperture']]
+                    tic = raw_lc['tic']
+                    data = raw_lc['data']
+                    length = data.shape[1]
+                    key = (tic, type_id, aperture_id, cadence_type)
+
+                    new_lc_df = pd.DataFrame({
+                        'cadences': data[0],
+                        'bjd': data[1],
+                        'values': data[2],
+                        'errors': data[3],
+                        'x_centroids': data[4],
+                        'y_centroids': data[5],
+                        'quality_flags': data[6]
+                    })
+
+                    new_lc_df['quality_flags'] = quality_flags[new_lc_df.index]['quality_flags']
+                    if key in lightcurve_map:
+                        # Merge lightcurve
+                        merged = pd.concat(lightcurve_map[key]['__data'], new_lc_df)
+                        merged[~merged.index.duplicated(keep='last')]
+                        lightcurve_map[key]['__data'] = merged
                     else:
-                        new_lc = {
-                            'id': db.session.execute(qlp_id_seq),
-                            'tic_id': tic,
-                            'cadence_type': cadence_type,
-                            'aperture_id': aperture_id,
-                            'lightcurve_type_id': type_id,
-                            '_cadences': data[0],
-                            '_bjd': data[1],
-                            '_values': data[2],
-                            '_errors': data[3],
-                            '_x_centroids': data[4],
-                            '_y_centroids': data[5],
-                            '_quality_flags': data[6],
-                        }
-                        new_lcs[key] = new_lc
+                        # Brand new lightcurve
+                        if key in new_lcs:
+                            merged = pd.concat(new_lcs[key]['__data'], new_lc_df)
+                            merged = merged[~merged.index.duplicated(keep='last')]
+                            merged.sort_index(inplace=True)
+                            new_lcs['key']['__data'] = merged
+                        else:
+                            new_lc = {
+                                'id': db.session.execute(qlp_id_seq),
+                                'tic_id': tic,
+                                'cadence_type': cadence_type,
+                                'aperture_id': aperture_id,
+                                'lightcurve_type_id': type_id,
+                                '__data': new_lc_df
+                            }
+                            new_lcs[key] = new_lc
 
-        logger.info(f'{worker_name}: inserting lightcurves and qlpdataproducts')
-        for chunk in chunkify(new_lcs.values(), 10000):
-            inheritance_mappings = [
-                {
-                    'id': lc['id'],
-                    'created_on': datetime.now(),
-                    'product_type': Lightcurve.__tablename__
-                }
-                for lc in chunk
-            ]
-            for kwargs in chunk:
-                for kwarg in ['cadences', 'barycentric_julian_date', 'values', 'errors', 'x_centroids', 'y_centroids', 'quality_flags']:
-                    kwarg[kwarg] = kwargs[kwarg].tolist()
+            logger.info(f'{worker_name}: inserting lightcurves and qlpdataproducts')
+            for new_lc_chunk in chunkify(new_lcs.values(), 10000):
+                inheritance_mappings = [
+                    {
+                        'id': lc['id'],
+                        'created_on': datetime.now(),
+                        'product_type': Lightcurve.__tablename__
+                    }
+                    for lc in new_lc_chunk
+                ]
+                for kwargs in new_lc_chunk:
+                    kwargs['_cadences'] = kwargs['__data'].index
+                    for kwarg in ['bjd', 'values', 'errors', 'x_centroids', 'y_centroids', 'quality_flags']:
+                        kwargs[f'_{kwarg}'] = kwargs['__data'][kwarg].tolist()
+                    del kwargs['__data']
 
-            db.session.bulk_insert_mappings(QLPDataProduct, inheritance_mappings)
-            db.session.bulk_insert_mappings(Lightcurve, chunk)
-            logger.info(f'{worker_name}: Inserted {len(inhertiance_mappings)} QLPDataProducts')
-            logger.info(f'{worker_name}: Inserted {len(chunk)} new lightcurves')
-        db.session.commit()
-        logger.info(f'{worker_name}: done')
-    return {'n_inserted': len(new_lcs), 'n_merged': len(lightcurve_map)}
+                db.session.bulk_insert_mappings(QLPDataProduct, inheritance_mappings)
+                db.session.bulk_insert_mappings(Lightcurve, new_lc_chunk)
+                db.session.flush()
+
+                n_inserted += len(new_lc_chunk)
+
+            for update_lc_chunk in chunkify(lightcurve_map.values(), 10000):
+                for kwargs in update_lc_chunk:
+                    mapping = {
+                        'cadences': bindparam('_cadences'),
+                        'barycentric_julian_date': bindparam('_bjd')
+                    }
+                    kwargs['_cadences'] = kwargs['__data'].index
+                    kwargs['_bjd'] = kwargs['__data']['bjd'].tolist()
+                    for kwarg in ['values', 'errors', 'x_centroids', 'y_centroids', 'quality_flags']:
+                        kwargs[f'_{kwarg}'] = kwargs['__data'][kwarg].tolist()
+                        mapping[kwarg] = bindparam(f'_{kwarg}')
+                    del kwargs['__data']
+                update_q = Lightcurve.__table__.update().\
+                    where(Lightcurve.id == bindparam('_id')).\
+                    values(mapping)
+                db.session.execute(update_q, update_lc_chunk)
+                db.session.flush()
+                n_updated += len(update_lc_chunk)
+
+            db.session.commit()
+            logger.info(f'{worker_name}: done')
+    return {'n_inserted': n_inserted, 'n_merged': n_updated}
 
 
 def merge_lc(lc, new_data):
@@ -223,13 +301,9 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             all_tics |= tics
 
         click.echo(f'Made {len(jobs)} partitions')
-        click.echo(f'Pool will process {len(tics)} tics')
+        click.echo(f'Pool will process {len(all_tics)} tics')
 
-        if not ctx.obj['dryrun']:
-            prompt = click.style('Does this information look ok?', bold=True)
-            click.confirm(prompt, abort=True)
-            click.echo('\tBeginning interpretation of new lightcurves')
-        else:
+        if ctx.obj['dryrun']:
             return
 
         func = partial(
@@ -263,20 +337,3 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, cadence_type, n_
             db.session.rollback()
             raise
 
-@lightcurve.command()
-@click.pass_context
-@click.argument('orbits', type=int, nargs=-1)
-@click.option('--cameras', type=CommaList(int), default='1,2,3,4')
-@click.option('--ccds', type=CommaList(int), default='1,2,3,4')
-def ingest_quality_flags(ctx, orbits, cameras, ccds):
-    with ctx.obj['dbconf'] as db:
-        orbits = orbit.orbits.filter(Orbit.orbit_number.in_(orbits)).all()
-
-        for orbit, camera, ccd in itertools.product(orbits, cameras, ccds):
-            run_path = os.path.join(
-                ctx['qlp_data'],
-                'orbit-{}'.format(orbit.orbit_number),
-                'ffi', 'run')
-            qflagfile = f'cam{camera}ccd{ccd}_qflag.txt'
-            path = os.path.join(run_path, qflagfile)
-            pass
