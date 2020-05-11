@@ -28,12 +28,15 @@ class Aperture(QLPReference):
     lightcurves = relationship('Lightcurve', back_populates='aperture')
 
     def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return '<Aperture {} {} >'.format(self.name, self.format())
+
+    def format(self):
         return '{}:{}:{}'.format(
             self.star_radius, self.inner_radius, self.outer_radius
         )
-
-    def __repr__(self):
-        return '<Aperture {} {} >'.format(self.name, str(self))
 
     @hybrid_property
     def star_r(self):

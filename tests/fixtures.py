@@ -15,3 +15,7 @@ def db_conn():
         db.close()
         raise
     db.close()
+
+def clear_all():
+    for tbl in reversed(QLPModel.metadata.sorted_tables):
+        yield tbl.delete()

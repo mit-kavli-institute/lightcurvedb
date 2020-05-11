@@ -19,6 +19,7 @@ from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_engine
+from lightcurvedb.managers.mass_upserts import MassUpsert
 
 
 def engine_overrides(**engine_kwargs):
@@ -52,6 +53,8 @@ class DB(object):
         self._session = None
         self._active = False
         self._config = None
+
+        self.mass_updater = MassUpsert.init_with_base()
 
     def __enter__(self):
         """Enter into the contejmxt of a SQLAlchemy open session"""

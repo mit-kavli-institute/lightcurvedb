@@ -33,7 +33,7 @@ celestial_degrees = floats(
 @define_strategy
 @composite
 def aperture(draw):
-    name = draw(from_regex(r'[aA]perture_[a-zA-Z0-9]{1,63}', fullmatch=True))
+    name = draw(from_regex(r'[aA]perture_[a-zA-Z0-9]{1,25}', fullmatch=True))
     star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
@@ -107,35 +107,29 @@ def frame(draw, **overrides):
     )
     return frame
 
-@define_strategy
-@composite
-def lightpoint(draw, **overrides):
-    lightpoint = models.Lightpoint(
-        cadence=draw(overrides.pop('cadence', integers(min_value=1, max_value=PSQL_INT_MAX))),
-        barycentric_julian_date=draw(overrides.pop('bjd', floats(allow_nan=False, allow_infinity=False))),
-        value=draw(overrides.pop('value', floats())),
-        error=draw(overrides.pop('error', floats())),
-        x_centroid=draw(overrides.pop('x_centroid', floats(allow_nan=False, allow_infinity=False))),
-        y_centroid=draw(overrides.pop('x_centroid', floats(allow_nan=False, allow_infinity=False))),
-        quality_flag=draw(overrides.pop('quality_flag', integers(min_value=1, max_value=PSQL_INT_MAX)))
-    )
-
-    return lightpoint
-
 
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    length = draw(overrides.pop('length', integers(min_value=0, max_value=10)))
+    length = draw(overrides.pop('length', integers(min_value=1, max_value=10)))
+
+    __floating__arr = draw(np_st.arrays(np.float32, (5, length)))
+
     cadences = draw(np_st.arrays(np.int32, length, unique=True))
-    bjd = draw(np_st.arrays(np.float32, length))
-    values = draw(np_st.arrays(np.float32, length))
-    errors = draw(np_st.arrays(np.float32, length))
-    x_centroids = draw(np_st.arrays(np.float32, length))
-    y_centroids = draw(np_st.arrays(np.float32, length))
+    bjd = __floating__arr[0]
+    values = __floating__arr[1]
+    errors = __floating__arr[2]
+    x_centroids = __floating__arr[3]
+    y_centroids = __floating__arr[4]
     quality_flags = draw(np_st.arrays(np.int32, length))
 
+    tic_id = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
+    cadence_type = draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767)))
+    lc_type = draw(overrides.pop('lightcurve_type', lightcurve_type()))
+    ap = draw(overrides.pop('aperture', aperture()))
+
     return models.Lightcurve(
+        id=draw(overrides.pop('with_id', none())),
         cadences=cadences,
         bjd=bjd,
         values=values,
@@ -143,9 +137,9 @@ def lightcurve(draw, **overrides):
         x_centroids=x_centroids,
         y_centroids=y_centroids,
         quality_flags=quality_flags,
-        tic_id=draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX))),
-        cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
-        lightcurve_type=draw(overrides.pop('lightcurve_type', lightcurve_type())),
-        aperture=draw(overrides.pop('aperture', aperture()))
+        tic_id=tic_id,
+        cadence_type=cadence_type,
+        lightcurve_type=lc_type,
+        aperture=ap
     )
 
