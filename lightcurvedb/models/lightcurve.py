@@ -10,8 +10,16 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql import select, func
+from sqlalchemy.sql.expression import bindparam
+from psycopg2.extensions import AsIs, register_adapter
 import numpy as np
 import pandas as pd
+
+
+def addapt_int64(numpy_int64):
+    return AsIs(numpy_int64)
+
+register_adapter(np.int64, addapt_int64)
 
 
 class LightcurveType(QLPDataSubType):
@@ -19,6 +27,12 @@ class LightcurveType(QLPDataSubType):
     __tablename__ = 'lightcurvetypes'
 
     lightcurves = relationship('Lightcurve', back_populates='lightcurve_type')
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return '<Lightcurve Type {} >'.format(self.name)
 
 
 class LightcurveFrameMap(QLPModel):
@@ -222,6 +236,19 @@ class Lightcurve(QLPModel):
         if isinstance(value, np.ndarray):
             value = value.tolist()
         self._quality_flags = value
+
+    @classmethod
+    def create_mappings(cls, **mappings):
+        mapping = {}
+        for field, binding in mappings.items():
+            if binding is None:
+                # If binding is None, do not map to the field
+                continue
+            mapper_field = '{}'.format(field)
+            binding = bindparam(binding)
+            mapping[mapper_field] = binding
+
+        return mapping
 
 
     # Foreign Keys

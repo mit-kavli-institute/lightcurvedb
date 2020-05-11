@@ -2,14 +2,19 @@ from collections import defaultdict
 from functools import partial
 import os
 import multiprocessing as mp
-from multiprocessing.managers import SyncManager
-from .sql_worker import SQLWorker, Job
-from .locking import QLPBarrier
+from itertools import groupby
 from sqlalchemy.ext.serializer import dumps
-import logging
+from sqlalchemy.sql.expression import bindparam
+from sqlalchemy.dialects.postgresql import insert
+from lightcurvedb.exceptions import LightcurveDBException
+from lightcurvedb.models import Lightcurve
 
 
-logger = logging.getLogger('Manager')
+class DuplicateEntryException(LightcurveDBException):
+    """Raised when attempting to add a lightcurve which already
+    exists in a LightcurveManager context.
+    """
+    pass
 
 
 def set_dict():
@@ -22,7 +27,7 @@ class LightcurveManager(object):
     lists of lightcurve objects.
     """
 
-    def __init__(self, lightcurves):
+    def __init__(self, lightcurves, internal_session=None):
         """__init__.
 
         Parameters
@@ -35,11 +40,31 @@ class LightcurveManager(object):
         self.types = set_dict()
         self.id_map = dict()
 
+        self.aperture_defs = {}
+        self.type_defs = {}
+
+        self._to_add = list()
+        self._to_update = list()
+        self._to_upsert = list()
+
+        if internal_session:
+            self.aperture_defs = {
+                ap.name: ap for ap in internal_session.apertures.all()
+            }
+            self.type_defs = {
+                t.name: t for t in internal_session.lightcurve_types.all()
+            }
+        self.internal_session = internal_session
+
+
         for lightcurve in lightcurves:
             self.tics[lightcurve.tic_id].add(lightcurve.id)
             self.apertures[lightcurve.aperture.name].add(lightcurve.id)
             self.types[lightcurve.lightcurve_type.name].add(lightcurve.id)
             self.id_map[lightcurve.id] = lightcurve
+
+            self.aperture_defs[lightcurve.aperture.name] = lightcurve.aperture
+            self.type_defs[lightcurve.lightcurve_type.name] = lightcurve.lightcurve_type
 
         self.searchables = (
             self.tics,
@@ -87,149 +112,230 @@ class LightcurveManager(object):
         """
         return iter(self.id_map.values())
 
+    def resolve_id(self, tic_id, aperture, lightcurve_type):
+        lc_by_tics = self.tics.get(tic_id, set())
+        if isinstance(aperture, str):
+            lc_by_aps = self.apertures.get(aperture, set())
+        else:
+            lc_by_aps = self.apertures.get(aperture.name, set())
+        if isinstance(lightcurve_type, str):
+            lc_by_types = self.types.get(lightcurve_type, set())
+        else:
+            lc_by_types = self.types.get(lightcurve_type.name, set())
 
-class LightcurveDaemon(object):
-    """LightcurveDaemon.
-    """
-    def __init__(self, session, max_queue=0, n_psql_workers=1):
-        """__init__.
+        try:
+            return set.union(lc_by_tics, lc_by_aps, lc_by_types).pop()
+        except KeyError:
+            # Nothing to resolve
+            return None
 
-        Parameters
-        ----------
-        session :
-            DB object to give to workers
-        max_queue :
-            Maximum Query Queue size before blocks occur
-        n_psql_workers :
-            Number of PSQL workers. Anything < 1 will throw
-            a ValueError
+    def clear_tracked(self):
+        self._to_add = list()
+        self._to_update = list()
+        self._to_upsert = list()
 
-        Raises
-        ------
-        ValueError :
-            A ValueError is raised if n_psql_workers is < 1
+    def add(self, tic_id, aperture, lightcurve_type, **data):
+        """Adds a new lightcurve to the manager. This will create a new
+        Lightcurve model instance and track it for batch insertions.
+
+        Arguments:
+            tic_id {int} -- The TIC Number for the new Lightcurve
+            aperture {str, Aperture} -- The aperture to be linked
+            lightcurve_type {str, LightcurveType} -- The type of lightcurve
+
+        Raises:
+            DuplicateEntryException: Raised when attempting to add a
+            lightcurve that already contains the same tic, aperture, and type
+            in order to avoid a PSQL Unique Contraint violation that will
+            invalidate mass queries. Caveat: will only catch unique constraint
+            violations within this Manager instance's context.
         """
-        if n_psql_workers < 1:
-            raise ValueError(
-                'Number of PSQL workers cannot be < 1. Given {}'.format(
-                    n_psql_workers
+        try:
+            assert self.resolve_id(tic_id, aperture, lightcurve_type) is None
+        except AssertionError:
+            raise DuplicateEntryException(
+                '{} already exists in the manager'.format(
+                    (tic_id, aperture, lightcurve_type)
                 )
+             )
+
+        # Past this point we are guaranteed a unique lightcurve (in the
+        # context of the current manager context)
+        new_lc = {
+            'tic_id': tic_id,
+            'aperture_id': self.aperture_defs[str(aperture)].id,
+            'lightcurve_type_id': self.type_defs[str(lightcurve_type)].id,
+            'cadence_type': 30,
+        }
+        new_lc.update(data)
+        self._to_add.append(new_lc)
+        
+
+    def update(self, tic_id, aperture, lightcurve_type, **data):
+        """Updates a lightcurve with the given tic, aperture, and type.
+        **data will apply keyword assignments to the lightcurve.
+
+        Any updates will set the manager to track the target for updating.
+
+        See the lightcurve model docs to see what fields can be assigned
+        using keyword arguments
+
+        Arguments:
+            tic_id {int} -- The TIC of the target you want to update
+            aperture {str, Aperture} -- The aperture of the target
+            lightcurve_type {str, LightcurveType} -- The lightcurve type of
+                the target
+        """
+        lc_to_find = self.resolve_id(tic_id, aperture, lightcurve_type)
+        self.update_w_id(lc_to_find, **data)
+        
+    def update_w_id(self, id, **data):
+        """Updates a lightcurve with the given PSQL id.
+        **data will apply assignments via keyword to the lightcurve.
+
+        Any updates will set the manager to track the target for updating.
+
+        See the lightcurve model docs to see what fields can be assigned
+        using keyword arguments.
+
+        Arguments:
+            id {int} -- The given PSQL integer for the lightcurve
+
+        Returns:
+            Lightcurve -- The updated lightcurve
+        """
+        
+        params = {'_id': id}
+        params.update(data)
+        self._to_update.append(params)
+
+    def upsert(self, tic_id, aperture, lightcurve_type, **data):
+        values = data
+        values['tic_id'] = tic_id
+        values['aperture_id'] = self.aperture_defs[str(aperture)].id
+        values['lightcurve_type'] = self.type_defs[str(lightcurve_type)].id
+
+        self._to_upsert.append(values)
+
+    def update_q(
+        self,
+        id_bind='_id',
+        cadences='cadences',
+        barycentric_julian_date='bjd',
+        values='values',
+        errors='errors',
+        x_centroids='x_centroids',
+        y_centroids='y_centroids',
+        quality_flags='quality_flags'):
+
+        mappings = Lightcurve.create_mappings(
+            cadences=cadences,
+            barycentric_julian_date=barycentric_julian_date,
+            values=values,
+            errors=errors,
+            x_centroids=x_centroids,
+            y_centroids=y_centroids,
+            quality_flags=quality_flags
+        )
+
+        q = Lightcurve.__table__.update()\
+            .where(
+                Lightcurve.id == bindparam(id_bind)
+            ).values(mappings)
+        raise NotImplementedError
+
+    def insert_q(
+        self,
+        id_bind='_id',
+        cadences='cadences',
+        barycentric_julian_date='bjd',
+        values='values',
+        errors='errors',
+        x_centroids='x_centroids',
+        y_centroids='y_centroids',
+        quality_flags='quality_flags'):
+
+        mappings = Lightcurve.create_mappings(
+            cadences=cadences,
+            barycentric_julian_date=barycentric_julian_date,
+            values=values,
+            errors=errors,
+            x_centroids=x_centroids,
+            y_centroids=y_centroids,
+            quality_flags=quality_flags
+        )
+
+        q = Lightcurve.__table__.insert().values(mappings)
+        return q
+
+    def upsert_q(
+        self,
+        aperture_bind='aperture',
+        lightcurve_type_bind='lightcurve_type',
+        tic_id_bind='tic_id',
+        cadences='cadences',
+        barycentric_julian_date='bjd',
+        values='values',
+        errors='errors',
+        x_centroids='x_centroids',
+        y_centroids='y_centroids',
+        quality_flags='quality_flags'):
+
+
+        mappings = Lightcurve.create_mappings(
+            cadences=cadences,
+            barycentric_julian_date=barycentric_julian_date,
+            values=values,
+            errors=errors,
+            x_centroids=x_centroids,
+            y_centroids=y_centroids,
+            quality_flags=quality_flags
+        )
+
+        q = insert(Lightcurve.__table__)\
+            .values(
+                mappings
+            ).on_conflict_do_update(
+                constraint=Lightcurve.__table_args__[0],
+                set_=mappings
             )
-        self._session = session
-        self._sync = SyncManager()
-        self._query_queue = mp.JoinableQueue(max_queue)
-        self._n_psql_workers = n_psql_workers
-        self._resultant_queue = None
-        self._processes = []
+        return q
 
-        # Internal bookkeeping
-        self._process_map = defaultdict(int)
-        self._process_job_map = {}
 
-    def open(self):
-        """open.
+    def execute(self, session=None):
+        insert_q = self.insert_q()
+        upsert_q = self.upsert_q()
 
-        Prepares the LightcurveDaemon to receive jobs. Spawns the specified
-        number of processes to consume SQL jobs.
-        """
-        pid = os.getpid()
-        self._sync.start()
-        self._resultant_queue = self._sync.dict()
-        self._processes = [
-            SQLWorker(
-                self._session._url,
-                self._query_queue,
-                self._resultant_queue,
-                name='Worker[{}]-{}'.format(pid, p),
-                daemon=True
+        if session is None:
+            session = self.internal_session
+
+        if len(self._to_add) > 0:
+            session.session.execute(
+                insert_q, self._to_add
             )
-            for p in range(self._n_psql_workers)
-        ]
 
-        for p in self._processes:
-            p.start()
+        if len(self._to_update) > 0:
+            # We need to group alike parameters and perform separate updates
+            groups = groupby(self._to_update, lambda param: set(param.keys()))
 
-        logger.info('Manager started {} workers'.format(len(self._processes)))
+            for params, values in groups:
+                # Create a binding
+                mapping = {}
+                for param in params:
+                    if param == 'bjd':
+                        mapping['barycentric_julian_date'] = bindparam('bjd')
+                    elif param == '_id':
+                        continue
+                    else:
+                        mapping[param] = bindparam(param)
+                q = Lightcurve.__table__.update().where(
+                    Lightcurve.id == bindparam('_id')
+                    ).values(mapping)
+                session.session.execute(q, list(values))
 
-    def close(self):
-        """close.
-        Signals the job queues that no more input will be given.
-        The job queue will join and wait for any remaining jobs.
-        Finally all processes will be joined and disposed of.
-        """
-        for p in self._processes:
-            self.job_queue.join()
-            p.join()
-        self._processes = []
+        if len(self._to_upsert) > 0:
+            session.session.execute(
+                upsert_q, self._to_upsert
+            )
 
-    def _make_job(self, job_id, source_process, q):
-        serialized_q = dumps(q)
-        job = Job(
-            source_process,
-            job_id,
-            serialized_q,
-            self._sync.Event()
-        )
-        logger.info('Manager received {} from {}'.format(job, source_process))
-        return job
-
-    def push(self, q):
-        source_process = os.getpid()
-        nth_job = self._process_map[source_process]
-        job_id = 'job-{}-process-{}'.format(
-            nth_job,
-            source_process
-        )
-        job = self._make_job(
-            job_id,
-            source_process,
-            q
-        )
-        self._process_map[job_id] = job
-        self.job_queue.put(job)
-
-        self._process_map[source_process] += 1
-        return job.job_id
-
-
-    def get(self, job_reference):
-        result = self._process_map[job_reference]
-        result.is_done.wait()
-        return self._process_map.pop(job_reference)
-
-    @property
-    def job_queue(self):
-        """job_queue.
-        """
-        return self._query_queue
-
-    @property
-    def result_queue(self):
-        """result_queue.
-        """
-        return self._resultant_queue
-
-    def __enter__(self):
-        """__enter__.
-        Allows for contextual "opening" of a daemon for easy
-        bookkeeping.
-        """
-        self.open()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """__exit__.
-        Allows for contextual "exiting" of a daemon for easy
-        bookkeeping.
-
-        Parameters
-        ----------
-        exc_type :
-            exc_type
-        exc_value :
-            exc_value
-        traceback :
-            traceback
-        """
-        self.close()
-        return self
+        self.clear_tracked()
