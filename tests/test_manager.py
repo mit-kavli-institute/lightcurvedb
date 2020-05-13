@@ -1,5 +1,6 @@
 from hypothesis import given, note, assume, settings, HealthCheck
 from hypothesis import strategies as st
+from hypothesis.extra import numpy as np_st
 from .factories import lightcurve as lightcurve_st
 from .fixtures import db_conn, clear_all
 from .util import arr_equal
