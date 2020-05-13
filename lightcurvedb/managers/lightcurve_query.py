@@ -210,11 +210,11 @@ class LightcurveManager(object):
         self._to_update.append(params)
 
     def upsert(self, tic_id, aperture, lightcurve_type, **data):
-        values = data
+        values = {}
         values['tic_id'] = tic_id
         values['aperture_id'] = self.aperture_defs[str(aperture)].id
-        values['lightcurve_type'] = self.type_defs[str(lightcurve_type)].id
-
+        values['lightcurve_type_id'] = self.type_defs[str(lightcurve_type)].id
+        values.update(data)
         self._to_upsert.append(values)
 
     def update_q(

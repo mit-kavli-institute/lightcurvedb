@@ -2,7 +2,7 @@ from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.util.merge import matrix_merge
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
-                        String, inspect, cast)
+                        String, inspect, cast, Sequence)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -57,10 +57,10 @@ class Lightcurve(QLPModel):
     __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
-        UniqueConstraint('cadence_type', 'lightcurve_type_id', 'aperture_id', 'tic_id'),
+        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id'),
     )
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, Sequence('lightcurve_id_seq', cache=10**6),primary_key=True)
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
 

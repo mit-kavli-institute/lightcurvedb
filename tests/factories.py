@@ -38,8 +38,6 @@ def aperture(draw):
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
 
-    assume(inner_radius < outer_radius)
-
     aperture = models.Aperture(
         name=name,
         star_radius=star_radius,
