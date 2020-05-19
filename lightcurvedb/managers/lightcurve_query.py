@@ -17,6 +17,12 @@ class DuplicateEntryException(LightcurveDBException):
     pass
 
 
+class IncongruentLightcurve(LightcurveDBException):
+    """Raised when attempting to modify a lightcurve in a way such that
+    its internal arrays become misaligned"""
+    pass
+
+
 def set_dict():
     """Helper to create default dictionaries with set objects"""
     return defaultdict(set)
@@ -26,6 +32,15 @@ class LightcurveManager(object):
     """LightcurveManager. A class to help manager and keep track of
     lists of lightcurve objects.
     """
+
+    array_attrs = [
+        'cadences',
+        'bjd',
+        'values',
+        'errors',
+        'x_centroids',
+        'y_centroids',
+        'quality_flags']
 
     def __init__(self, lightcurves, internal_session=None):
         """__init__.
@@ -112,6 +127,15 @@ class LightcurveManager(object):
         """
         return iter(self.id_map.values())
 
+
+    def __validate__(self, **data):
+        lengths = map(len, (data[attr] for attr in self.array_attrs if attr in data))
+        length_0 = next(lengths)
+        if not all(l == length_0 for l in lengths):
+            raise IncongruentLightcurve(
+                'Lightcurve is being improperly modified with array lengths {}'.format(lengths)
+            )
+
     def resolve_id(self, tic_id, aperture, lightcurve_type):
         lc_by_tics = self.tics.get(tic_id, set())
         if isinstance(aperture, str):
@@ -158,6 +182,7 @@ class LightcurveManager(object):
                     (tic_id, aperture, lightcurve_type)
                 )
              )
+        self.__validate__(**data)
 
         # Past this point we are guaranteed a unique lightcurve (in the
         # context of the current manager context)
@@ -205,16 +230,19 @@ class LightcurveManager(object):
             Lightcurve -- The updated lightcurve
         """
         
+        self.__validate__(**data)
         params = {'_id': id}
         params.update(data)
         self._to_update.append(params)
 
     def upsert(self, tic_id, aperture, lightcurve_type, **data):
-        values = data
+
+        self.__validate__(**data)
+        values = {}
         values['tic_id'] = tic_id
         values['aperture_id'] = self.aperture_defs[str(aperture)].id
-        values['lightcurve_type'] = self.type_defs[str(lightcurve_type)].id
-
+        values['lightcurve_type_id'] = self.type_defs[str(lightcurve_type)].id
+        values.update(data)
         self._to_upsert.append(values)
 
     def update_q(
