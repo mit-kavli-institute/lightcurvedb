@@ -143,3 +143,18 @@ def lightcurve(draw, **overrides):
         aperture=ap
     )
 
+
+@define_strategy
+@composite
+def observation(draw, **overrides):
+    tic_id = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
+    camera = draw(overrides.pop('camera', integers(min_value=1, max_value=4)))
+    ccd = draw(overrides.pop('ccd', integers(min_value=1, max_value=4)))
+
+    return models.Observation(
+        tic_id=tic_id,
+        camera=camera,
+        ccd=ccd,
+        orbit=draw(overrides.pop('orbit', orbit()))
+    )
+

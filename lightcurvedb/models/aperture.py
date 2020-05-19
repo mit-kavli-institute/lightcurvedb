@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric
+from sqlalchemy import Column, Integer, String, Float, Numeric, Sequence
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.schema import UniqueConstraint, CheckConstraint
@@ -19,7 +19,7 @@ class Aperture(QLPReference):
     )
 
     # Model Attributes
-    name = Column(String(64), unique=True, nullable=False)
+    name = Column(String(64), primary_key=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)
     outer_radius = Column(Numeric, nullable=False)

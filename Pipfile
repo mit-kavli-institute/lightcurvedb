@@ -24,6 +24,11 @@ pandas = "*"
 cython = "*"
 alembic = "*"
 h5py = "*"
+llvmlite = "*"
+isort = "*"
+flake8 = "*"
+coverage = "*"
+doq = "*"
 
 [requires]
 python_version = "3.7"

@@ -94,6 +94,9 @@ class DB(object):
                 'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
         return self._session
 
+    def query(self, *args, **kwargs):
+        return self._session.query(*args, **kwargs)
+
     @property
     def is_active(self):
         return self._active
@@ -178,6 +181,29 @@ class DB(object):
         )
         mq.mass_insert(tics)
         return mq.execute()
+
+    def lightcurves_by_observation(self, orbit, camera=None, ccd=None):
+        """
+            Retrieve lightcurves that have been observed in the given orbit.
+            This method can also filter by camera and ccd,
+
+            Arguments:
+                orbit {int, Orbit} -- The orbit to filter on. Can pass an
+                integer representing the orbit number or an Orbit instance
+                itself.
+                camera {int} -- Filter by camera
+                ccd {int} -- Filter by ccd
+        """
+        q = self.lightcurves.join(
+            models.Observation,
+            models.Lightcurve.tic_id == models.Observation.tic_id
+        )
+        if camera:
+            q = q.filter(Observation.camera == camera)
+        if ccd:
+            q = q.filter(Observation.ccd == ccd)
+
+        return q.all()
 
     def commit(self):
         self._session.commit()

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, Boolean
+from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, Boolean, Sequence
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
@@ -12,6 +12,7 @@ class Orbit(QLPReference):
     __tablename__ = 'orbits'
 
     # Model Attributes
+    id = Column(Integer, Sequence('orbit_id_seq'), primary_key=True)
     orbit_number = Column(Integer, unique=True, nullable=False)
     sector = Column(Integer, nullable=False)
 
@@ -30,6 +31,7 @@ class Orbit(QLPReference):
 
     # Relationships
     frames = relationship('Frame', back_populates='orbit')
+    observations = relationship('Observation', back_populates='orbit')
 
     def __repr__(self):
         return 'Orbit-{} Sector-{} ({:.3f}, {:.3f}, {:.3f}) {}'.format(
