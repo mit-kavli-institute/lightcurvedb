@@ -198,12 +198,25 @@ class DB(object):
             models.Observation,
             models.Lightcurve.tic_id == models.Observation.tic_id
         )
+        if isinstance(orbit, models.Orbit):
+            q = q.filter(models.Observation.orbit == orbit)
+        elif isinstance(orbit, int):
+            q = q.join(
+                models.Orbit, models.Observation.orbit_id == models.Orbit.id
+            )
+            q = q.filter(models.Orbit.orbit_number == orbit)
+        else:
+            raise ValueError(
+                'Cannot compare {} of type {} against the Orbit table.'.format(
+                    orbit, type(orbit)
+                )
+            )
         if camera:
-            q = q.filter(Observation.camera == camera)
+            q = q.filter(models.Observation.camera == camera)
         if ccd:
-            q = q.filter(Observation.ccd == ccd)
+            q = q.filter(models.Observation.ccd == ccd)
 
-        return q.all()
+        return q
 
     def commit(self):
         self._session.commit()
@@ -215,7 +228,9 @@ class DB(object):
         self._session.update(*args, **kwargs)
 
     def delete(self, model_inst, synchronize_session='evaluate'):
-        self._session.delete(model_inst, synchronize_session=synchronize_session)
+        self._session.delete(
+            model_inst, synchronize_session=synchronize_session
+        )
 
 
 def db_from_config(config_path, **engine_kwargs):

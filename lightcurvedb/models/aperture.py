@@ -50,6 +50,10 @@ class Aperture(QLPReference):
     def outer_r(self):
         return self.outer_radius
 
+    @hybrid_property
+    def id(self):
+        return self.name
+
     @classmethod
     def from_aperture_string(cls, string):
         """Attempt to parse an aperture string (fistar/fiphot format)

@@ -35,7 +35,7 @@ def test_lightcurve_query(db_conn, lightcurves):
 
 
 @settings(suppress_health_check=[HealthCheck.too_slow])
-@given(st.lists(lightcurve_st(), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+@given(st.lists(lightcurve_st(), unique_by=(lambda l: l.id, lambda l: l.aperture.name, lambda l: l.lightcurve_type.name)))
 def test_load_from_db(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()
@@ -62,7 +62,7 @@ def test_load_from_db(db_conn, lightcurves):
 
 
 @settings(suppress_health_check=[HealthCheck.too_slow])
-@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.name, lambda l: l.lightcurve_type.name)))
 def test_get_lightcurve_w_model(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()
@@ -91,7 +91,7 @@ def test_get_lightcurve_w_model(db_conn, lightcurves):
 
 
 @settings(suppress_health_check=[HealthCheck.too_slow])
-@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.id, lambda l: l.lightcurve_type.id)))
+@given(st.lists(lightcurve_st(tic_id=st.just(10), cadence_type=st.just(30)), unique_by=(lambda l: l.id, lambda l: l.aperture.name, lambda l: l.lightcurve_type.name)))
 def test_get_lightcurve_w_str(db_conn, lightcurves):
     try:
         db_conn.session.begin_nested()

@@ -45,13 +45,23 @@ def test_observation_insertions(db_conn, observation):
             db_conn.session.execute(q)
         db_conn.commit()
 
-@given(st.lists(lightcurve_st(), unique_by=lambda l: l.tic_id, min_size=2), orbit_st(), orbit_st())
+@given(
+    st.lists(
+        lightcurve_st(), unique_by=lambda l: l.tic_id,
+        min_size=2
+    ),
+    orbit_st(),
+    orbit_st())
 def test_lightcurve_retrieval(db_conn, lightcurves, orbit1, orbit2):
 
     subsample = sample(lightcurves, len(lightcurves) - 1)
+    for lc in lightcurves[1:]:
+        lc.aperture = lightcurves[0].aperture
+        lc.lightcurve_type = lightcurves[0].lightcurve_type
 
     try:
         orbit2.orbit_number = orbit1.orbit_number + 1
+        assert orbit2.orbit_number != orbit1.orbit_number
         db_conn.session.add(orbit1)
         db_conn.session.add(orbit2)
         db_conn.session.add_all(lightcurves)
@@ -62,7 +72,7 @@ def test_lightcurve_retrieval(db_conn, lightcurves, orbit1, orbit2):
                     tic_id=lc.tic_id,
                     camera=1,
                     ccd=1,
-                    orbit_id=orbit1.id
+                    orbit=orbit1
                 )
             )
 
@@ -72,20 +82,21 @@ def test_lightcurve_retrieval(db_conn, lightcurves, orbit1, orbit2):
                     tic_id=lc.tic_id,
                     camera=1,
                     ccd=1,
-                    orbit_id=orbit2.id
+                    orbit=orbit2
                 )
             )
         db_conn.commit()
 
-        orbit1_check = db_conn.lightcurves_by_observation(
-            orbit1.orbit_number
-        )
-        assert orbit1_check.count() == len(lightcurves)
+        orbit1_lcs_check = db_conn.lightcurves_by_observation(
+            orbit1
+        ).all()
+        assert len(orbit1_lcs_check) == len(lightcurves)
 
-        orbit2_check = db_conn.lightcurves_by_observation(
+        orbit2_lcs_check = db_conn.lightcurves_by_observation(
             orbit2.orbit_number
-        )
-        assert orbit2_check.count() == len(subsample)
+        ).all()
+        assert len(orbit2_lcs_check) == len(subsample)
+        db_conn.session.rollback()
     except Exception:
         db_conn.session.rollback()
         raise

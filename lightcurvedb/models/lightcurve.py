@@ -57,7 +57,7 @@ class Lightcurve(QLPModel):
     __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
-        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id'),
+        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id', name='unique_lightcurve_constraint'),
     )
 
     id = Column(BigInteger, Sequence('lightcurve_id_seq', cache=10**6),primary_key=True)

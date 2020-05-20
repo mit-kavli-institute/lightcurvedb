@@ -195,7 +195,6 @@ class LightcurveManager(object):
         new_lc.update(data)
         self._to_add.append(new_lc)
 
-
     def update(self, tic_id, aperture, lightcurve_type, **data):
         """Updates a lightcurve with the given tic, aperture, and type.
         **data will apply keyword assignments to the lightcurve.
@@ -213,7 +212,7 @@ class LightcurveManager(object):
         """
         lc_to_find = self.resolve_id(tic_id, aperture, lightcurve_type)
         self.update_w_id(lc_to_find, **data)
-        
+
     def update_w_id(self, id, **data):
         """Updates a lightcurve with the given PSQL id.
         **data will apply assignments via keyword to the lightcurve.
@@ -229,7 +228,7 @@ class LightcurveManager(object):
         Returns:
             Lightcurve -- The updated lightcurve
         """
-        
+
         self.__validate__(**data)
         params = {'_id': id}
         params.update(data)

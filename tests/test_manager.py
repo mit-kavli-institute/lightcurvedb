@@ -61,19 +61,24 @@ def test_grouping_by_aperture(lightcurves):
             assert filtered.pop().id == result.id
 
 
-@given(lightcurve_st(with_id=st.integers(min_value=1)))
+@given(lightcurve_st())
 def test_insert_manager_q(db_conn, lightcurve):
     try:
         db_conn.session.begin_nested()
-        db_conn.session.add(lightcurve.lightcurve_type)
-        db_conn.session.add(lightcurve.aperture)
+        lc_type = lightcurve.lightcurve_type
+        aperture = lightcurve.aperture
+        lightcurve.lightcurve_type = None
+        lightcurve.aperture = None
+        db_conn.add(lc_type)
+        db_conn.add(aperture)
         db_conn.commit()
-        note(lightcurve.cadences)
+
+        assert db_conn.lightcurves.count() == 0
         manager = LightcurveManager([], internal_session=db_conn)
         manager.add(
             lightcurve.tic_id,
-            lightcurve.aperture,
-            lightcurve.lightcurve_type,
+            aperture,
+            lc_type,
             cadences=lightcurve.cadences,
             bjd=lightcurve.bjd,
             values=lightcurve.values,
@@ -102,7 +107,6 @@ def test_insert_manager_q(db_conn, lightcurve):
     except Exception:
         db_conn.session.rollback()
         raise
-
     finally:
         for q in clear_all():
             db_conn.session.execute(q)

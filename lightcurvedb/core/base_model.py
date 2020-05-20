@@ -48,6 +48,10 @@ class QLPDataSubType(QLPModel):
     description = Column(String)
     created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
+    @property
+    def id(self):
+        return self.name
+
 
 class QLPReference(QLPModel):
     """
