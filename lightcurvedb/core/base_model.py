@@ -34,7 +34,6 @@ class QLPDataProduct(QLPModel):
     """
     __abstract__ = True
 
-    product_type = Column(String(255))
     created_on = Column(DateTime, default=datetime.datetime.utcnow)
 
 
@@ -59,5 +58,5 @@ class QLPReference(QLPModel):
         'produced'. For example: orbits and space craft telemetery
     """
     __abstract__ = True
-    reference_type = Column(String(255))
+
     created_on = Column(DateTime, default=datetime.datetime.utcnow)

@@ -6,7 +6,7 @@ from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, create_engine
+from sqlalchemy import Column, create_engine, and_
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
@@ -217,6 +217,35 @@ class DB(object):
             q = q.filter(models.Observation.ccd == ccd)
 
         return q
+
+    def lightcurves_from_best_aperture(self, q=None):
+        if q is None:
+            q = self.lightcurves
+        q = q.join(
+            models.BestApertureMap,
+            and_(
+                models.Lightcurve.tic_id == models.BestApertureMap.tic_id,
+                models.Lightcurve.aperture_id == models.BestApertureMap.aperture_id
+            )
+        )
+        return q
+
+    def set_best_aperture(self, tic_id, aperture):
+
+        upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
+        self._session.execute(upsert)
+
+    def unset_best_aperture(self, tic_id, aperture):
+        if isinstance(aperture, models.Aperture):
+            check = self._session.query(models.BestApertureMap).get(
+                (tic_id, aperture.name)
+            )
+        else:
+            check = self._session.query(models.BestApertureMap).get(
+                (tic_id, aperture)
+            )
+        if check:
+            check.delete()
 
     def commit(self):
         self._session.commit()
