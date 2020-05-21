@@ -250,7 +250,7 @@ def test_best_apertures(db_conn, data):
                         lambda a: (a.star_r, a.inner_r, a.outer_r),
                         lambda a: a.name
                     ),
-                    min_size=1
+                    min_size=2
                 )
         )
 
