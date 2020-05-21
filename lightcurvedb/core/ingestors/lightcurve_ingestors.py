@@ -1,7 +1,7 @@
 from h5py import File as H5File
 from datetime import datetime
 from sqlalchemy import Sequence
-from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Lightpoint
+from lightcurvedb.models import Aperture, LightcurveType, Lightcurve
 from lightcurvedb.util.iter import chunkify
 import numpy as np
 import numba as nb
@@ -38,7 +38,7 @@ def bulk_ingest_lightcurves(db, lightcurves, chunksize=10000):
             qlpdataproducts.append(qlpdata)
             lightcurve['id'] = qlpdp['id']
         db.session.bulk_insert_mappings(QLPDataProduct, qlpdataproducts)
-        db.session.bulk_insert_mappings(LightcurveRevision, chunk)
+        db.session.bulk_insert_mappings(Lightcurve, chunk)
 
 
 def h5_to_matrices(filepath):
