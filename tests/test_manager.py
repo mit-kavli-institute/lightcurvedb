@@ -267,6 +267,7 @@ def test_best_apertures(db_conn, data):
                     aperture=st.sampled_from(apertures),
                     lightcurve_type=st.just(lc_type),
                 ),
+                unique_by=lambda lc: lc.tic_id,
                 min_size=1
             )
         )
