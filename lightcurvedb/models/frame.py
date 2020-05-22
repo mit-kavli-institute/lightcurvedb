@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, SmallInteger, BigInteger, String, Boolean
+from sqlalchemy import Column, ForeignKey, Integer, SmallInteger, BigInteger, String, Boolean, Sequence
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.schema import UniqueConstraint, CheckConstraint
@@ -40,6 +40,7 @@ class Frame(QLPDataProduct):
         return '<Frame {} cam={} ccd={} cadence={}>'.format(self.frame_type.name, self.camera, self.ccd, self.cadence)
 
     # Model attributes
+    id = Column(Integer, Sequence('frame_id_seq', cache=2400), primary_key=True)
     cadence_type = Column(SmallInteger, index=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=True)
@@ -57,7 +58,7 @@ class Frame(QLPDataProduct):
 
     # Foreign Keys
     orbit_id = Column(Integer, ForeignKey('orbits.id', ondelete='RESTRICT'), nullable=False)
-    frame_type_id = Column(ForeignKey('frametypes.id', ondelete='RESTRICT'), nullable=False)
+    frame_type_id = Column(ForeignKey('frametypes.name', ondelete='RESTRICT'), nullable=False)
 
     # Relationships
     orbit = relationship('Orbit', back_populates='frames')

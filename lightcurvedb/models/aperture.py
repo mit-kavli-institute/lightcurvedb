@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric
+from sqlalchemy import Column, Integer, String, Float, Numeric, Sequence, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.schema import UniqueConstraint, CheckConstraint
 from lightcurvedb.core.base_model import QLPReference
 
@@ -19,13 +20,14 @@ class Aperture(QLPReference):
     )
 
     # Model Attributes
-    name = Column(String(64), unique=True, nullable=False)
+    name = Column(String(64), primary_key=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)
     outer_radius = Column(Numeric, nullable=False)
 
     # Relationships
     lightcurves = relationship('Lightcurve', back_populates='aperture')
+    best_apertures = relationship('BestApertureMap', back_populates='aperture')
 
     def __str__(self):
         return self.name
@@ -50,6 +52,10 @@ class Aperture(QLPReference):
     def outer_r(self):
         return self.outer_radius
 
+    @hybrid_property
+    def id(self):
+        return self.name
+
     @classmethod
     def from_aperture_string(cls, string):
         """Attempt to parse an aperture string (fistar/fiphot format)
@@ -73,3 +79,49 @@ class Aperture(QLPReference):
         outer_r = float(vals[2])
 
         return star_r, inner_r, outer_r
+
+
+class BestApertureMap(QLPReference):
+    """
+        A mapping of lightcurves to their 'best' aperture.
+    """
+    __tablename__ = 'best_apertures'
+    __table_args__ = (
+        UniqueConstraint('tic_id', name='best_ap_unique_tic'),
+    )
+
+    aperture_id = Column(
+        ForeignKey(Aperture.name, onupdate='CASCADE', ondelete='RESTRICT'),
+        primary_key=True
+    )
+    tic_id = Column(BigInteger, primary_key=True)
+
+    aperture = relationship(
+        'Aperture',
+        back_populates='best_apertures'
+    )
+
+    @classmethod
+    def set_best_aperture(cls, tic_id, aperture):
+        q = insert(cls.__table__)
+        if isinstance(aperture, Aperture):
+            q = q.values(
+                tic_id=tic_id,
+                aperture_id=aperture.name
+            ).on_conflict_do_update(
+                constraint='best_ap_unique_tic',
+                set_={
+                    'aperture_id': aperture.name
+                }
+            )
+        else:
+            q = q.values(
+                tic_id=tic_id,
+                aperture_id=aperture
+            ).on_conflict_do_update(
+                constraint='best_ap_unique_tic',
+                set_={
+                    'aperture_id': aperture
+                }
+            )
+        return q

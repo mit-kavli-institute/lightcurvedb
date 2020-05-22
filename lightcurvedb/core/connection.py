@@ -6,7 +6,7 @@ from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, create_engine
+from sqlalchemy import Column, create_engine, and_
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
@@ -94,6 +94,9 @@ class DB(object):
                 'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
         return self._session
 
+    def query(self, *args, **kwargs):
+        return self._session.query(*args, **kwargs)
+
     @property
     def is_active(self):
         return self._active
@@ -179,6 +182,71 @@ class DB(object):
         mq.mass_insert(tics)
         return mq.execute()
 
+    def lightcurves_by_observation(self, orbit, camera=None, ccd=None):
+        """
+            Retrieve lightcurves that have been observed in the given orbit.
+            This method can also filter by camera and ccd,
+
+            Arguments:
+                orbit {int, Orbit} -- The orbit to filter on. Can pass an
+                integer representing the orbit number or an Orbit instance
+                itself.
+                camera {int} -- Filter by camera
+                ccd {int} -- Filter by ccd
+        """
+        q = self.lightcurves.join(
+            models.Observation,
+            models.Lightcurve.tic_id == models.Observation.tic_id
+        )
+        if isinstance(orbit, models.Orbit):
+            q = q.filter(models.Observation.orbit == orbit)
+        elif isinstance(orbit, int):
+            q = q.join(
+                models.Orbit, models.Observation.orbit_id == models.Orbit.id
+            )
+            q = q.filter(models.Orbit.orbit_number == orbit)
+        else:
+            raise ValueError(
+                'Cannot compare {} of type {} against the Orbit table.'.format(
+                    orbit, type(orbit)
+                )
+            )
+        if camera:
+            q = q.filter(models.Observation.camera == camera)
+        if ccd:
+            q = q.filter(models.Observation.ccd == ccd)
+
+        return q
+
+    def lightcurves_from_best_aperture(self, q=None):
+        if q is None:
+            q = self.lightcurves
+        q = q.join(
+            models.BestApertureMap,
+            and_(
+                models.Lightcurve.tic_id == models.BestApertureMap.tic_id,
+                models.Lightcurve.aperture_id == models.BestApertureMap.aperture_id
+            )
+        )
+        return q
+
+    def set_best_aperture(self, tic_id, aperture):
+
+        upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
+        self._session.execute(upsert)
+
+    def unset_best_aperture(self, tic_id, aperture):
+        if isinstance(aperture, models.Aperture):
+            check = self._session.query(models.BestApertureMap).get(
+                (tic_id, aperture.name)
+            )
+        else:
+            check = self._session.query(models.BestApertureMap).get(
+                (tic_id, aperture)
+            )
+        if check:
+            check.delete()
+
     def commit(self):
         self._session.commit()
 
@@ -189,7 +257,9 @@ class DB(object):
         self._session.update(*args, **kwargs)
 
     def delete(self, model_inst, synchronize_session='evaluate'):
-        self._session.delete(model_inst, synchronize_session=synchronize_session)
+        self._session.delete(
+            model_inst, synchronize_session=synchronize_session
+        )
 
 
 def db_from_config(config_path, **engine_kwargs):

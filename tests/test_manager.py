@@ -1,12 +1,13 @@
 from hypothesis import given, note, assume, settings, HealthCheck
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
-from .factories import lightcurve as lightcurve_st
+from .factories import lightcurve as lightcurve_st, lightcurve_list, aperture as aperture_st, lightcurve_type as lightcurve_type_st
 from .fixtures import db_conn, clear_all
 from .util import arr_equal
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.managers.lightcurve_query import LightcurveManager
 from lightcurvedb.models import Lightcurve, LightcurveType
+from random import sample
 import numpy as np
 
 
@@ -61,19 +62,24 @@ def test_grouping_by_aperture(lightcurves):
             assert filtered.pop().id == result.id
 
 
-@given(lightcurve_st(with_id=st.integers(min_value=1)))
+@given(lightcurve_st())
 def test_insert_manager_q(db_conn, lightcurve):
     try:
         db_conn.session.begin_nested()
-        db_conn.session.add(lightcurve.lightcurve_type)
-        db_conn.session.add(lightcurve.aperture)
+        lc_type = lightcurve.lightcurve_type
+        aperture = lightcurve.aperture
+        lightcurve.lightcurve_type = None
+        lightcurve.aperture = None
+        db_conn.add(lc_type)
+        db_conn.add(aperture)
         db_conn.commit()
-        note(lightcurve.cadences)
+
+        assert db_conn.lightcurves.count() == 0
         manager = LightcurveManager([], internal_session=db_conn)
         manager.add(
             lightcurve.tic_id,
-            lightcurve.aperture,
-            lightcurve.lightcurve_type,
+            aperture,
+            lc_type,
             cadences=lightcurve.cadences,
             bjd=lightcurve.bjd,
             values=lightcurve.values,
@@ -102,7 +108,6 @@ def test_insert_manager_q(db_conn, lightcurve):
     except Exception:
         db_conn.session.rollback()
         raise
-
     finally:
         for q in clear_all():
             db_conn.session.execute(q)
@@ -224,6 +229,63 @@ def test_upsert_manager_q(db_conn, lc1, lc2):
         assert arr_equal(check.x_centroids, lc2.x_centroids)
         assert arr_equal(check.y_centroids, lc2.y_centroids)
         assert arr_equal(check.quality_flags, lc2.quality_flags)
+
+    except Exception:
+        db_conn.session.rollback()
+        raise
+    finally:
+        db_conn.session.rollback()
+        for q in clear_all():
+            db_conn.session.execute(q)
+        db_conn.commit()
+
+
+@given(st.data())
+def test_best_apertures(db_conn, data):
+    try:
+        apertures = data.draw(
+                st.lists(
+                    aperture_st(),
+                    unique_by=(
+                        lambda a: (a.star_r, a.inner_r, a.outer_r),
+                        lambda a: a.name
+                    ),
+                    min_size=2
+                )
+        )
+
+        db_conn.session.add_all(apertures)
+        db_conn.commit()
+
+        lc_type = data.draw(lightcurve_type_st())
+        db_conn.session.add(lc_type)
+        db_conn.commit()
+
+        lightcurves = data.draw(
+            st.lists(
+                lightcurve_st(
+                    aperture=st.sampled_from(apertures),
+                    lightcurve_type=st.just(lc_type),
+                ),
+                unique_by=lambda lc: lc.tic_id,
+                min_size=1
+            )
+        )
+        db_conn.session.add_all(lightcurves)
+        db_conn.commit()
+
+        tics = {lc.tic_id for lc in lightcurves}
+        aperture = sample([lc.aperture for lc in lightcurves], 1)[0]
+        for tic in tics:
+            db_conn.set_best_aperture(tic, aperture)
+        db_conn.commit()
+
+        best_apertures = db_conn.lightcurves_from_best_aperture(
+            db_conn.lightcurves
+        )
+
+        assert all(lc.aperture == aperture for lc in best_apertures)
+        db_conn.session.rollback()
 
     except Exception:
         db_conn.session.rollback()

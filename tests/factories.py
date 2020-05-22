@@ -1,7 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex, just, lists
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX
@@ -38,19 +38,19 @@ def aperture(draw):
     inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
     outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
 
-    aperture = models.Aperture(
+    ap = models.Aperture(
         name=name,
         star_radius=star_radius,
         inner_radius=inner_radius,
         outer_radius=outer_radius
     )
 
-    return aperture
+    return ap
 
 @define_strategy
 @composite
 def orbit(draw, **overrides):
-    orbit = models.Orbit(
+    orb = models.Orbit(
         orbit_number=draw(overrides.get('orbit_number', integers(min_value=0, max_value=PSQL_INT_MAX))),
         sector=draw(overrides.get('orbit_number', integers(min_value=0, max_value=PSQL_INT_MAX))),
         right_ascension=draw(overrides.get('right_ascension', celestial_degrees)),
@@ -64,30 +64,30 @@ def orbit(draw, **overrides):
         crm=draw(overrides.get('crm', booleans())),
         basename=draw(overrides.get('basename', postgres_text()))
     )
-    return orbit
+    return orb
 
 @define_strategy
 @composite
 def frame_type(draw, **overrides):
-    frame_type=models.FrameType(
+    f_type = models.FrameType(
         name=draw(overrides.pop('name', postgres_text())),
         description=draw(overrides.pop('description', postgres_text()))
     )
-    return frame_type
+    return f_type
 
 @define_strategy
 @composite
 def lightcurve_type(draw, **overrides):
-    lightcurve_type = models.lightcurve.LightcurveType(
+    lc_type = models.lightcurve.LightcurveType(
         name=draw(overrides.pop('name', postgres_text())),
         description=draw(overrides.pop('description', postgres_text()))
     )
-    return lightcurve_type
+    return lc_type
 
 @define_strategy
 @composite
 def frame(draw, **overrides):
-    frame = models.Frame(
+    new_frame = models.Frame(
         cadence_type=draw(overrides.pop('orbit_number', integers(min_value=1, max_value=32767))),
         camera=draw(overrides.pop('camera', integers(min_value=1, max_value=4))),
         cadence=draw(overrides.pop('cadence', integers(min_value=0, max_value=PSQL_INT_MAX))),
@@ -103,7 +103,7 @@ def frame(draw, **overrides):
         orbit=(draw(overrides.pop('orbit', orbit()))),
         frame_type=(draw(overrides.pop('frame_type', frame_type())))
     )
-    return frame
+    return new_frame
 
 
 @define_strategy
@@ -141,3 +141,46 @@ def lightcurve(draw, **overrides):
         aperture=ap
     )
 
+
+@define_strategy
+@composite
+def observation(draw, **overrides):
+    tic_id = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
+    camera = draw(overrides.pop('camera', integers(min_value=1, max_value=4)))
+    ccd = draw(overrides.pop('ccd', integers(min_value=1, max_value=4)))
+
+    return models.Observation(
+        tic_id=tic_id,
+        camera=camera,
+        ccd=ccd,
+        orbit=draw(overrides.pop('orbit', orbit()))
+    )
+
+
+@define_strategy
+@composite
+def lightcurve_list(draw, tic=None, apertures=None, lightcurve_types=None):
+    """
+        Strategy for buildling lists of lightcurves.
+        If passed apertures and/or lightcurve_types, examples will be drawn
+        from the passed parameters. If set to None, the lightcurve_list will
+        hold a common aperture/type.
+    """
+
+    if apertures:
+        aperture_choice = one_of(apertures)
+    else:
+        aperture_choice = aperture()
+
+    if lightcurve_types:
+        type_choice = one_of(lightcurve_types)
+    else:
+        type_choice = lightcurve_type()
+    if tic:
+        tic_choice = just(tic)
+    else:
+        tic_choice = integers(min_value=1, max_value=PSQL_INT_MAX)
+
+    return draw(
+        lists(lightcurve(aperture=aperture_choice, lightcurve_type=type_choice, tic_id=tic_choice))
+    )

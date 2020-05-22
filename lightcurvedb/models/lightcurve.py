@@ -57,7 +57,7 @@ class Lightcurve(QLPModel):
     __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
-        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id'),
+        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id', name='unique_lightcurve_constraint'),
     )
 
     id = Column(BigInteger, Sequence('lightcurve_id_seq', cache=10**6),primary_key=True)
@@ -65,12 +65,13 @@ class Lightcurve(QLPModel):
     cadence_type = Column(SmallInteger, index=True)
 
     # Foreign Keys
-    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.name', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    aperture_id = Column(ForeignKey('apertures.name', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
 
     # Relationships
     lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
     aperture = relationship('Aperture', back_populates='lightcurves')
+    frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 
     _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
     _bjd = Column('barycentric_julian_date', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
@@ -251,11 +252,3 @@ class Lightcurve(QLPModel):
         return mapping
 
 
-    # Foreign Keys
-    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-    aperture_id = Column(ForeignKey('apertures.id', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-
-    # Relationships
-    lightcurve_type = relationship('LightcurveType')
-    aperture = relationship('Aperture')
-    frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
