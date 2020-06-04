@@ -2,7 +2,20 @@ from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, B
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
+import numpy as np
 
+
+ORBIT_DTYPE = [
+    ('orbit_number', np.int32),
+    ('crm_n', np.int16),
+    ('right_ascension', np.float64),
+    ('declination', np.float64),
+    ('roll', np.float64),
+    ('quaternion_x', np.float64),
+    ('quaternion_y', np.float64),
+    ('quaternion_z', np.float64),
+    ('quaternion_q', np.float64)
+]
 
 class Orbit(QLPReference):
     """
@@ -42,6 +55,14 @@ class Orbit(QLPReference):
             self.roll,
             self.basename
         )
+
+    @classmethod
+    def get_legacy_attrs(cls, dtype_override=None):
+        if dtype_override:
+            columns = dtype_override
+        else:
+            columns = ORBIT_DTYPE
+        return tuple(getattr(cls, column) for column, dtype in columns)
 
     def copy_from(self, other_orbit):
         # load in the other attributes

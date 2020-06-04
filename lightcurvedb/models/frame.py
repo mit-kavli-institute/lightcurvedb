@@ -4,6 +4,18 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.schema import UniqueConstraint, CheckConstraint
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
+import numpy as np
+
+
+FRAME_DTYPE = [
+    ('cadence', np.int64),
+    ('start_tjd', np.float64),
+    ('mid_tjd', np.float64),
+    ('end_tjd', np.float64),
+    ('gps_time', np.float64),
+    ('exp_time', np.float64),
+    ('qual_bit', np.int32),
+]
 
 
 class FrameType(QLPDataSubType):
@@ -13,7 +25,8 @@ class FrameType(QLPDataSubType):
     frames = relationship('Frame', back_populates='frame_type')
 
     def __repr__(self):
-        return 'FrameType(name="{}", description="{}")'.format(self.name, self.description)
+        return 'FrameType(name="{}", description="{}")'.format(
+            self.name, self.description)
 
 
 class Frame(QLPDataProduct):
@@ -25,16 +38,16 @@ class Frame(QLPDataProduct):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint(
-            'frame_type_id',
-            'orbit_id',
-            'cadence',
-            'camera',
-            'ccd',
-            name='unique_frame'),
-        CheckConstraint('camera BETWEEN 1 and 4', name='physical_camera_constraint'),
-        CheckConstraint('(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)', name='physical_ccd_constraint'),
-    )
+            UniqueConstraint(
+                'frame_type_id',
+                'orbit_id',
+                'cadence',
+                'camera',
+                'ccd',
+                name='unique_frame'),
+            CheckConstraint('camera BETWEEN 1 and 4', name='physical_camera_constraint'),
+            CheckConstraint('(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)', name='physical_ccd_constraint'),
+            )
 
     def __repr__(self):
         return '<Frame {} cam={} ccd={} cadence={}>'.format(self.frame_type.name, self.camera, self.ccd, self.cadence)
@@ -64,6 +77,15 @@ class Frame(QLPDataProduct):
     orbit = relationship('Orbit', back_populates='frames')
     frame_type = relationship('FrameType', back_populates='frames')
     lightcurves = association_proxy('lightcurveframemapping', 'lightcurve')
+
+    @classmethod
+    def get_legacy_attrs(cls, dtype_override=None):
+        if dtype_override:
+            columns = dtype_override
+        else:
+            columns = FRAME_DTYPE
+
+        return tuple(getattr(cls, column) for column, dtype in columns)
 
     def copy(self, other):
         self.cadence_type = other.cadence_type

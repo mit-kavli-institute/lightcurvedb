@@ -243,6 +243,7 @@ def test_upsert_manager_q(db_conn, lc1, lc2):
 @given(st.data())
 def test_best_apertures(db_conn, data):
     try:
+        db_conn.session.begin_nested()
         apertures = data.draw(
                 st.lists(
                     aperture_st(),
