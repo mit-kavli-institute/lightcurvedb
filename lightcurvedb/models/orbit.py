@@ -3,9 +3,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, B
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
-<<<<<<< HEAD
 import numpy as np
-=======
 from astropy.io import fits
 from multiprocessing import Pool
 
