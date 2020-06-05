@@ -16,10 +16,16 @@ import numpy as np
 import pandas as pd
 
 
-def addapt_int64(numpy_int64):
-    return AsIs(numpy_int64)
 
-register_adapter(np.int64, addapt_int64)
+def adapt_as_is_type(type_class):
+    def adaptor(type_instance):
+        return AsIs(type_instance)
+    register_adapter(type_class, adaptor)
+
+adapt_as_is_type(np.int64)
+adapt_as_is_type(np.int32)
+adapt_as_is_type(np.float32)
+adapt_as_is_type(np.float64)
 
 
 class LightcurveType(QLPDataSubType):
@@ -60,7 +66,7 @@ class Lightcurve(QLPModel):
         UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id', name='unique_lightcurve_constraint'),
     )
 
-    id = Column(BigInteger, Sequence('lightcurve_id_seq', cache=10**6),primary_key=True)
+    id = Column(BigInteger, Sequence('lightcurves_id_seq', cache=10**6),primary_key=True)
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
 
@@ -137,7 +143,7 @@ class Lightcurve(QLPModel):
         df = pd.DataFrame(
             index=self.cadences,
             data={
-                'bjd': self._bjd,
+                'barycentric_julian_date': self._bjd,
                 'values': self._values,
                 'errors': self._errors,
                 'x_centroids': self.x_centroids,
@@ -159,13 +165,12 @@ class Lightcurve(QLPModel):
         current_data.sort_index(inplace=True)
 
         self.cadences = current_data.index
-        self.bjd = current_data['bjd']
+        self.bjd = current_data['barycentric_julian_date']
         self.values = current_data['values']
         self.errors = current_data['errors']
         self.x_centroids = current_data['x_centroids']
         self.y_centroids = current_data['y_centroids']
         self.quality_flags = current_data['quality_flags']
-
 
     @hybrid_property
     def cadences(self):
@@ -173,6 +178,10 @@ class Lightcurve(QLPModel):
 
     @hybrid_property
     def bjd(self):
+        return np.array(self._bjd)
+
+    @hybrid_property
+    def barycentric_julian_date(self):
         return np.array(self._bjd)
 
     @hybrid_property
@@ -206,6 +215,10 @@ class Lightcurve(QLPModel):
     def bjd(self, value):
         if isinstance(value, np.ndarray):
             value = value.tolist()
+        self._bjd = value
+
+    @barycentric_julian_date.setter
+    def barycentric_julian_date(self, value):
         self._bjd = value
 
     @values.setter

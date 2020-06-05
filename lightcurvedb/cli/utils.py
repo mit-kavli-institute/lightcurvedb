@@ -6,6 +6,10 @@ from itertools import groupby, chain, product
 from glob import glob
 
 
+def extr_tic(filepath):
+    return int(os.path.basename(filepath).split('.')[0])
+
+
 def find_fits(*paths, allow_compressed=True):
     exts = ['*.fits.gz', '*.fits'] if allow_compressed else ['*.fits']
     # To avoid duplication of frames strip out the file extensions and
@@ -51,3 +55,9 @@ def group_fits(files, field='ORBIT_ID'):
             headers.append(header)
 
     return groupby(headers, lambda h: h[field])
+
+
+def group_h5(files):
+    groups = groupby(sorted(files, key=extr_tic), key=extr_tic)
+    for tic, files in groups:
+        yield tic, list(files)

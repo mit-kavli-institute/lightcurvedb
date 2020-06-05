@@ -4,6 +4,7 @@ from sqlalchemy.ext.declarative import declared_attr, as_declarative, has_inheri
 from sqlalchemy.orm import relationship
 from sqlalchemy import Column, String, DateTime, BigInteger, ForeignKey, Sequence
 from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.sql import func
 import numpy as np
 from psycopg2.extensions import register_adapter, AsIs
 
@@ -34,7 +35,7 @@ class QLPDataProduct(QLPModel):
     """
     __abstract__ = True
 
-    created_on = Column(DateTime, default=datetime.datetime.utcnow)
+    created_on = Column(DateTime, server_default=func.now())
 
 
 class QLPDataSubType(QLPModel):
@@ -45,7 +46,7 @@ class QLPDataSubType(QLPModel):
 
     name = Column(String(64), primary_key=True, nullable=False)
     description = Column(String)
-    created_on = Column(DateTime, default=datetime.datetime.utcnow)
+    created_on = Column(DateTime, server_default=func.now())
 
     @property
     def id(self):
@@ -59,4 +60,4 @@ class QLPReference(QLPModel):
     """
     __abstract__ = True
 
-    created_on = Column(DateTime, default=datetime.datetime.utcnow)
+    created_on = Column(DateTime, server_default=func.now())
