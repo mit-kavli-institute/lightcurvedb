@@ -195,6 +195,7 @@ class LightcurveManager(object):
         new_lc.update(data)
         self._to_add.append(new_lc)
 
+
     def update(self, tic_id, aperture, lightcurve_type, **data):
         """Updates a lightcurve with the given tic, aperture, and type.
         **data will apply keyword assignments to the lightcurve.

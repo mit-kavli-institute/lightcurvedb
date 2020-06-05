@@ -12,8 +12,8 @@ class Observation(QLPModel):
     __tablename__ = 'observations'
 
     tic_id = Column(BigInteger, primary_key=True, nullable=False)
-    camera = Column(SmallInteger, primary_key=True, nullable=False)
-    ccd = Column(SmallInteger, primary_key=True, nullable=False)
+    camera = Column(SmallInteger, index=True, nullable=False)
+    ccd = Column(SmallInteger, index=True, nullable=False)
     orbit_id = Column(
         ForeignKey('orbits.id', ondelete='RESTRICT'), primary_key=True, nullable=False
     )

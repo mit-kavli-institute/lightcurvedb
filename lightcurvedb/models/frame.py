@@ -5,6 +5,8 @@ from sqlalchemy.schema import UniqueConstraint, CheckConstraint
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
 import numpy as np
+from astropy.io import fits
+import os
 
 
 FRAME_DTYPE = [
@@ -53,7 +55,7 @@ class Frame(QLPDataProduct):
         return '<Frame {} cam={} ccd={} cadence={}>'.format(self.frame_type.name, self.camera, self.ccd, self.cadence)
 
     # Model attributes
-    id = Column(Integer, Sequence('frame_id_seq', cache=2400), primary_key=True)
+    id = Column(Integer, Sequence('frames_id_seq', cache=2400), primary_key=True)
     cadence_type = Column(SmallInteger, index=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=True)
@@ -101,3 +103,30 @@ class Frame(QLPDataProduct):
         self.file_path = other.file_path
         self.orbit = other.orbit
         self.frame_type = other.frame_type
+
+
+    @classmethod
+    def from_fits(cls, path, cadence_type=30, frame_type=None, orbit=None):
+        abspath = os.path.abspath(path)
+        header = fits.open(abspath)[0].header
+        try:
+            return cls(
+                cadence_type=cadence_type,
+                camera=header.get('CAM', header.get('CAMNUM', None)),
+                ccd=header.get('CCD', header.get('CCDNUM', None)),
+                cadence=header['CADENCE'],
+                gps_time=header['TIME'],
+                start_tjd=header['STARTTJD'],
+                mid_tjd=header['MIDTJD'],
+                end_tjd=header['ENDTJD'],
+                exp_time=header['EXPTIME'],
+                quality_bit=header['QUAL_BIT'],
+                file_path=abspath,
+                frame_type=frame_type,
+                orbit=orbit
+            )
+        except KeyError as e:
+            print(e)
+            print('===LOADED HEADER===')
+            print(repr(header))
+            raise
