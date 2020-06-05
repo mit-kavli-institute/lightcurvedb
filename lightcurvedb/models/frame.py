@@ -14,7 +14,7 @@ FRAME_DTYPE = [
     ('end_tjd', np.float64),
     ('gps_time', np.float64),
     ('exp_time', np.float64),
-    ('qual_bit', np.int32),
+    ('quality_bit', np.int32),
 ]
 
 

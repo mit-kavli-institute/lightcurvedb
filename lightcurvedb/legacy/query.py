@@ -69,7 +69,7 @@ class QlpQuery(object):
     def query_frames_by_orbit(self, orbit_id, cadence_type, camera):
         # Differs from PATools in that orbit_id != orbit number
         # so we need to record that.
-        cols = [Orbit.orbit_number] + Frame.get_legacy_attrs()
+        cols = [Orbit.orbit_number] + list(Frame.get_legacy_attrs())
         values = self.db.query(
             *cols
         ).join(Frame.orbit).filter(
@@ -83,8 +83,9 @@ class QlpQuery(object):
         )
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
+        cols = [Orbit.orbit_number] + list(Frame.get_legacy_attrs())
         values = self.db.query(
-            [Orbit.orbit_number, *Frame.get_legacy_attrs()]
+            *cols
         ).join(Frame.orbit).filter(
             Frame.cadence_type == cadence_type,
             Frame.camera == camera,

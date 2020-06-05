@@ -272,6 +272,7 @@ def test_best_apertures(db_conn, data):
                 min_size=1
             )
         )
+        note(lightcurves)
         db_conn.session.add_all(lightcurves)
         db_conn.commit()
 

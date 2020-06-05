@@ -9,6 +9,7 @@ from .constants import CONFIG_PATH, PSQL_INT_MAX
 
 define_strategy = lambda f: f
 
+
 @define_strategy
 @composite
 def postgres_text(draw, **text_args):
@@ -119,7 +120,7 @@ def frame(draw, **overrides):
         end_tjd=end_tjd,
         exp_time=(draw(overrides.pop('exp_time', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
         quality_bit=(draw(overrides.pop('quality_bit', booleans()))),
-        file_path=f'{cadence}-{draw(overrides.pop("file_path", postgres_text()))}',
+        file_path='{}-{}'.format(cadence, draw(overrides.pop("file_path", postgres_text()))),
         orbit=(draw(overrides.pop('orbit', orbit()))),
         frame_type=(draw(overrides.pop('frame_type', frame_type())))
     )
