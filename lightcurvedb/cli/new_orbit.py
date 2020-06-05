@@ -27,7 +27,7 @@ CCD_EXTR = re.compile(
 )
 
 
-def ingest_directory(ctx, session, path, extensions):
+def ingest_directory(ctx, session, path, cadence_type, extensions):
     orbit_context = ORBIT_EXTR.search(path)
     cam_context = CAM_EXTR.search(path)
     ccd_context = CCD_EXTR.search(path)
@@ -103,7 +103,8 @@ def ingest_directory(ctx, session, path, extensions):
         session.add(orbit)
         if not ctx.obj['dryrun']:
             session.commit()
-    func = partial(Frame.from_fits)
+
+    func = partial(Frame.from_fits, cadence_type=cadence_type)
     with Pool() as p:
         click.echo('Generating frames')
         frames = p.map(func, files)
@@ -119,12 +120,13 @@ def ingest_directory(ctx, session, path, extensions):
 @click.pass_context
 @click.argument('ingest_directories', nargs=-1)
 @click.option('--new-orbit/--no-new-orbit', default=False)
+@click.option('--cadence-type', default=30, type=int)
 @click.option('--extensions', '-x', multiple=True, default=['fits', 'gz', 'bz2'])
-def ingest_frames(ctx, ingest_directories, new_orbit, extensions):
+def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type, extensions):
     with ctx.obj['dbconf'] as db:
         added_frames = []
         for directory in ingest_directories:
-            frames = ingest_directory(ctx, db, directory, extensions)
+            frames = ingest_directory(ctx, db, directory, cadence_type, extensions)
             db.session.add_all(frames)
             added_frames += frames
 

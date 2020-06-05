@@ -10,6 +10,7 @@ from tabulate import tabulate
 from random import sample
 from functools import partial
 from sqlalchemy.sql.expression import bindparam
+from sqlalchemy.sql import update
 from sqlalchemy.dialects.postgresql import insert
 from multiprocessing import Pool, cpu_count
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation
@@ -169,6 +170,17 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
                 observation['orbit_id'] = orbit_map[int(observation['orbit'])]
                 del observation['orbit']
 
+            logger.info(f'Performing insertion of {len(new_lcs)} new lightcurves')
             db.session.execute(lightcurve_q, new_lcs)
+            logger.info(f'Performing insertion of {len(observation)} tic observation maps')
             db.session.execute(observation_q, observations)
+
+            logger.info(f'Performing update query construction')
+            
+            merging_lc_ids = lightpoints.get_lightcurve_ids()
+
+            q = update(Lightcurve.__table__).where(
+                Lightcurve.id == bindparam('_id'))
+            db.session.execute(q, yield_insert_kwargs(merging_lc_ids))
+
         db.commit()

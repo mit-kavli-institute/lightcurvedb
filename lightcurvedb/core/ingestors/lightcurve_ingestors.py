@@ -264,6 +264,20 @@ class LightpointCache(object):
         result = result[~result.index.duplicated(keep='last')]
         return result
 
+    def yield_insert_kwargs(self, ids, id_col='_id'):
+        for id in ids:
+            data = self.get_lc(id)
+            yield {
+                id_col: id,
+                'cadences': data.index,
+                'barycentric_julian_date': data['barycentric_julian_date'],
+                'values': data['values'],
+                'errors': data['errors'],
+                'x_centroids': data['x_centroids'],
+                'y_centroids': data['y_centroids'],
+                'quality_flags': data['quality_flags']
+            }
+
     def get_lightcurve_ids(self):
         command = (
             'SELECT DISTINCT lightcurve_ids FROM lightpoints'
