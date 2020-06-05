@@ -90,7 +90,7 @@ class QlpQuery(object):
             Frame.cadence_type == cadence_type,
             Frame.camera == camera,
             Frame.cadence.in_(cadences)
-        )
+        ).all()
 
         return np.array(
             values, dtype=FRAME_COMP_DTYPE

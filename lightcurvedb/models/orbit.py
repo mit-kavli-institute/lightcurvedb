@@ -10,7 +10,6 @@ from multiprocessing import Pool
 
 def _extr_fits_header(f):
     return fits.open(f)[0].header
->>>>>>> interfaces
 
 
 ORBIT_DTYPE = [
