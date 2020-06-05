@@ -1,7 +1,7 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex, just, lists
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex, just, lists, tuples
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX
@@ -87,23 +87,62 @@ def lightcurve_type(draw, **overrides):
 @define_strategy
 @composite
 def frame(draw, **overrides):
+
+    float_kwargs = dict(
+        min_value=0,
+        exclude_min=True,
+        allow_infinity=False,
+        allow_nan=False
+    )
+
+    tjds = draw(tuples(
+        floats(**float_kwargs),
+        floats(**float_kwargs),
+        floats(**float_kwargs)
+    ))
+    cadence = draw(overrides.pop('cadence', integers(min_value=0, max_value=PSQL_INT_MAX)))
+
+    sort = sorted(tjds)
+    start_tjd = sort[0]
+    mid_tjd = sort[1]
+    end_tjd = sort[2]
+
     new_frame = models.Frame(
-        cadence_type=draw(overrides.pop('orbit_number', integers(min_value=1, max_value=32767))),
+        cadence_type=draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767))),
         camera=draw(overrides.pop('camera', integers(min_value=1, max_value=4))),
-        cadence=draw(overrides.pop('cadence', integers(min_value=0, max_value=PSQL_INT_MAX))),
+        cadence=cadence,
         ccd=draw(overrides.pop('ccd', one_of(integers(min_value=1, max_value=4), none()))),
 
         gps_time=draw(overrides.pop('gps_time', floats(allow_infinity=False, allow_nan=False))),
-        start_tjd=(draw(overrides.pop('start_tjd', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
-        mid_tjd=(draw(overrides.pop('mid_tjd', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
-        end_tjd=(draw(overrides.pop('end_tjd', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
+        start_tjd=start_tjd,
+        mid_tjd=mid_tjd,
+        end_tjd=end_tjd,
         exp_time=(draw(overrides.pop('exp_time', floats(min_value=0, exclude_min=True, allow_infinity=False, allow_nan=False)))),
         quality_bit=(draw(overrides.pop('quality_bit', booleans()))),
-        file_path=(draw(overrides.pop('file_path', postgres_text()))),
+        file_path=f'{cadence}-{draw(overrides.pop("file_path", postgres_text()))}',
         orbit=(draw(overrides.pop('orbit', orbit()))),
         frame_type=(draw(overrides.pop('frame_type', frame_type())))
     )
     return new_frame
+
+
+@define_strategy
+@composite
+def orbit_frames(draw):
+    target_orbit = draw(orbit())
+    f_type = draw(frame_type(name=just('Raw FFI')))
+
+    result = draw(lists(
+        frame(
+            frame_type=just(f_type),
+            orbit=just(target_orbit),
+            cadence_type=just(30),
+            camera=just(1)
+        ),
+        min_size=2,
+        unique_by=lambda f: f.cadence
+    ))
+    return result
 
 
 @define_strategy

@@ -287,9 +287,11 @@ def test_best_apertures(db_conn, data):
 
         assert all(lc.aperture == aperture for lc in best_apertures)
         db_conn.session.rollback()
-
     except Exception:
         db_conn.session.rollback()
+        for remove in clear_all():
+            db_conn.session.execute(remove)
+        db_conn.commit()
         raise
     finally:
         db_conn.session.rollback()
