@@ -241,7 +241,7 @@ class LightpointCache(object):
         df = lc_dict_to_df(dictionary)
         self.ingest_lc_df(df, id, rename=True)
 
-    def get_lc(self, id):
+    def get_lc(self, _id):
         cols = [
             'cadence',
             'barycentric_julian_date',
@@ -254,7 +254,7 @@ class LightpointCache(object):
         col_clause = ', '.join(cols)
         command = (
             f'SELECT {col_clause} FROM lightpoints '
-            'WHERE lightcurve_id = {id} ORDER BY cadence'
+            f'WHERE lightcurve_id = {_id} ORDER BY cadence'
         )
         result = pd.read_sql(
             command,
@@ -280,9 +280,9 @@ class LightpointCache(object):
 
     def get_lightcurve_ids(self):
         command = (
-            'SELECT DISTINCT lightcurve_ids FROM lightpoints'
+            'SELECT DISTINCT lightcurve_id FROM lightpoints'
         )
-        return self._db.execute(command).fetchall()
+        return {result[0] for result in self._db.execute(command).fetchall()}
 
 
 class TempLightcurveIDMapper(object):

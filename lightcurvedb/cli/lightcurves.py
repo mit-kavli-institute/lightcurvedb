@@ -126,7 +126,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
             observations = []
             observed_tics = set()
             logger.debug(f'Executing query for existing lightcurves')
-            for lightcurve in q.yield_per(1000):
+            for lightcurve in q.yield_per(100):
                 logger.debug(f'Loading {lightcurve}, length: {len(lightcurve)}')
                 lightpoints.ingest_lc(lightcurve)
                 temp_ids.set_id(
@@ -171,16 +171,24 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
                 del observation['orbit']
 
             logger.info(f'Performing insertion of {len(new_lcs)} new lightcurves')
-            db.session.execute(lightcurve_q, new_lcs)
+            for data_chunk in chunkify(new_lcs, 100):
+                db.session.execute(lightcurve_q, data_chunk)
             logger.info(f'Performing insertion of {len(observation)} tic observation maps')
             db.session.execute(observation_q, observations)
 
             logger.info(f'Performing update query construction')
-            
+            q = update(Lightcurve.__table__).where(Lightcurve.id == bindparam('_id')).values({
+                'cadences': bindparam('cadences'),
+                'barcentric_julian_date': bindparam('barycentric_julian_date'),
+                'values': bindparam('values'),
+                'errors': bindparam('errors'),
+                'x_centroids': bindparam('x_centroids'),
+                'y_centroids': bindparam('y_centroids'),
+                'quality_flags': bindparam('quality_flags')
+                })
             merging_lc_ids = lightpoints.get_lightcurve_ids()
-
-            q = update(Lightcurve.__table__).where(
-                Lightcurve.id == bindparam('_id'))
-            db.session.execute(q, yield_insert_kwargs(merging_lc_ids))
+            logger.info(f'Updating {len(merging_lc_ids)} lightcurves')
+            for ids in chunkify(merging_lc_ids, 100):
+                db.session.execute(q, list(lightpoints.yield_insert_kwargs(ids)))
 
         db.commit()
