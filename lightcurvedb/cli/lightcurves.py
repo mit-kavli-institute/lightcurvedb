@@ -179,7 +179,7 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
             logger.info(f'Performing update query construction')
             q = update(Lightcurve.__table__).where(Lightcurve.id == bindparam('_id')).values({
                 'cadences': bindparam('cadences'),
-                'barcentric_julian_date': bindparam('barycentric_julian_date'),
+                'barycentric_julian_date': bindparam('barycentric_julian_date'),
                 'values': bindparam('values'),
                 'errors': bindparam('errors'),
                 'x_centroids': bindparam('x_centroids'),

@@ -271,11 +271,11 @@ class LightpointCache(object):
                 id_col: id,
                 'cadences': data.index,
                 'barycentric_julian_date': data['barycentric_julian_date'],
-                'values': data['values'],
-                'errors': data['errors'],
-                'x_centroids': data['x_centroids'],
-                'y_centroids': data['y_centroids'],
-                'quality_flags': data['quality_flags']
+                'values': data['value'],
+                'errors': data['error'],
+                'x_centroids': data['x_centroid'],
+                'y_centroids': data['y_centroid'],
+                'quality_flags': data['quality_flag']
             }
 
     def get_lightcurve_ids(self):
