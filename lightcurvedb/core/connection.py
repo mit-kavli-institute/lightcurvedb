@@ -150,16 +150,14 @@ class DB(object):
         q = self.lightcurves
 
         if isinstance(lightcurve_type, models.LightcurveType):
-            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type.id)
+            q = q.filter(models.Lightcurve.lightcurve_type == lightcurve_type)
         else:
-            x = self.session.query(models.LightcurveType).filter(models.LightcurveType.name == lightcurve_type).one()
-            q = q.filter(models.Lightcurve.lightcurve_type_id == x.id)
+            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type)
 
         if isinstance(aperture, models.Aperture):
-            q = q.filter(models.Lightcurve.aperture_id == aperture.id)
+            q = q.filter(models.Lightcurve.aperture == aperture)
         else:
-            x = self.session.query(models.Aperture).filter(models.Aperture.name == aperture).one()
-            q = q.filter(models.Lightcurve.aperture_id == x.id)
+            q = q.filter(models.Lightcurve.aperture_id == aperture)
 
         q = q.filter(
                 models.Lightcurve.tic_id == tic,
