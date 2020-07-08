@@ -16,12 +16,18 @@ from sqlalchemy.engine.url import URL
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
 from lightcurvedb.models.orbit import ORBIT_DTYPE
-from lightcurvedb.models.frame import FRAME_COMP_DTYPE
+from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_engine
 from lightcurvedb.managers.mass_upserts import MassUpsert
+
+
+# Bring legacy capability
+# TODO Encapsulate so it doesn't pollute this namespace
+LEGACY_FRAME_TYPE_ID = 'Raw FFI'
+FRAME_COMP_DTYPE = [('orbit_id', np.int32)] + FRAME_DTYPE
 
 
 def engine_overrides(**engine_kwargs):
