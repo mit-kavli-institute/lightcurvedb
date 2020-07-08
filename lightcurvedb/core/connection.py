@@ -18,7 +18,7 @@ from lightcurvedb import models
 from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
-from lightcurvedb.core.engines import init_engine
+from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
 from lightcurvedb.managers.mass_upserts import MassUpsert
 
 
@@ -26,7 +26,7 @@ def engine_overrides(**engine_kwargs):
     if 'pool_size' not in engine_kwargs:
         engine_kwargs['pool_size'] = 12
     if 'max_overflow' not in engine_kwargs:
-        engine_kwargs['max_overflow'] = 32
+        engine_kwargs['max_overflow'] = -1
     if 'pool_pre_ping' not in engine_kwargs:
         engine_kwargs['pool_pre_ping'] = True
     if 'poolclass' not in engine_kwargs:
@@ -37,24 +37,19 @@ def engine_overrides(**engine_kwargs):
 class DB(object):
     """Wrapper for SQLAlchemy sessions."""
 
-    def __init__(self, username, password, db_name, db_host, db_type='postgresql+psycopg2', port=5432, **engine_kwargs):
-        if password and len(password) == 0:
-            password = None
-        self._url = URL(db_type, username=username, password=password, host=db_host, port=port, database=db_name)
-        kwargs = engine_overrides(**engine_kwargs)
-        self._engine = init_engine(
-            self._url,
-            **kwargs
-        )
-        self.factory = sessionmaker(bind=self._engine)
-        self.SessionClass = scoped_session(self.factory)
+    def __init__(self, FACTORY, SESSIONCLASS=None):
 
-        # Create any models which are not in the current PSQL schema
-        self._session = None
-        self._active = False
+        if SESSIONCLASS:
+            # Createdb instance opened
+            self.SessionClass = SESSIONCLASS
+            self._session = SESSIONCLASS()
+            self._active = True
+        else:
+            self.__FACTORY__ = FACTORY
+            self.SessionClass = scoped_session(self.__FACTORY__)
+            self._session = None
+            self._active = False
         self._config = None
-
-        self.mass_updater = MassUpsert.init_with_base()
 
     def __enter__(self):
         """Enter into the contejmxt of a SQLAlchemy open session"""
@@ -66,8 +61,7 @@ class DB(object):
 
     def open(self):
         if not self._active:
-            self._session = self.SessionClass()
-            self._active = True
+            return DB(None, SESSIONCLASS=self.SessionClass)
         else:
             warnings.warn(
                 'DB session is already scoped, ignoring duplicate open call',
@@ -76,16 +70,10 @@ class DB(object):
         return self
 
     def close(self):
-        if self._active:
-            self.SessionClass.remove()
+        if self._session is not None:
+            self._session.close()
             self._session = None
             self._active = False
-        else:
-            warnings.warn(
-                'DB session is already closed',
-                RuntimeWarning
-            )
-        return self
 
     @property
     def session(self):
@@ -233,7 +221,6 @@ class DB(object):
         return q
 
     def set_best_aperture(self, tic_id, aperture):
-
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
         self._session.execute(upsert)
 
@@ -264,25 +251,21 @@ class DB(object):
         )
 
 
-def db_from_config(config_path, **engine_kwargs):
+def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
+
     parser = ConfigParser()
     parser.read(config_path)
 
     kwargs = {
         'username': parser.get('Credentials', 'username'),
         'password': parser.get('Credentials', 'password'),
-        'db_name': parser.get('Credentials', 'database_name'),
-        'db_host': parser.get('Credentials', 'database_host'),
+        'database': parser.get('Credentials', 'database_name'),
+        'host': parser.get('Credentials', 'database_host'),
         'port': parser.get('Credentials', 'database_port'),
     }
-    if 'port' not in engine_kwargs:
-        engine_kwargs['port'] = kwargs['port']
 
-    db = DB(
-        kwargs['username'],
-        kwargs['password'],
-        kwargs['db_name'],
-        kwargs['db_host'],
-        **engine_kwargs)
+    url = URL('postgresql+psycopg2', **kwargs)
+    factory = init_LCDB(url, **engine_kwargs)
+    db = DB(factory)
     db._config = config_path
     return db
