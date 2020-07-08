@@ -15,6 +15,8 @@ from sqlalchemy.engine.url import URL
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
+from lightcurvedb.models.orbit import ORBIT_DTYPE
+from lightcurvedb.models.frame import FRAME_COMP_DTYPE
 from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
@@ -117,6 +119,71 @@ class DB(object):
     def lightcurve_types(self):
         return self.session.query(models.LightcurveType)
 
+    # Begin orbit methods
+    def query_orbits_by_id(self, orbit_numbers):
+        """Grab a numpy array representing the orbits"""
+        orbits = self.query(*models.Orbit.get_legacy_attrs())\
+                .filter(models.Orbit.orbit_number.in_(orbit_numbers))\
+                .order_by(models.Orbit.orbit_number)
+        return np.array(orbits.all(), dtype=ORBIT_DTYPE)
+
+    def query_orbit_cadence_limit(self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID):
+        cadence_limit = self.query(
+            func.min(models.Frame.cadence), func.max(models.Frame.cadence)
+        ).join(models.Orbit, models.Frame.orbit_id == models.Orbit.id).filter(
+            models.Frame.cadence_type == cadence_type,
+            models.Frame.camera == camera,
+            models.Frame.frame_type_id == frame_type,
+            models.Orbit.orbit_number == orbit_id
+        )
+
+        return cadence_limit.one()
+
+    def query_orbit_tjd_limit(self, orbit_id, cadence_type, camera):
+        tjd_limit = self.query(
+            func.min(models.Frame.start_tjd), func.max(models.Frame.end_tjd)
+        ).join(models.Frame.orbit).filter(
+            models.Frame.cadence_type == cadence_type,
+            models.Frame.camera == camera,
+            models.Orbit.orbit_number == orbit_id
+        )
+
+        return tjd_limit.one()
+
+    def query_frames_by_orbit(self, orbit_id, cadence_type, camera):
+        # Differs from PATools in that orbit_id != orbit number
+        # so we need to record that.
+        cols = [models.Orbit.orbit_number] + list(models.Frame.get_legacy_attrs())
+        values = self.query(
+            *cols
+        ).join(models.Frame.orbit).filter(
+            models.Frame.cadence_type == cadence_type,
+            models.Frame.camera == camera,
+            models.Orbit.orbit_number == orbit_id
+        ).all()
+
+        return np.array(
+            values, dtype=FRAME_COMP_DTYPE
+        )
+
+    def query_frames_by_cadence(self, camera, cadence_type, cadences):
+        cols = [models.Orbit.orbit_number] + list(models.Frame.get_legacy_attrs())
+        values = self.query(
+            *cols
+        ).join(models.Frame.orbit).filter(
+            models.Frame.cadence_type == cadence_type,
+            models.Frame.camera == camera,
+            models.Frame.cadence.in_(cadences)
+        ).all()
+
+        return np.array(
+            values, dtype=FRAME_COMP_DTYPE
+        )
+
+    def query_all_orbit_ids(self):
+        return self.query(models.Orbit.orbit_number).all()
+
+    # Begin Lightcurve Methods
     def query_lightcurves(self, tics=[], apertures=[], types=[], cadence_types=[30]):
         q = self.lightcurves
         if len(apertures) > 0:
@@ -159,16 +226,6 @@ class DB(object):
 
 
     def lightcurves_from_tics(self, tics, **kw_filters):
-        #pk_type = models.Lightcurve.tic_id.type
-        #mq = MassQuery(
-        #    self.session,
-        #    models.Lightcurve,
-        #    models.Lightcurve.tic_id,
-        #    Column(pk_type, name='tic_id', primary_key=True, index=True),
-        #    **kw_filters
-        #)
-        #mq.mass_insert(tics)
-        #return mq.execute()
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
