@@ -2,6 +2,7 @@ from __future__ import division, print_function
 
 import os
 import warnings
+import numpy as np
 from sys import version_info
 
 from configparser import ConfigParser
