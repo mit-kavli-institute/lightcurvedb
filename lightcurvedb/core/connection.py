@@ -138,31 +138,21 @@ class DB(object):
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
-    def load_from_db(self, tics=[], apertures=[], types=[], cadence_types=[30]):
+    def load_from_db(self, tics=[], apertures=[], types=[]):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.all()
 
-    def yield_from_db(self, chunksize, tics=[], apertures=[], types=[], cadence_types=[30]):
+    def yield_from_db(self, chunksize, tics=[], apertures=[], types=[]):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
         return q.yield_per(chunksize)
 
-    def get_lightcurve(self, tic, lightcurve_type, aperture, cadence_type=30, resolve=True):
-        q = self.lightcurves
+    def get_lightcurve(self, tic, lightcurve_type, aperture, resolve=True):
+        q = self.lightcurves.filter(
+            models.Lightcurve.tic_id == tic,
+            models.Lightcurve.aperture_id == aperture,
+            models.Lightcurve.lightcurve_type_id == lightcurve_type
+        )
 
-        if isinstance(lightcurve_type, models.LightcurveType):
-            q = q.filter(models.Lightcurve.lightcurve_type == lightcurve_type)
-        else:
-            q = q.filter(models.Lightcurve.lightcurve_type_id == lightcurve_type)
-
-        if isinstance(aperture, models.Aperture):
-            q = q.filter(models.Lightcurve.aperture == aperture)
-        else:
-            q = q.filter(models.Lightcurve.aperture_id == aperture)
-
-        q = q.filter(
-                models.Lightcurve.tic_id == tic,
-                models.Lightcurve.cadence_type == cadence_type,
-            )
         if resolve:
             return q.one()
         return q
