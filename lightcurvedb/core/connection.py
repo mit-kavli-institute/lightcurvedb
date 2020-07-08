@@ -7,7 +7,7 @@ from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, create_engine, and_
+from sqlalchemy import Column, create_engine, and_, func
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
