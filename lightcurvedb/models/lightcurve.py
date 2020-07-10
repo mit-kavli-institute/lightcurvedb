@@ -2,8 +2,8 @@ from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.util.merge import matrix_merge
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
-                        String, inspect, cast, Sequence)
-from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION
+                        String, inspect, cast, Sequence, select, join)
+from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, insert
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -251,6 +251,39 @@ class Lightcurve(QLPModel):
             value = value.tolist()
         self._quality_flags = value
 
+    # Expressions
+    @cadences.expression
+    def cadences(cls):
+        return cls._cadences
+
+    @barycentric_julian_date.expression
+    def barycentric_julian_date(cls):
+        return cls._bjd
+
+    @bjd.expression
+    def bjd(cls):
+        return cls._bjd
+
+    @values.expression
+    def values(cls):
+        return cls._values
+
+    @errors.expression
+    def errors(cls):
+        return cls._errors
+
+    @x_centroids.expression
+    def x_centroids(cls):
+        return cls._x_centroids
+
+    @y_centroids.expression
+    def y_centroids(cls):
+        return cls._y_centroids
+
+    @quality_flags.expression
+    def quality_flags(cls):
+        return cls._quality_flags
+
     @classmethod
     def create_mappings(cls, **mappings):
         mapping = {}
@@ -264,4 +297,31 @@ class Lightcurve(QLPModel):
 
         return mapping
 
+    @classmethod
+    def insert_with(cls, stmt):
+        stmt = insert(cls).from_select(
+            [cls.tic_id, cls.aperture_id, cls.lightcurve_type_id,
+             cls.cadences, cls.barycentric_julian_date, cls.values,
+             cls.errors, cls.x_centroids, cls.y_centroids,
+             cls.quality_flags
+            ],
+            stmt
+        )
+        return stmt
 
+    @classmethod
+    def update_with(cls, cte):
+        T = cls.__table__
+        q = T.update().values({
+            cls.cadences: cte.c.cadences,
+            cls.barycentric_julian_date: cte.c.bjd,
+            cls.values: cte.c._values,
+            cls.errors: cte.c.errors,
+            cls.x_centroids: cte.c.x_centroids,
+            cls.y_centroids: cte.c.y_centroids,
+            cls.quality_flags: cte.c.quality_flags
+        }).where(
+            cls.id == cte.c.lightcurve_id
+        )
+
+        return q

@@ -1,4 +1,4 @@
-from sqlalchemy.schema import Table, Column
+from sqlalchemy import Table, Column, BigInteger
 from sqlalchemy.orm import Query
 from sqlalchemy.inspection import inspect
 from sqlalchemy.sql import compiler
@@ -71,5 +71,21 @@ class MassQuery(object):
         self.session.execute(q)
 
 
+def tic_temp_table(session, metadata, tics):
+    tablename = '{}_{}'.format('tic_tmp', os.getpid())
+    temp_table = Table(
+        tablename,
+        metadata,
+        Column('tic_id', BigInteger, primary_key=True),
+        prefixes=['TEMPORARY']
+    )
+    temp_table.create(bind=session.bind)
+    session.commit()
 
+    insertion_q = temp_table.insert().values(
+        [{'tic_id': tic} for tic in tics]
+    )
 
+    session.execute(insertion_q)
+
+    return temp_table

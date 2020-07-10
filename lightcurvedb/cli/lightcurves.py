@@ -3,45 +3,31 @@ import os
 import itertools
 import sys
 import numpy as np
-import logging
 import re
 import pandas as pd
 from tabulate import tabulate
-from random import sample
 from functools import partial
-from sqlalchemy.sql.expression import bindparam
-from sqlalchemy.sql import update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func, and_
+from sqlalchemy.orm import sessionmaker
+from collections import defaultdict
 from multiprocessing import Pool, cpu_count
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation
-from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, LightpointCache, TempLightcurveIDMapper, lc_dict_to_df, parallel_h5_merge
-from lightcurvedb.core.ingestors.quality_flag_ingestors import QualityFlagReference
+from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge
 from lightcurvedb.managers.lightcurve_query import LightcurveManager
 from lightcurvedb.util.iter import partition, chunkify, partition_by
 from lightcurvedb.core.connection import db_from_config
+from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
+from lightcurvedb.core.ingestors.temp_table import TempSession, IngestionJob, TempObservation, TIC8Parameters, LightcurveIDMapper
+from lightcurvedb import db as closed_db
+from glob import glob
 from h5py import File as H5File
 from .base import lcdbcli
 from .utils import find_h5, extr_tic, group_h5
 from .types import CommaList
 
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-logger.addHandler(ch)
-
-logger.debug('Initialized logger')
-
-COLS = [
-    'cadences',
-    'barycentric_julian_date',
-    'values',
-    'errors',
-    'x_centroids',
-    'y_centroids',
-    'quality_flags'
-]
+TIC8Session = sessionmaker(autoflush=True)
+TIC8Session.configure(bind=TIC8_ENGINE)
 
 
 @lcdbcli.group()
@@ -57,56 +43,79 @@ def determine_orbit_path(orbit_dir, orbit, cam, ccd):
     return os.path.join(orbit_dir, orbit_name, 'ffi', cam_name, ccd_name, 'LC')
 
 def determine_h5_path_components(h5path):
-    search = r'orbit-(?P<orbit>[1-9][0-9]*)/ffi/cam(?P<camera>[1-4])/ccd(?P<ccd>[1-4])/LC/(?P<tic>[1-9][0-9]*)\.h5$'
+    search = r'orbit-(?P<orbit_number>[1-9][0-9]*)/ffi/cam(?P<camera>[1-4])/ccd(?P<ccd>[1-4])/LC/(?P<tic_id>[1-9][0-9]*)\.h5$'
     match = re.search(search, h5path)
     if match:
         return match.groupdict()
     return None
 
-def yield_lightcurves_from(file_groups):
-    for h5 in itertools.chain.from_iterable(file_groups):
-        for lc in h5_to_kwargs(h5):
-            yield lc, h5
+def observation_map(session):
+    q = session.query(
+        Observation.tic_id,
+        Observation.camera,
+        Observation.ccd,
+        Orbit.orbit_number
+    ).join(Observation.orbit)
 
-def make_key(kwargs):
-    return (kwargs['tic_id'], kwargs['aperture_id'], kwargs['lightcurve_type_id'])
+    observation_df = pd.read_sql(
+        q.statement,
+        session.session.bind,
+    )
+    return observation_df
+
+def files_to_dict(orbits, cameras, ccds, orbit_dir):
+    for orbit, camera, ccd in itertools.product(orbits, cameras, ccds):
+        path = determine_orbit_path(orbit_dir, orbit, camera, ccd)
+        for h5 in find_h5(path):
+            components = determine_h5_path_components(h5)
+            if components:
+                yield dict(
+                    file_path=h5,
+                    **components
+                )
 
 
-def conv_lc_dict(kwargs):
-    for col in COLS:
-        kwargs[col] = kwargs[col].tolist()
-    return kwargs
+def files_to_df(orbits, cameras, ccds, orbit_dir):
+    df = pd.DataFrame(
+        list(files_to_dict(orbits, cameras, ccds, orbit_dir))
+    )
+    return df
+
+
+def filter_for_tic(base_file_paths, tic):
+    for path in base_file_paths:
+        fullpath = os.path.join(path, f'{tic}.h5')
+        if os.path.exists(fullpath):
+            components = determine_h5_path_components(fullpath)
+            if components:
+                yield dict(
+                    file_path=fullpath,
+                    **components
+                )
+
 
 @lightcurve.command()
 @click.pass_context
 @click.argument('orbits', type=int, nargs=-1)
 @click.option('--n-process', type=int, default=-1, help='Number of cores. <= 0 will use all cores available')
+@click.option('--n-tics', type=int, default=1000, help='Number of tics to be given per worker')
 @click.option('--cameras', type=CommaList(int), default='1,2,3,4')
 @click.option('--ccds', type=CommaList(int), default='1,2,3,4')
 @click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
 @click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/')
-def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
-    temp_ids = TempLightcurveIDMapper()
-    pid = os.getpid()
-    uri = os.path.join(scratch, f'{pid}-lightpoints.db')
-    lightpoints = LightpointCache()
+@click.option('--smart-update/--force-full-update', default=True)
+def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch, smart_update):
     current_tmp_id = -1
-    with ctx.obj['dbconf'] as db:
+
+    # Create a sqlite session to hold job contexts across processes
+    job_sqlite = TempSession()
+
+    with closed_db as db:
         orbits = db.orbits.filter(Orbit.orbit_number.in_(orbits)).all()
-        orbit_numbers = [o.orbit_number for o in orbits]
+        orbit_numbers = sorted([o.orbit_number for o in orbits])
         orbit_map = {
             orbit.orbit_number: orbit.id for orbit in orbits
         }
-        apertures = db.apertures.all()
-        lc_types = db.lightcurve_types.all()
-
-        qflag_ref = QualityFlagReference()
-        for orbit_n in orbit_numbers:
-            qflag_ref.ingest(orbit_n)
-
-        click.echo(
-            'Ingesting {} orbits with {} apertures'.format(len(orbits), len(apertures))
-        )
 
         if n_process <= 0:
             n_process = cpu_count()
@@ -114,81 +123,150 @@ def ingest_h5(ctx, orbits, n_process, cameras, ccds, orbit_dir, scratch):
         click.echo(
             'Utilizing {} cores'.format(click.style(str(n_process), bold=True))
         )
+        file_df = files_to_df(orbit_numbers, cameras, ccds, orbit_dir)
+        observation_df = observation_map(db)
 
-        paths = [determine_orbit_path(orbit_dir, o, cam, ccd) for o, cam, ccd in itertools.product(orbit_numbers, cameras, ccds)]
-        grouped_lcs = list(group_h5(find_h5(*paths)))
+        click.echo('Determining needed ingestion jobs')
+        ref_tics = file_df['tic_id'].unique()
 
-        tics = {group[0] for group in grouped_lcs}
-        click.echo(f'Will process {len(tics)} TICs')
+        job_sqlite.bulk_insert_mappings(IngestionJob, file_df.to_dict('records'))
+        job_sqlite.bulk_insert_mappings(TempObservation, observation_df.to_dict('records'))
 
-        for tic_chunk in chunkify(tics, 10000):
-            q = db.lightcurves_from_tics(tic_chunk)
-            observations = []
-            observed_tics = set()
-            logger.debug(f'Executing query for existing lightcurves')
-            for lightcurve in q.yield_per(100):
-                logger.debug(f'Loading {lightcurve}, length: {len(lightcurve)}')
-                lightpoints.ingest_lc(lightcurve)
-                temp_ids.set_id(
-                    lightcurve.id,
-                    lightcurve.tic_id,
-                    lightcurve.aperture_id,
-                    lightcurve.lightcurve_type_id
+        job_sqlite.commit()
+
+        if smart_update:
+            # Only process new observations, delete any ingestion job that already
+            # has a defined observation
+            click.echo(f'Determining merge solutions')
+            bad_ids = job_sqlite.query(
+                IngestionJob.id
+            ).join(
+                TempObservation,
+                and_(
+                    IngestionJob.tic_id == TempObservation.tic_id,
+                    IngestionJob.orbit_number == TempObservation.orbit_number
                 )
+            )
+            n_bad = bad_ids.count()
 
-            file_groups = [group for _, group in filter(lambda g: g[0] in tic_chunk, grouped_lcs)]
+            job_sqlite.query(IngestionJob).filter(IngestionJob.id.in_(bad_ids.subquery())).delete(synchronize_session=False)
 
-            new_lcs = []
+            job_sqlite.commit()
+            click.echo(
+                'Removed {} jobs as these files have already been ingested'.format(
+                    click.style(str(n_bad), fg='green', bold=True)
+                )
+            )
+        else:
+            # Look at all the files, process everything
+            pass
 
-            with Pool(n_process) as p:
-                results = p.imap_unordered(parallel_h5_merge, file_groups)
-                for lc_observed_in, merged_lc_kwargs in results:
-                    observations += lc_observed_in
-                    for merged_lc_kwarg in merged_lc_kwargs:
-                        id_check = temp_ids.get_id_by_dict(merged_lc_kwarg)
-                        if id_check is None:
-                            temp_ids.set_id(
-                                current_tmp_id,
-                                merged_lc_kwarg['tic_id'],
-                                merged_lc_kwarg['aperture_id'],
-                                merged_lc_kwarg['lightcurve_type_id']
-                            )
-                            id_check = current_tmp_id
-                            current_tmp_id -= 1
-                            new_lcs.append(
-                                conv_lc_dict(merged_lc_kwarg)
-                            )
-                        else:
-                            # Emplace
-                            lightpoints.ingest_dict(merged_lc_kwarg, id_check)
-                    logger.info(f'Processed {lc_observed_in[0]["tic_id"]}')
+        n_jobs = job_sqlite.query(IngestionJob.id).count()
+        tics = {r for r, in job_sqlite.query(IngestionJob.tic_id).distinct().all()}
 
-            lightcurve_q = insert(Lightcurve.__table__)
-            observation_q = insert(Observation.__table__).on_conflict_do_nothing()
+        # Create TIC8 Session and load in necessary stellar parameters
+        tic8 = TIC8Session()
+        #  Chunkify to reduce querysize
+        click.echo('Grabbing needed info from TIC8')
+        for nth_chunk, tic_chunk in enumerate(chunkify(tics, 10000)):
+            click.echo(f'Pre-processing TIC chunk {nth_chunk+1}')
+            params = pd.read_sql(
+                tic8.query(
+                    TIC_Entries.c.id.label('tic_id'),
+                    TIC_Entries.c.ra.label('right_ascension'),
+                    TIC_Entries.c.dec.label('declination'),
+                    TIC_Entries.c.tmag.label('tmag'),
+                    TIC_Entries.c.e_tmag.label('tmag_error')
+                ).filter(TIC_Entries.c.id.in_(tic_chunk)).statement,
+                tic8.bind
+            )
+            job_sqlite.bulk_insert_mappings(
+                TIC8Parameters,
+                params.to_dict('records')
+            )
+            # Load in ID Map
+            q = db.query(
+                Lightcurve.id,
+                Lightcurve.tic_id,
+                Lightcurve.aperture_id,
+                Lightcurve.lightcurve_type_id
+            ).filter(Lightcurve.tic_id.in_(tic_chunk))
+            lc_kwargs = [dict(zip(row.keys(), row)) for row in q.all()]
 
-            for observation in observations:
-                observation['orbit_id'] = orbit_map[int(observation['orbit'])]
-                del observation['orbit']
+            job_sqlite.bulk_insert_mappings(
+                LightcurveIDMapper,
+                lc_kwargs
+            )
 
-            logger.info(f'Performing insertion of {len(new_lcs)} new lightcurves')
-            for data_chunk in chunkify(new_lcs, 100):
-                db.session.execute(lightcurve_q, data_chunk)
-            logger.info(f'Performing insertion of {len(observation)} tic observation maps')
-            db.session.execute(observation_q, observations)
+        job_sqlite.commit()
+    click.echo(f'Will process {len(tics)} TICs')
 
-            logger.info(f'Performing update query construction')
-            q = update(Lightcurve.__table__).where(Lightcurve.id == bindparam('_id')).values({
-                'cadences': bindparam('cadences'),
-                'barycentric_julian_date': bindparam('barycentric_julian_date'),
-                'values': bindparam('values'),
-                'errors': bindparam('errors'),
-                'x_centroids': bindparam('x_centroids'),
-                'y_centroids': bindparam('y_centroids'),
-                'quality_flags': bindparam('quality_flags')
-                })
-            merging_lc_ids = lightpoints.get_lightcurve_ids()
-            logger.info(f'Updating {len(merging_lc_ids)} lightcurves')
-            for ids in chunkify(merging_lc_ids, 100):
-                db.session.execute(q, list(lightpoints.yield_insert_kwargs(ids)))
+    jobs = [chunk for chunk in chunkify(tics, n_tics)]
 
-        db.commit()
+    with Pool(n_process) as p:
+        func = partial(parallel_h5_merge, ctx.obj['dbconf']._config)
+        results = p.imap_unordered(func, jobs)
+        for nth, result in enumerate(results):
+            click.echo(f'Worker successfully processed {result} tics. Job ({nth+1}/{len(jobs)})')
+
+    job_sqlite.close()
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument('ticlist', type=click.Path(exists=True, dir_okay=False))
+@click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
+def manual_ingest(ctx, ticlist, orbit_dir):
+
+    tics = [int(ticstr.split('.')[0]) for ticstr in open(ticlist, 'rt').readlines()]
+
+    job_sqlite = TempSession()
+
+
+    with closed_db as db:
+        # Grab orbits
+        orbits = db.orbits.all()
+        numbers = {o.orbit_number for o in orbits}
+        paths = [determine_orbit_path(orbit_dir, o, cam, ccd) for o, cam, ccd in itertools.product(numbers, [1,2,3,4],[1,2,3,4])]
+        raw_lcs = []
+        for tic in tics:
+            raw_lcs += list(filter_for_tic(paths, tic))
+
+        job_sqlite.bulk_insert_mappings(IngestionJob, raw_lcs)
+        job_sqlite.commit()
+
+        tic8 = TIC8Session()
+
+        params = pd.read_sql(
+            tic8.query(
+                TIC_Entries.c.id.label('tic_id'),
+                TIC_Entries.c.ra.label('right_ascension'),
+                TIC_Entries.c.dec.label('declination'),
+                TIC_Entries.c.tmag.label('tmag'),
+                TIC_Entries.c.e_tmag.label('tmag_error')
+            ).filter(TIC_Entries.c.id.in_(tics)).statement,
+                tic8.bind
+        )
+
+        job_sqlite.bulk_insert_mappings(
+            TIC8Parameters,
+            params.to_dict('records')
+        )
+
+        q = db.query(
+                Lightcurve.id,
+                Lightcurve.tic_id,
+                Lightcurve.aperture_id,
+                Lightcurve.lightcurve_type_id
+            ).filter(Lightcurve.tic_id.in_(tics))
+        lc_kwargs = [dict(zip(row.keys(), row)) for row in q.all()]
+
+        job_sqlite.bulk_insert_mappings(
+            LightcurveIDMapper,
+            lc_kwargs
+        )
+
+        job_sqlite.commit()
+
+        parallel_h5_merge(ctx.obj['dbconf']._config, tics)
+    job_sqlite.close()

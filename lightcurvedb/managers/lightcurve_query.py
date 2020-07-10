@@ -1,13 +1,24 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from functools import partial
 import os
+from abc import ABCMeta, abstractmethod
 import multiprocessing as mp
 from itertools import groupby
 from sqlalchemy.ext.serializer import dumps
 from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.inspection import inspect
 from lightcurvedb.exceptions import LightcurveDBException
 from lightcurvedb.models import Lightcurve
+
+
+class AmbiguousIdentifierDeduction(LightcurveDBException):
+    """Raised when resolving a lightcurve ID and an insufficent
+    set of identifiers were passed to successfully determine a scalar
+    ID or lack thereof.
+    """
+    pass
 
 
 class DuplicateEntryException(LightcurveDBException):
@@ -26,6 +37,81 @@ class IncongruentLightcurve(LightcurveDBException):
 def set_dict():
     """Helper to create default dictionaries with set objects"""
     return defaultdict(set)
+
+
+class Manager(object):
+    """Base Manager object. Defines abstract methods to retrive, store,
+    and update lightcurves."""
+    __metaclass__ = ABCMeta
+    __managed_class__ = None
+    __PK_tuple__ = None
+
+    __model_registry__ = dict()  # Will be keyed by __PK_tuple__
+    __unique_col_registery__ = defaultdict(dict)  # Keyed by unique_constraints
+
+    __resolvers__ = set()  # A set of sets
+
+    __new_ids__ = set()
+    __existing_ids__ = set()
+
+
+    def __init__(self):
+        # Use the defined managed class to determine identifiers
+        inspection = inspect(self.__managed_class__)
+        pk_cols, self.__PK_tuple__ = self.__get_pk_namedtuple__()
+
+        self.__resolvers__.add(set(c.name for c in pk_cols))
+
+        # Create additional resolution rules to allow deduction of a singular
+        # object instance
+        for cols, constraint_tuple in self.__yield_unique_namedtuples__():
+            raise NotImplementedError
+
+
+    def __get_pk_namedtuple__(self):
+        Model = self.__managed_class__
+        inspector = inspect(Model)
+
+        pk_constraint = inspector.primary_key
+        return pk_constraint, namedtuple('PrimaryKey', pk_constraint)
+
+    def __yield_unique_namedtuples__(self):
+        Model = self.__managed_class__
+        inspector = inspect(Model)
+
+        constraints = Model.__table__
+
+        for constraint in constraints:
+            if isinstance(constraint, UniqueConstraint):
+                cols = constraint.columns
+                yield cols, namedtuple(constraint.name, cols)
+
+    def __attempt_to_resolve_id__(self, **columns):
+        # Return the first set of identifiers that match a resolution rule
+        raise NotImplementedError
+
+    def __reduce_items__(self, *identifier_values):
+        pass
+
+    @abstractmethod
+    def get_id(self, **identifiers):
+        pass
+
+    @abstractmethod
+    def get_item_by_id(self, id_):
+        pass
+
+    @abstractmethod
+    def create_id(self, **identifiers):
+        pass
+
+    @abstractmethod
+    def upsert_data(self, **data):
+        pass
+
+    @abstractmethod
+    def remove_data(self, **identifiers):
+        pass
 
 
 class LightcurveManager(object):

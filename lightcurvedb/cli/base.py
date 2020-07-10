@@ -1,5 +1,6 @@
 import click
 import os
+from lightcurvedb.util.logging import set_level
 from .types import Database
 
 
@@ -9,8 +10,10 @@ from .types import Database
 @click.option('--dryrun/--wetrun', default=False, help='If dryrun, no changes will be commited, recommended for first runs')
 @click.option('--scratch', '-s', default='/scratch/tmp', type=click.Path(file_okay=False, exists=True), help='Path to scratch disk for caching')
 @click.option('--qlp-data', default='/pdo/qlp-data/', type=click.Path(file_okay=False, exists=True), help='The base QLP-Data directory')
-def lcdbcli(ctx, dbconf, dryrun, scratch, qlp_data):
+@click.option('--logging', default='info')
+def lcdbcli(ctx, dbconf, dryrun, scratch, qlp_data, logging):
     """Master command for all lightcurve database commandline interaction"""
+    set_level(logging)
     if dryrun:
         click.echo(click.style('Running in dryrun mode', fg='green'))
     else:

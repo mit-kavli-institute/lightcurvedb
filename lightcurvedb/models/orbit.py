@@ -1,11 +1,14 @@
 import re
-from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, Boolean, Sequence
+from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, Boolean, Sequence, select, func
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
 import numpy as np
+import click
 from astropy.io import fits
 from multiprocessing import Pool
+from .frame import Frame
 
 
 def _extr_fits_header(f):
@@ -52,6 +55,12 @@ class Orbit(QLPReference):
     # Relationships
     frames = relationship('Frame', back_populates='orbit')
     observations = relationship('Observation', back_populates='orbit')
+
+    # Click Parameters
+    click_parameters = click.Choice(
+        ['orbit_number', 'sector', 'ra', 'dec', 'roll', 'basename'],
+        case_sensitive=False
+    )
 
     def __repr__(self):
         return 'Orbit-{} Sector-{} ({:.3f}, {:.3f}, {:.3f}) {}'.format(
@@ -120,3 +129,45 @@ class Orbit(QLPReference):
         return cls(
             **attrs
         )
+
+    @hybrid_property
+    def max_cadence(self):
+        cadences = {f.cadence for f in self.frames}
+        return max(cadences)
+
+    @hybrid_property
+    def min_cadence(self):
+        cadences = {f.cadence for f in self.frames}
+        return min(cadences)
+
+    @hybrid_property
+    def ra(self):
+        return self.right_ascension
+
+    @hybrid_property
+    def dec(self):
+        return self.declination
+
+    @hybrid_property
+    def cadences(self):
+        return [f.cadence for f in self.frames]
+
+    @cadences.expression
+    def cadences(cls):
+        return Frame.cadence
+
+    @max_cadence.expression
+    def max_cadence(cls):
+        return func.max(Frame.cadence).label('max_cadence')
+
+    @min_cadence.expression
+    def min_cadence(cls):
+        return func.min(Frame.cadence).label('min_cadence')
+
+    @ra.expression
+    def ra(cls):
+        return cls.right_ascension
+
+    @dec.expression
+    def dec(cls):
+        return cls.declination

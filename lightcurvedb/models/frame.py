@@ -72,8 +72,8 @@ class Frame(QLPDataProduct):
     file_path = Column(String, nullable=False, unique=True)
 
     # Foreign Keys
-    orbit_id = Column(Integer, ForeignKey('orbits.id', ondelete='RESTRICT'), nullable=False)
-    frame_type_id = Column(ForeignKey('frametypes.name', ondelete='RESTRICT'), nullable=False)
+    orbit_id = Column(Integer, ForeignKey('orbits.id', ondelete='RESTRICT'), nullable=False, index=True)
+    frame_type_id = Column(ForeignKey('frametypes.name', ondelete='RESTRICT'), nullable=False, index=True)
 
     # Relationships
     orbit = relationship('Orbit', back_populates='frames')

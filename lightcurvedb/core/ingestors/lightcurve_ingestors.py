@@ -1,16 +1,25 @@
 from h5py import File as H5File
-from datetime import datetime
-from sqlalchemy import Sequence
-from lightcurvedb.models import Aperture, LightcurveType, Lightcurve
+from math import ceil
+from sqlalchemy import Sequence, Column, BigInteger, Integer, func, text, Table, String, select, bindparam, join
+from sqlalchemy.orm.session import Session, sessionmaker
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
+from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Observation, Orbit, Frame
 from lightcurvedb.util.iter import chunkify
+from lightcurvedb.util.logger import lcdb_logger as logger
+from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
+from lightcurvedb.legacy.timecorrect import TimeCorrector
+from lightcurvedb import db_from_config
 import numpy as np
 import pandas as pd
 import os
 import re
-import sqlite3
-import itertools
-from copy import deepcopy
-from .base import Ingestor
+import time
+from itertools import product
+from .temp_table import LightcurveIDMapper, TempObservation, IngestionJob, TIC8Parameters, TempSession
+
+
+THRESHOLD = 1 * 10**9  # bytes
 
 
 path_components = re.compile(r'orbit-(?P<orbit>[1-9][0-9]*)/ffi/cam(?P<camera>[1-4])/ccd(?P<ccd>[1-4])/LC/(?P<tic>[1-9][0-9]*)\.h5$')
@@ -33,10 +42,11 @@ H5_LC_TYPES = {
 
 def h5_to_observation(filepath):
     context = path_components.search(filepath).groupdict()
-    mapped = deepcopy(context)
+    mapped = dict(context)
     mapped['tic_id'] = mapped['tic']
     del mapped['tic']
     return mapped
+
 
 def h5_to_matrices(filepath):
     with H5File(filepath, 'r') as h5in:
@@ -78,7 +88,7 @@ def h5_to_matrices(filepath):
                 yield result
 
 
-def h5_to_kwargs(filepath):
+def h5_to_kwargs(filepath, orbit=None, camera=None, ccd=None):
     with H5File(filepath, 'r') as h5in:
         lc = h5in['LightCurve']
         tic = int(os.path.basename(filepath).split('.')[0])
@@ -109,254 +119,322 @@ def h5_to_kwargs(filepath):
                     'errors': errors,
                     'x_centroids': x_centroids,
                     'y_centroids': y_centroids,
-                    'quality_flags': quality_flags
+                    'quality_flags': quality_flags,
+                    'orbit_number': orbit,
+                    'camera': camera, 
+                    'ccd': ccd
                 }
 
 
-def lc_dict_to_df(dictionary):
-    return pd.DataFrame(
+def lc_dict_to_df(dictionary, **constants):
+
+    df = pd.DataFrame(
          {
+            'cadence': dictionary['cadences'],
             'barycentric_julian_date': dictionary['barycentric_julian_date'],
-            'values': dictionary['values'],
-            'errors': dictionary['errors'],
-            'x_centroids': dictionary['x_centroids'],
-            'y_centroids': dictionary['y_centroids'],
-            'quality_flags': dictionary['quality_flags']
-        },
-        index=dictionary['cadences']
+            'value': dictionary['values'],
+            'error': dictionary['errors'],
+            'x_centroid': dictionary['x_centroids'],
+            'y_centroid': dictionary['y_centroids'],
+            'quality_flag': dictionary['quality_flags'],
+            'orbit_number': dictionary['orbit_number'],
+            'camera': dictionary['camera'],
+            'ccd': dictionary['ccd']
+        }
+    )
+    for name, value in constants.items():
+        df[name] = value
+    return df
+
+
+def load_quality_flags(*orbit_numbers):
+    dfs = []
+    for orbit, camera, ccd in product(orbit_numbers, [1,2,3,4], [1,2,3,4]):
+        path = os.path.join(
+            '/','pdo', 'qlp-data',
+            'orbit-{}'.format(orbit),
+            'ffi',
+            'run'
+        )
+        filename = 'cam{}ccd{}_qflag.txt'.format(camera, ccd)
+        full_path = os.path.join(path, filename)
+        q_df = pd.read_csv(
+            full_path,
+            delimiter=' ',
+            names=['cadence', 'quality_flag'],
+            dtype={'cadence': int, 'quality_flag': int}
+        )
+        q_df['camera'] = camera
+        q_df['ccd'] = ccd
+        q_df = q_df.set_index(['cadence', 'camera', 'ccd'])
+        q_df.index.rename(['cadence', 'camera', 'ccd'])
+        dfs.append(q_df)
+
+    df = pd.concat(dfs)
+    df = df[~df.index.duplicated(keep='last')]
+    return df
+
+def assign_quality_flags(lp_df, qf_df):
+    index = pd.MultiIndex.from_frame(lp_df[['cadence', 'camera', 'ccd']])
+    reindexed = qf_df.loc[index]
+    lp_df['quality_flag'] = reindexed.quality_flag.values
+
+
+def align_orbit(lp_df, tmag):
+    values = np.array(lp_df['value'])
+    quality_flags = np.array(lp_df['quality_flag'])
+    good_values = values[quality_flags == 0]
+    offset = np.nanmedian(good_values) - tmag
+    lp_df['value'] = values - offset
+
+
+def approx_lp_mem(lightpoints):
+    mem = lightpoints.memory_usage()
+    db_columns = [
+        'lightcurve_id',
+        'cadence',
+        'barycentric_julian_date',
+        'value',
+        'error',
+        'x_centroid',
+        'y_centroid',
+        'quality_flag'
+    ]
+    total = sum([mem[col] for col in db_columns])
+    return total
+
+
+def yield_new_lc_dict(merged, lc_kwargs):
+    merged = merged[merged['lightcurve_id'] < 0]
+
+    mem_requirement = 0
+    batch = []
+    for id_, lightpoints in merged.groupby('lightcurve_id'):
+        sorted_lp = lightpoints.sort_values('cadence')
+        r = dict(
+            tic_id=lc_kwargs.loc[id_]['tic_id'],
+            aperture_id=lc_kwargs.loc[id_]['aperture'],
+            lightcurve_type_id=lc_kwargs.loc[id_]['lightcurve_type'],
+            cadences=sorted_lp['cadence'],
+            barycentric_julian_date=sorted_lp['barycentric_julian_date'],
+            values=sorted_lp['value'],
+            errors=sorted_lp['error'],
+            x_centroids=sorted_lp['x_centroid'],
+            y_centroids=sorted_lp['y_centroid'],
+            quality_flags=sorted_lp['quality_flag']
+        )
+
+        batch.append(r)
+        mem_requirement += approx_lp_mem(lightpoints)
+        # Check if we've reached the threshold
+        if mem_requirement >= THRESHOLD:
+            yield batch
+            batch = []
+    # Clean up any remaining batches
+    if len(batch) > 0:
+        yield batch
+
+
+def yield_merge_lc_dict(merged, lc_kwargs):
+    merged = merged[merged['lightcurve_id'] > 0]
+
+    mem_requirement = 0
+    batch = []
+    for id_, lightpoints in merged.groupby('lightcurve_id'):
+        sorted_lp = lightpoints.sort_values('cadence')
+        r = dict(
+            _id=int(id_),
+            cadences=sorted_lp['cadence'],
+            bjd=sorted_lp['barycentric_julian_date'],
+            _values=sorted_lp['value'],
+            errors=sorted_lp['error'],
+            x_centroids=sorted_lp['x_centroid'],
+            y_centroids=sorted_lp['y_centroid'],
+            quality_flags=sorted_lp['quality_flag']
+        )
+        batch.append(r)
+        mem_requirement += approx_lp_mem(lightpoints)
+
+        if mem_requirement >= THRESHOLD:
+            yield batch
+            batch = []
+            mem_requirement = 0
+    if len(batch) > 0:
+        yield batch
+
+
+def parallel_h5_merge(config, tics):
+    # Setup necessary contexts
+    job_sqlite = TempSession()
+    pid = os.getpid()
+    observations = []
+    jobs = []
+    for tic_chunk in chunkify(tics, 999):
+        q = job_sqlite.query(IngestionJob).filter(IngestionJob.tic_id.in_(tic_chunk)).all()
+        for job in q:
+            jobs.append(job)
+
+    orbits = set(job.orbit_number for job in jobs)
+
+    quality_flags = load_quality_flags(*orbits)
+    logger.debug(f'Worker-{pid} parsed file contexts')
+
+    tic_parameters = pd.concat(
+        [
+            pd.read_sql(
+                job_sqlite.query(
+                    TIC8Parameters.tic_id,
+                    TIC8Parameters.right_ascension.label('ra'),
+                    TIC8Parameters.declination.label('dec'),
+                    TIC8Parameters.tmag
+            ).filter(TIC8Parameters.tic_id.in_(tic_chunk)).statement,
+            job_sqlite.bind,
+            index_col=['tic_id'])
+            for tic_chunk in chunkify(tics, 999)
+        ]
     )
 
+    dataframes = []
+    tmp_id_map = {}
 
-def merge_h5(*h5_files):
-    pid = os.getpid()
-    kwargs = []
+    job_sqlite.close()
+    with db_from_config() as db:
+        id_q = db.query(
+            Lightcurve.id,
+            Lightcurve.tic_id,
+            Lightcurve.aperture_id,
+            Lightcurve.lightcurve_type_id
+        ).filter(Lightcurve.tic_id.in_(tics))
+        for id_, tic_id, aperture, lc_type in id_q.all():
+            tmp_id_map[(tic_id, aperture, lc_type)] = id_
 
-    for h5 in h5_files:
-        for kwarg in h5_to_kwargs(h5):
-            kwargs.append(kwarg)
-    tic_id = kwargs[0]['tic_id']
-    apertures = {kwarg['aperture_id'] for kwarg in kwargs}
-    types = {kwarg['lightcurve_type_id'] for kwarg in kwargs}
-
-    for aperture, lc_type in itertools.product(apertures, types):
-
-        parallel_lcs = list(
-            filter(
-                lambda k: k['aperture_id'] == aperture and k['lightcurve_type_id'] == lc_type,
-                kwargs
-            )
+        time_corrector = TimeCorrector(db.session, tic_parameters)
+        orbit_map = pd.read_sql(
+            db.query(
+                Orbit.id.label('orbit_id'),
+                Orbit.orbit_number
+            ).statement,
+            db.session.bind,
+            index_col=['orbit_number']
         )
-        ref = deepcopy(parallel_lcs[0])
 
-        cadence_lengths = ' '.join(map(lambda p: str(len(p['cadences'])), parallel_lcs))
-        values_lengths = ' '.join(map(lambda p: str(len(p['values'])), parallel_lcs))
+        logger.debug(f'Worker-{pid} instantiated TimeCorrector')
 
-        dfs = [lc_dict_to_df(kwarg) for kwarg in parallel_lcs]
+        # Preload existing lightcurves into dataframe as lightpoints
+        initial_lp = pd.read_sql(
+            db.query(
+                Lightcurve.id.label('lightcurve_id'),
+                func.unnest(Lightcurve.cadences).label('cadence'),
+                func.unnest(Lightcurve.bjd).label('barycentric_julian_date'),
+                func.unnest(Lightcurve.values).label('value'),
+                func.unnest(Lightcurve.errors).label('error'),
+                func.unnest(Lightcurve.x_centroids).label('x_centroid'),
+                func.unnest(Lightcurve.y_centroids).label('y_centroid'),
+                func.unnest(Lightcurve.quality_flags).label('quality_flag')
+            ).filter(Lightcurve.tic_id.in_(tics)).statement,
+            db.session.bind,
+            index_col=['lightcurve_id', 'cadence']
+        )
+        initial_lp.index.rename(['lightcurve_id', 'cadence'], inplace=True)
+        logger.debug(f'Worker-{pid} preloaded {len(initial_lp)} lightpoints')
+        dataframes.append(initial_lp)
+        #  All needed pretexts are needed to begin ingesting
+        tmp_lc_id = -1
+        logger.debug(f'Worker-{pid} processing files...')
+        time_0 = time.time()
+        for nth, job in enumerate(jobs):
+            observation = dict(
+                tic_id=job.tic_id,
+                camera=job.camera,
+                ccd=job.ccd,
+                orbit_id=orbit_map.loc[job.orbit_number]['orbit_id']
+            )
+            observations.append(observation)
+            orbit = job.orbit_number
+            camera = job.camera
+            ccd = job.ccd
+            for kwarg in h5_to_kwargs(job.file_path, orbit=orbit, camera=camera, ccd=ccd):
+                key = (
+                    kwarg['tic_id'],
+                    kwarg['aperture_id'],
+                    kwarg['lightcurve_type_id']
+                )
+                try:
+                    id_ = tmp_id_map[key]
+                except KeyError:
+                    id_ = tmp_lc_id
+                    tmp_id_map[key] = id_
+                    tmp_lc_id -= 1
 
-        merged = pd.concat(dfs)
+                df = lc_dict_to_df(
+                    kwarg,
+                    lightcurve_id=id_,
+                )
+
+                # Time correct
+                earth_tjd = time_corrector.correct(
+                    int(observation['tic_id']),
+                    time_corrector.mid_tjd(df)
+                )
+                df['barycentric_julian_date'] = earth_tjd
+
+                # Quality flag assignment
+                assign_quality_flags(df, quality_flags)
+
+                # Orbit alignment
+                tmag = tic_parameters.loc[kwarg['tic_id']]['tmag']
+                align_orbit(df, tmag)
+
+                df = df.set_index(['lightcurve_id', 'cadence'])
+                df.index.rename(['lightcurve_id', 'cadence'], inplace=True)
+                dataframes.append(df)
+            elapsed = time.time() - time_0
+            if elapsed > 10:  # Ten seconds
+                logger.debug(f'Worker-{pid} status {nth}/{len(jobs)}')
+                time_0 = time.time()
+
+        # Grab lightcurve kwarg dump to properly discern to insert/update
+        kwarg_map = pd.DataFrame(
+            [dict(tic_id=k[0], aperture=k[1], lightcurve_type=k[2], id=v) for k, v in tmp_id_map.items()]
+        )
+        kwarg_map.set_index('id', inplace=True)
+        # Done! We just need to merge back into the lightcurves table
+        # and commit to finalize the changes
+        merged = pd.concat(dataframes, sort=False)
         merged = merged[~merged.index.duplicated(keep='last')]
-        merged.sort_index(inplace=True)
+        merged.reset_index(inplace=True)
 
-        yield {
-            'tic_id': tic_id,
-            'aperture_id': aperture,
-            'lightcurve_type_id': lc_type,
-            'cadences': np.array(merged.index),
-            'barycentric_julian_date': np.array(merged.barycentric_julian_date),
-            'values': np.array(merged['values']),
-            'errors': np.array(merged.errors),
-            'x_centroids': np.array(merged.x_centroids),
-            'y_centroids': np.array(merged.y_centroids),
-            'quality_flags': np.array(merged.quality_flags)
-        }
-
-
-def parallel_h5_merge(file_group):
-    merged = list(merge_h5(*file_group))
-    observations = [h5_to_observation(f) for f in file_group]
-
-    return observations, merged
-    
-
-class LightpointCache(object):
-    def __init__(self, uri=':memory:', create_index=True):
-        self.uri = uri
-        self._db = sqlite3.connect(uri, uri=True)
-
-        index_cols = ['lightcurve_id', 'cadence']
-        self._db.execute(
-            'CREATE TABLE IF NOT EXISTS '
-            'lightpoints ( '
-            'id INTEGER PRIMARY KEY AUTOINCREMENT, '
-            'lightcurve_id INTEGER NOT NULL, '
-            'cadence INTEGER NOT NULL, '
-            'barycentric_julian_date REAL NOT NULL, '
-            'value REAL, '
-            'error REAL, '
-            'x_centroid REAL, '
-            'y_centroid REAL, '
-            'quality_flag INTEGER NOT NULL) '
-        )
-        if create_index:
-            for col in index_cols:
-                self._db.execute(
-                    'CREATE INDEX idx_{} ON lightpoints ({})'.format(
-                        col, col
-                    )
-                )
-
-    def __del__(self):
-        self._db.close()
-        if os.path.exists(self.uri):
-            os.remove(self.uri)
-
-    def ingest_lc_df(self, dataframe, temp_lc_id, rename=True):
-        if rename:
-            aliased = dataframe.rename(
-                columns={
-                    'cadences': 'cadence',
-                    'values': 'value',
-                    'errors': 'error',
-                    'x_centroids': 'x_centroid',
-                    'y_centroids': 'y_centroid',
-                    'quality_flags': 'quality_flag'
-                }
+        for batch in yield_new_lc_dict(merged, kwarg_map):
+            logger.debug(f'Worker-{pid} inserting {len(batch)} new lightcurves')
+            q = Lightcurve.__table__.insert().values(batch)
+            db.session.execute(
+                q
             )
-        else:
-            aliased = dataframe
-        aliased['cadence'] = aliased.index
-        aliased = aliased.assign(lightcurve_id=lambda x: temp_lc_id)
-        aliased.to_sql(
-            'lightpoints',
-            con=self._db,
-            if_exists='append',
-            index=False
+
+
+        for batch in yield_merge_lc_dict(merged, kwarg_map):
+            logger.debug(f'Worker-{pid} updating {len(batch)} lightcurves')
+            update_q = Lightcurve.__table__.update().where(
+                Lightcurve.id == bindparam('_id')
+            ).values({
+                Lightcurve.cadences: bindparam('cadences'),
+                Lightcurve.bjd: bindparam('bjd'),
+                Lightcurve.values: bindparam('_values'),
+                Lightcurve.errors: bindparam('errors'),
+                Lightcurve.x_centroids: bindparam('x_centroids'),
+                Lightcurve.y_centroids: bindparam('y_centroids'),
+                Lightcurve.quality_flags: bindparam('quality_flag')
+            })
+            db.session.execute(update_q, batch)
+
+        logger.debug(f'Worker-{pid} updating observations')
+        observations = pd.DataFrame(observations).set_index(['tic_id', 'orbit_id'])
+        observations = observations[~observations.index.duplicated(keep='last')]
+        observations.reset_index(inplace=True)
+        db.session.execute(
+            Observation.upsert_dicts(),
+            observations.to_dict('records')
         )
-
-    def ingest_lc(self, lightcurve):
-        df = lightcurve.to_df
-        self.ingest_lc_df(df, lightcurve.id, rename=True)
-
-    def ingest_dict(self, dictionary, id):
-        df = lc_dict_to_df(dictionary)
-        self.ingest_lc_df(df, id, rename=True)
-
-    def get_lc(self, _id):
-        cols = [
-            'cadence',
-            'barycentric_julian_date',
-            'value',
-            'error',
-            'x_centroid',
-            'y_centroid',
-            'quality_flag'
-        ]
-        col_clause = ', '.join(cols)
-        command = (
-            f'SELECT {col_clause} FROM lightpoints '
-            f'WHERE lightcurve_id = {_id} ORDER BY cadence'
-        )
-        result = pd.read_sql(
-            command,
-            self._db,
-            index_col='cadence'
-        )
-        result = result[~result.index.duplicated(keep='last')]
-        return result
-
-    def yield_insert_kwargs(self, ids, id_col='_id'):
-        for id in ids:
-            data = self.get_lc(id)
-            yield {
-                id_col: id,
-                'cadences': data.index,
-                'barycentric_julian_date': data['barycentric_julian_date'],
-                'values': data['value'],
-                'errors': data['error'],
-                'x_centroids': data['x_centroid'],
-                'y_centroids': data['y_centroid'],
-                'quality_flags': data['quality_flag']
-            }
-
-    def get_lightcurve_ids(self):
-        command = (
-            'SELECT DISTINCT lightcurve_id FROM lightpoints'
-        )
-        return {result[0] for result in self._db.execute(command).fetchall()}
-
-
-class TempLightcurveIDMapper(object):
-    def __init__(self, uri=':memory:'):
-        self._db = sqlite3.connect(uri, uri=True)
-
-        self._db.execute(
-            'CREATE TABLE IF NOT EXISTS '
-            'temp_lightcurve_ids ( '
-            'id INTEGER PRIMARY KEY, '
-            'tic_id INTEGER NOT NULL, '
-            'aperture_id TEXT NOT NULL, '
-            'lightcurve_type_id TEXT NOT NULL )'
-        )
-
-        index_cols = ['tic_id', 'aperture_id', 'lightcurve_type_id']
-        for col in index_cols:
-            self._db.execute(
-                'CREATE INDEX idx_{} ON temp_lightcurve_ids ({})'.format(
-                    col, col
-                )
-            )
-        self._db.execute(
-            'CREATE INDEX idx_main_lookup on temp_lightcurve_ids '
-            '(tic_id, aperture_id, lightcurve_type_id)'
-        )
-
-    def set_id(self, id, tic_id, aperture_id, lightcurve_type_id):
-        command = (
-            'INSERT INTO temp_lightcurve_ids'
-            '(id, tic_id, aperture_id, lightcurve_type_id) VALUES '
-            f'({id}, {tic_id}, "{aperture_id}", "{lightcurve_type_id}")'
-        )
-        try:
-            self._db.execute(command)
-        except sqlite3.OperationalError:
-            print(command)
-            raise
-
-    def get_id(self, tic_id, aperture_id, lightcurve_type_id):
-        result = self._db.execute(
-            'SELECT id FROM temp_lightcurve_ids WHERE '
-            f'tic_id = {tic_id} AND '
-            f'aperture_id = "{aperture_id}" AND '
-            f'lightcurve_type_id = "{lightcurve_type_id}"'
-        ).fetchone()
-
-        if result:
-            return result[0]
-        return None
-
-    def get_id_by_dict(self, kwargs):
-        return self.get_id(
-            kwargs['tic_id'],
-            kwargs['aperture_id'],
-            kwargs['lightcurve_type_id']
-        )
-
-    def get_values(self, id):
-        return self._db.execute(
-            'SELECT tic_id, aperture_id, lightcurve_type_id FROM '
-            'temp_lightcurve_ids WHERE id = {}'.format(id)
-        ).fetchone()
-
-    def get_new_values(self):
-        return list(
-            self._db.execute(
-                'SELECT id, tic_id, aperture_id, lightcurve_type_id  FROM temp_lightcurve_ids WHERE id < 0'
-            ).fetchall()
-        )
-
-    def get_defined_values(self):
-        return list(
-            self._db.execute(
-                'SELECT id, tic_id, aperture_id, lightcurve_type_id  FROM temp_lightcurve_ids WHERE id > 0'
-            ).fetchall()
-        )
+        db.commit()
+    logger.debug(f'Worker-{pid} done')
+    return len(tics)
