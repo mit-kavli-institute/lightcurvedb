@@ -54,7 +54,11 @@ class LightcurveFrameMap(QLPModel):
 
     lightcurve = relationship(
         'Lightcurve',
-        backref=backref('lightcurveframemapping', cascade='all, delete-orphan'))
+        backref=backref(
+            'lightcurveframemapping',
+            cascade='all, delete-orphan'
+        )
+    )
     frame = relationship('Frame')
 
 
@@ -63,37 +67,101 @@ class Lightcurve(QLPModel):
     __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
-        UniqueConstraint('lightcurve_type_id', 'aperture_id', 'tic_id', name='unique_lightcurve_constraint'),
+        UniqueConstraint(
+            'lightcurve_type_id',
+            'aperture_id',
+            'tic_id',
+            name='unique_lightcurve_constraint'
+        ),
     )
 
-    id = Column(BigInteger, Sequence('lightcurves_id_seq', cache=10**6),primary_key=True)
+    id = Column(
+        BigInteger,
+        Sequence('lightcurves_id_seq', cache=10**6),
+        primary_key=True
+    )
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
 
     # Foreign Keys
-    lightcurve_type_id = Column(ForeignKey('lightcurvetypes.name', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
-    aperture_id = Column(ForeignKey('apertures.name', onupdate='CASCADE', ondelete='RESTRICT'), index=True)
+    lightcurve_type_id = Column(
+        ForeignKey(
+            'lightcurvetypes.name',
+            onupdate='CASCADE',
+            ondelete='RESTRICT'
+        ),
+        index=True
+    )
+    aperture_id = Column(
+        ForeignKey(
+            'apertures.name',
+            onupdate='CASCADE',
+            ondelete='RESTRICT'
+        ),
+        index=True
+    )
 
     # Relationships
-    lightcurve_type = relationship('LightcurveType', back_populates='lightcurves')
+    lightcurve_type = relationship(
+        'LightcurveType',
+        back_populates='lightcurves'
+    )
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 
-    _cadences = Column('cadences', ARRAY(Integer, dimensions=1), nullable=False)
-    _bjd = Column('barycentric_julian_date', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _values = Column('values', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _errors = Column('errors', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _x_centroids = Column('x_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _y_centroids = Column('y_centroids', ARRAY(DOUBLE_PRECISION, dimensions=1), nullable=False)
-    _quality_flags = Column('quality_flags', ARRAY(Integer, dimensions=1), nullable=False)
+    # Variables marked with '_' prefix are internal and
+    # should not be modified directly
+
+    _cadences = Column(
+        'cadences',
+        ARRAY(Integer, dimensions=1),
+        nullable=False
+    )
+    _bjd = Column(
+        'barycentric_julian_date',
+        ARRAY(DOUBLE_PRECISION, dimensions=1),
+        nullable=False
+    )
+    _values = Column(
+        'values',
+        ARRAY(DOUBLE_PRECISION, dimensions=1),
+        nullable=False
+    )
+    _errors = Column(
+        'errors',
+        ARRAY(DOUBLE_PRECISION, dimensions=1),
+        nullable=False
+    )
+    _x_centroids = Column(
+        'x_centroids',
+        ARRAY(DOUBLE_PRECISION, dimensions=1),
+        nullable=False
+    )
+    _y_centroids = Column(
+        'y_centroids',
+        ARRAY(DOUBLE_PRECISION, dimensions=1),
+        nullable=False
+    )
+    _quality_flags = Column(
+        'quality_flags',
+        ARRAY(Integer, dimensions=1),
+        nullable=False
+    )
 
     def __len__(self):
         return len(self._cadences)
 
     def __repr__(self):
-        return '<Lightcurve {} {} {}>'.format(self.lightcurve_type.name, self.tic_id, self.aperture.name)
+        return '<Lightcurve {} {} {}>'.format(
+            self.lightcurve_type.name,
+            self.tic_id,
+            self.aperture.name
+        )
 
     def __getitem__(self, key):
+        """
+        TODO Cleanup & move aliases to some configurable constant
+        """
         key = key.lower()
         try:
             return getattr(self, key)
@@ -109,6 +177,9 @@ class Lightcurve(QLPModel):
                 raise
 
     def __setitem__(self, key, value):
+        """
+        TODO Cleanup & move aliases to some configurable constant
+        """
         key = key.lower()
         try:
             setattr(self, key, value)
@@ -124,22 +195,12 @@ class Lightcurve(QLPModel):
 
     @hybrid_property
     def type(self):
+        """Return the type of lightcurve for this paricular instance"""
         return self.lightcurve_type
-
-    @hybrid_property
-    def to_np(self):
-        return np.array([
-            self.cadences,
-            self.bjd,
-            self.values,
-            self.errors,
-            self.x_centroids,
-            self.y_centroids,
-            self.quality_flags
-        ])
 
     @property
     def to_df(self):
+        """Conver this lightcurve into a pandas dataframe"""
         df = pd.DataFrame(
             index=self.cadences,
             data={
@@ -153,15 +214,20 @@ class Lightcurve(QLPModel):
         )
         return df
 
-    def merge(self, *dataframes):
-
+    def merge_df(self, *dataframes):
+        """
+        Merge the current lightcurve with the given Lightpoint dataframes.
+        This merge will handle all cadence orderings and duplicate entries
+        """
         frames = [self.to_df]
         frames += dataframes
 
         current_data = pd.concat(frames)
 
         # Remove duplicates
-        current_data = current_data[~current_data.index.duplicated(keep='last')]
+        current_data = current_data[
+            ~current_data.index.duplicated(keep='last')
+        ]
         current_data.sort_index(inplace=True)
 
         self.cadences = current_data.index
@@ -171,6 +237,61 @@ class Lightcurve(QLPModel):
         self.x_centroids = current_data['x_centroids']
         self.y_centroids = current_data['y_centroids']
         self.quality_flags = current_data['quality_flags']
+
+        return self
+
+    def merge_np(
+            self,
+            cadences,
+            bjd,
+            values,
+            errors,
+            x_centroids,
+            y_centroids,
+            quality_flags):
+
+        raw_cadences = np.concatenate(self.cadences, cadences)
+        raw_bjd = np.concatenate(self.bjd, bjd)
+        raw_values = np.concatenate(self.values, values)
+        raw_errors = np.concatenate(self.errors, errors)
+        raw_x = np.concatenate(self.x_centroids, x_centroids)
+        raw_y = np.concatenate(self.y_centroids, y_centroids)
+        raw_qflag = np.concatenate(self.quality_flags, quality_flags)
+
+        # Determine sort and diff of cadences
+        path = np.argsort(raw_cadences)
+        check = np.append(
+            np.diff(raw_cadences[path]),
+            1  # Always keep last element
+        )
+
+        self.cadences = raw_cadences[check]
+        self.bjd = raw_bjd[check]
+        self.values = raw_values[check]
+        self.errors = raw_errors[check]
+        self.x_centroids = raw_x[check]
+        self.y_centroids = raw_y[check]
+        self.quality_flags = raw_qflag[check]
+
+        return self
+
+    def merge(self, other_lc):
+        if self.id != other_lc.id:
+            raise ValueError(
+                '{} does not have the same ID as {}, cannot merge'.format(
+                    self,
+                    other_lc
+                )
+            )
+        self.merge_np(
+            other_lc.cadences,
+            other_lc.bjd,
+            other_lc.values,
+            other_lc.errors,
+            other_lc.x_centroids,
+            other_lc.y_centroids,
+            other_lc.quality_flags
+        )
 
     @hybrid_property
     def cadences(self):
