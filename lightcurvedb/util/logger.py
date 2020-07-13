@@ -5,22 +5,21 @@ import traceback
 
 lcdb_logger = __logging.getLogger('lightcurvedb')
 
-# create console handler and set level to debug
-ch = __logging.StreamHandler()
+DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-# create formatter
-formatter = __logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# add formatter to ch
-ch.setFormatter(formatter)
-
-# add ch to logger
-lcdb_logger.addHandler(ch)
+def add_stream_handler(level, fmt=DEFAULT_FORMAT):
+    global lcdb_logger
+    __level__ = getattr(__logging, level.upper())
+    formatter = __logging.Formatter(fmt)
+    ch = __logging.StreamHandler()
+    ch.setFormatter(formatter)
+    ch.setLevel(__level__)
+    lcdb_logger.addHandler(ch)
+    lcdb_logger.debug('Set {} level to {}'.format(ch, __level__))
 
 
 def set_level(level):
     __level__ = getattr(__logging, level.upper())
     lcdb_logger.setLevel(__level__)
-    ch.setLevel(__level__)
-
     lcdb_logger.debug('Set logging level to {}'.format(__level__))

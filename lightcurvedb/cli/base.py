@@ -1,6 +1,6 @@
 import click
 import os
-from lightcurvedb.util.logging import set_level
+from lightcurvedb.util.logger import add_stream_handler, set_level
 from .types import Database
 
 
@@ -13,6 +13,7 @@ from .types import Database
 @click.option('--logging', default='info')
 def lcdbcli(ctx, dbconf, dryrun, scratch, qlp_data, logging):
     """Master command for all lightcurve database commandline interaction"""
+    add_stream_handler(logging)
     set_level(logging)
     if dryrun:
         click.echo(click.style('Running in dryrun mode', fg='green'))

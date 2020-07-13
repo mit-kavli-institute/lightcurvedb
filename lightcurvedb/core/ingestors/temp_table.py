@@ -16,48 +16,37 @@ SQLITE_ENGINE = create_engine(
     poolclass=StaticPool
 )
 
-# @listens_for(SQLITE_ENGINE, 'connect')
-# def connect(dbapi_connection, connection_record):
-#     connection_record.info['pid'] = os.getpid()
-# 
-# 
-# @listens_for(SQLITE_ENGINE, 'checkout')
-# def checkout(dbapi_connection, connection_record, connection_proxy):
-#     pid = os.getpid()
-#     if connection_record.info['pid'] != pid:
-#         # connection is being shared across processes...
-#         connection_record.connection = connection_proxy.connection = None
-#         raise DisconnectionError('Attempting to disassociate database connection')
-#     return SQLITE_ENGINE
-
-
 TemporaryQLPModel = declarative_base()
 
 
 class LightcurveIDMapper(TemporaryQLPModel):
     __tablename__ = 'lightcurve_id_maps'
     id = Column(BigInteger, primary_key=True)
-    tic_id = Column(BigInteger, index=True)
-    aperture = Column(String(64), index=True)
-    lightcurve_type = Column(String(64), index=True)
+    tic_id = Column(BigInteger, index=True, nullable=False)
+    aperture = Column(String(64), index=True, nullable=False)
+    lightcurve_type = Column(String(64), index=True, nullable=False)
+
+    @property
+    def to_key_value(self):
+        return (self.tic_id, self.aperture, self.lightcurve_type), self.id
 
 
 class TempObservation(TemporaryQLPModel):
     __tablename__ = 'temp_observations'
     tic_id = Column(BigInteger, primary_key=True)
     orbit_number = Column(Integer, primary_key=True)
-    camera = Column(SmallInteger, index=True)
-    ccd = Column(SmallInteger, index=True)
+    camera = Column(SmallInteger, index=True, nullable=False)
+    ccd = Column(SmallInteger, index=True, nullable=False)
 
 
 class IngestionJob(TemporaryQLPModel):
     __tablename__ = 'ingestion_jobs'
     id = Column(Integer, primary_key=True)
-    tic_id = Column(BigInteger, index=True)
-    camera = Column(Integer)
-    ccd = Column(Integer)
-    orbit_number = Column(Integer, index=True)
-    file_path = Column(String(256), index=True)
+    tic_id = Column(BigInteger, index=True, nullable=False)
+    camera = Column(Integer, nullable=False)
+    ccd = Column(Integer, nullable=False)
+    orbit_number = Column(Integer, index=True, nullable=False)
+    file_path = Column(String(256), index=True, nullable=False)
 
     __table_args__ = {
         'sqlite_autoincrement': True
@@ -69,9 +58,9 @@ class IngestionJob(TemporaryQLPModel):
 class TIC8Parameters(TemporaryQLPModel):
     __tablename__ = 'tic8_parameters'
     tic_id = Column(BigInteger, primary_key=True)
-    right_ascension = Column(Float)
-    declination = Column(Float)
-    tmag = Column(Float)
+    right_ascension = Column(Float, nullable=False)
+    declination = Column(Float, nullable=False)
+    tmag = Column(Float, nullable=False)
     tmag_error = Column(Float)
 
 
