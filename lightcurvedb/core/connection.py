@@ -19,6 +19,7 @@ from lightcurvedb import models
 from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.uri import construct_uri, uri_from_config
+from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
@@ -227,7 +228,10 @@ class DB(object):
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
-    def tics_by_orbit(self, *orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True):
+    def tics_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True):
+
+        if not isiterable(orbit_numbers):
+            orbit_numbers = [orbit_numbers]
 
         col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
 
@@ -248,7 +252,10 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def tics_by_sector(self, *sectors, cameras=None, ccds=None, resolve=True, unique=True):
+    def tics_by_sector(self, sectors, cameras=None, ccds=None, resolve=True, unique=True):
+
+        if not isiterable(sectors):
+            sectors = [sectors]
 
         col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
 
@@ -269,7 +276,7 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def lightcurves_by_orbit(self, *orbits_numbers, cameras=None, ccds=None):
+    def lightcurves_by_orbit(self, orbits_numbers, cameras=None, ccds=None):
         """
             Retrieve lightcurves that have been observed in the given orbit.
             This method can also filter by camera and ccd.
@@ -285,12 +292,12 @@ class DB(object):
         """
 
         tic_sub_q = self.tics_by_orbit(
-            *orbit_numbers, cameras=cameras, ccds=ccds, resolve=False
+            orbit_numbers, cameras=cameras, ccds=ccds, resolve=False
         ).subquery('tics_from_observations')
 
         return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
 
-    def lightcurves_by_sector(self, *sectors, cameras=None, ccds=None):
+    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None):
         """
         Retrieve lightcurves that have been observed in the given sectors.
         This method can also filter by camera and ccd.
@@ -303,7 +310,7 @@ class DB(object):
             then don't discriminate using ccds.
         """
         tic_sub_q = self.tics_by_sector(
-            *sectors, cameras=cameras, ccds=ccds, resolve=False
+            sectors, cameras=cameras, ccds=ccds, resolve=False
         ).subquery('tics_from_observations')
 
         return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
