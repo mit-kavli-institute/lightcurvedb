@@ -125,6 +125,10 @@ class LightcurveManager(object):
         'y_centroids',
         'quality_flags']
 
+    DEFAULT_RESOLUTION = {
+        'KSPMagnitude': 'RawMagnitude'
+    }
+
     def __init__(self, lightcurves):
         """__init__.
 
@@ -199,16 +203,32 @@ class LightcurveManager(object):
         """
         return iter(self.id_map.values())
 
-    def __validate__(self, **data):
-        lengths = map(
+    def __validate__(self, tic_id, aperture, lightcurve_type, **data):
+        lengths = list(map(
             len,
             (data[attr] for attr in self.array_attrs if attr in data)
-        )
-        length_0 = next(lengths)
-        if not all(length == length_0 for length in lengths):
+        ))
+        length_0 = lengths[0]
+        if not all(length == length_0 for length in lengths[1:]):
             raise IncongruentLightcurve(
                 'Lightcurve is being improperly modified with array lengths {}'.format(lengths)
             )
+
+        if lightcurve_type is in self.DEFAULT_RESOLUTION:
+            sister_type = self.DEFAULT_RESOLUTION[lightcurve_type]
+            sister_item = self[tic_id][aperture][sister_type].to_df
+
+            if 'errors' not in data:
+                data['errors'] = np.empty(len(data['cadences']))
+                data['errors'][:] = np.nan
+            if 'x_centroids' not in data:
+                data['x_centroids'] = sister_item.loc[data['cadences']].x_centroids.to_numpy()
+            if 'y_centroids' not in data:
+                data['y_centroids'] = sister_item.loc[data'cadences']].y_centroids.to_numpy()
+            if 'quality_flags' not in data:
+                data['quality_flags'] = np.zeros(len(data['cadences']))
+
+        return data
 
     @classmethod
     def from_q(cls, q):
@@ -350,7 +370,7 @@ class LightcurveManager(object):
                     (tic_id, aperture, lightcurve_type)
                 )
              )
-        self.__validate__(**data)
+        checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
 
         # Update definitions
         self.tics[tic_id].add(self.cur_tmp_id)
@@ -361,7 +381,7 @@ class LightcurveManager(object):
             tic_id=tic_id,
             aperture_id=aperture,
             lightcurve_type_id=lightcurve_type,
-            **data
+            **checked_data
         )
 
         self.id_map[self.cur_tmp_id] = lc
@@ -385,6 +405,7 @@ class LightcurveManager(object):
                 the target
         """
         id_ = self.resolve_id(tic_id, aperture, lightcurve_type)
+        checked_data = self__validate__(tic_id, aperture, lightcurve_type, **data)
         self.update_w_id(id_, **data)
 
     def update_w_id(self, id_, **data):
@@ -403,7 +424,6 @@ class LightcurveManager(object):
             Lightcurve -- The updated lightcurve
         """
 
-        self.__validate__(**data)
         target_lc = self.get_by_id(id_)
         target_lc.merge_np(**data)
         return target_lc
