@@ -2,6 +2,7 @@ from lightcurvedb.core.engines import __SESSION_FACTORY__, __DEFAULT_PATH__
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType, QLPReference
 from lightcurvedb.models import Aperture, FrameType, Frame, Orbit, Lightcurve, LightcurveType
 from lightcurvedb.core.connection import DB, db_from_config
+from lightcurvedb.managers import LightcurveManager
 
 
 # Register global db instance if available

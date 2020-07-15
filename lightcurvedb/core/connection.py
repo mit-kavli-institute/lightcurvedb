@@ -170,43 +170,88 @@ class DB(object):
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
-    def lightcurves_by_observation(self, orbit, camera=None, ccd=None):
+    def tics_by_orbit(self, *orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True):
+
+        col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
+
+        q = self.query(
+            col
+        ).join(
+            models.Observation.orbit
+        ).filter(
+            models.Orbit.orbit_number.in_(orbit_numbers)
+        )
+
+        if cameras:
+            q = q.filter(models.Observation.camera.in_(cameras))
+        if ccds:
+            q = q.filter(models.Observation.ccd.in_(ccds))
+
+        if resolve:
+            return [r for r, in q.all()]
+        return q
+
+    def tics_by_sector(self, *sectors, cameras=None, ccds=None, resolve=True, unique=True):
+
+        col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
+
+        q = self.query(
+            col
+        ).join(
+            models.Observation.orbit
+        ).filter(
+            models.Orbit.sector.in_(sectors)
+        )
+
+        if cameras:
+            q = q.filter(models.Observation.camera.in_(cameras))
+        if ccds:
+            q = q.filter(models.Observation.ccd.in_(ccds))
+
+        if resolve:
+            return [r for r, in q.all()]
+        return q
+
+    def lightcurves_by_orbit(self, *orbits_numbers, cameras=None, ccds=None):
         """
             Retrieve lightcurves that have been observed in the given orbit.
-            This method can also filter by camera and ccd,
+            This method can also filter by camera and ccd.
 
             Arguments:
                 orbit {int, Orbit} -- The orbit to filter on. Can pass an
                 integer representing the orbit number or an Orbit instance
                 itself.
-                camera {int} -- Filter by camera
-                ccd {int} -- Filter by ccd
+                cameras (list) -- List of cameras to query against. If None,
+                then don't discriminate using cameras.
+                ccds (list) -- List of ccds to query against. If None,
+                then don't discriminate using ccds
         """
-        q = self.lightcurves.join(
-            models.Observation,
-            models.Lightcurve.tic_id == models.Observation.tic_id
-        )
-        if isinstance(orbit, models.Orbit):
-            q = q.filter(models.Observation.orbit == orbit)
-        elif isinstance(orbit, int):
-            q = q.join(
-                models.Orbit, models.Observation.orbit_id == models.Orbit.id
-            )
-            q = q.filter(models.Orbit.orbit_number == orbit)
-        else:
-            raise ValueError(
-                'Cannot compare {} of type {} against the Orbit table.'.format(
-                    orbit, type(orbit)
-                )
-            )
-        if camera:
-            q = q.filter(models.Observation.camera == camera)
-        if ccd:
-            q = q.filter(models.Observation.ccd == ccd)
 
-        return q
+        tic_sub_q = self.tics_by_orbit(
+            *orbit_numbers, cameras=cameras, ccds=ccds, resolve=False
+        ).subquery('tics_from_observations')
 
-    def lightcurves_from_best_aperture(self, q=None):
+        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+
+    def lightcurves_by_sector(self, *sectors, cameras=None, ccds=None):
+        """
+        Retrieve lightcurves that have been observed in the given sectors.
+        This method can also filter by camera and ccd.
+
+        Arguments:
+            *sectors (int) -- The sector to filter for.
+            cameras (list) -- List of cameras to query against. If None,
+            then don't discriminate using cameras.
+            ccds (list) -- List of ccds to query against. If None,
+            then don't discriminate using ccds.
+        """
+        tic_sub_q = self.tics_by_sector(
+            *sectors, cameras=cameras, ccds=ccds, resolve=False
+        ).subquery('tics_from_observations')
+
+        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+
+    def lightcurves_from_best_aperture(self, q=None, resolve=True):
         if q is None:
             q = self.lightcurves
         q = q.join(
@@ -216,6 +261,20 @@ class DB(object):
                 models.Lightcurve.aperture_id == models.BestApertureMap.aperture_id
             )
         )
+        if resolve:
+            return q.all()
+        return q
+
+    def lightcurve_id_map(self, *filters, resolve=True):
+        q = self.query(
+            models.Lightcurve.id,
+            models.Lightcurve.tic_id,
+            models.Lightcurve.aperture_id,
+            models.Lightcurve.lightcurve_type_id
+        ).filter(*filters)
+
+        if resolve:
+            return q.all()
         return q
 
     def set_best_aperture(self, tic_id, aperture):
@@ -233,6 +292,9 @@ class DB(object):
             )
         if check:
             check.delete()
+
+    def set_quality_flags(self, orbit_number, camera, ccd, cadences, quality_flags):
+        pass
 
     def commit(self):
         self._session.commit()

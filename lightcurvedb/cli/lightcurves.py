@@ -221,24 +221,18 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             Column('tic_id', BigInteger, primary_key=True),
             prefixes=['TEMPORARY']
         )
-        tic8_tmp_table.create(bind=tic8.bind)
-        lc_kwarg_tmp_table.create(bind=db.session.bind)
-        tic8.commit()
-        db.session.commit()
 
+        #  Chunkify to reduce querysize
+        click.echo('Grabbing needed info from TIC8')
+        tic8_tmp_table.create(bind=tic8.bind)
+        tic8.commit()
         tic8.execute(
             tic8_tmp_table.insert(),
             [{'tic_id': tic} for tic in tics]
         )
+        click.echo('\tPopulated TMP TIC8 Table')
         tic8.commit()
-        db.session.execute(
-            lc_kwarg_tmp_table.insert(),
-            [{'tic_id': tic} for tic in tics]
-        )
-        db.commit()
 
-        #  Chunkify to reduce querysize
-        click.echo('Grabbing needed info from TIC8')
         tic8_params = pd.read_sql(
             tic8.query(
                 TIC_Entries.c.id.label('tic_id'),
@@ -255,6 +249,16 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             TIC8Parameters,
             tic8_params.to_dict('records')
         )
+
+        click.echo('Loading defined lightcurve identifiers')
+        lc_kwarg_tmp_table.create(bind=db.session.bind)
+        db.session.commit()
+
+        db.session.execute(
+            lc_kwarg_tmp_table.insert(),
+            [{'tic_id': tic} for tic in tics]
+        )
+        db.commit()
 
         # Load in ID Map
         q = db.query(

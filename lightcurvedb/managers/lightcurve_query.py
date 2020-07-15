@@ -1,5 +1,6 @@
 from collections import defaultdict, namedtuple
 from functools import partial
+import pandas as pd
 import os
 from abc import ABCMeta, abstractmethod
 import multiprocessing as mp
@@ -147,8 +148,8 @@ class LightcurveManager(object):
 
         for lightcurve in lightcurves:
             self.tics[lightcurve.tic_id].add(lightcurve.id)
-            self.apertures[lightcurve.aperture.name].add(lightcurve.id)
-            self.types[lightcurve.lightcurve_type.name].add(lightcurve.id)
+            self.apertures[lightcurve.aperture_id].add(lightcurve.id)
+            self.types[lightcurve.lightcurve_type_id].add(lightcurve.id)
             self.id_map[lightcurve.id] = lightcurve
 
         self.searchables = (
@@ -208,19 +209,26 @@ class LightcurveManager(object):
                 'Lightcurve is being improperly modified with array lengths {}'.format(lengths)
             )
 
+    @classmethod
+    def from_q(cls, q):
+
+        lm = cls([])
+        for lc in q.yield_per(100):
+            lm.add_defined_lightcurve(lc)
+
+        return lm
+
+    def update_w_q(self, q):
+        for lightcurve in q.all():
+            self.add_defined_lightcurve(lightcurve)
+
     def resolve_id(self, tic_id, aperture, lightcurve_type):
         lc_by_tics = self.tics.get(tic_id, set())
-        if isinstance(aperture, str):
-            lc_by_aps = self.apertures.get(aperture, set())
-        else:
-            lc_by_aps = self.apertures.get(aperture.name, set())
-        if isinstance(lightcurve_type, str):
-            lc_by_types = self.types.get(lightcurve_type, set())
-        else:
-            lc_by_types = self.types.get(lightcurve_type.name, set())
+        lc_by_aps = self.apertures.get(aperture, set())
+        lc_by_types = self.types.get(lightcurve_type, set())
 
         try:
-            return set.union(lc_by_tics, lc_by_aps, lc_by_types).pop()
+            return set.intersection(lc_by_tics, lc_by_aps, lc_by_types).pop()
         except KeyError:
             # Nothing to resolve
             return None
@@ -289,12 +297,25 @@ class LightcurveManager(object):
             return cur_lc
         else:
             # Impossible, lightcurve id has a defined conflict
-            raise ValueError(
-                'Given lightcurve has defined id {} but manager has {}'.format(
+            conflicting = self.id_map[id_check]
+            msg = 'Given lightcurve has defined id {} but manager has {}'.format(
                     lightcurve.id,
                     id_check
-                )
             )
+            msg += '\n{} has ({}, {}, {})\n'.format(
+                    lightcurve.id,
+                    lightcurve.tic_id,
+                    lightcurve.aperture_id,
+                    lightcurve.lightcurve_type_id
+            )
+            msg += '{} has ({}, {}, {})'.format(
+                    conflicting.id,
+                    conflicting.tic_id,
+                    conflicting.aperture_id,
+                    conflicting.lightcurve_type_id
+            )
+
+            raise ValueError(msg)
 
     def add(self, tic_id, aperture, lightcurve_type, **data):
         """Adds a new lightcurve to the manager. This will create a new
@@ -390,3 +411,63 @@ class LightcurveManager(object):
         else:
             # Must insert
             self.add(tic_id, aperture, lightcurve_type, **data)
+
+
+    def resolve_to_db(self, db, resolve_conflicts=True):
+        """
+        Execute add and update statements to the database.
+
+        Arguments:
+            db (DB) -- The given lightcurvedb Session Wrapper to mediate
+            the connection to the database.
+            resolve_conflicts (bool) -- If true, attempt to resolve unique
+            constraint conflicts with the database.
+        """
+        if resolve_conflicts:
+            # Determine if any of the lightcurves to be inserted need to
+            # be merged, filter using defined tic ids in the manager
+            q = db.lightcurve_id_map(
+                Lightcurve.tic_id.in_(self.tics),
+                resolve=False
+            )
+            id_mapper = pd.DataFrame.read_sql(
+                q.statement,
+                db.session.bind,
+                index_col=['tic_id', 'aperture_id', 'lightcurve_type_id']
+            )
+
+            # Resolve insertions into updates if needed
+            ids_to_remove = set()
+            for id_, lightcurve in self.id_map.items():
+                if id_ > 0:
+                    continue
+                # "New" lightcurve
+                try:
+                    defined_id = id_mapper.loc[
+                        (
+                            Lightcurve.tic_id,
+                            Lightcurve.aperture_id,
+                            Lightcurve.lightcurve_type_id
+                        )
+                    ]['id']
+                    # This would have resulted in a unique-constraint collision. Perform update
+                    defined_lightcurve = db.get_lightcurve(
+                        lightcurve.tic_id,
+                        lightcurve.aperture_id,
+                        lightcurve.lightcurve_type_id
+                    )
+                    defined_lightcurve.merge(lightcurve)
+
+                    # Remove refs to "add" lightcurve
+                    ids_to_remove.add(id_)
+                except KeyError:
+                    # Lightcurve is indeed "new"
+                    continue
+
+            for id_ in ids_to_remove:
+                del self.id_map[id_]
+
+        ids_to_add = set(filter(lambda id_: id_ < 0, self.id_map.keys()))
+        db.session.bulk_save_objects(
+            [self.id_map[id_] for id_ in ids_to_add]
+        )
