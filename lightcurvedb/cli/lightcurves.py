@@ -134,6 +134,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
 
         if n_process <= 0:
             n_process = cpu_count()
+        db.session.rollback()
 
         click.echo(
             'Utilizing {} cores'.format(click.style(str(n_process), bold=True))
@@ -250,7 +251,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             tic8_params.to_dict('records')
         )
 
-        click.echo('Loading defined lightcurve identifiers')
+        click.echo('\tLoading defined lightcurve identifiers')
         lc_kwarg_tmp_table.create(bind=db.session.bind)
         db.session.commit()
 
@@ -259,6 +260,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             [{'tic_id': tic} for tic in tics]
         )
         db.commit()
+        click.echo('\tPopulated Kwarg Table')
 
         # Load in ID Map
         q = db.query(
@@ -285,7 +287,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             lc_kwargs
         )
         
-        click.echo('\tLoaded LC Kwargs')
+        click.echo('\tLoaded LC Kwargs into SQLite')
 
         job_sqlite.commit()
     click.echo(f'Will process {len(tics)} TICs')

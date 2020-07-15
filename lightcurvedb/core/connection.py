@@ -205,11 +205,11 @@ class DB(object):
         return q
 
     def load_from_db(self, tics=[], apertures=[], types=[]):
-        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
+        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.all()
 
     def yield_from_db(self, chunksize, tics=[], apertures=[], types=[]):
-        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types, cadence_types=cadence_types)
+        q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.yield_per(chunksize)
 
     def get_lightcurve(self, tic, lightcurve_type, aperture, resolve=True):
