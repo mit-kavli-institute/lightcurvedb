@@ -70,7 +70,10 @@ class DB(object):
 
     def open(self):
         if not self._active:
-            return DB(None, SESSIONCLASS=self.SessionClass)
+            if not self._session:
+                self._session = self.SessionClass()
+                self._active = True
+                return self
         else:
             warnings.warn(
                 'DB session is already scoped, ignoring duplicate open call',
