@@ -223,9 +223,9 @@ class LightcurveManager(object):
                 data['errors'] = np.empty(len(data['cadences']))
                 data['errors'][:] = np.nan
             if 'x_centroids' not in data:
-                data['x_centroids'] = sister_item.loc[data['cadences']].x_centroids.to_numpy()
+                data['x_centroids'] = sister_item.loc[data['cadences']].x_centroids.values
             if 'y_centroids' not in data:
-                data['y_centroids'] = sister_item.loc[data['cadences']].y_centroids.to_numpy()
+                data['y_centroids'] = sister_item.loc[data['cadences']].y_centroids.values
             if 'quality_flags' not in data:
                 data['quality_flags'] = np.zeros(len(data['cadences']))
 
