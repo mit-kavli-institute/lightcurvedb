@@ -346,8 +346,8 @@ def manual_ingest(ctx, ticlist, orbit_dir):
         q = db.query(
                 Lightcurve.id,
                 Lightcurve.tic_id,
-                Lightcurve.aperture_id,
-                Lightcurve.lightcurve_type_id
+                Lightcurve.aperture_id.label('aperture'),
+                Lightcurve.lightcurve_type_id.label('lightcurve_type')
             ).filter(Lightcurve.tic_id.in_(tics))
         lc_kwargs = [dict(zip(row.keys(), row)) for row in q.all()]
 

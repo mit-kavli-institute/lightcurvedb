@@ -10,6 +10,7 @@ from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.inspection import inspect
+from sqlalchemy.orm.query import Query
 from lightcurvedb.exceptions import LightcurveDBException
 from lightcurvedb.models import Lightcurve
 
@@ -213,8 +214,14 @@ class LightcurveManager(object):
     def from_q(cls, q):
 
         lm = cls([])
-        for lc in q.yield_per(100):
-            lm.add_defined_lightcurve(lc)
+
+        if isinstance(q, Query):
+            for lc in q.all():
+                lm.add_defined_lightcurve(lc)
+        else:
+            # Assume q is an iterable...
+            for lc in q:
+                lm.add_defined_lightcurve(lc)
 
         return lm
 
