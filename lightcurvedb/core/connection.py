@@ -183,23 +183,20 @@ class DB(object):
         return self.query(models.Orbit.orbit_number).all()
 
     # Begin Lightcurve Methods
-    def query_lightcurves(self, tics=[], apertures=[], types=[], cadence_types=[30]):
+    def query_lightcurves(self, tics=[], apertures=[], types=[]):
         q = self.lightcurves
         if len(apertures) > 0:
             q = q.filter(
                 models.Lightcurve.aperture_id.in_(
-                    qlp_type_multiple_check(self, models.Aperture, apertures)
+                    apertures
                 )
             )
         if len(types) > 0:
             q = q.filter(
                 models.Lightcurve.lightcurve_type_id.in_(
-                    qlp_type_multiple_check(self, models.LightcurveType, types)
+                    types
                 )
             )
-        if len(cadence_types) > 0:
-            q = q.filter(models.Lightcurve.cadence_type.in_(cadence_types))
-
         if len(tics) > 0:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q

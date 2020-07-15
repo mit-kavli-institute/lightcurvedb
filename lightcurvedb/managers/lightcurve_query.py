@@ -277,7 +277,6 @@ class LightcurveManager(object):
             self.tics[lightcurve.tic_id].add(id_)
             self.apertures[lightcurve.aperture_id].add(id_)
             self.types[lightcurve.lightcurve_type_id].add(id_)
-            self.id_map[id_] = lightcurve
 
             return lightcurve
 
