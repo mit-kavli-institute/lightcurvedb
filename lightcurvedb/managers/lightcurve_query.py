@@ -433,7 +433,8 @@ class LightcurveManager(object):
 
         if id_check:
             # Must update
-            self.update_w_id(id_check, **data)
+            checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
+            self.update_w_id(id_check, **checked_data)
         else:
             # Must insert
             self.add(tic_id, aperture, lightcurve_type, **data)
