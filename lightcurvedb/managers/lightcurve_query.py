@@ -224,7 +224,7 @@ class LightcurveManager(object):
             if 'x_centroids' not in data:
                 data['x_centroids'] = sister_item.loc[data['cadences']].x_centroids.to_numpy()
             if 'y_centroids' not in data:
-                data['y_centroids'] = sister_item.loc[data'cadences']].y_centroids.to_numpy()
+                data['y_centroids'] = sister_item.loc[data['cadences']].y_centroids.to_numpy()
             if 'quality_flags' not in data:
                 data['quality_flags'] = np.zeros(len(data['cadences']))
 
@@ -424,7 +424,7 @@ class LightcurveManager(object):
             Lightcurve -- The updated lightcurve
         """
 
-        target_lc = self.get_by_id(id_)
+        target_lc = self.id_map[id_]
         target_lc.merge_np(**data)
         return target_lc
 
