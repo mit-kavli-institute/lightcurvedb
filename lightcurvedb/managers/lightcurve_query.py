@@ -214,7 +214,7 @@ class LightcurveManager(object):
                 'Lightcurve is being improperly modified with array lengths {}'.format(lengths)
             )
 
-        if lightcurve_type is in self.DEFAULT_RESOLUTION:
+        if lightcurve_type in self.DEFAULT_RESOLUTION:
             sister_type = self.DEFAULT_RESOLUTION[lightcurve_type]
             sister_item = self[tic_id][aperture][sister_type].to_df
 
