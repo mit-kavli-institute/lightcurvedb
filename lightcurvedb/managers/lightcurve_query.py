@@ -458,7 +458,7 @@ class LightcurveManager(object):
                 [Lightcurve.tic_id.in_(self.tics)],
                 resolve=False
             )
-            id_mapper = pd.DataFrame.read_sql(
+            id_mapper = pd.read_sql(
                 q.statement,
                 db.session.bind,
                 index_col=['tic_id', 'aperture_id', 'lightcurve_type_id']
