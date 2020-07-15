@@ -329,7 +329,7 @@ class DB(object):
             return q.all()
         return q
 
-    def lightcurve_id_map(self, *filters, resolve=True):
+    def lightcurve_id_map(self, filters, resolve=True):
         q = self.query(
             models.Lightcurve.id,
             models.Lightcurve.tic_id,
@@ -358,7 +358,7 @@ class DB(object):
             check.delete()
 
     def set_quality_flags(self, orbit_number, camera, ccd, cadences, quality_flags):
-        pass
+        raise NotImplementedError
 
     def commit(self):
         self._session.commit()
