@@ -2,6 +2,7 @@ from collections import defaultdict, namedtuple
 from functools import partial
 import pandas as pd
 import os
+import numpy as np
 from abc import ABCMeta, abstractmethod
 import multiprocessing as mp
 from itertools import groupby
