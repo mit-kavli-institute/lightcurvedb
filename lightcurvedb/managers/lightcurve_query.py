@@ -455,7 +455,7 @@ class LightcurveManager(object):
             # Determine if any of the lightcurves to be inserted need to
             # be merged, filter using defined tic ids in the manager
             q = db.lightcurve_id_map(
-                Lightcurve.tic_id.in_(self.tics),
+                [Lightcurve.tic_id.in_(self.tics)],
                 resolve=False
             )
             id_mapper = pd.DataFrame.read_sql(
