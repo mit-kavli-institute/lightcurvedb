@@ -250,13 +250,13 @@ class Lightcurve(QLPModel):
             y_centroids,
             quality_flags):
 
-        raw_cadences = np.concatenate(self.cadences, cadences)
-        raw_bjd = np.concatenate(self.bjd, bjd)
-        raw_values = np.concatenate(self.values, values)
-        raw_errors = np.concatenate(self.errors, errors)
-        raw_x = np.concatenate(self.x_centroids, x_centroids)
-        raw_y = np.concatenate(self.y_centroids, y_centroids)
-        raw_qflag = np.concatenate(self.quality_flags, quality_flags)
+        raw_cadences = np.concatenate((self.cadences, cadences))
+        raw_bjd = np.concatenate((self.bjd, bjd))
+        raw_values = np.concatenate((self.values, values))
+        raw_errors = np.concatenate((self.errors, errors))
+        raw_x = np.concatenate((self.x_centroids, x_centroids))
+        raw_y = np.concatenate((self.y_centroids, y_centroids))
+        raw_qflag = np.concatenate((self.quality_flags, quality_flags))
 
         # Determine sort and diff of cadences
         path = np.argsort(raw_cadences)
