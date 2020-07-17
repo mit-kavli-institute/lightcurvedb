@@ -19,11 +19,16 @@ EXPECTED_COLS = [
 ]
 
 
-def matrix_merge(*arrays):
-    data = np.concatenate(arrays, axis=1)
-    ref_row = data[0]
-    path = np.argsort(ref_row)
-    check = np.append(np.diff(ref_row[path]), 1)  # Always append last element
+def merge_arrays(ref_array, **arrays):
+    """
+    Using the ref_array, sort the given arrays.:qa
+    """
+    path = np.argsort(ref_array, kind='stable')
+    check = np.append(np.diff(ref_array[path]), 1)
 
-    return data[:, path[check > 0]]
+    result = dict()
+    for arr_name, arr in arrays.items():
+        result[arr_name] = arr[path[check > 0]]
+
+    return ref_array[path[check > 0]], result
 

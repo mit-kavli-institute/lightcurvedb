@@ -48,6 +48,7 @@ def aperture(draw):
 
     return ap
 
+
 @define_strategy
 @composite
 def orbit(draw, **overrides):
@@ -67,6 +68,7 @@ def orbit(draw, **overrides):
     )
     return orb
 
+
 @define_strategy
 @composite
 def frame_type(draw, **overrides):
@@ -76,14 +78,16 @@ def frame_type(draw, **overrides):
     )
     return f_type
 
+
 @define_strategy
 @composite
 def lightcurve_type(draw, **overrides):
     lc_type = models.lightcurve.LightcurveType(
-        name=draw(overrides.pop('name', postgres_text())),
+        name=draw(overrides.pop('name', from_regex(r'[a-za-Z]{1,64}'))),
         description=draw(overrides.pop('description', postgres_text()))
     )
     return lc_type
+
 
 @define_strategy
 @composite
@@ -148,37 +152,34 @@ def orbit_frames(draw):
 
 @define_strategy
 @composite
-def lightcurve(draw, **overrides):
+def lightcurve_kwargs(draw, **overrides):
     length = draw(overrides.pop('length', integers(min_value=1, max_value=10)))
-
     __floating__arr = draw(np_st.arrays(np.float32, (5, length)))
 
-    cadences = draw(np_st.arrays(np.int32, length, unique=True))
-    bjd = __floating__arr[0]
-    values = __floating__arr[1]
-    errors = __floating__arr[2]
-    x_centroids = __floating__arr[3]
-    y_centroids = __floating__arr[4]
-    quality_flags = draw(np_st.arrays(np.int32, length))
+    kwargs = dict()
 
-    tic_id = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
-    cadence_type = draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767)))
-    lc_type = draw(overrides.pop('lightcurve_type', lightcurve_type()))
-    ap = draw(overrides.pop('aperture', aperture()))
+    kwargs['cadences'] = np.arange(length)
+    kwargs['bjd'] = __floating__arr[0]
+    kwargs['values'] = __floating__arr[1]
+    kwargs['errors'] = __floating__arr[2]
+    kwargs['x_centroids'] = __floating__arr[3]
+    kwargs['y_centroids'] = __floating__arr[4]
+    kwargs['quality_flags'] = draw(np_st.arrays(np.int32, length))
 
+    kwargs['tic_id'] = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
+    kwargs['cadence_type'] = draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767)))
+    kwargs['lightcurve_type'] = draw(overrides.pop('lightcurve_type', lightcurve_type()))
+    kwargs['aperture'] = draw(overrides.pop('aperture', aperture()))
+
+    return kwargs
+
+
+@define_strategy
+@composite
+def lightcurve(draw, **overrides):
+    kwargs = draw(lightcurve_kwargs())
     return models.Lightcurve(
-        id=draw(overrides.pop('with_id', none())),
-        cadences=cadences,
-        bjd=bjd,
-        values=values,
-        errors=errors,
-        x_centroids=x_centroids,
-        y_centroids=y_centroids,
-        quality_flags=quality_flags,
-        tic_id=tic_id,
-        cadence_type=cadence_type,
-        lightcurve_type=lc_type,
-        aperture=ap
+        **kwargs
     )
 
 

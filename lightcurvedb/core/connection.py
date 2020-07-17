@@ -220,12 +220,42 @@ class DB(object):
             return q.one()
         return q
 
-
     def lightcurves_from_tics(self, tics, **kw_filters):
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
-    def tics_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True):
+    def tics_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True, sort=True):
+        """
+        Return tics by observed in the given orbit numbers. This query can be
+        filtered for specific cameras/ccds.
+
+        Arguments
+        ---------
+        orbit_numbers : int or iterable of integers
+            The orbit numbers to discriminate for.
+        cameras : list of integers, optional
+            A list of cameras to discriminate for. If None (default) then no
+            cameras will be filtered for.
+        ccds : list of integers, optional
+            A list of ccds to discriminate for. If None (default) then no
+            ccds will be filtered for.
+        resolve : bool, optional
+            If True, resolve the query into a list of integers. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
+        unique : bool, optional
+            Since the same TIC can appear across multiple observations
+            and JOIN statements produce cross products of Tables, query
+            results might contain duplicate TICs. Setting ``unique`` to
+            ``True`` will make the return be a proper set of TICs.
+        sort : bool, optional
+            If ``True`` apply an Ascending sort to the return.
+
+        Returns
+        -------
+        list of integers or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
+        """
 
         if not isiterable(orbit_numbers):
             orbit_numbers = [orbit_numbers]
@@ -245,11 +275,45 @@ class DB(object):
         if ccds:
             q = q.filter(models.Observation.ccd.in_(ccds))
 
+        if sort:
+            q = q.order_by(models.Observation.tic_id.asc())
+
         if resolve:
             return [r for r, in q.all()]
         return q
 
-    def tics_by_sector(self, sectors, cameras=None, ccds=None, resolve=True, unique=True):
+    def tics_by_sector(self, sectors, cameras=None, ccds=None, resolve=True, unique=True, sort=True):
+        """
+        Return tics by observed in the given sector numbers. This query can be
+        filtered for specific cameras/ccds.
+
+        Arguments
+        ---------
+        sectors : int or iterable of integers
+            The sectors to discriminate for.
+        cameras : list of integers, optional
+            A list of cameras to discriminate for. If None (default) then no
+            cameras will be filtered for.
+        ccds : list of integers, optional
+            A list of ccds to discriminate for. If None (default) then no
+            ccds will be filtered for.
+        resolve : bool, optional
+            If True, resolve the query into a list of integers. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
+        unique : bool, optional
+            Since the same TIC can appear across multiple observations
+            and JOIN statements produce cross products of Tables, query
+            results might contain duplicate TICs. Setting ``unique`` to
+            ``True`` will make the return be a proper set of TICs.
+        sort : bool, optional
+            If ``True`` apply an Ascending sort to the return.
+
+        Returns
+        -------
+        list of integers or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
+        """
 
         if not isiterable(sectors):
             sectors = [sectors]
@@ -268,46 +332,69 @@ class DB(object):
             q = q.filter(models.Observation.camera.in_(cameras))
         if ccds:
             q = q.filter(models.Observation.ccd.in_(ccds))
+        if sort:
+            q = q.order_by(models.Observation.tic_id.asc())
 
         if resolve:
             return [r for r, in q.all()]
         return q
 
-    def lightcurves_by_orbit(self, orbits_numbers, cameras=None, ccds=None):
+    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None):
         """
-            Retrieve lightcurves that have been observed in the given orbit.
-            This method can also filter by camera and ccd.
+        Retrieve lightcurves that have been observed in the given
+        orbit numbers. This method can also filter by camera and ccd.
 
-            Arguments:
-                orbit {int, Orbit} -- The orbit to filter on. Can pass an
-                integer representing the orbit number or an Orbit instance
-                itself.
-                cameras (list) -- List of cameras to query against. If None,
-                then don't discriminate using cameras.
-                ccds (list) -- List of ccds to query against. If None,
-                then don't discriminate using ccds
+        Arguments
+        ---------
+        orbit_numbers : list of integers
+            The orbits to filter on.
+        cameras : list of integers, optional
+            List of cameras to query against. If None, then don't
+            discriminate using cameras.
+        ccds : list of integers, optional
+            List of ccds to query against. If None, then don't discriminate
+            using ccds
+
+        Returns
+        -------
+        ``sqlalchemy.orm.Query``
+            A Query object on ``Lightcurve``.
         """
 
         tic_sub_q = self.tics_by_orbit(
-            orbit_numbers, cameras=cameras, ccds=ccds, resolve=False
+            orbit_numbers,
+            cameras=cameras,
+            ccds=ccds,
+            resolve=False,
+            sort=False
         ).subquery('tics_from_observations')
 
         return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
 
     def lightcurves_by_sector(self, sectors, cameras=None, ccds=None):
         """
-        Retrieve lightcurves that have been observed in the given sectors.
-        This method can also filter by camera and ccd.
+        Retrieve lightcurves that have been observed in the given
+        sector numbers. This method can also filter by camera and ccd.
 
-        Arguments:
-            *sectors (int) -- The sector to filter for.
-            cameras (list) -- List of cameras to query against. If None,
-            then don't discriminate using cameras.
-            ccds (list) -- List of ccds to query against. If None,
-            then don't discriminate using ccds.
+        Arguments
+        ---------
+        sectors : list of integers
+            The sectors to filter on.
+        cameras : list of integers, optional
+            List of cameras to query against. If None, then don't
+            discriminate using cameras.
+        ccds : list of integers, optional
+            List of ccds to query against. If None, then don't discriminate
+            using ccds
+
+        Returns
+        -------
+        ``sqlalchemy.orm.Query``
+            A Query object on ``Lightcurve``.
         """
+
         tic_sub_q = self.tics_by_sector(
-            sectors, cameras=cameras, ccds=ccds, resolve=False
+            sectors, cameras=cameras, ccds=ccds, resolve=False, sort=False
         ).subquery('tics_from_observations')
 
         return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
