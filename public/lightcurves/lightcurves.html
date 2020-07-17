@@ -1,0 +1,281 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightcurve &#8212; LightcurveDB July 16, 2020 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <div class="section" id="lightcurve">
+<h1>Lightcurve<a class="headerlink" href="#lightcurve" title="Permalink to this headline">¶</a></h1>
+<dl class="py class">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve">
+<em class="property">class </em><code class="sig-prename descclassname">lightcurvedb.models.lightcurve.</code><code class="sig-name descname">Lightcurve</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">**</span><span class="n">kwargs</span></em><span class="sig-paren">)</span><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve" title="Permalink to this definition">¶</a></dt>
+<dd><p>This SQLAlchemy model is used to represent the magnitude or flux
+information as a time series. Each lightcurve instance represents
+these values as a single SQL row in respect to a tic_id, lightcurve type,
+and aperture. Every lightcurve must contain a unique tuple of (tic_id,
+lightcurve type, and aperture). As of August 2020, it is expected that
+Lightcurves will contain cadence types of both 30 minutes and 10 minutes;
+with cadences numberings being repsective of each.</p>
+<p>…</p>
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.id">
+<code class="sig-name descname">id</code><em class="property">: int</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.id" title="Permalink to this definition">¶</a></dt>
+<dd><p>The primary key identifier for tracking this lightcurve in the
+postgreSQL database. This should not be modified by hand.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.tic_id">
+<code class="sig-name descname">tic_id</code><em class="property">: int</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.tic_id" title="Permalink to this definition">¶</a></dt>
+<dd><p>The TIC identifier for this Lightcurve. While the TIC 8 relation
+cannot be directly mapped to TIC 8 (you cannot build foreign keys
+across databases) you can assume this identifier is unique in TIC 8.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.cadence_type">
+<code class="sig-name descname">cadence_type</code><em class="property">: int</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.cadence_type" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deprecated. Lightcurves will have mixed cadences starting with the
+reduction of Sector 27 (End of July 2020).</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.lightcurve_type_id">
+<code class="sig-name descname">lightcurve_type_id</code><em class="property">: str</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.lightcurve_type_id" title="Permalink to this definition">¶</a></dt>
+<dd><p>The lightcurve type associated with this lightcurve. It is not
+advisable to modify this attribute directly as this is a Foreign
+Key constraint.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.aperture_id">
+<code class="sig-name descname">aperture_id</code><em class="property">: str</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.aperture_id" title="Permalink to this definition">¶</a></dt>
+<dd><p>The aperture associated with this lightcurve. It is not
+advisable to modify this attribute directly as this is a Foreign
+Key constraint.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.lightcurve_type">
+<code class="sig-name descname">lightcurve_type</code><em class="property">: LightcurveType</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.lightcurve_type" title="Permalink to this definition">¶</a></dt>
+<dd><p>The LightcurveType model related to this lightcurve. By default
+accessing this attribute will emit an SQL query to resolve this
+model. If this access is needed in bulk or upon resolution of a query
+then as part of your query you will need:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">sqlalchemy.orm</span> <span class="kn">import</span> <span class="n">joinedload</span>
+<span class="n">db</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">Lightcurve</span><span class="p">)</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">joinedload</span><span class="p">(</span><span class="n">Lightcurve</span><span class="o">.</span><span class="n">lightcurve_type</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>This will ensure that your Lightcurve query results will already have
+their LightcurveType models already populated.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.aperture">
+<code class="sig-name descname">aperture</code><em class="property">: Aperture</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.aperture" title="Permalink to this definition">¶</a></dt>
+<dd><p>The Aperture model related to this lightcurve. By default
+accessing this attribute will emit an SQL query to resolve this
+model. If this access is needed in bulk or upon resolution of a query
+then as part of your query you will need:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">sqlalchemy.orm</span> <span class="kn">import</span> <span class="n">joinedload</span>
+<span class="n">db</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">Lightcurve</span><span class="p">)</span><span class="o">.</span><span class="n">options</span><span class="p">(</span><span class="n">joinedload</span><span class="p">(</span><span class="n">Lightcurve</span><span class="o">.</span><span class="n">aperture</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>This will ensure that your Lightcurve query results will already have
+their Aperture models already populated.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.frames">
+<code class="sig-name descname">frames</code><em class="property">: list</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.frames" title="Permalink to this definition">¶</a></dt>
+<dd><p>Not yet implemented</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.cadences">
+<code class="sig-name descname">cadences</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.cadences" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of integers representing the all the cadence
+numberings in this lightcurve. This array will be returned in
+ascending order and must continue to be in ascending order for it
+to be accepted into the database.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.barycentric_julian_date">
+<code class="sig-name descname">barycentric_julian_date</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.barycentric_julian_date" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of floats representing all the barycentric
+julian dates of the lightcurve. Their ordering is directly
+related to the cadence information so the bjd[n] will be observed
+in cadences[n].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.bjd">
+<code class="sig-name descname">bjd</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.bjd" title="Permalink to this definition">¶</a></dt>
+<dd><p>An alias for barycentric_julian_date</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.values">
+<code class="sig-name descname">values</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.values" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of floats representing the observed values
+of this lightcurve. The unit of these values will depend
+on the type of lightcurve. The values are ordered based upon
+the cadences of this lightcurve so values[n] will be observed in
+cadences[n]</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.errors">
+<code class="sig-name descname">errors</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.errors" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of floats representing the observed errors
+of this lightcurve. The unit of these values will depend on the
+type of lightcurve. The errors are ordered based upon the cadences
+of this lightcurve so errors[n] will be observed in cadences[n]</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.x_centroids">
+<code class="sig-name descname">x_centroids</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.x_centroids" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of floats representing the pixel X coordinate
+of this lightcurve on the related FFI and its aperture. The centroids
+are ordered based upon the cadences of this lightcurve so
+x_centroids[n] will be observed in cadences[n].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.y_centroids">
+<code class="sig-name descname">y_centroids</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.y_centroids" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of floats representing the pixel y coordinate
+of this lightcurve on the related FFI and its aperture. The centroids
+are ordered based upon the cadences of this lightcurve so
+y_centroids[n] will be observed in cadences[n].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.quality_flags">
+<code class="sig-name descname">quality_flags</code><em class="property">: np.ndarray</em><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.quality_flags" title="Permalink to this definition">¶</a></dt>
+<dd><p>A 1-Dimensional array of integers representing the quality flags
+of this lightcurve. Currently the values are either 0 (OK) or
+1 (BAD). In the future this may change to utilize the remaining
+31 bits left on this field. The quality flags are ordered based upon
+the cadences of this lightcurve so quality_flags[n] will be observed
+in cadences[n].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.merge_df">
+<code class="sig-name descname">merge_df</code><span class="sig-paren">(</span><em class="sig-param"><span class="o">*</span><span class="n">dataframes</span></em><span class="sig-paren">)</span><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.merge_df" title="Permalink to this definition">¶</a></dt>
+<dd><p>Merge the current lightcurve with the given Lightpoint dataframes.
+This merge will handle all cadence orderings and duplicate entries</p>
+</dd></dl>
+
+<dl class="py method">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.to_df">
+<em class="property">property </em><code class="sig-name descname">to_df</code><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.to_df" title="Permalink to this definition">¶</a></dt>
+<dd><p>Convert this lightcurve into a pandas dataframe
+:returns:
+:rtype: pd.DataFrame</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt id="lightcurvedb.models.lightcurve.Lightcurve.type">
+<code class="sig-name descname">type</code><a class="headerlink" href="#lightcurvedb.models.lightcurve.Lightcurve.type" title="Permalink to this definition">¶</a></dt>
+<dd><p>An alias for lightcurve_type</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">LightcurveDB</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" />
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2020, William Fong.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 3.1.0</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+      |
+      <a href="../_sources/lightcurves/lightcurves.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
