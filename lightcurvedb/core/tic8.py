@@ -12,7 +12,10 @@ CONFIG_PATH = os.path.expanduser(
 
 TIC8_CONFIGURATION = {
     'pool_size': 10,
-    'max_overflow': -1
+    'max_overflow': -1,
+    'executemany_mode': 'values',
+    'executemany_values_page_size': 10000,
+    'executemany_batch_page_size': 500
 }
 
 try:

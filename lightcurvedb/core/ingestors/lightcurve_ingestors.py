@@ -19,7 +19,7 @@ from itertools import product
 from .temp_table import LightcurveIDMapper, TempObservation, IngestionJob, TIC8Parameters, TempSession
 
 
-THRESHOLD = 1 * 10**9 / 16  # bytes
+THRESHOLD = 1 * 10**9 / 4  # bytes
 
 
 path_components = re.compile(r'orbit-(?P<orbit>[1-9][0-9]*)/ffi/cam(?P<camera>[1-4])/ccd(?P<ccd>[1-4])/LC/(?P<tic>[1-9][0-9]*)\.h5$')
@@ -306,7 +306,11 @@ def parallel_h5_merge(config, tics):
             tmp_id_map[k] = v
 
     job_sqlite.close()
-    with db_from_config() as db:
+    with db_from_config(
+            executemany_mode='values',
+            executemany_values_page_size=10000,
+            executemany_batch_page_size=500
+        ) as db:
         time_corrector = TimeCorrector(db.session, tic_parameters)
         orbit_map = pd.read_sql(
             db.query(
