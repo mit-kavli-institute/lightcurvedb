@@ -375,7 +375,7 @@ class Lightcurve(QLPModel):
         raw_qflag = np.concatenate((self.quality_flags, quality_flags))
 
         # Determine sort and diff of cadences
-        cadences, merged_data = merge_arrays(
+        merged_cadences, merged_data = merge_arrays(
             raw_cadences,
             bjd=raw_bjd,
             values=raw_values,
@@ -385,7 +385,7 @@ class Lightcurve(QLPModel):
             quality_flags=raw_qflag
         )
 
-        self.cadences = cadences
+        self.cadences = merged_cadences
         self.bjd = merged_data['bjd']
         self.values = merged_data['values']
         self.errors = merged_data['errors']
@@ -403,15 +403,7 @@ class Lightcurve(QLPModel):
                     other_lc
                 )
             )
-        self.merge_np(
-            other_lc.cadences,
-            other_lc.bjd,
-            other_lc.values,
-            other_lc.errors,
-            other_lc.x_centroids,
-            other_lc.y_centroids,
-            other_lc.quality_flags
-        )
+        self.merge_df(other_lc.to_df)
 
     @hybrid_property
     def cadences(self):

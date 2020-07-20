@@ -464,7 +464,15 @@ class LightcurveManager(object):
         """
 
         target_lc = self.id_map[id_]
-        target_lc.merge_np(**data)
+        target_lc.merge_np(
+            data['cadences'],
+            data['bjd'],
+            data['values'],
+            data['errors'],
+            data['x_centroids'],
+            data['y_centroids'],
+            data['quality_flags']
+        )
         return target_lc
 
     def upsert(self, tic_id, aperture, lightcurve_type, **data):

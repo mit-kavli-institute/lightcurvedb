@@ -25,10 +25,12 @@ def merge_arrays(ref_array, **arrays):
     """
     path = np.argsort(ref_array, kind='stable')
     check = np.append(np.diff(ref_array[path]), 1)
-
     result = dict()
-    for arr_name, arr in arrays.items():
-        result[arr_name] = arr[path[check > 0]]
 
-    return ref_array[path[check > 0]], result
+    valid_path = path[check > 0]
+
+    for arr_name, arr in arrays.items():
+        result[arr_name] = arr[valid_path]
+
+    return ref_array[valid_path], result
 
