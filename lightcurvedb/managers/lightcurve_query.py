@@ -135,7 +135,7 @@ class LightcurveManager(object):
 
         Parameters
         ----------
-        lightcurves :
+        lightcurves : iterable of ``Lightcurve`` instances
             An iterable collection of lightcurves to manage.
         """
         self.tics = set_dict()
@@ -170,14 +170,15 @@ class LightcurveManager(object):
     def __getitem__(self, key):
         """__getitem__.
 
-        Parameters
+        Arguments
         ----------
-        key :
+        key : obj
             The key to search for
+
         Raises
         ------
         KeyError
-            If the key is not found within the LightcurveManager
+            If the key is not found within the LightcurveManager.
         """
         for searchable in self.searchables:
             if key in searchable:
@@ -193,14 +194,24 @@ class LightcurveManager(object):
         )
 
     def __len__(self):
-        """__len__.
+        """
         The length of the manager in terms of number of stored lightcurves.
+
+        Returns
+        -------
+        int
+            The number of lightcurves managed.
         """
         return len(self.id_map)
 
     def __iter__(self):
-        """__iter__.
+        """
         Iterate over the stored lightcurves.
+
+        Returns
+        -------
+        iterator
+            An iterator over all the lightcurves within this manager.
         """
         return iter(self.id_map.values())
 
@@ -272,13 +283,20 @@ class LightcurveManager(object):
         to contain identifiers that already exist within the manager then
         the appropriate id will be assigned to the manager.
 
-        Arguments:
-            lightcurve {Lightcurve} -- The lightcurve to add to the manager
-        Raises:
-            ValueError if the given lightcurve does not have a valid ID
+        Arguments
+        ---------
+        lightcurve : ``Lightcurve``
+            The lightcurve to add to the manager.
 
-        Returns:
-            The merged lightcurve as viewed by the manager
+        Raises
+        ------
+        ValueError
+            The given lightcurve does not have a valid ID.
+
+        Returns
+        -------
+        ``Lightcurve``
+            The merged lightcurve as viewed by the manager.
         """
 
         id_check = self.resolve_id(
@@ -348,20 +366,30 @@ class LightcurveManager(object):
         """Adds a new lightcurve to the manager. This will create a new
         Lightcurve model instance and track it for batch insertions.
 
-        Arguments:
-            tic_id {int} -- The TIC Number for the new Lightcurve
-            aperture {str, Aperture} -- The aperture to be linked
-            lightcurve_type {str, LightcurveType} -- The type of lightcurve
+        Arguments
+        ---------
+        tic_id : int
+            The TIC Number for the new Lightcurve
 
-        Raises:
-            DuplicateEntryException: Raised when attempting to add a
+        aperture : str
+            The ``Aperture.name`` to be linked.
+
+        lightcurve_type : str
+            The ``LightcurveType.name`` to be linked.
+
+        Raises
+        ------
+        DuplicateEntryException
+            Raised when attempting to add a
             lightcurve that already contains the same tic, aperture, and type
             in order to avoid a PSQL Unique Contraint violation that will
             invalidate mass queries. Caveat: will only catch unique constraint
             violations within this Manager instance's context.
 
-        Returns:
-            The constructed Lightcurve object
+        Returns
+        -------
+        ``Lightcurve``
+            The constructed Lightcurve object.
         """
         try:
             assert self.resolve_id(tic_id, aperture, lightcurve_type) is None
@@ -399,15 +427,18 @@ class LightcurveManager(object):
         See the lightcurve model docs to see what fields can be assigned
         using keyword arguments
 
-        Arguments:
-            tic_id {int} -- The TIC of the target you want to update
-            aperture {str, Aperture} -- The aperture of the target
-            lightcurve_type {str, LightcurveType} -- The lightcurve type of
-                the target
+        Arguments
+        ---------
+        tic_id : int
+            The TIC of the target you want to update
+        aperture : str
+            The ``Aperture.name`` of the target.
+        lightcurve_type : str
+            The ``LightcurveType.name`` of the target.
         """
         id_ = self.resolve_id(tic_id, aperture, lightcurve_type)
-        checked_data = self__validate__(tic_id, aperture, lightcurve_type, **data)
-        self.update_w_id(id_, **data)
+        checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
+        self.update_w_id(id_, **checked_data)
 
     def update_w_id(self, id_, **data):
         """Updates a lightcurve with the given PSQL id.
@@ -418,11 +449,18 @@ class LightcurveManager(object):
         See the lightcurve model docs to see what fields can be assigned
         using keyword arguments.
 
-        Arguments:
-            id {int} -- The given PSQL integer for the lightcurve
+        Arguments
+        ---------
+        id : int
+            The given PSQL integer for the lightcurve
 
-        Returns:
-            Lightcurve -- The updated lightcurve
+        **data : Arbitrary keyword arguments
+            Passed to ``Lightcurve`` for merging parameters.
+
+        Returns
+        -------
+        ``Lightcurve``
+            The updated lightcurve.
         """
 
         target_lc = self.id_map[id_]
@@ -445,10 +483,13 @@ class LightcurveManager(object):
         """
         Execute add and update statements to the database.
 
-        Arguments:
-            db (DB) -- The given lightcurvedb Session Wrapper to mediate
+        Arguments
+        ---------
+        db : ``lightcurvedb.core.connection.DB``
+            The given lightcurvedb Session Wrapper to mediate
             the connection to the database.
-            resolve_conflicts (bool) -- If true, attempt to resolve unique
+        resolve_conflicts : bool, optional
+            If ``True`` (default), attempt to resolve unique
             constraint conflicts with the database.
         """
         if resolve_conflicts:
@@ -471,7 +512,7 @@ class LightcurveManager(object):
                     continue
                 # "New" lightcurve
                 try:
-                    defined_id = id_mapper.loc[
+                    _ = id_mapper.loc[
                         (
                             Lightcurve.tic_id,
                             Lightcurve.aperture_id,

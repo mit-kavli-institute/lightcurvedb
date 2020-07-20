@@ -1,26 +1,34 @@
-from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
-                                          QLPModel)
-from lightcurvedb.util.merge import matrix_merge
-from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, SmallInteger,
-                        String, inspect, cast, Sequence, select, join)
+"""
+lightcurve.py
+=============
+The lightcurve model module containing the Lightcurve model class
+and directly related models
+"""
+
+import numpy as np
+import pandas as pd
+from psycopg2.extensions import AsIs, register_adapter
+from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, Sequence,
+                        SmallInteger, String, cast, inspect, join, select)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, insert
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.orm.collections import collection
-from sqlalchemy.schema import CheckConstraint, UniqueConstraint
-from sqlalchemy.sql import select, func
+from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import bindparam
-from psycopg2.extensions import AsIs, register_adapter
-import numpy as np
-import pandas as pd
 
+from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
+                                          QLPModel)
+from lightcurvedb.util.merge import merge_arrays
 
 
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
         return AsIs(type_instance)
     register_adapter(type_class, adaptor)
+
 
 adapt_as_is_type(np.int64)
 adapt_as_is_type(np.int32)
@@ -63,7 +71,102 @@ class LightcurveFrameMap(QLPModel):
 
 
 class Lightcurve(QLPModel):
-    """Revising lightcurve to use arrays"""
+    """
+    This SQLAlchemy model is used to represent the magnitude or flux
+    information as a time series. Each lightcurve instance represents
+    these values as a single SQL row in respect to a tic_id, lightcurve type,
+    and aperture. Every lightcurve must contain a unique tuple of (tic_id,
+    lightcurve type, and aperture). As of August 2020, it is expected that
+    Lightcurves will contain cadence types of both 30 minutes and 10 minutes;
+    with cadences numberings being repsective of each.
+
+    ...
+
+    Attributes
+    ----------
+    id : int
+        The primary key identifier for tracking this lightcurve in the
+        postgreSQL database. This should not be modified by hand.
+    tic_id : int
+        The TIC identifier for this Lightcurve. While the TIC 8 relation
+        cannot be directly mapped to TIC 8 (you cannot build foreign keys
+        across databases) you can assume this identifier is unique in TIC 8.
+    cadence_type : int
+        Deprecated. Lightcurves will have mixed cadences starting with the
+        reduction of Sector 27 (End of July 2020).
+    lightcurve_type_id : str
+        The lightcurve type associated with this lightcurve. It is not
+        advisable to modify this attribute directly as this is a Foreign
+        Key constraint.
+    aperture_id : str
+        The aperture associated with this lightcurve. It is not
+        advisable to modify this attribute directly as this is a Foreign
+        Key constraint.
+    lightcurve_type: LightcurveType
+        The LightcurveType model related to this lightcurve. By default
+        accessing this attribute will emit an SQL query to resolve this
+        model. If this access is needed in bulk or upon resolution of a query
+        then as part of your query you will need:
+        ::
+            from sqlalchemy.orm import joinedload
+            db.query(Lightcurve).options(joinedload(Lightcurve.lightcurve_type))
+
+        This will ensure that your Lightcurve query results will already have
+        their LightcurveType models already populated.
+    aperture: Aperture
+        The Aperture model related to this lightcurve. By default
+        accessing this attribute will emit an SQL query to resolve this
+        model. If this access is needed in bulk or upon resolution of a query
+        then as part of your query you will need:
+        ::
+            from sqlalchemy.orm import joinedload
+            db.query(Lightcurve).options(joinedload(Lightcurve.aperture))
+        This will ensure that your Lightcurve query results will already have
+        their Aperture models already populated.
+    frames : list
+            Not yet implemented
+    cadences : np.ndarray
+        A 1-Dimensional array of integers representing the all the cadence
+        numberings in this lightcurve. This array will be returned in
+        ascending order and must continue to be in ascending order for it
+        to be accepted into the database.
+    barycentric_julian_date : np.ndarray
+        A 1-Dimensional array of floats representing all the barycentric
+        julian dates of the lightcurve. Their ordering is directly
+        related to the cadence information so the bjd[n] will be observed
+        in cadences[n].
+    bjd : np.ndarray
+        An alias for barycentric_julian_date
+    values : np.ndarray
+        A 1-Dimensional array of floats representing the observed values
+        of this lightcurve. The unit of these values will depend
+        on the type of lightcurve. The values are ordered based upon
+        the cadences of this lightcurve so values[n] will be observed in
+        cadences[n]
+    errors: np.ndarray
+        A 1-Dimensional array of floats representing the observed errors
+        of this lightcurve. The unit of these values will depend on the
+        type of lightcurve. The errors are ordered based upon the cadences
+        of this lightcurve so errors[n] will be observed in cadences[n]
+    x_centroids : np.ndarray
+        A 1-Dimensional array of floats representing the pixel X coordinate
+        of this lightcurve on the related FFI and its aperture. The centroids
+        are ordered based upon the cadences of this lightcurve so
+        x_centroids[n] will be observed in cadences[n].
+    y_centroids : np.ndarray
+        A 1-Dimensional array of floats representing the pixel y coordinate
+        of this lightcurve on the related FFI and its aperture. The centroids
+        are ordered based upon the cadences of this lightcurve so
+        y_centroids[n] will be observed in cadences[n].
+    quality_flags : np.ndarray
+        A 1-Dimensional array of integers representing the quality flags
+        of this lightcurve. Currently the values are either 0 (OK) or
+        1 (BAD). In the future this may change to utilize the remaining
+        31 bits left on this field. The quality flags are ordered based upon
+        the cadences of this lightcurve so quality_flags[n] will be observed
+        in cadences[n].
+
+    """
     __tablename__ = 'lightcurves'
     # Constraints
     __table_args__ = (
@@ -149,6 +252,14 @@ class Lightcurve(QLPModel):
     )
 
     def __len__(self):
+        """
+        Returns
+        -------
+        int
+            The length of the lightcurve. Since cadences are the base
+            reference for all time-series fields, specifically the length
+            of the cadences is returned.
+        """
         return len(self._cadences)
 
     def __repr__(self):
@@ -195,12 +306,17 @@ class Lightcurve(QLPModel):
 
     @hybrid_property
     def type(self):
-        """Return the type of lightcurve for this paricular instance"""
+        """An alias for lightcurve_type"""
         return self.lightcurve_type
 
     @property
     def to_df(self):
-        """Conver this lightcurve into a pandas dataframe"""
+        """
+        Convert this lightcurve into a pandas dataframe
+        Returns
+        -------
+        pd.DataFrame
+        """
         df = pd.DataFrame(
             index=self.cadences,
             data={
@@ -259,19 +375,23 @@ class Lightcurve(QLPModel):
         raw_qflag = np.concatenate((self.quality_flags, quality_flags))
 
         # Determine sort and diff of cadences
-        path = np.argsort(raw_cadences)
-        check = np.append(
-            np.diff(raw_cadences[path]),
-            1  # Always keep last element
+        cadences, merged_data = merge_arrays(
+            raw_cadences,
+            bjd=raw_bjd,
+            values=raw_values,
+            errors=raw_errors,
+            x_centroids=raw_x,
+            y_centroids=raw_y,
+            quality_flags=raw_qflag
         )
 
-        self.cadences = raw_cadences[check]
-        self.bjd = raw_bjd[check]
-        self.values = raw_values[check]
-        self.errors = raw_errors[check]
-        self.x_centroids = raw_x[check]
-        self.y_centroids = raw_y[check]
-        self.quality_flags = raw_qflag[check]
+        self.cadences = cadences
+        self.bjd = merged_data['bjd']
+        self.values = merged_data['values']
+        self.errors = merged_data['errors']
+        self.x_centroids = merged_data['x_centroids']
+        self.y_centroids = merged_data['y_centroids']
+        self.quality_flags = merged_data['quality_flags']
 
         return self
 
