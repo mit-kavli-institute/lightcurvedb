@@ -45,7 +45,9 @@ def engine_overrides(**engine_kwargs):
 
 
 class DB(object):
-    """Wrapper for SQLAlchemy sessions."""
+    """Wrapper for SQLAlchemy sessions. This is the primary way to interface
+    with the lightcurve database.
+    """
 
     def __init__(self, FACTORY, SESSIONCLASS=None):
 
@@ -70,6 +72,15 @@ class DB(object):
         self.close()
 
     def open(self):
+        """
+        Establish a connection to the database. If this session has already
+        been opened it will issue a warning before a no-op.
+
+        Returns
+        -------
+        DB
+            Returns itself in an open state.
+        """
         if not self._active:
             if not self._session:
                 self._session = self.SessionClass()
@@ -77,22 +88,52 @@ class DB(object):
                 return self
         else:
             warnings.warn(
-                'DB session is already scoped, ignoring duplicate open call',
+                'DB session is already scoped. Ignoring duplicate open call',
                 RuntimeWarning
             )
         return self
 
     def close(self):
+        """
+        Closes the database connection. If this session has not been opened
+        it will issue a warning.
+
+        Returns
+        -------
+        DB
+            Returns itself in a closed state.
+        """
         if self._session is not None:
             self._session.close()
             self._session = None
             self._active = False
+        else:
+            warnings.warn(
+                'DB session is not active. Ignoring duplicate close call'
+            )
+        return self
 
     @property
     def session(self):
+        """
+        Return the underlying SQLAlchemy Session.
+
+        Returns
+        -------
+        sqlalchemy.orm.Session
+            The active Session object performing all the interactions to
+            PostgreSQL.
+
+        Raises
+        ------
+        RuntimeError
+            Attempting to access this property without first calling `open()`.
+        """
         if not self._active:
             raise RuntimeError(
-                'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
+                'Session is not open. Please call `db_inst.open()`'
+                'or use `with db_inst as opendb:`'
+            )
         return self._session
 
     def query(self, *args, **kwargs):
@@ -122,8 +163,8 @@ class DB(object):
     def query_orbits_by_id(self, orbit_numbers):
         """Grab a numpy array representing the orbits"""
         orbits = self.query(*models.Orbit.get_legacy_attrs())\
-                .filter(models.Orbit.orbit_number.in_(orbit_numbers))\
-                .order_by(models.Orbit.orbit_number)
+            .filter(models.Orbit.orbit_number.in_(orbit_numbers))\
+            .order_by(models.Orbit.orbit_number)
         return np.array(orbits.all(), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID):

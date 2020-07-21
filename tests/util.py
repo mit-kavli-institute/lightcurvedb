@@ -1,7 +1,4 @@
-import numpy as np
-from functools import reduce
-
-def arr_equal(*arrays):
-    masks = [np.isnan(a) for a in arrays]
-    mask = ~reduce(lambda l, r: l | r, masks)
-    return reduce(lambda l, r: np.allclose(l[mask], r[mask]), arrays)
+def import_lc_prereqs(db, lightcurves):
+    for lc in lightcurves:
+        db.session.merge(lc.aperture)
+        db.session.merge(lc.lightcurve_type)

@@ -33,7 +33,7 @@ class FrameType(QLPDataSubType):
 
 class Frame(QLPDataProduct):
     """
-        Provides ORM implementation of various Frame models
+    Provides ORM implementation of various Frame models
     """
 
     __tablename__ = 'frames'

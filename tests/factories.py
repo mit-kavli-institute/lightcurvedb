@@ -168,14 +168,36 @@ def lightcurve_kwargs(draw, **overrides):
         np_st.arrays(
             np.int32,
             length,
-            elements=sampled_from([0,1])
+            elements=sampled_from([0, 1])
         )
     )
 
-    kwargs['tic_id'] = draw(overrides.pop('tic_id', integers(min_value=1, max_value=PSQL_INT_MAX)))
-    kwargs['cadence_type'] = draw(overrides.pop('cadence_type', integers(min_value=1, max_value=32767)))
-    kwargs['lightcurve_type'] = draw(overrides.pop('lightcurve_type', lightcurve_type()))
-    kwargs['aperture'] = draw(overrides.pop('aperture', aperture()))
+    kwargs['tic_id'] = draw(
+        overrides.pop(
+            'tic_id',
+            integers(
+                min_value=1, max_value=PSQL_INT_MAX
+            )
+        )
+    )
+    kwargs['cadence_type'] = draw(
+        overrides.pop(
+            'cadence_type',
+            integers(min_value=1, max_value=32767)
+        )
+    )
+    kwargs['lightcurve_type'] = draw(
+        overrides.pop(
+            'lightcurve_type',
+            lightcurve_type()
+        )
+    )
+    kwargs['aperture'] = draw(
+        overrides.pop(
+            'aperture',
+            aperture()
+        )
+    )
 
     return kwargs
 
@@ -206,7 +228,7 @@ def observation(draw, **overrides):
 
 @define_strategy
 @composite
-def lightcurve_list(draw, tic=None, apertures=None, lightcurve_types=None):
+def lightcurve_list(draw, min_size=1, max_size=10, tic=None, apertures=None, lightcurve_types=None):
     """
         Strategy for buildling lists of lightcurves.
         If passed apertures and/or lightcurve_types, examples will be drawn
@@ -217,17 +239,26 @@ def lightcurve_list(draw, tic=None, apertures=None, lightcurve_types=None):
     if apertures:
         aperture_choice = one_of(apertures)
     else:
-        aperture_choice = aperture()
+        aperture_choice = just(draw(aperture()))
 
     if lightcurve_types:
         type_choice = one_of(lightcurve_types)
     else:
-        type_choice = lightcurve_type()
+        type_choice = just(draw(lightcurve_type()))
+
     if tic:
         tic_choice = just(tic)
     else:
         tic_choice = integers(min_value=1, max_value=PSQL_INT_MAX)
 
     return draw(
-        lists(lightcurve(aperture=aperture_choice, lightcurve_type=type_choice, tic_id=tic_choice))
+        lists(
+            lightcurve(
+                aperture=aperture_choice,
+                lightcurve_type=type_choice,
+                tic_id=tic_choice
+            ),
+            min_size=min_size,
+            max_size=max_size
+        )
     )
