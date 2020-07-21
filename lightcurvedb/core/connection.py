@@ -7,7 +7,8 @@ from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, create_engine, and_, func
+from sqlalchemy import Column, SmallInteger, create_engine, and_, func, bindparam
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
@@ -21,9 +22,8 @@ from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
-from lightcurvedb.en_masse import MassQuery
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
-from lightcurvedb.managers.mass_upserts import MassUpsert
+from lightcurvedb.en_masse.temp_table import declare_lightcurve_cadence_map
 
 
 # Bring legacy capability
@@ -45,7 +45,23 @@ def engine_overrides(**engine_kwargs):
 
 
 class DB(object):
-    """Wrapper for SQLAlchemy sessions."""
+    """Wrapper for SQLAlchemy sessions. This is the primary way to interface
+    with the lightcurve database.
+
+    It is advised not to instantiate this class directly. The preferred
+    methods are through
+
+    ::
+
+        from lightcurvedb import db
+        with db as opendb:
+            foo
+
+        # or
+        from lightcurvedb import db_from_config
+        db = db_from_config('path_to_config')
+
+    """
 
     def __init__(self, FACTORY, SESSIONCLASS=None):
 
@@ -62,7 +78,7 @@ class DB(object):
         self._config = None
 
     def __enter__(self):
-        """Enter into the contejmxt of a SQLAlchemy open session"""
+        """Enter into the context of a SQLAlchemy open session"""
         return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -70,6 +86,15 @@ class DB(object):
         self.close()
 
     def open(self):
+        """
+        Establish a connection to the database. If this session has already
+        been opened it will issue a warning before a no-op.
+
+        Returns
+        -------
+        DB
+            Returns itself in an open state.
+        """
         if not self._active:
             if not self._session:
                 self._session = self.SessionClass()
@@ -77,26 +102,98 @@ class DB(object):
                 return self
         else:
             warnings.warn(
-                'DB session is already scoped, ignoring duplicate open call',
+                'DB session is already scoped. Ignoring duplicate open call',
                 RuntimeWarning
             )
         return self
 
     def close(self):
+        """
+        Closes the database connection. If this session has not been opened
+        it will issue a warning.
+
+        Returns
+        -------
+        DB
+            Returns itself in a closed state.
+        """
         if self._session is not None:
             self._session.close()
             self._session = None
             self._active = False
+        else:
+            warnings.warn(
+                'DB session is not active. Ignoring duplicate close call'
+            )
+        return self
 
     @property
     def session(self):
+        """
+        Return the underlying SQLAlchemy Session.
+
+        Returns
+        -------
+        sqlalchemy.orm.Session
+            The active Session object performing all the interactions to
+            PostgreSQL.
+
+        Raises
+        ------
+        RuntimeError
+            Attempting to access this property without first calling
+            ``open()``.
+        """
         if not self._active:
             raise RuntimeError(
-                'Session is not open. Please call db_inst.open() or use with db_inst as opendb:')
+                'Session is not open. Please call `db_inst.open()`'
+                'or use `with db_inst as opendb:`'
+            )
         return self._session
 
-    def query(self, *args, **kwargs):
-        return self._session.query(*args, **kwargs)
+    def query(self, *args):
+        """
+        Constructs a query attached to this session.
+
+        ::
+
+            # Will retrive a list of Lightcurve objects
+            db.query(Lightcurve)
+
+            # Or
+
+            # Will retrieve a list of tuples in the form of
+            # (tic_id, list of cadences)
+            db.query(Lightcurve.tic_id, Lightcurve.cadences)
+
+            # More complicated queries can be made. But keep in mind
+            # that queries spanning relations will require JOINing them
+            # in order to retrieve the needed information
+            db.query(
+                Lightcurve.tic_id,
+                Aperture.name
+            ).join(
+                Lightcurve.aperture
+            )
+
+        Arguments
+        ---------
+        *args : variadic Mapper or variadic Columns
+            The parameters to query for. These parameters can be full
+            mapper objects such as Lightcurve or Aperture. Or they can
+            also be columns of these mapper objects such as Lightcurve.tic_id,
+            or Aperture.inner_radius.
+
+        Returns
+        -------
+        sqlalchemy.orm.query.Query
+            Returns the Query object.
+
+        Notes
+        -----
+        See .. _SQLAlchemy Query Docs: https://docs.sqlalchemy.org/en/13/orm/query.html
+        """
+        return self._session.query(*args)
 
     @property
     def is_active(self):
@@ -122,8 +219,8 @@ class DB(object):
     def query_orbits_by_id(self, orbit_numbers):
         """Grab a numpy array representing the orbits"""
         orbits = self.query(*models.Orbit.get_legacy_attrs())\
-                .filter(models.Orbit.orbit_number.in_(orbit_numbers))\
-                .order_by(models.Orbit.orbit_number)
+            .filter(models.Orbit.orbit_number.in_(orbit_numbers))\
+            .order_by(models.Orbit.orbit_number)
         return np.array(orbits.all(), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID):
@@ -210,6 +307,31 @@ class DB(object):
         return q.yield_per(chunksize)
 
     def get_lightcurve(self, tic, lightcurve_type, aperture, resolve=True):
+        """
+        Retrieves a single lightcurve row.
+
+        Arguments
+        ---------
+        tic : int
+            The TIC identifier of the lightcurve.
+        aperture : str
+            The aperture name of the lightcurve.
+        lightcurve_type : str
+            The name of the lightcurve's type.
+        resolve : bool, optional
+            If True return a single Lightcurve object, or a query instance.
+
+        Returns
+        -------
+        Lightcurve or sqlalchemy.orm.query.Query
+            Returns either a single Lightcurve instance or a Query object.
+
+        Raises
+        ------
+        sqlalchemy.orm.exc.NoResultFound
+            No lightcurve matched your requirements.
+
+        """
         q = self.lightcurves.filter(
             models.Lightcurve.tic_id == tic,
             models.Lightcurve.aperture_id == aperture,
@@ -221,6 +343,21 @@ class DB(object):
         return q
 
     def lightcurves_from_tics(self, tics, **kw_filters):
+        """
+        Retrieves lightcurves from a collection of TIC identifiers.
+        Can also apply keyword filters.
+
+        .. deprecated:: 0.9.0
+            ``kw_filters`` will be replaced instead with ``resolve`` to
+            allow filters that span relationships.
+
+        Arguments
+        ---------
+        tics : list or collection of integers
+            The set of tics to filter for.
+        **kw_filters : Keyword arguments, optional
+            Keyword arguments to pass into ``filter_by``.
+        """
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
@@ -339,7 +476,7 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None):
+    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True):
         """
         Retrieve lightcurves that have been observed in the given
         orbit numbers. This method can also filter by camera and ccd.
@@ -354,11 +491,15 @@ class DB(object):
         ccds : list of integers, optional
             List of ccds to query against. If None, then don't discriminate
             using ccds
+        resolve : bool, optional
+            If True, resolve the query into a list of Lightcurves. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
 
         Returns
         -------
-        ``sqlalchemy.orm.Query``
-            A Query object on ``Lightcurve``.
+        list of lightcurves or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
         """
 
         tic_sub_q = self.tics_by_orbit(
@@ -369,9 +510,12 @@ class DB(object):
             sort=False
         ).subquery('tics_from_observations')
 
-        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        if resolve:
+            return q.all()
+        return q
 
-    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None):
+    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None, resolve=True):
         """
         Retrieve lightcurves that have been observed in the given
         sector numbers. This method can also filter by camera and ccd.
@@ -386,20 +530,73 @@ class DB(object):
         ccds : list of integers, optional
             List of ccds to query against. If None, then don't discriminate
             using ccds
+        resolve : bool, optional
+            If True, resolve the query into a list of Lightcurves. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
 
         Returns
         -------
-        ``sqlalchemy.orm.Query``
-            A Query object on ``Lightcurve``.
+        list of lightcurves or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
+
         """
 
         tic_sub_q = self.tics_by_sector(
             sectors, cameras=cameras, ccds=ccds, resolve=False, sort=False
         ).subquery('tics_from_observations')
 
-        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+
+        if resolve:
+            return q.all()
+        return q
 
     def lightcurves_from_best_aperture(self, q=None, resolve=True):
+        """
+        Find Lightcurve rows based upon their best aperture.
+
+        Arguments
+        ---------
+        q : sqlalchemy.orm.query.Query, optional
+            An initial Lightcurve Query. If left to None then all lightcurves
+            will be queried for.
+        resolve : bool, optional
+            If True execute the Query into a list of Lightcurves. If False,
+            return a Query object.
+
+        Returns
+        -------
+        list of ``Lightcurves`` or a ``sqlalchemy.orm.query.Query``
+
+
+        Notes
+        -----
+        This methods finds Lightcurves by JOINing them onto the BestAperture
+        table. SQL JOINs find the cartesian product of two tables. This
+        product is filtered by ``Lightcurve.tic_id == BestApertureMap.tic_id``
+        and ``Lightcurve.aperture_id == BestApertureMap.aperture_id``. In this
+        way the catesian product is filtered and the expected Best Aperture
+        filter is achieved.
+
+        For best results additional filters should be applied as this JOIN
+        will, by default, attempt to find the cartesian product of the
+        entire lightcurve and best aperture tables.
+
+        This can be done by first passing in a ``sqlalchemy.orm.query.Query``
+        object as the ``q`` parameter. This query must be on the
+        ``Lightcurve`` table.
+
+        ::
+
+            # Example
+            q = db.lightcurves_by_orbit(23, resolve=False) # Get init. query
+
+            lcs = db.lightcurves_from_best_apertures(q=q)
+
+            # Retrives lcs that appear in orbit 23 and filtered
+            # for best aperture.
+        """
         if q is None:
             q = self.lightcurves
         q = q.join(
@@ -426,26 +623,150 @@ class DB(object):
         return q
 
     def set_best_aperture(self, tic_id, aperture):
+        """
+        Maps the best aperture to a TIC id.
+
+        Arguments
+        ---------
+        tic_id : int
+            The TIC id to assign an Aperture
+        aperture : str or Aperture
+            The name of an Aperture or an Aperture instance
+        """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
         self._session.execute(upsert)
 
-    def unset_best_aperture(self, tic_id, aperture):
-        if isinstance(aperture, models.Aperture):
-            check = self._session.query(models.BestApertureMap).get(
-                (tic_id, aperture.name)
-            )
-        else:
-            check = self._session.query(models.BestApertureMap).get(
-                (tic_id, aperture)
-            )
+    def unset_best_aperture(self, tic_id):
+        """
+        Unsets the best aperture.
+
+        Arguments
+        ---------
+        tic_id : int
+            The TIC id to unassign
+
+        Notes
+        -----
+        If there is no best aperture map for the given TIC id then no
+        operation will take place.
+        """
+        check = self._session.query(models.BestApertureMap).filter(
+            models.BestApertureMap.tic_id == tic_id
+        ).one_or_none()
         if check:
             check.delete()
 
     def set_quality_flags(self, orbit_number, camera, ccd, cadences, quality_flags):
-        raise NotImplementedError
+        """
+        Assign quality flags en masse by orbit and camera and ccds. Updates
+        are performed using the passed cadences and quality flag
+        arrays.
+
+        Arguments
+        ---------
+        orbit_number : int
+            The orbit context for quality flag assignment.
+        camera : int
+            The camera context
+        ccd : int
+            The ccd context
+        cadences : iterable of integers
+            The cadences to key by to assign quality flags.
+        quality_flags : iterable of integers
+            The quality flags to assign in relation to the passed
+            ``cadences``.
+
+        Notes
+        -----
+        This method utilizes Temporary Tables which SQLAlchemy requires
+        a clean session. Any present and uncommitted changes will be
+        rolledback and a commit is emitted in order to construct the
+        temporary tables.
+
+        Saving the changes will still require a subsequent 'commit' call.
+
+        """
+        self.session.rollback()
+        QMap = declare_lightcurve_cadence_map(
+            Column('quality_flag', SmallInteger, nullable=False),
+            extend_existing=True,
+            keep_existing=False,
+        )
+        QMap.create(
+            bind=self.session.bind,
+            checkfirst=True)
+        self.commit()
+
+        # Insert relevant lightcurves
+        insert_q = QMap.insert().from_select(
+            ['lightcurve_id', 'cadence', 'quality_flag'],
+            self.query(
+                models.Lightcurve.id,
+                func.unnest(models.Lightcurve.cadences),
+                func.unnest(models.Lightcurve.quality_flags)
+            ).filter(
+                models.Lightcurve.tic_id.in_(
+                    self.tics_by_orbit(
+                        orbit_number,
+                        resolve=False
+                    ).filter(
+                        models.Observation.camera == camera,
+                        models.Observation.ccd == ccd
+                    ).subquery('observed_tics')
+                )
+            )
+        )
+        self.session.execute(insert_q)
+
+        # Cadence map is populated
+        update_q = QMap.update().where(
+            QMap.c.cadence == bindparam('_cadence')
+        ).values({
+            QMap.c.quality_flag: bindparam('_quality_flag')
+        })
+
+        self.session.execute(
+            update_q,
+            [
+                {
+                    '_cadence': cadence,
+                    '_quality_flag': qflag
+                } for cadence, qflag in zip(cadences, quality_flags)
+            ]
+        )
+
+        # Quality flags in the temp table are now updated, apply
+        # changes back to the Lightcurve table
+        updated_qflag = self.query(
+            QMap.c.lightcurve_id,
+            func.array_agg(
+                aggregate_order_by(
+                    QMap.c.quality_flag,
+                    QMap.c.cadence.desc()
+                )
+            ).label('qflags')
+        ).group_by(QMap.c.lightcurve_id).cte('updated_qflags')
+
+        update_q = models.Lightcurve.__table__.update().where(
+            models.Lightcurve.id == updated_qflag.c.lightcurve_id
+        ).values({
+            models.Lightcurve.quality_flags: updated_qflag.c.qflags
+        })
+
+        self.session.execute(update_q)
 
     def commit(self):
+        """
+        Commit the executed queries in the database to make any
+        changes permanent.
+        """
         self._session.commit()
+
+    def rollback(self):
+        """
+        Rollback all changes to the previous commit.
+        """
+        self._session.rollback()
 
     def add(self, model_inst):
         self._session.add(model_inst)
@@ -460,9 +781,25 @@ class DB(object):
 
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
+    """
+    Create a DB instance from a configuration file.
 
+    Arguments
+    ---------
+    config_path : str or Path, optional
+        The path to the configuration file.
+        Defaults to ``~/.config/lightcurvedb/db.conf``. This is expanded
+        from the user's ``~`` space using ``os.path.expanduser``.
+    **engine_kwargs : keyword arguments, optional
+        Arguments to pass off into engine construction.
+        See _SQLAlchemy Engine : https://docs.sqlalchemy.org/en/13/core/engines.html
+    """
     parser = ConfigParser()
-    parser.read(config_path)
+    parser.read(
+        os.path.expanduser(
+            config_path
+        )
+    )
 
     kwargs = {
         'username': parser.get('Credentials', 'username'),

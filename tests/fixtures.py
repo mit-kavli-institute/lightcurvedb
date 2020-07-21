@@ -1,6 +1,5 @@
 import pytest
-import sys
-import decorator
+from sqlalchemy import text
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.base_model import QLPModel
 from .constants import CONFIG_PATH
@@ -12,15 +11,18 @@ def near_equal(a, b, rel_tol=1e-09, abs_tol=0.0):
 
 @pytest.yield_fixture(scope='session')
 def db_conn():
-    db = db_from_config(CONFIG_PATH)
-    QLPModel.metadata.create_all(db._engine)
-    try:
-        yield db.open()
-    except Exception:
-        db.close()
-        raise
+    db = db_from_config(CONFIG_PATH).open()
+    QLPModel.metadata.create_all(db.session.bind)
     db.close()
 
-def clear_all():
+    yield db
+
+
+def clear_all(db):
     for tbl in reversed(QLPModel.metadata.sorted_tables):
-        yield tbl.delete()
+        db.session.execute(
+            text(
+                'TRUNCATE TABLE {} RESTART IDENTITY CASCADE'.format(tbl.name)
+            )
+        )
+    db.commit()

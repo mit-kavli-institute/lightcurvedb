@@ -32,11 +32,9 @@ def __config_to_url__(path):
 
 
 # Attempt to create DB from default configuration file
-__DEFAULT_PATH__ = os.path.expanduser(
-    os.path.join(
+__DEFAULT_PATH__ = os.path.join(
         '~', '.config', 'lightcurvedb', 'db.conf'
     )
-)
 
 
 def __register_process_guards__(engine):
@@ -66,7 +64,9 @@ def __init_engine__(uri, **engine_kwargs):
 
 
 try:
-    url = __config_to_url__(__DEFAULT_PATH__)
+    url = __config_to_url__(
+        os.path.expanduser(__DEFAULT_PATH__)
+    )
     __LCDB_ENGINE__ = __init_engine__(url, **DEFAULT_ENGINE_KWARGS)
     __SESSION_FACTORY__ = sessionmaker(bind=__LCDB_ENGINE__)
 

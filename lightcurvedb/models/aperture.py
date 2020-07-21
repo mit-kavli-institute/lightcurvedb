@@ -8,7 +8,26 @@ from lightcurvedb.core.base_model import QLPReference
 
 class Aperture(QLPReference):
     """
-        Provides ORM implementation of an aperture used by QLP
+    Provides ORM implementation of an aperture used by QLP.
+
+    Attributes
+    ----------
+    name : str
+        The name of the Aperture. This serves as the primary key of the Model
+        so this is both unique and indexed. This name is case-sensitive.
+    star_radius : float
+        The star radius to be used in the fiphot/fistar processing.
+    inner_radius : float
+        The inner radius to be used in the fiphot/fistar processing.
+    outer_radius : float
+        The outer radius to be used in the fiphot/fistar processing.
+
+    lightcurves : list of Lightcurves
+        Returns all lightcurves associated with this Aperture. Accessing
+        this attribute will result in a SQL query emission.
+    best_apertures : list of BestApertureMap
+        Returns all mappings of BestApertureMap related to this Aperture.
+        Accessing this attribute will result in a SQL query emission.
     """
 
     __tablename__ = 'apertures'
@@ -83,7 +102,24 @@ class Aperture(QLPReference):
 
 class BestApertureMap(QLPReference):
     """
-        A mapping of lightcurves to their 'best' aperture.
+        A mapping of lightcurves to their 'best' aperture. This model
+        is defined so TICs will contain 1 best aperture. This is enforced
+        on a PSQL constraint so behavior alterations will require a 
+        database migration.
+
+        Attributes
+        ----------
+        aperture_id : str
+            Foreign key to the "best aperture". Do not edit unless you're
+            confident in the change will be a valid Foreign Key.
+        tic_id : int
+            The TIC identifier. This serves as the primary key of the model
+            so it must be unique.
+
+        aperture : Aperture
+            Returns the Aperture model related to this BestApertureMap
+            instance. Accessing this attribute will result in a SQL query
+            emission.
     """
     __tablename__ = 'best_apertures'
     __table_args__ = (
