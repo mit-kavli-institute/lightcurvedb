@@ -552,6 +552,34 @@ class DB(object):
         Returns
         -------
         list of ``Lightcurves`` or a ``sqlalchemy.orm.query.Query``
+
+
+        Notes
+        -----
+        This methods finds Lightcurves by JOINing them onto the BestAperture
+        table. SQL JOINs find the cartesian product of two tables. This
+        product is filtered by ``Lightcurve.tic_id == BestApertureMap.tic_id``
+        and ``Lightcurve.aperture_id == BestApertureMap.aperture_id``. In this
+        way the catesian product is filtered and the expected Best Aperture
+        filter is achieved.
+
+        For best results additional filters should be applied as this JOIN
+        will, by default, attempt to find the cartesian product of the
+        entire lightcurve and best aperture tables.
+
+        This can be done by first passing in a ``sqlalchemy.orm.query.Query``
+        object as the ``q`` parameter. This query must be on the
+        ``Lightcurve`` table.
+
+        ::
+
+            # Example
+            q = db.lightcurves_by_orbit(23, resolve=False) # Get init. query
+
+            lcs = db.lightcurves_from_best_apertures(q=q)
+
+            # Retrives lcs that appear in orbit 23 and filtered
+            # for best aperture.
         """
         if q is None:
             q = self.lightcurves
@@ -618,15 +646,6 @@ class DB(object):
         are performed using the passed cadences and quality flag
         arrays.
 
-        Notes
-        -----
-        This method utilizes Temporary Tables which SQLAlchemy requires
-        a clean session. Any present and uncommitted changes will be
-        rolledback and a commit is emitted in order to construct the
-        temporary tables.
-
-        Saving the changes will still require a subsequent 'commit' call.
-
         Arguments
         ---------
         orbit_number : int
@@ -640,6 +659,16 @@ class DB(object):
         quality_flags : iterable of integers
             The quality flags to assign in relation to the passed
             ``cadences``.
+
+        Notes
+        -----
+        This method utilizes Temporary Tables which SQLAlchemy requires
+        a clean session. Any present and uncommitted changes will be
+        rolledback and a commit is emitted in order to construct the
+        temporary tables.
+
+        Saving the changes will still require a subsequent 'commit' call.
+
         """
         self.session.rollback()
         QMap = declare_lightcurve_cadence_map(
