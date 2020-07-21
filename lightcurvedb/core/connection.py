@@ -467,18 +467,36 @@ class DB(object):
         return q
 
     def set_best_aperture(self, tic_id, aperture):
+        """
+        Maps the best aperture to a TIC id.
+
+        Arguments
+        ---------
+        tic_id : int
+            The TIC id to assign an Aperture
+        aperture : str or Aperture
+            The name of an Aperture or an Aperture instance
+        """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
         self._session.execute(upsert)
 
-    def unset_best_aperture(self, tic_id, aperture):
-        if isinstance(aperture, models.Aperture):
-            check = self._session.query(models.BestApertureMap).get(
-                (tic_id, aperture.name)
-            )
-        else:
-            check = self._session.query(models.BestApertureMap).get(
-                (tic_id, aperture)
-            )
+    def unset_best_aperture(self, tic_id):
+        """
+        Unsets the best aperture.
+
+        Arguments
+        ---------
+        tic_id : int
+            The TIC id to unassign
+
+        Notes
+        -----
+        If there is no best aperture map for the given TIC id then no
+        operation will take place.
+        """
+        check = self._session.query(models.BestApertureMap).filter(
+            models.BestApertureMap.tic_id == tic_id
+        ).one_or_none()
         if check:
             check.delete()
 
@@ -494,6 +512,8 @@ class DB(object):
         a clean session. Any present and uncommitted changes will be
         rolledback and a commit is emitted in order to construct the
         temporary tables.
+
+        Saving the changes will still require a subsequent 'commit' call.
 
         Arguments
         ---------

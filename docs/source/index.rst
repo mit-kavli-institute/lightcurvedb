@@ -1,11 +1,12 @@
 Welcome to LightcurveDB's documentation!
 ========================================
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+    :maxdepth: 2
+    :caption: Contents:
 
-   lightcurves/lightcurves
-   managers/managers
+    db/db
+    lightcurves/lightcurves
+    managers/managers
 
 
 Indices and tables
