@@ -476,7 +476,7 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None):
+    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True):
         """
         Retrieve lightcurves that have been observed in the given
         orbit numbers. This method can also filter by camera and ccd.
@@ -491,11 +491,15 @@ class DB(object):
         ccds : list of integers, optional
             List of ccds to query against. If None, then don't discriminate
             using ccds
+        resolve : bool, optional
+            If True, resolve the query into a list of Lightcurves. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
 
         Returns
         -------
-        ``sqlalchemy.orm.Query``
-            A Query object on ``Lightcurve``.
+        list of lightcurves or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
         """
 
         tic_sub_q = self.tics_by_orbit(
@@ -506,9 +510,12 @@ class DB(object):
             sort=False
         ).subquery('tics_from_observations')
 
-        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        if resolve:
+            return q.all()
+        return q
 
-    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None):
+    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None, resolve=True):
         """
         Retrieve lightcurves that have been observed in the given
         sector numbers. This method can also filter by camera and ccd.
@@ -523,18 +530,27 @@ class DB(object):
         ccds : list of integers, optional
             List of ccds to query against. If None, then don't discriminate
             using ccds
+        resolve : bool, optional
+            If True, resolve the query into a list of Lightcurves. If False
+            return the ``sqlalchemy.orm.Query`` object representing
+            the intended SQL statement.
 
         Returns
         -------
-        ``sqlalchemy.orm.Query``
-            A Query object on ``Lightcurve``.
+        list of lightcurves or ``sqlalchemy.orm.Query``
+            Returns either the result of the query or the Query object itself.
+
         """
 
         tic_sub_q = self.tics_by_sector(
             sectors, cameras=cameras, ccds=ccds, resolve=False, sort=False
         ).subquery('tics_from_observations')
 
-        return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+
+        if resolve:
+            return q.all()
+        return q
 
     def lightcurves_from_best_aperture(self, q=None, resolve=True):
         """

@@ -7,7 +7,6 @@ Clone the repository onto the target machine using ``git``. And using the
 desired ``pip`` install the package by entering into the project's root
 directory and running ``pip install .``
 
-
 Development
 ###########
 Clone the repository into the desired location. Grab pipenv from ``PyPi``
@@ -19,7 +18,6 @@ Create and enter a virtual environment for development by executing
 
 To add a dependency run ``pipenv install [PACKAGE]``.
 To add a development dependency run ``pipenv install --development [PACKAGE]``
-
 
 Testing
 #######
