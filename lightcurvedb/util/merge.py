@@ -21,7 +21,7 @@ EXPECTED_COLS = [
 
 def merge_arrays(ref_array, **arrays):
     """
-    Using the ref_array, sort the given arrays.:qa
+    Using the ref_array, sort the given arrays.
     """
     path = np.argsort(ref_array, kind='stable')
     check = np.append(np.diff(ref_array[path]), 1)

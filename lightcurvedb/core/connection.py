@@ -47,6 +47,20 @@ def engine_overrides(**engine_kwargs):
 class DB(object):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
+
+    It is advised not to instantiate this class directly. The preferred
+    methods are through
+
+    ::
+
+        from lightcurvedb import db
+        with db as opendb:
+            foo
+
+        # or
+        from lightcurvedb import db_from_config
+        db = db_from_config('path_to_config')
+
     """
 
     def __init__(self, FACTORY, SESSIONCLASS=None):
@@ -64,7 +78,7 @@ class DB(object):
         self._config = None
 
     def __enter__(self):
-        """Enter into the contejmxt of a SQLAlchemy open session"""
+        """Enter into the context of a SQLAlchemy open session"""
         return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -127,7 +141,8 @@ class DB(object):
         Raises
         ------
         RuntimeError
-            Attempting to access this property without first calling `open()`.
+            Attempting to access this property without first calling
+            ``open()``.
         """
         if not self._active:
             raise RuntimeError(
@@ -136,8 +151,49 @@ class DB(object):
             )
         return self._session
 
-    def query(self, *args, **kwargs):
-        return self._session.query(*args, **kwargs)
+    def query(self, *args):
+        """
+        Constructs a query attached to this session.
+
+        ::
+
+            # Will retrive a list of Lightcurve objects
+            db.query(Lightcurve)
+
+            # Or
+
+            # Will retrieve a list of tuples in the form of
+            # (tic_id, list of cadences)
+            db.query(Lightcurve.tic_id, Lightcurve.cadences)
+
+            # More complicated queries can be made. But keep in mind
+            # that queries spanning relations will require JOINing them
+            # in order to retrieve the needed information
+            db.query(
+                Lightcurve.tic_id,
+                Aperture.name
+            ).join(
+                Lightcurve.aperture
+            )
+
+        Arguments
+        ---------
+        *args : variadic Mapper or variadic Columns
+            The parameters to query for. These parameters can be full
+            mapper objects such as Lightcurve or Aperture. Or they can
+            also be columns of these mapper objects such as Lightcurve.tic_id,
+            or Aperture.inner_radius.
+
+        Returns
+        -------
+        sqlalchemy.orm.query.Query
+            Returns the Query object.
+
+        Notes
+        -----
+        See .. _SQLAlchemy Query Docs: https://docs.sqlalchemy.org/en/13/orm/query.html
+        """
+        return self._session.query(*args)
 
     @property
     def is_active(self):
@@ -251,6 +307,31 @@ class DB(object):
         return q.yield_per(chunksize)
 
     def get_lightcurve(self, tic, lightcurve_type, aperture, resolve=True):
+        """
+        Retrieves a single lightcurve row.
+
+        Arguments
+        ---------
+        tic : int
+            The TIC identifier of the lightcurve.
+        aperture : str
+            The aperture name of the lightcurve.
+        lightcurve_type : str
+            The name of the lightcurve's type.
+        resolve : bool, optional
+            If True return a single Lightcurve object, or a query instance.
+
+        Returns
+        -------
+        Lightcurve or sqlalchemy.orm.query.Query
+            Returns either a single Lightcurve instance or a Query object.
+
+        Raises
+        ------
+        sqlalchemy.orm.exc.NoResultFound
+            No lightcurve matched your requirements.
+
+        """
         q = self.lightcurves.filter(
             models.Lightcurve.tic_id == tic,
             models.Lightcurve.aperture_id == aperture,
@@ -262,6 +343,21 @@ class DB(object):
         return q
 
     def lightcurves_from_tics(self, tics, **kw_filters):
+        """
+        Retrieves lightcurves from a collection of TIC identifiers.
+        Can also apply keyword filters.
+
+        .. deprecated:: 0.9.0
+            ``kw_filters`` will be replaced instead with ``resolve`` to
+            allow filters that span relationships.
+
+        Arguments
+        ---------
+        tics : list or collection of integers
+            The set of tics to filter for.
+        **kw_filters : Keyword arguments, optional
+            Keyword arguments to pass into ``filter_by``.
+        """
         q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
         return q
 
@@ -441,6 +537,22 @@ class DB(object):
         return self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
 
     def lightcurves_from_best_aperture(self, q=None, resolve=True):
+        """
+        Find Lightcurve rows based upon their best aperture.
+
+        Arguments
+        ---------
+        q : sqlalchemy.orm.query.Query, optional
+            An initial Lightcurve Query. If left to None then all lightcurves
+            will be queried for.
+        resolve : bool, optional
+            If True execute the Query into a list of Lightcurves. If False,
+            return a Query object.
+
+        Returns
+        -------
+        list of ``Lightcurves`` or a ``sqlalchemy.orm.query.Query``
+        """
         if q is None:
             q = self.lightcurves
         q = q.join(
@@ -599,7 +711,17 @@ class DB(object):
         self.session.execute(update_q)
 
     def commit(self):
+        """
+        Commit the executed queries in the database to make any
+        changes permanent.
+        """
         self._session.commit()
+
+    def rollback(self):
+        """
+        Rollback all changes to the previous commit.
+        """
+        self._session.rollback()
 
     def add(self, model_inst):
         self._session.add(model_inst)
@@ -614,9 +736,25 @@ class DB(object):
 
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
+    """
+    Create a DB instance from a configuration file.
 
+    Arguments
+    ---------
+    config_path : str or Path, optional
+        The path to the configuration file.
+        Defaults to ``~/.config/lightcurvedb/db.conf``. This is expanded
+        from the user's ``~`` space using ``os.path.expanduser``.
+    **engine_kwargs : keyword arguments, optional
+        Arguments to pass off into engine construction.
+        See _SQLAlchemy Engine : https://docs.sqlalchemy.org/en/13/core/engines.html
+    """
     parser = ConfigParser()
-    parser.read(config_path)
+    parser.read(
+        os.path.expanduser(
+            config_path
+        )
+    )
 
     kwargs = {
         'username': parser.get('Credentials', 'username'),
