@@ -119,7 +119,8 @@ def parallel_search_h5(queue, orbit_path, orbit, camera, ccd):
 @click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
 @click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/')
 @click.option('--smart-update/--force-full-update', default=True)
-def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch, smart_update):
+@click.option('--ingest-qflags/--no-qflags', default=False)
+def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch, smart_update, ingest_qflags):
     current_tmp_id = -1
 
     # Create a sqlite session to hold job contexts across processes
@@ -295,7 +296,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
     jobs = [chunk for chunk in chunkify(tics, n_tics)]
 
     with Pool(n_process) as p:
-        func = partial(parallel_h5_merge, ctx.obj['dbconf']._config)
+        func = partial(parallel_h5_merge, ctx.obj['dbconf']._config, ingest_qflags)
         results = p.imap_unordered(func, jobs)
         for nth, result in enumerate(results):
             click.echo(f'Worker successfully processed {result} tics. Job ({nth+1}/{len(jobs)})')

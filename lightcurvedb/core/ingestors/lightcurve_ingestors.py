@@ -263,7 +263,7 @@ def yield_merge_lc_dict(merged, lc_kwargs):
         yield batch
 
 
-def parallel_h5_merge(config, tics):
+def parallel_h5_merge(config, ingest_qflags, tics):
     # Setup necessary contexts
     job_sqlite = TempSession()
     pid = os.getpid()
@@ -276,7 +276,8 @@ def parallel_h5_merge(config, tics):
 
     orbits = set(job.orbit_number for job in jobs)
 
-    quality_flags = load_quality_flags(*orbits)
+    if ingest_qflags:
+        quality_flags = load_quality_flags(*orbits)
     logger.debug(f'Worker-{pid} parsed file contexts')
 
     tic_parameters = pd.concat(
@@ -382,7 +383,8 @@ def parallel_h5_merge(config, tics):
                 df['barycentric_julian_date'] = earth_tjd
 
                 # Quality flag assignment
-                assign_quality_flags(df, quality_flags)
+                if ingest_qflags:
+                    assign_quality_flags(df, quality_flags)
 
                 # Orbit alignment
                 tmag = tic_parameters.loc[kwarg['tic_id']]['tmag']
