@@ -2,12 +2,28 @@ import click
 import os
 import re
 import sys
-from pathlib import Path
 from glob import glob
 from functools import partial
 from lightcurvedb.models import FrameType, Frame, Orbit
 from multiprocessing import Pool
 from .base import lcdbcli
+
+
+if sys.version_info[0] >= 3:
+    from pathlib import Path
+    def get_parent_dir(path):
+        return Path(path).parts[-1]
+else:
+    def get_parent_dir(path):
+        return os.path.basename(
+            os.path.abspath(
+                os.path.join(
+                    path,
+                    os.pardir
+                )
+            )
+        )
+
 
 TYPE_MAP = {
     'ffi_fits': 'Raw FFI',
@@ -34,18 +50,18 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
 
     files = []
 
-    parent_dir = Path(path).parts[-1]
+    parent_dir = get_parent_dir(path)
     mapped = TYPE_MAP[parent_dir]
     frame_type = session.query(FrameType).get(mapped)
     if frame_type is None:
         click.echo(
-            f'Found no definition for frame type {mapped}, creating '
-            f'according to specification.'
+            'Found no definition for frame type {}, creating '
+            'according to specification.'.format(mapped)
         )
         frame_type = FrameType(name=TYPE_MAP[parent_dir])
         click.echo(
             click.style(
-                f'Generated frametype {frame_type}',
+                'Generated frametype {frame_type}'.format(frame_type),
                 fg='green'
             )
         )
@@ -55,7 +71,7 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
 
 
     for extension in extensions:
-        found = glob(os.path.join(path, f'*.{extension}'))
+        found = glob(os.path.join(path, '*.{}'.format(extension)))
         files += found
     click.echo(
         'Found {} fits files'.format(
@@ -84,21 +100,21 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
     orbit = session.orbits.filter_by(orbit_number=orbit_number).one_or_none()
 
     if not orbit:
-        click.echo(f'Orbit {orbit_number} not found! Will make one')
+        click.echo('Orbit {} not found! Will make one'.format(orbit_number))
         sector = int((orbit_number + 1) / 2) - 4
         # sanity checks: see if the entered sector is looks ok
         checks = session.orbits.filter(Orbit.sector > sector, Orbit.orbit_number < orbit_number).order_by(Orbit.orbit_number).all()
         if len(checks) > 0:
             for sanity_check in checks:
                 click.echo(
-                    f'Orbit {sanity_check.orbit_number} '
-                    f'has a smaller sector ID {sanity_check.sector}'
+                    'Orbit {} '
+                    'has a smaller sector ID {}'.format(sanity_check.orbit_number, sanity_check.sector)
                 )
             click.confirm('Are you sure this is OK?', abort=True)
         orbit = Orbit.generate_from_fits(files)
         orbit.sector = sector
         click.echo(
-            click.style(f'Generated {orbit}', fg='green')
+            click.style('Generated {}'.format(orbit), fg='green')
         )
         session.add(orbit)
         if not ctx.obj['dryrun']:
@@ -112,7 +128,7 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
             frame.orbit = orbit
             frame.frame_type = frame_type
 
-    click.echo(f'Generated {len(frames)} frames from {len(files)} files')
+    click.echo('Generated {} frames from {} files'.format(len(frames), len(files)))
     return frames
 
 
@@ -134,7 +150,7 @@ def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type, extensions):
             db.session.rollback()
             click.echo(
                 click.style(
-                    f'Dryrun! Rolling back {len(added_frames)} frames!',
+                    'Dryrun! Rolling back {} frames!'.format(len(added_frames)),
                     fg='yellow',
                     bold=True
                 )
@@ -143,7 +159,7 @@ def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type, extensions):
             db.session.commit()
             click.echo(
                 click.style(
-                    f'Committed {len(added_frames)} frames!',
+                    'Committed {} frames!'.format(len(added_frames)),
                     fg='green',
                     bold=True
                 )

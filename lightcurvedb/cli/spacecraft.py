@@ -61,7 +61,7 @@ def ingest(ctx, ephemris_csv):
             )
             db.session.merge(eph)
             click.echo(
-                f'Added {eph}'
+                'Added {}'.format(eph)
             )
         if not ctx.obj['dryrun']:
             db.commit()

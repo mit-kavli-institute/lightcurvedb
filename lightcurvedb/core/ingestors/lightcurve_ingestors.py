@@ -1,4 +1,8 @@
-from h5py import File as H5File
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', category=FutureWarning)
+    from h5py import File as H5File
+
 from math import ceil
 from sqlalchemy import Sequence, Column, BigInteger, Integer, func, text, Table, String, select, bindparam, join
 from sqlalchemy.orm.session import Session, sessionmaker
@@ -103,6 +107,8 @@ def h5_to_kwargs(filepath, orbit=None, camera=None, ccd=None):
             quality_flags = quality_flag_extr(lc_by_ap['QualityFlag'][()]).astype(int)
 
             for lc_type, has_error_field in H5_LC_TYPES.items():
+                if not lc_type in lc_by_ap:
+                    continue
                 values = lc_by_ap[lc_type][()]
                 if has_error_field:
                     errors = lc_by_ap['{}Error'.format(lc_type)][()]
@@ -278,7 +284,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
 
     if ingest_qflags:
         quality_flags = load_quality_flags(*orbits)
-    logger.debug(f'Worker-{pid} parsed file contexts')
+    logger.debug('Worker-{} parsed file contexts'.format(pid))
 
     tic_parameters = pd.concat(
         [
@@ -322,7 +328,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
             index_col=['orbit_number']
         )
 
-        logger.debug(f'Worker-{pid} instantiated TimeCorrector')
+        logger.debug('Worker-{} instantiated TimeCorrector'.format(pid))
 
         # Preload existing lightcurves into dataframe as lightpoints
         initial_lp = pd.read_sql(
@@ -340,11 +346,11 @@ def parallel_h5_merge(config, ingest_qflags, tics):
             index_col=['lightcurve_id', 'cadence']
         )
         initial_lp.index.rename(['lightcurve_id', 'cadence'], inplace=True)
-        logger.debug(f'Worker-{pid} preloaded {len(initial_lp)} lightpoints')
+        logger.debug('Worker-{} preloaded {} lightpoints'.format(pid, len(initial_lp)))
         dataframes.append(initial_lp)
         #  All needed pretexts are needed to begin ingesting
         tmp_lc_id = -1
-        logger.debug(f'Worker-{pid} processing files...')
+        logger.debug('Worker-{} processing files...'.format(pid))
         time_0 = time.time()
         for nth, job in enumerate(jobs):
             observation = dict(
@@ -395,7 +401,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
                 dataframes.append(df)
             elapsed = time.time() - time_0
             if elapsed > 10:  # Ten seconds
-                logger.debug(f'Worker-{pid} status {nth}/{len(jobs)}')
+                logger.debug('Worker-{} status {}/{}'.format(pid, nth, len(jobs)))
                 time_0 = time.time()
 
         # Grab lightcurve kwarg dump to properly discern to insert/update
@@ -410,7 +416,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
         merged.reset_index(inplace=True)
 
         for batch in yield_new_lc_dict(merged, kwarg_map):
-            logger.debug(f'Worker-{pid} inserting {len(batch)} new lightcurves')
+            logger.debug('Worker-{} inserting {} new lightcurves'.format(pid, len(batch)))
             q = Lightcurve.__table__.insert().values(batch)
             db.session.execute(
                 q
@@ -418,7 +424,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
 
 
         for batch in yield_merge_lc_dict(merged, kwarg_map):
-            logger.debug(f'Worker-{pid} updating {len(batch)} lightcurves')
+            logger.debug('Worker-{} updating {} lightcurves'.format(pid, len(batch)))
             update_q = Lightcurve.__table__.update().where(
                 Lightcurve.id == bindparam('_id')
             ).values({
@@ -432,7 +438,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
             })
             db.session.execute(update_q, batch)
 
-        logger.debug(f'Worker-{pid} updating observations')
+        logger.debug('Worker-{} updating observations'.format(pid))
         observations = pd.DataFrame(observations).set_index(['tic_id', 'orbit_id'])
         observations = observations[~observations.index.duplicated(keep='last')]
         observations.reset_index(inplace=True)
@@ -441,5 +447,5 @@ def parallel_h5_merge(config, ingest_qflags, tics):
             observations.to_dict('records')
         )
         db.commit()
-    logger.debug(f'Worker-{pid} done')
+    logger.debug('Worker-{} done'.format(pid))
     return len(tics)
