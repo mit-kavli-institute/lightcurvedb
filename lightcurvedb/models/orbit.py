@@ -171,3 +171,28 @@ class Orbit(QLPReference):
     @dec.expression
     def dec(cls):
         return cls.declination
+
+
+    def get_qlp_directory(self, base_path='/pdo/qlp-data'):
+        """
+        Return the base QLP orbit directory for the orbit
+        """
+        return os.path.join(
+            base_path,
+            'orbit-{}'.format(self.orbit_number)
+        )
+
+    def get_poc_directory(self, base_path='/pdo/poc-data/orbits'):
+        """
+        Return the base POC orbit directory for the orbit.
+        """
+
+        return os.path.join(
+            base_path,
+            'orbit-{}'.format(self.orbit_number)
+        )
+
+    def get_qlp_run_directory(self, base_path='/pdo/qlp-data'):
+        base_dir = self.get_qlp_directory(base_path)
+        run_dir = os.path.join(base_dir, 'ffi', 'run')
+        return run_dir

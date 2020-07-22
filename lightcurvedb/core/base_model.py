@@ -61,3 +61,13 @@ class QLPReference(QLPModel):
     __abstract__ = True
 
     created_on = Column(DateTime, server_default=func.now())
+
+
+class QLPMetric(QLPModel):
+    """
+    Mixin for describing models which are purely for determining performance
+    metrics or some other internal diagnostics.
+    """
+
+    __abstract__ = True
+    created_on = Column(DateTime, server_default=func.now())

@@ -415,14 +415,24 @@ def parallel_h5_merge(config, ingest_qflags, tics):
         merged = merged[~merged.index.duplicated(keep='last')]
         merged.reset_index(inplace=True)
 
+        batch_timings = []
+        start_insertion_time = time.time()
         for batch in yield_new_lc_dict(merged, kwarg_map):
             logger.debug('Worker-{} inserting {} new lightcurves'.format(pid, len(batch)))
+            batch_t0 = time.time()
             q = Lightcurve.__table__.insert().values(batch)
             db.session.execute(
                 q
             )
+            elapsed = time.time() - batch_t0
+            batch_timings.append(
+                len(batch), elapsed        
+            )
 
+        insertion_time_elapsed = time.time() - start_insertion_time
 
+        start_update_time = time.time()
+        update_timings = []
         for batch in yield_merge_lc_dict(merged, kwarg_map):
             logger.debug('Worker-{} updating {} lightcurves'.format(pid, len(batch)))
             update_q = Lightcurve.__table__.update().where(
