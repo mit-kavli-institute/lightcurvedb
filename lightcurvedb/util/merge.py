@@ -23,7 +23,7 @@ def merge_arrays(ref_array, **arrays):
     """
     Using the ref_array, sort the given arrays.
     """
-    path = np.argsort(ref_array, kind='stable')
+    path = np.argsort(ref_array, kind='mergesort')
     check = np.append(np.diff(ref_array[path]), 1)
     result = dict()
 
