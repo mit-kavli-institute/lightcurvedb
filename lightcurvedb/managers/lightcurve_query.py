@@ -181,15 +181,31 @@ class LightcurveManager(object):
         KeyError
             If the key is not found within the LightcurveManager.
         """
+
+        found_ids = []
+
         for searchable in self.searchables:
             if key in searchable:
                 ids = searchable[key]
-                if len(ids) == 1:
-                    # Singular, just return the lightcurve
-                    id = next(iter(ids))
-                    return self.id_map[id]
-                return LightcurveManager([self.id_map[id_] for id_ in ids])
+                found_ids.append(ids)
+        # If found_ids is empty, raise an error
+        if len(found_ids) == 0:
+            raise KeyError(
+                'The keyword \'{}\' was not found in the query'.format(key)
+            )
 
+        # Grab the union of all found ids. If it's a single id, return the
+        # lightcurve
+        result = set.intersection(*found_ids)
+        if len(result) == 0:
+            raise KeyError(
+                'The keyword \'{}\' was not found in the query'.format(key)
+            )
+        if all(len(s) <= 1 for s in found_ids):
+            id = next(iter(result))
+            return self.id_map[id]
+        elif len(result) > 1:
+            return LightcurveManager([self.id_map[id_] for id_ in result])
         raise KeyError(
             'The keyword \'{}\' was not found in the query'.format(key)
         )
@@ -229,7 +245,11 @@ class LightcurveManager(object):
 
         if lightcurve_type in self.DEFAULT_RESOLUTION:
             sister_type = self.DEFAULT_RESOLUTION[lightcurve_type]
-            sister_item = self[tic_id][aperture][sister_type].to_df
+            check = self[tic_id][aperture]
+            if not isinstance(check, Lightcurve):
+                check = check[sister_type]
+
+            sister_item = check.to_df
 
             if 'errors' not in data:
                 data['errors'] = np.empty(len(data['cadences']))
