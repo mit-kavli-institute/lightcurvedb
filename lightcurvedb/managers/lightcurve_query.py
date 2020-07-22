@@ -196,7 +196,7 @@ class LightcurveManager(object):
         # Grab the union of all found ids. If it's a single id, return the
         # lightcurve
         result = set.intersection(*found_ids)
-        if len(result) == 1:
+        if all(len(s) == 1 for s in self.searchables):
             id = next(iter(result))
             return self.id_map[id]
         elif len(result) > 1:
@@ -241,6 +241,10 @@ class LightcurveManager(object):
 
         if lightcurve_type in self.DEFAULT_RESOLUTION:
             sister_type = self.DEFAULT_RESOLUTION[lightcurve_type]
+            check = self[tic_id][aperture]
+            if not isinstance(check, Lightcurve):
+                check = check[sister_type]
+
             sister_item = self[tic_id][aperture][sister_type].to_df
 
             if 'errors' not in data:
