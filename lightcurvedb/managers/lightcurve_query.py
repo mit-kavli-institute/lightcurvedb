@@ -196,12 +196,15 @@ class LightcurveManager(object):
         # Grab the union of all found ids. If it's a single id, return the
         # lightcurve
         result = set.intersection(*found_ids)
-        if all(len(s) == 1 for s in self.searchables):
+        if len(result) == 0:
+            raise KeyError(
+                'The keyword \'{}\' was not found in the query'.format(key)
+            )
+        if all(len(s) <= 1 for s in found_ids):
             id = next(iter(result))
             return self.id_map[id]
         elif len(result) > 1:
             return LightcurveManager([self.id_map[id_] for id_ in result])
-
         raise KeyError(
             'The keyword \'{}\' was not found in the query'.format(key)
         )
@@ -245,7 +248,7 @@ class LightcurveManager(object):
             if not isinstance(check, Lightcurve):
                 check = check[sister_type]
 
-            sister_item = self[tic_id][aperture][sister_type].to_df
+            sister_item = check.to_df
 
             if 'errors' not in data:
                 data['errors'] = np.empty(len(data['cadences']))
