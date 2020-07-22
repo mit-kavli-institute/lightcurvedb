@@ -180,14 +180,27 @@ class LightcurveManager(object):
         KeyError
             If the key is not found within the LightcurveManager.
         """
+
+        found_ids = []
+
         for searchable in self.searchables:
             if key in searchable:
                 ids = searchable[key]
-                if len(ids) == 1:
-                    # Singular, just return the lightcurve
-                    id = next(iter(ids))
-                    return self.id_map[id]
-                return LightcurveManager([self.id_map[id_] for id_ in ids])
+                found_ids.append(ids)
+        # If found_ids is empty, raise an error
+        if len(found_ids) == 0:
+            raise KeyError(
+                'The keyword \'{}\' was not found in the query'.format(key)
+            )
+
+        # Grab the union of all found ids. If it's a single id, return the
+        # lightcurve
+        result = set.intersection(*found_ids)
+        if len(result) == 1:
+            id = next(iter(result))
+            return self.id_map[id]
+        elif len(result) > 1:
+            return LightcurveManager([self.id_map[id_] for id_ in result])
 
         raise KeyError(
             'The keyword \'{}\' was not found in the query'.format(key)
