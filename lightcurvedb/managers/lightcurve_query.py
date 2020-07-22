@@ -1,19 +1,20 @@
+from abc import ABCMeta, abstractmethod
 from collections import defaultdict, namedtuple
 from functools import partial
-import pandas as pd
-import os
-import numpy as np
-from abc import ABCMeta, abstractmethod
-import multiprocessing as mp
 from itertools import groupby
-from sqlalchemy.ext.serializer import dumps
-from sqlalchemy.sql.expression import bindparam
+
+import numpy as np
+import pandas as pd
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.ext.serializer import dumps
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm.query import Query
+from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.sql.expression import bindparam
+
 from lightcurvedb.exceptions import LightcurveDBException
 from lightcurvedb.models import Lightcurve
+from lightcurvedb.models.aperture import BestApertureMap
 
 
 class AmbiguousIdentifierDeduction(LightcurveDBException):
@@ -527,7 +528,8 @@ class LightcurveManager(object):
                             Lightcurve.lightcurve_type_id
                         )
                     ]['id']
-                    # This would have resulted in a unique-constraint collision. Perform update
+                    # This would have resulted in a unique-constraint
+                    # collision. Perform update
                     defined_lightcurve = db.get_lightcurve(
                         lightcurve.tic_id,
                         lightcurve.aperture_id,
