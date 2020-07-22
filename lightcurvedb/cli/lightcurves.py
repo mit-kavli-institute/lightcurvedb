@@ -1,3 +1,5 @@
+from __future__ import division, print_function
+
 import click
 import os
 import itertools
@@ -23,9 +25,9 @@ from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import db as closed_db
 from glob import glob
 from h5py import File as H5File
-from .base import lcdbcli
-from .utils import find_h5, extr_tic, group_h5
-from .types import CommaList
+from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.cli.utils import find_h5, extr_tic, group_h5
+from lightcurvedb.cli.types import CommaList
 
 
 TIC8Session = sessionmaker(autoflush=True)
@@ -86,7 +88,7 @@ def files_to_df(orbits, cameras, ccds, orbit_dir):
 
 def filter_for_tic(base_file_paths, tic):
     for path in base_file_paths:
-        fullpath = os.path.join(path, f'{tic}.h5')
+        fullpath = os.path.join(path, '{}.h5'.format(tic))
         if os.path.exists(fullpath):
             components = determine_h5_path_components(fullpath)
             if components:
@@ -175,7 +177,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
         if smart_update:
             # Only process new observations, delete any ingestion job that already
             # has a defined observation
-            click.echo(f'Determining merge solutions')
+            click.echo('Determining merge solutions')
             bad_ids = job_sqlite.query(
                 IngestionJob.id
             ).join(
@@ -291,15 +293,21 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
         click.echo('\tLoaded LC Kwargs into SQLite')
 
         job_sqlite.commit()
-    click.echo(f'Will process {len(tics)} TICs')
+    click.echo('Will process {} TICs'.format(len(tics)))
 
-    jobs = [chunk for chunk in chunkify(tics, n_tics)]
+    jobs = list(chunkify(tics, n_tics))
 
     with Pool(n_process) as p:
         func = partial(parallel_h5_merge, ctx.obj['dbconf']._config, ingest_qflags)
         results = p.imap_unordered(func, jobs)
         for nth, result in enumerate(results):
-            click.echo(f'Worker successfully processed {result} tics. Job ({nth+1}/{len(jobs)})')
+            click.echo(
+                'Worker successfully processed {} tics. Job ({}/{})'.format(
+                    result,
+                    nth+1, 
+                    len(jobs)
+                )
+            )
 
     job_sqlite.close()
 
