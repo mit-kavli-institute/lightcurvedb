@@ -6,3 +6,4 @@ numpy
 numba
 h5py
 pandas
+packaging

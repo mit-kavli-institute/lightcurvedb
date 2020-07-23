@@ -1,3 +1,6 @@
+__version__ = '0.1.10'
+
+
 from lightcurvedb.core.engines import __SESSION_FACTORY__, __DEFAULT_PATH__
 from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType, QLPReference
 from lightcurvedb.models import Aperture, FrameType, Frame, Orbit, Lightcurve, LightcurveType

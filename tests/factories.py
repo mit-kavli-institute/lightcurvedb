@@ -154,16 +154,14 @@ def orbit_frames(draw):
 @composite
 def lightcurve_kwargs(draw, **overrides):
     length = draw(overrides.pop('length', integers(min_value=1, max_value=10)))
-    __floating__arr = draw(np_st.arrays(np.float32, (5, length)))
-
     kwargs = dict()
 
     kwargs['cadences'] = np.arange(length)
-    kwargs['bjd'] = __floating__arr[0]
-    kwargs['values'] = __floating__arr[1]
-    kwargs['errors'] = __floating__arr[2]
-    kwargs['x_centroids'] = __floating__arr[3]
-    kwargs['y_centroids'] = __floating__arr[4]
+    kwargs['bjd'] = np.arange(length, dtype=np.float64)
+    kwargs['values'] = np.arange(length, dtype=np.float64)
+    kwargs['errors'] = np.arange(length, dtype=np.float64)
+    kwargs['x_centroids'] = np.arange(length, dtype=np.float64)
+    kwargs['y_centroids'] = np.arange(length, dtype=np.float64)
     kwargs['quality_flags'] = draw(
         np_st.arrays(
             np.int32,

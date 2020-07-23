@@ -5,6 +5,22 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm.query import Query
 from sqlalchemy.ext.hybrid import hybrid_property
 from importlib import import_module  # Say that 5 times
+from packaging.version import Version, parse
+
+
+SUPPORTED_VERSION_ARGS = (
+    'public',
+    'base_version',
+    'epoch',
+    'release',
+    'major',
+    'minor',
+    'micro',
+    'local',
+    'is_prerelease',
+    'is_devrelease',
+    'is_postrelease'
+)
 
 
 class QLPProcess(QLPMetric):
@@ -39,7 +55,103 @@ class QLPProcess(QLPMetric):
     job_version_major = Column(SmallInteger, index=True, nullable=False)
     job_version_minor = Column(SmallInteger, index=True, nullable=False)
     job_version_revision = Column(Integer, index=True, nullable=False)
+
+    additional_version_info = Column(
+        postgresql.JSONB,
+        index=True,
+        nullable=True
+    )
+
     job_description = Text()
+
+    @hybrid_property
+    def version(self):
+
+        try:
+            return parse(
+                self.additional_version_info['base_version']
+            )
+        except KeyError:
+            return parse('.'.join((
+                str(self.job_version_major),
+                str(self.job_version_minor),
+                str(self.job_version_revision)
+            )))
+
+    @version.setter
+    def version(self, value):
+        if isinstance(value, Version):
+            self.version = value
+        else:
+            v = parse(value)
+
+            self.job_version_major = v.major
+            self.job_version_minor = v.minor
+            self.job_version_revision = v.micro
+
+            self.additional_version_info = {
+                k: getattr(v, k) for k in SUPPORTED_VERSION_ARGS
+            }
+
+    @classmethod
+    def make_from_module(cls, module, job_type, description=None):
+        """
+        Attempt to create a QLPProcess using an imported module. A string
+        may also be passed to be interpreted as an import.
+
+        Arguments
+        ---------
+        module : obj or str
+            The module object or string import path to be used as context.
+            The specified module must have a ``__version__`` or ``version``
+            attribute.
+        job_type : str
+            The name of the job.
+        description : str, optional
+            The description of the job
+        Raises
+        ------
+        AttributeError:
+            Raised if no ``__version__`` or ``version`` attributes could be
+            found on the module.
+        """
+        if isinstance(module, str):
+            __module = import_module(module)
+        else:
+            __module = module
+
+        try:
+            version = getattr(__module, 'version')
+        except AttributeError:
+            # Attempt to fallback
+            version = getattr(__module, '__version__')
+
+        inst = cls(
+            job_type=job_type,
+            job_description=description
+        )
+        inst.version = version
+
+        return inst
+
+    @classmethod
+    def lightcurvedb_process(cls, job_type, description=None):
+        """
+        Factory method of creating a QLPProcess instance using the current
+        defined lightcurvedb version number.
+
+        Arguments
+        ---------
+        job_tpye : str
+            The name of the job.
+        description : str, optional
+            The description of this process.
+        """
+        return cls.make_from_module(
+            'lightcurvedb',
+            job_type,
+            description=description
+        )
 
 
 class QLPAlteration(QLPMetric):
@@ -155,6 +267,10 @@ class QLPAlteration(QLPMetric):
         """
         Attempt to import the target model
         """
-        return import_module(
-            self.target_model
+        classpath = self.target_model.split('.')
+        return getattr(
+            import_module(
+                '.'.join(classpath[:-1])
+            ),
+            classpath[-1]
         )

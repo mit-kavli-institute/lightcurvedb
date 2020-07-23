@@ -29,6 +29,7 @@ isort = "*"
 flake8 = "*"
 coverage = "*"
 doq = "*"
+packaging = "*"
 
 [requires]
 python_version = "3.7"
