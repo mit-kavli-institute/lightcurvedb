@@ -28,7 +28,8 @@ class QLPProcess(QLPMetric):
     This model is used to describe various processes interacting on the
     database. The job type, description and use is up to the user to
     define and maintain.
-Attributes
+
+    Attributes
     ----------
     id : int
         The primary key of the model. Do not edit unless you are confident

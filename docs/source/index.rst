@@ -27,6 +27,9 @@ the tests are finished or encounter some python side error.
 
 Ensure you're within a ``pipenv`` environemtn and run ``tox``.
 
+
+Submodule Documentation
+#######################
 .. toctree::
     :maxdepth: 2
     :caption: Contents:
@@ -34,6 +37,7 @@ Ensure you're within a ``pipenv`` environemtn and run ``tox``.
     db/db
     lightcurves/lightcurves
     managers/managers
+    metrics/metrics
 
 
 Indices and tables
