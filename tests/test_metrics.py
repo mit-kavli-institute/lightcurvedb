@@ -10,8 +10,8 @@ def test_load_module(n_rows, row_size, start, end):
         process_id=None,
         target_model='lightcurvedb.models.lightcurve.Lightcurve',
         alteration_type='insert',
-        n_altered_rows=n_rows,
-        est_row_size=row_size,
+        n_altered_items=n_rows,
+        est_item_size=row_size,
         time_start=start,
         time_end=end
     )

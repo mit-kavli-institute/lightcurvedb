@@ -28,8 +28,7 @@ class QLPProcess(QLPMetric):
     This model is used to describe various processes interacting on the
     database. The job type, description and use is up to the user to
     define and maintain.
-
-    Attributes
+Attributes
     ----------
     id : int
         The primary key of the model. Do not edit unless you are confident
@@ -48,6 +47,12 @@ class QLPProcess(QLPMetric):
         with zero padded versionings.
     job_description : str
         The description for this process.
+    additional_version_info : dict
+        A JSON stored datastructure which contains all major, minor versions
+        along with other version info which does not fit into the scalar
+        version descriptions on the base model.
+    version : packaging.version.Version
+        Return a Version object.
     """
     __tablename__ = 'qlpprocesses'
     id = Column(Integer, Sequence('qlpprocess_id_seq'), primary_key=True)
@@ -66,7 +71,6 @@ class QLPProcess(QLPMetric):
 
     @hybrid_property
     def version(self):
-
         try:
             return parse(
                 self.additional_version_info['base_version']
@@ -156,10 +160,11 @@ class QLPProcess(QLPMetric):
 
 class QLPAlteration(QLPMetric):
     """
-    This model is used to describe various alertations performed on
-    the database. This model is best used to describe atomic operations,
-    like single insert, update, delete commands. These commands may interact
-    with multiple rows.
+    This model is used to describe various alterations performed on. This
+    is best used to describe atomic operations, like single insert,
+    update, delete commands. But QLPAlteration may also be used to define
+    other non-database operations. The parameters set are up to the user/
+    developer to interperet and keep consistent.
 
     Attributes
     ----------
@@ -178,13 +183,15 @@ class QLPAlteration(QLPMetric):
         The alteration type of the alteration. Generally should be `insert` or
         `update`. On python-side this is enforced to be lower case and not
         have any leading formatting characters or whitespace.
-    n_altered_rows : int
-        The number of rows being altered. With ``update`` this metric will be
-        an estimation. PostgreSQL's update commands will return the number
-        of rows returned by a WHERE clause. But this might not reflect the
-        number of rows actually affected during the update.
-    est_row_size : int
-        The general `size` of each row. The interpretation is up to the user
+    n_altered_items : int
+        The number of items being altered. If using ``update`` this metric
+        should be an estimation. PostgreSQL's update commands will return
+        the number of rows filtered by a WHERE clause. But this might not
+        reflect the true number of items actually affected during the update.
+        As always this might not be a SQL operation and instead might be a
+        purely pythonic or mixed environment.
+    est_item_size : int
+        The general `size` of each item. The interpretation is up to the user
         to define. It might be the number of columns affected but with
         models containing ARRAYs it might be the total number of elements.
     time_start : datetime
@@ -194,8 +201,10 @@ class QLPAlteration(QLPMetric):
         The UTC end date of the job.
     query : str
         The query executed by this job. It may not be assigned due to size
-        constraints or simplicity (no need to store this query if it's
-        just a simple selection)
+        constraints or context.
+    model : obj
+        This property attempts to import the python model associated with
+        this aleration.
     """
     __tablename__ = 'qlpalterations'
     id = Column(
@@ -218,8 +227,8 @@ class QLPAlteration(QLPMetric):
     )
 
     _alteration_type = Column(String(255), index=True, nullable=False)
-    n_altered_rows = Column(BigInteger, index=True, nullable=False)
-    est_row_size = Column(BigInteger, index=True, nullable=False)
+    n_altered_items = Column(BigInteger, index=True, nullable=False)
+    est_item_size = Column(BigInteger, index=True, nullable=False)
     time_start = Column(DateTime(timezone=False), nullable=False, index=True)
     time_end = Column(DateTime(timezone=False), nullable=False, index=True)
 
