@@ -6,7 +6,7 @@ from .types import Database
 
 @click.group()
 @click.pass_context
-@click.option('--dbconf', default=os.path.expanduser('~/.config/lightcurvedb/db.conf'), type=Database(), help='Specify a database config for connections')
+@click.option('--dbconf', default='~/.config/lightcurvedb/db.conf', type=Database(), help='Specify a database config for connections')
 @click.option('--dryrun/--wetrun', default=False, help='If dryrun, no changes will be commited, recommended for first runs')
 @click.option('--scratch', '-s', default='/scratch/tmp', type=click.Path(file_okay=False, exists=True), help='Path to scratch disk for caching')
 @click.option('--qlp-data', default='/pdo/qlp-data/', type=click.Path(file_okay=False, exists=True), help='The base QLP-Data directory')

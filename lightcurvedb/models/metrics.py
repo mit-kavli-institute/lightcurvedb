@@ -1,12 +1,14 @@
-from lightcurvedb.core.base_model import QLPMetric
-from sqlalchemy import (BigInteger, Column, DateTime, Float, ForeignKey, Index,
+from importlib import import_module  # Say that 5 times
+
+from packaging.version import Version, parse
+from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Index,
                         Integer, Sequence, SmallInteger, String, Text)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm.query import Query
 from sqlalchemy.ext.hybrid import hybrid_property
-from importlib import import_module  # Say that 5 times
-from packaging.version import Version, parse
+from sqlalchemy.orm import relationship
+from sqlalchemy.orm.query import Query
 
+from lightcurvedb.core.base_model import QLPMetric
 
 SUPPORTED_VERSION_ARGS = (
     'public',
@@ -69,6 +71,24 @@ class QLPProcess(QLPMetric):
     )
 
     job_description = Text()
+
+    alterations = relationship(
+        'QLPAlteration',
+        back_populates='process'
+    )
+
+    @property
+    def to_dict(self):
+        """
+        Convert to python dictionary
+        """
+        return dict(
+            id=id,
+            job_type=self.job_type,
+            version=str(self.version),
+            version_info=self.additional_version_info,
+            description=self.job_description
+        )
 
     @hybrid_property
     def version(self):
@@ -213,7 +233,11 @@ class QLPAlteration(QLPMetric):
         Sequence('qlpalteration_id_seq', cache=1000),
         primary_key=True)
     process_id = Column(
-        ForeignKey(QLPProcess.id),
+        ForeignKey(
+            QLPProcess.id,
+            onupdate='CASCADE',
+            ondelete='CASCADE'
+        ),
         nullable=False
     )
 
@@ -242,6 +266,26 @@ class QLPAlteration(QLPMetric):
             postgresql_using='gin'
         )
     )
+
+    process = relationship(
+        'QLPProcess',
+        back_populates='alterations'
+    )
+
+    @property
+    def to_dict(self):
+        """
+        Convert the instance to a python dictionary
+        """
+        return dict(
+            target_model=self.target_model,
+            alteration_type=self.alteration_type,
+            n_altered_items=self.n_altered_items,
+            est_time_size=self.est_item_size,
+            elapsed=self.time_end - self.time_start,
+            time_start=self.time_start,
+            time_end=self.time_end
+        )
 
     @hybrid_property
     def query(self):
