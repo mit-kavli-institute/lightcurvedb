@@ -281,6 +281,31 @@ class DB(object):
 
     # Begin Lightcurve Methods
     def query_lightcurves(self, tics=[], apertures=[], types=[]):
+        """
+        Make a query of lightcurves that meet the provided
+        parameters. The emitted SQL clause is an IN statement for the given
+        tics, apertures, and types (grouped using an AND).
+
+        Arguments
+        ---------
+        tics : list, optional
+            Filter lightcurves that have TIC identifiers contained in this
+            list. If this list is empty then no filter will be applied using
+            ``tics``.
+        apertures : list, optional
+            Filter lightcurves that have one of the given ``Aperture.name``
+            strings. If this list is empty then no filter will be applied
+            using ``apertures``.
+        types : list, optional
+            Filter lightcurves that have of of the given
+            ``LightcurveType.name`` strings. If this list is empty then no
+            filter will be applied using ``types``.
+
+        Returns
+        -------
+        sqlalchemy.orm.query.Query
+            A query of lightcurves that match the given parameters.
+        """
         q = self.lightcurves
         if len(apertures) > 0:
             q = q.filter(
@@ -299,10 +324,75 @@ class DB(object):
         return q
 
     def load_from_db(self, tics=[], apertures=[], types=[]):
+        """
+        A quick method to return a list of lightcurves that meet the provided
+        parameters. The emitted SQL clause is an IN statement for the given
+        tics, apertures, and types (grouped using an AND).
+
+        Arguments
+        ---------
+        tics : list, optional
+            Filter lightcurves that have TIC identifiers contained in this
+            list. If this list is empty then no filter will be applied using
+            ``tics``.
+        apertures : list, optional
+            Filter lightcurves that have one of the given ``Aperture.name``
+            strings. If this list is empty then no filter will be applied
+            using ``apertures``.
+        types : list, optional
+            Filter lightcurves that have of of the given
+            ``LightcurveType.name`` strings. If this list is empty then no
+            filter will be applied using ``types``.
+
+        Returns
+        -------
+        list
+            A list of lightcurves that match the given parameters. This list
+            will be empty if no lightcurves match.
+
+        """
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.all()
 
     def yield_from_db(self, chunksize, tics=[], apertures=[], types=[]):
+        """
+        Akin to ``load_from_db`` but instead of a list we return an iterator
+        over a `server-side` PSQL cursor. This may be beneficial when
+        interacting with hundreds of thousands of lightcurves or you don't
+        need to load everything into memory at once.
+
+        Arguments
+        ---------
+        chunksize : int
+            The number of lightcurves the `PSQL` cursor should return as
+            it executes the query. *NOTE* this is **NOT** the number of
+            lightcurves returned each time the iterator yields. The
+            iterator will return 1 lightcurve at a time.
+        tics : list, optional
+            Filter lightcurves that have TIC identifiers contained in this
+            list. If this list is empty then no filter will be applied using
+            ``tics``.
+        apertures : list, optional
+            Filter lightcurves that have one of the given ``Aperture.name``
+            strings. If this list is empty then no filter will be applied
+            using ``apertures``.
+        types : list, optional
+            Filter lightcurves that have of of the given
+            ``LightcurveType.name`` strings. If this list is empty then no
+            filter will be applied using ``types``.
+
+        Returns
+        -------
+        iter
+            An iterator over the given query that returns 1 row (lightcurve)
+            at a time.
+
+        Notes
+        -----
+        Server-side cursors are not free and have higher memory requirements
+        for fileservers given certain circumstances than `normal` queries.
+        This method is best reserved for very large queries.
+        """
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.yield_per(chunksize)
 

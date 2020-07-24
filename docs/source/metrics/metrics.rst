@@ -1,6 +1,6 @@
 Performing LightcurveDB Metrics
 ===============================
-For long term performance checks over time lightcurvedb has models to help
+For long term performance checks over time, lightcurvedb has models to help
 store and describe operations done. This document will describe will help
 guide where to apply these models and how to interact, create, destroy, and
 retrieve them.
