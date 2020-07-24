@@ -8,7 +8,7 @@ from sqlalchemy import Sequence, Column, BigInteger, Integer, func, text, Table,
 from sqlalchemy.orm.session import Session, sessionmaker
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
 from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Observation, Orbit, Frame
+from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Observation, Orbit, Frame, QLPProcess, QLPAlteration
 from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import os
 import re
-import time
+from datetime import datetime
 from itertools import product
 from .temp_table import LightcurveIDMapper, TempObservation, IngestionJob, TIC8Parameters, TempSession
 
@@ -269,7 +269,7 @@ def yield_merge_lc_dict(merged, lc_kwargs):
         yield batch
 
 
-def parallel_h5_merge(config, ingest_qflags, tics):
+def parallel_h5_merge(config, process_id, ingest_qflags, tics):
     # Setup necessary contexts
     job_sqlite = TempSession()
     pid = os.getpid()
@@ -318,6 +318,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
             executemany_values_page_size=10000,
             executemany_batch_page_size=500
         ) as db:
+
         time_corrector = TimeCorrector(db.session, tic_parameters)
         orbit_map = pd.read_sql(
             db.query(
@@ -351,7 +352,7 @@ def parallel_h5_merge(config, ingest_qflags, tics):
         #  All needed pretexts are needed to begin ingesting
         tmp_lc_id = -1
         logger.debug('Worker-{} processing files...'.format(pid))
-        time_0 = time.time()
+        time_0 = datetime.now()
         for nth, job in enumerate(jobs):
             observation = dict(
                 tic_id=job.tic_id,
@@ -399,10 +400,10 @@ def parallel_h5_merge(config, ingest_qflags, tics):
                 df = df.set_index(['lightcurve_id', 'cadence'])
                 df.index.rename(['lightcurve_id', 'cadence'], inplace=True)
                 dataframes.append(df)
-            elapsed = time.time() - time_0
-            if elapsed > 10:  # Ten seconds
+            elapsed = datetime.now() - time_0
+            if elapsed.total_seconds() > 10:
                 logger.debug('Worker-{} status {}/{}'.format(pid, nth, len(jobs)))
-                time_0 = time.time()
+                time_0 = datetime.now()
 
         # Grab lightcurve kwarg dump to properly discern to insert/update
         kwarg_map = pd.DataFrame(
@@ -415,24 +416,26 @@ def parallel_h5_merge(config, ingest_qflags, tics):
         merged = merged[~merged.index.duplicated(keep='last')]
         merged.reset_index(inplace=True)
 
-        batch_timings = []
-        start_insertion_time = time.time()
         for batch in yield_new_lc_dict(merged, kwarg_map):
             logger.debug('Worker-{} inserting {} new lightcurves'.format(pid, len(batch)))
-            batch_t0 = time.time()
+            batch_t0 = datetime.now()
             q = Lightcurve.__table__.insert().values(batch)
             db.session.execute(
                 q
             )
-            elapsed = time.time() - batch_t0
-            batch_timings.append(
-                len(batch), elapsed        
+            batch_t1 = datetime.now()
+
+            alteration = QLPAlteration(
+                process_id=process_id,
+                alteration_type='insert',
+                target_model='lightcurvedb.models.lightcurve.Lightcurve',
+                n_altered_items = len(batch),
+                est_item_size = sum([len(x['cadences']) for x in batch]),
+                time_start = batch_t0,
+                time_end = batch_t1
             )
+            db.add(alteration)
 
-        insertion_time_elapsed = time.time() - start_insertion_time
-
-        start_update_time = time.time()
-        update_timings = []
         for batch in yield_merge_lc_dict(merged, kwarg_map):
             logger.debug('Worker-{} updating {} lightcurves'.format(pid, len(batch)))
             update_q = Lightcurve.__table__.update().where(
@@ -446,16 +449,43 @@ def parallel_h5_merge(config, ingest_qflags, tics):
                 Lightcurve.y_centroids: bindparam('y_centroids'),
                 Lightcurve.quality_flags: bindparam('quality_flag')
             })
+            batch_t0 = datetime.now()
             db.session.execute(update_q, batch)
+            batch_t1 = datetime.now()
+
+            alteration = QLPAlteration(
+                process_id=process_id,
+                alteration_type='update',
+                target_model='lightcurvedb.models.lightcurve.Lightcurve',
+                n_altered_items = len(batch),
+                est_item_size = sum([len(x['cadences']) for x in batch]),
+                time_start = batch_t0,
+                time_end = batch_t1
+            )
+            db.add(alteration)
 
         logger.debug('Worker-{} updating observations'.format(pid))
         observations = pd.DataFrame(observations).set_index(['tic_id', 'orbit_id'])
         observations = observations[~observations.index.duplicated(keep='last')]
         observations.reset_index(inplace=True)
+
+        obs_insert_t0 = datetime.now()
         db.session.execute(
             Observation.upsert_dicts(),
             observations.to_dict('records')
         )
+        obs_insert_t1 = datetime.now()
+
+        alteration = QLPAlteration(
+            process_id=process_id,
+            alteration_type='upsert',
+            target_model='lightcurvedb.models.Observation',
+            n_altered_items=len(observations),
+            est_item_size=4,
+            time_start=obs_insert_t0,
+            time_end=obs_insert_t1
+        )
+        db.add(alteration)
         db.commit()
     logger.debug('Worker-{} done'.format(pid))
     return len(tics)

@@ -2,9 +2,10 @@ from importlib import import_module  # Say that 5 times
 
 from packaging.version import Version, parse
 from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Index,
-                        Integer, Sequence, SmallInteger, String, Text)
+                        Integer, Sequence, SmallInteger, String, Text,
+                        between)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query
 
@@ -306,7 +307,7 @@ class QLPAlteration(QLPMetric):
 
     @hybrid_property
     def alteration_type(self):
-        return self._alertation_type
+        return self._alteration_type
 
     @alteration_type.expression
     def alteration_type(cls):
@@ -315,6 +316,14 @@ class QLPAlteration(QLPMetric):
     @alteration_type.setter
     def alteration_type(self, value):
         self._alteration_type = value.strip().lower()
+
+    @hybrid_method
+    def date_during_job(self, target_date):
+        return self.time_start < target_date < self.time_end
+
+    @date_during_job.expression
+    def date_during_job(cls, target_date):
+        return between(target_date, cls.time_start, cls.time_end)
 
     @property
     def model(self):

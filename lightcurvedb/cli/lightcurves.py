@@ -13,7 +13,7 @@ from sqlalchemy import func, and_, Table, Column, BigInteger
 from sqlalchemy.orm import sessionmaker
 from collections import defaultdict
 from multiprocessing import Manager, Queue, Pool, cpu_count
-from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation
+from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation, QLPProcess, QLPAlteration
 from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge
 from lightcurvedb.managers.lightcurve_query import LightcurveManager
 from lightcurvedb.util.iter import partition, chunkify, partition_by
@@ -250,6 +250,21 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             orbit.orbit_number: orbit.id for orbit in orbits
         }
 
+        process = db.query(QLPProcess).filter(
+            QLPProcess.job_type == 'ingest-h5'
+        ).order_by(
+            QLPProcess.created_on.desc()
+        ).first()
+
+        if process is None:
+            process = QLPProcess.lightcurvedb_process(
+                'ingest-h5',
+                description='First h5 ingestion integration'
+            )
+            db.add(process)
+            db.commit()
+        process_id = process.id
+
         if n_process <= 0:
             n_process = cpu_count()
         db.session.rollback()
@@ -413,7 +428,12 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
     jobs = list(chunkify(tics, n_tics))
 
     with Pool(n_process) as p:
-        func = partial(parallel_h5_merge, ctx.obj['dbconf']._config, ingest_qflags)
+        func = partial(
+            parallel_h5_merge,
+            ctx.obj['dbconf']._config,
+            process_id,
+            ingest_qflags
+        )
         results = p.imap_unordered(func, jobs)
         for nth, result in enumerate(results):
             click.echo(
