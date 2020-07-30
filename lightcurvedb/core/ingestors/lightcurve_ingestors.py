@@ -1,3 +1,9 @@
+try:
+    # Python agnostic import of Queue
+    import queue
+except ImportError:
+    import Queue as queue
+
 import warnings
 with warnings.catch_warnings():
     warnings.simplefilter('ignore', category=FutureWarning)
@@ -11,9 +17,10 @@ from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.models import Aperture, LightcurveType, Lightcurve, Observation, Orbit, Frame, QLPProcess, QLPAlteration
 from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util.logger import lcdb_logger as logger
+from lightcurvedb.util.merge import merge_arrays
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
 from lightcurvedb.legacy.timecorrect import TimeCorrector
-from lightcurvedb import db_from_config
+from lightcurvedb import db_from_config, LightcurveManager
 import numpy as np
 import pandas as pd
 import os
@@ -92,7 +99,7 @@ def h5_to_matrices(filepath):
                 yield result
 
 
-def h5_to_kwargs(filepath, orbit=None, camera=None, ccd=None):
+def h5_to_kwargs(filepath):
     with H5File(filepath, 'r') as h5in:
         lc = h5in['LightCurve']
         tic = int(os.path.basename(filepath).split('.')[0])
@@ -125,10 +132,7 @@ def h5_to_kwargs(filepath, orbit=None, camera=None, ccd=None):
                     'errors': errors,
                     'x_centroids': x_centroids,
                     'y_centroids': y_centroids,
-                    'quality_flags': quality_flags,
-                    'orbit_number': orbit,
-                    'camera': camera, 
-                    'ccd': ccd
+                    'quality_flags': quality_flags
                 }
 
 
@@ -192,6 +196,12 @@ def align_orbit(lp_df, tmag):
     good_values = values[quality_flags == 0]
     offset = np.nanmedian(good_values) - tmag
     lp_df['value'] = values - offset
+
+
+def align_values(tmag, values, quality_flags):
+    good_values = values[quality_flags == 0]
+    offset = np.nanmedian(good_values) - tmag
+    return values - offset
 
 
 def approx_lp_mem(lightpoints):
@@ -269,6 +279,51 @@ def yield_merge_lc_dict(merged, lc_kwargs):
         yield batch
 
 
+def kwargs_to_df(*kwargs, **constants):
+    dfs = []
+    keys = ['cadences', 'barycentric_julian_date', 'values', 'errors',
+            'x_centroids', 'y_centroids', 'quality_flags']
+
+    for kwarg in kwargs:
+        df = pd.DataFrame(
+            data={
+                k: kwarg[k] for k in keys
+            }
+        )
+        df['lightcurve_id'] = kwarg.get('id', None)
+        df = df.set_index(['lightcurve_id', 'cadences'])
+        dfs.append(df)
+    main = pd.concat(dfs)
+    for k, constant in constants.items():
+        main[k] = constant
+    return main
+
+
+def kwarg_merge(target, *sources):
+    args = [
+        'barycentric_julian_date',
+        'values',
+        'errors',
+        'x_centroids',
+        'y_centroids',
+        'quality_flags'
+    ]
+    cadences = target['cadences']
+    kwargs = {
+        k: target[k] for k in args
+    }
+
+    for source in sources:
+        cadences = np.concatenate((cadences, source['cadences']))
+        for arg in args:
+            kwargs[arg] = np.concatenate(
+                (kwargs[arg], source[arg])
+            )
+    cadences, result = merge_arrays(cadences, **kwargs)
+    result['cadences'] = cadences
+    return result
+
+
 def parallel_h5_merge(config, process_id, ingest_qflags, tics):
     # Setup necessary contexts
     job_sqlite = TempSession()
@@ -314,6 +369,7 @@ def parallel_h5_merge(config, process_id, ingest_qflags, tics):
 
     job_sqlite.close()
     with db_from_config(
+            config,
             executemany_mode='values',
             executemany_values_page_size=10000,
             executemany_batch_page_size=500
@@ -489,3 +545,224 @@ def parallel_h5_merge(config, process_id, ingest_qflags, tics):
         db.commit()
     logger.debug('Worker-{} done'.format(pid))
     return len(tics)
+
+
+def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_qflags):
+    """
+    Merge h5 as fast as possible loading target TICs from the tic_queue.
+    Merged lightcurve arguments will be serialized into dictionaries and
+    passed into the lightcurve_queue to be inserted into the database.
+    This process still needs a connection to the database in order
+    to determine past lightcurve data.
+
+    Notes
+    -----
+    If the lightcurve_queue is full this process will block.
+    """
+    db = db_from_config(config).open()
+    job_sqlite = TempSession()
+    pid = os.getpid()
+    first_ingestion = True
+
+    id_map = dict()
+    cur_tmp_id = -1  # For grouping purposes only in this process
+
+    try:
+        while True:
+            if not first_ingestion:
+                # Timeout after 5 seconds
+                tic, tic8_params = tic_queue.get(timeout=5)
+            else:
+                tic, tic8_params = tic_queue.get(block=True)
+                first_ingestion = False
+            lightcurves =  [
+                lc.to_dict
+                for lc in db.lightcurves.filter(Lightcurve.tic_id == tic).all()
+            ]
+
+            ra = tic8_params['ra']
+            dec = tic8_params['dec']
+            tmag = tic8_params['tmag']
+
+            # Load defined lightcurve ids
+            for lc in lightcurves:
+                key = (tic, lc['aperture_id'], lc['lightcurve_type_id'])
+                id_map[key] = lc['id']
+
+            to_ingest = job_sqlite.query(IngestionJob).filter(
+                IngestionJob.tic_id == tic
+            )
+            kwarg_keys = dict()
+
+            # Convert current lightcurves into a single dataframe
+            if len(lightcurves) > 0:
+                lightpoints = kwargs_to_df(*lightcurves)
+            else:
+                lightpoints = None
+            new_lightpoints = []
+            observations = []
+
+            # Find and merge the relevant files
+            for job in to_ingest:
+                if ingest_qflags:
+                    quality_flags = load_quality_flags(job.orbit_number)
+
+                observation = h5_to_observation(job.file_path)
+                observations.append(observation)
+                for lc_kwargs in h5_to_kwargs(job.file_path):
+                    ap = lc_kwargs['aperture_id']
+                    lc_type = lc_kwargs['lightcurve_type_id']
+
+                    id_key = (tic, ap, lc_type)
+                    _id = id_map.get(id_key, None)
+                    lc_kwargs['id'] = _id
+
+                    if _id is None:
+                        _id = cur_tmp_id
+                        cur_tmp_id -= 1
+                        kwarg_keys[_id] = id_key
+
+                    new_lp = kwargs_to_df(
+                        lc_kwargs,
+                        camera=int(observation['camera']),
+                        ccd=int(observation['ccd'])
+                    )
+
+                    if ingest_qflags:
+                        # Perform quality_flag check
+                        check = new_lp.reset_index()
+                        index = pd.MultiIndex.from_frame(
+                            check[['cadences', 'camera', 'ccd']]
+                        )
+                        reindex = quality_flags.loc[index]
+                        new_lp['quality_flags'] = reindex.quality_flag.values
+
+                    # Perform orbit align
+                    good_values = new_lp[new_lp['quality_flags'] == 0]['values']
+                    offset = np.nanmedian(good_values) - tmag
+                    new_lp['values'] = new_lp['values'] - offset
+
+                    # Perform time correction
+                    mid_tjd = time_corrector.mid_tjd(new_lp)
+                    corrected_times = time_corrector.correct_bjd(
+                        ra, dec, new_lp
+                    )
+                    new_lp['barycentric_julian_date'] = corrected_times
+
+                    # Concat to lightpoint df
+                    if lightpoints is not None:
+                        lightpoints = pd.concat((lightpoints, new_lp), sort=False)
+                    else:
+                        lightpoints = new_lp
+            # Ingested all jobs, perform merge
+            lightpoints = lightpoints[~lightpoints.index.duplicated(keep='last')]
+            lightpoints.reset_index(inplace=True)
+
+            # Group by id, sort by cadence, and send merged lightcurve to queue
+            for _id, lp in lightpoints.groupby('lightcurve_id'):
+                data = dict(
+                    cadences=lp['cadences'],
+                    bjd=lp['barycentric_julian_date'],
+                    values=lp['values'],
+                    errors=lp['errors'],
+                    x_centroids=lp['x_centroids'],
+                    y_centroids=lp['y_centroids'],
+                    quality_flags=lp['quality_flags'],
+                    observations=observations
+                )
+
+                if _id < 0:
+                    # Just need to insert, send needed data
+                    context = kwarg_keys[_id]
+                    data['tic_id'] = context[0]
+                    data['aperture_id'] = context[1]
+                    data['lightcurve_type_id'] = context[2]
+                    data['_id'] = None
+                else:
+                    # Just need to provide id for update
+                    data['_id'] = _id
+
+                lightcurve_queue.put(data)
+            tic_queue.task_done()
+    except queue.Empty:
+        logger.debug('Worker-{} timed-out getting job, exiting')
+    finally:
+        # Cleanup connections
+        job_sqlite.close()
+        db.close()
+        logger.debug('Worker-{} exiting')
+
+
+def async_ingestor(config, lightcurve_queue, **ingestion_kwargs):
+    pid = os.getpid()
+    name = 'Ingestion Worker-{}'.format(pid)
+    engine_kwargs = ingestion_kwargs.get('engine_kwargs', dict())
+
+    # -1 checkpoint assumes commit only when ingestor is done
+    checkpoint = ingestion_kwargs.pop('checkpoint', -1)
+    first_ingestion = True
+
+    with db_from_config(config, **engine_kwargs) as db:
+
+        # Grab mapper objects
+        orbits = db.orbits.all()
+        orbit_id_map = {
+            o.orbit_number: o.id for o in orbits
+        }
+        cur_item = 0
+        current_elements = 0
+        while True:
+            # Pull from queue
+            try:
+                if not first_ingestion:
+                    lightcurve_kw = lightcurve_queue.get(timeout=5)
+                else:
+                    lightcurve_kw = lightcurve_queue.get(block=True)
+                    first_ingestion = False
+                current_elements += len(lightcurve_kw['cadences'])
+                observations = lightcurve_kw.pop('observations')
+                for observation in observations:
+                    observation['orbit_id'] = orbit_id_map[
+                        int(observation['orbit'])
+                    ]
+                    del observation['orbit']
+
+                if lightcurve_kw['_id'] is not None:
+                    db.lightcurves.filter(
+                        Lightcurve.id == lightcurve_kw['_id']
+                    ).update({
+                        Lightcurve.cadences: lightcurve_kw['cadences'],
+                        Lightcurve.bjd: lightcurve_kw['bjd'],
+                        Lightcurve.values: lightcurve_kw['values'],
+                        Lightcurve.errors: lightcurve_kw['errors'],
+                        Lightcurve.x_centroids: lightcurve_kw['x_centroids'],
+                        Lightcurve.y_centroids: lightcurve_kw['y_centroids'],
+                        Lightcurve.quality_flags: lightcurve_kw['quality_flags']
+                    },
+                    synchronize_session=False)
+                else:
+                    # Insertion!
+                    lc = Lightcurve(
+                        **lightcurve_kw
+                    )
+                    db.add(lc)
+
+                # Upsert observation table
+                db.session.execute(
+                    Observation.upsert_dicts(),
+                    pd.DataFrame(observations).to_dict('records')
+                )
+
+                cur_item += 1
+                logger.debug('{} processed lc'.format(name))
+                if checkpoint > 0 and cur_item % checkpoint == 0:
+                    db.commit()
+                    current_elements += 0
+                lightcurve_queue.task_done()
+            except queue.Empty:
+                logger.debug(
+                    '{} timed-out. Assuming no more data'.format(name)
+                )
+                break
+        db.commit()
+        logger.debug('{} finished'.format(name))

@@ -61,7 +61,6 @@ class TIC8Parameters(TemporaryQLPModel):
     right_ascension = Column(Float, nullable=False)
     declination = Column(Float, nullable=False)
     tmag = Column(Float, nullable=False)
-    tmag_error = Column(Float)
 
 
 TemporaryQLPModel.metadata.create_all(SQLITE_ENGINE)

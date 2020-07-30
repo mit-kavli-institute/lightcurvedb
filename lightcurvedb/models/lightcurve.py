@@ -330,6 +330,28 @@ class Lightcurve(QLPModel):
         )
         return df
 
+    @property
+    def to_dict(self):
+        """
+        Represent this lightcurve as a dictionary
+        Returns
+        -------
+        dict
+        """
+        return dict(
+            id=self.id,
+            tic_id=self.tic_id,
+            aperture_id=self.aperture_id,
+            lightcurve_type_id=self.lightcurve_type_id,
+            cadences=self.cadences,
+            barycentric_julian_date=self.bjd,
+            values=self.values,
+            errors=self.errors,
+            x_centroids=self.x_centroids,
+            y_centroids=self.y_centroids,
+            quality_flags=self.quality_flags
+        )
+
     def merge_df(self, *dataframes):
         """
         Merge the current lightcurve with the given Lightpoint dataframes.

@@ -12,15 +12,16 @@ from functools import partial
 from sqlalchemy import func, and_, Table, Column, BigInteger
 from sqlalchemy.orm import sessionmaker
 from collections import defaultdict
-from multiprocessing import Manager, Queue, Pool, cpu_count
+from multiprocessing import Manager, Queue, Pool, cpu_count, Process
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation, QLPProcess, QLPAlteration
-from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge
+from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge, async_h5_merge, async_ingestor
 from lightcurvedb.managers.lightcurve_query import LightcurveManager
 from lightcurvedb.util.iter import partition, chunkify, partition_by
 from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries, TIC8_Base
 from lightcurvedb.core.ingestors.temp_table import TempSession, IngestionJob, TempObservation, TIC8Parameters, LightcurveIDMapper
+from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import db as closed_db
 from glob import glob
@@ -111,7 +112,7 @@ def parallel_search_h5(queue, orbit_path, orbit, camera, ccd):
             )
 
 
-def prepare_ingestions(job_session, smart_update, file_df, observation_df):
+def prepare_ingestions(job_sqlite, smart_update, file_df, observation_df):
     click.echo('Determining needed ingestion jobs')
     ref_tics = file_df['tic_id'].unique()
 
@@ -152,21 +153,22 @@ def prepare_ingestions(job_session, smart_update, file_df, observation_df):
         )
 
 
-def load_from_tic8(tics):
+def get_from_tic8(tics):
     tic8 = TIC8Session()
-
-    # Create temptable to hold large number of
-    # tics
-    tic8_tmp_table = Table(
-        'mass_tic_ref',
-        TIC8_Base.metadata,
-        Column('tic_id', BigInteger, primary_key=True),
-        prefixes=['TEMPORARY']
-    )
-    tic8_tmp_table.create(bind=tic8.bind)
-    tic8.commit()
-
     # Load temporary table
+    tic8_params = pd.read_sql(
+        tic8.query(
+            TIC_Entries.c.id.label('tic_id'),
+            TIC_Entries.c.ra.label('right_ascension'),
+            TIC_Entries.c.dec.label('declination'),
+            TIC_Entries.c.tmag.label('tmag'),
+        ).filter(
+            TIC_Entries.c.id.in_(tics)   
+        ).statement,
+        tic8.bind
+    )
+    tic8.close()
+    return tic8_params
 
 def determine_tic_info(orbits, cameras, tics, scratch_dir):
     # First attempt to read TIC8 Caches. Start by finding all
@@ -186,7 +188,7 @@ def determine_tic_info(orbits, cameras, tics, scratch_dir):
         try:
             df = pd.read_csv(
                 path,
-                sep=' ',
+                delim_whitespace=True,
                 header=None,
                 names=[
                     'tic_id',
@@ -200,31 +202,47 @@ def determine_tic_info(orbits, cameras, tics, scratch_dir):
                     'vmag'
                 ]
             )
-            catalog.append(df)
+            df = df[['tic_id', 'right_ascension', 'declination', 'tmag']]
+            catalogs.append(df)
         except FileNotFoundError:
             click.echo(
-                'Could not find TIC catalog for orbit {}'.format(
+                'Could not find TIC catalog for orbit {} camera {}'.format(
                     click.style(
                         str(orbit.orbit_number),
                         bold='True',
                         fg='red'
+                    ),
+                    click.style(
+                        str(camera),
+                        bold='True'
                     )
                 )
             )
             continue
-    # Create master catalog to reference
-    master = pd.concat(catalogs).set_index('tic_id')
-    master = master[~master.index.duplicated(keep='last')]
-    master = master.reset_index()
+    if len(catalogs) > 0:
+        # Create master catalog to reference
+        master = pd.concat(catalogs).set_index('tic_id')
+        master = master[~master.index.duplicated(keep='last')]
+        master = master.reset_index()
 
-    # Determine what TICs need to be queried directly from TIC8 (if any)
-    found_tics = set(master['tic_id'].unique())
-    tics_not_found = set(tics) - found_tics
+        # Determine what TICs need to be queried directly from TIC8 (if any)
+        found_tics = set(master['tic_id'].unique())
+        tics_not_found = set(tics) - found_tics
+    else:
+        click.echo('No catalogs found, mass-querying TIC8')
+        master = get_from_tic8(tics)
+        tics_not_found = set()
 
     if len(tics_not_found) > 0:
+        click.echo('Could not find {} TICs from catalogs, grabbing from TIC8'.format(len(tics_not_found)))
         data_from_tic8 = get_from_tic8(tics_not_found)
-
-    return pd.concat([master, data_from_tic])
+        click.echo('Recovered:')
+        click.echo(data_from_tic8)
+        if master is not None:
+            master = pd.concat([master, data_from_tic8])
+        else:
+            master = data_from_tic8
+    return master
 
 @lightcurve.command()
 @click.pass_context
@@ -243,7 +261,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
     # Create a sqlite session to hold job contexts across processes
     job_sqlite = TempSession()
 
-    with closed_db as db:
+    with ctx.obj['dbconf'] as db:
         orbits = db.orbits.filter(Orbit.orbit_number.in_(orbits)).all()
         orbit_numbers = sorted([o.orbit_number for o in orbits])
         orbit_map = {
@@ -339,16 +357,8 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
         n_jobs = job_sqlite.query(IngestionJob.id).count()
         tics = {r for r, in job_sqlite.query(IngestionJob.tic_id).distinct().all()}
 
-        # Create TIC8 Session and load in necessary stellar parameters
-        tic8 = TIC8Session()
-
-        # Create temporary tables to allow for potentially enourmous query sizes
-        tic8_tmp_table = Table(
-            'mass_tic_ref',
-            TIC8_Base.metadata,
-            Column('tic_id', BigInteger, primary_key=True),
-            prefixes=['TEMPORARY']
-        )
+        # Find necessary TIC8 parameters
+        tic8_results = determine_tic_info(orbits, cameras, tics, scratch)
         lc_kwarg_tmp_table = Table(
             'mass_tic_kwarg_ref',
             QLPModel.metadata,
@@ -356,35 +366,13 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             prefixes=['TEMPORARY']
         )
 
-        #  Chunkify to reduce querysize
-        click.echo('Grabbing needed info from TIC8')
-        tic8_tmp_table.create(bind=tic8.bind)
-        tic8.commit()
-        tic8.execute(
-            tic8_tmp_table.insert(),
-            [{'tic_id': tic} for tic in tics]
-        )
-        click.echo('\tPopulated TMP TIC8 Table')
-        tic8.commit()
-
-        tic8_params = pd.read_sql(
-            tic8.query(
-                TIC_Entries.c.id.label('tic_id'),
-                TIC_Entries.c.ra.label('right_ascension'),
-                TIC_Entries.c.dec.label('declination'),
-                TIC_Entries.c.tmag.label('tmag'),
-                TIC_Entries.c.e_tmag.label('tmag_error')
-            ).join(
-                tic8_tmp_table, TIC_Entries.c.id == tic8_tmp_table.c.tic_id
-            ).statement,
-            tic8.bind
-        )
         job_sqlite.bulk_insert_mappings(
             TIC8Parameters,
-            tic8_params.to_dict('records')
+            tic8_results.to_dict('records')
         )
 
         click.echo('\tLoading defined lightcurve identifiers')
+        db.session.rollback()
         lc_kwarg_tmp_table.create(bind=db.session.bind)
         db.session.commit()
 
@@ -514,13 +502,14 @@ def manual_ingest(ctx, ticlist, orbit_dir):
 @click.argument('orbits', type=int, nargs=-1)
 @click.option('--cameras', type=CommaList(int), default='1,2,3,4')
 @click.option('--ccds', type=CommaList(int), default='1,2,3,4')
-@click.option('--n-consumers', type=click.IntRange(min=1), default=4)
-@click.option('--n-producers', type=click.IntRange(min=1), default=8)
+@click.option('--n-consumers', type=click.IntRange(min=1), default=1)
+@click.option('--n-producers', type=click.IntRange(min=1), default=16)
 @click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
 @click.option('--scratch-dir', type=click.Path(exists=True, file_okay=False), default='/scratch/')
 @click.option('--smart-update/--force-full-update', default=True)
 @click.option('--ingest-qflags/--no-qflags', default=False)
 def parallel_ingest(
+        ctx,
         orbits,
         cameras,
         ccds,
@@ -528,128 +517,103 @@ def parallel_ingest(
         n_producers,
         orbit_dir,
         scratch_dir,
-        smart_ingest,
+        smart_update,
         ingest_qflags
         ):
-    with closed_db as db:
+    with ctx.obj['dbconf'] as db:
         orbits = db.orbits.filter(
-            Orbit.orbit_number.in_(orbits).all()
-        )
+            Orbit.orbit_number.in_(orbits)
+        ).all()
 
         m = Manager()
         q = m.Queue()
 
-        func = partial(parallel_search_h5, q)
-
-        p.starmap(
-            func,
-            itertools.product(
-                [orbit_dir],
-                orbit_numbers,
-                cameras,
-                ccds
+        with Pool(n_consumers + n_producers) as p:
+            func = partial(parallel_search_h5, q)
+            p.starmap(
+                func,
+                itertools.product(
+                    [orbit_dir],
+                    [o.orbit_number for o in orbits],
+                    cameras,
+                    ccds
+                )
             )
-        )
-        accumulator = []
-        while not q.empty():
-            component = q.get()
-            accumulator.append(component)
+            accumulator = []
+            while not q.empty():
+                component = q.get()
+                accumulator.append(component)
 
         file_df = pd.DataFrame(accumulator)
         observation_df = observation_map(db)
+
+        job_sqlite = TempSession()
 
         prepare_ingestions(job_sqlite, smart_update, file_df, observation_df)
 
         n_jobs = job_sqlite.query(IngestionJob.id).count()
         tics = {r for r, in job_sqlite.query(IngestionJob.tic_id).distinct().all()}
 
-        # Create TIC8 Session and load in necessary stellar parameters
-        tic8 = TIC8Session()
-
-        # Create temporary tables to allow for potentially enourmous query sizes
-        tic8_tmp_table = Table(
-            'mass_tic_ref',
-            TIC8_Base.metadata,
-            Column('tic_id', BigInteger, primary_key=True),
-            prefixes=['TEMPORARY']
-        )
-        lc_kwarg_tmp_table = Table(
-            'mass_tic_kwarg_ref',
-            QLPModel.metadata,
-            Column('tic_id', BigInteger, primary_key=True),
-            prefixes=['TEMPORARY']
-        )
-
-        #  Chunkify to reduce querysize
-        click.echo('Grabbing needed info from TIC8')
-        tic8_tmp_table.create(bind=tic8.bind)
-        tic8.commit()
-        tic8.execute(
-            tic8_tmp_table.insert(),
-            [{'tic_id': tic} for tic in tics]
-        )
-        click.echo('\tPopulated TMP TIC8 Table')
-        tic8.commit()
-
-        tic8_params = pd.read_sql(
-            tic8.query(
-                TIC_Entries.c.id.label('tic_id'),
-                TIC_Entries.c.ra.label('right_ascension'),
-                TIC_Entries.c.dec.label('declination'),
-                TIC_Entries.c.tmag.label('tmag'),
-                TIC_Entries.c.e_tmag.label('tmag_error')
-            ).join(
-                tic8_tmp_table, TIC_Entries.c.id == tic8_tmp_table.c.tic_id
-            ).statement,
-            tic8.bind
-        )
-        job_sqlite.bulk_insert_mappings(
-            TIC8Parameters,
-            tic8_params.to_dict('records')
-        )
-
-        click.echo('\tLoading defined lightcurve identifiers')
-        lc_kwarg_tmp_table.create(bind=db.session.bind)
-        db.session.commit()
-
-        db.session.execute(
-            lc_kwarg_tmp_table.insert(),
-            [{'tic_id': tic} for tic in tics]
-        )
-        db.commit()
-        click.echo('\tPopulated Kwarg Table')
-
-        # Load in ID Map
-        q = db.query(
-            Lightcurve.id,
-            Lightcurve.tic_id,
-            Lightcurve.aperture_id,
-            Lightcurve.lightcurve_type_id
-        ).join(
-            lc_kwarg_tmp_table,
-            Lightcurve.tic_id == lc_kwarg_tmp_table.c.tic_id
-        )
-
-        lc_kwargs = [
-            {
-                'id': row[0],
-                'tic_id': row[1],
-                'aperture': row[2],
-                'lightcurve_type': row[3]
-            }
-            for row in q.all()
-        ]
-        job_sqlite.bulk_insert_mappings(
-            LightcurveIDMapper,
-            lc_kwargs
-        )
-        click.echo('\tLoaded LC Kwargs into SQLite')
-
         job_sqlite.commit()
-    click.echo('Will process {} TICs'.format(len(tics)))
 
-    jobs = list(chunkify(tics, n_tics))
+        time_corrector = StaticTimeCorrector(
+            db.session
+        )
 
     m = Manager()
-    tic_queue = m.Queue()
-    lightcurve_queue = m.Queue()
+    job_queue = m.Queue()
+    lightcurve_queue = m.Queue(maxsize=10000)
+
+    engine_kwargs = dict(
+        executemany_mode='values',
+        executemany_values_page_size=10000,
+        executemany_batch_page_size=500
+    )
+
+    producers = [
+        Process(
+            target=async_h5_merge,
+            args=(
+                ctx.obj['dbconf']._config,
+                job_queue,
+                lightcurve_queue,
+                time_corrector,
+                ingest_qflags
+            ),
+            daemon=True
+        )
+    ]
+    consumers = [
+        Process(
+            target=async_ingestor,
+            args=[ctx.obj['dbconf']._config, lightcurve_queue],
+            kwargs=dict(
+                engine_kwargs=engine_kwargs,
+                checkpoint=1000
+            ),
+            daemon=True
+        )
+    ]
+
+    for p in itertools.chain(producers, consumers):
+        p.start()
+
+    tic8 = TIC8Session()
+    for i, tic in enumerate(tics):
+        ra, dec, tmag = tic8.query(
+            TIC_Entries.c.ra,
+            TIC_Entries.c.dec,
+            TIC_Entries.c.tmag
+        ).filter(TIC_Entries.c.id == tic).one()
+
+        job_queue.put((
+            tic,
+            dict(ra=ra, dec=dec, tmag=tmag),
+        ))
+    # Everything has been queued
+    click.echo('Awaiting processing queues')
+    lightcurve_queue.join()
+    tic8_parameters.join()
+    job_sqlite.close()
+    tic8.close()
+    click.echo('Subprocesses joined. Exiting')

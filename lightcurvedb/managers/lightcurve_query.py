@@ -507,6 +507,12 @@ class LightcurveManager(object):
             # Must insert
             self.add(tic_id, aperture, lightcurve_type, **data)
 
+    def upsert_kwarg(self, **kwargs):
+        tic_id = kwargs.pop('tic_id')
+        aperture = kwargs.pop('aperture_id')
+        lightcurve_type = kwargs.pop('lightcurve_type_id')
+        self.upsert(tic_id, aperture, lightcurve_type, **kwargs)
+        
 
     def resolve_to_db(self, db, resolve_conflicts=True):
         """

@@ -722,6 +722,12 @@ class DB(object):
             The TIC id to assign an Aperture
         aperture : str or Aperture
             The name of an Aperture or an Aperture instance
+
+        Notes
+        -----
+        These changes are not committed. The user will need to call
+        ``db.commit()`` in order for the changes to be made
+        permanent.
         """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
         self._session.execute(upsert)
@@ -738,7 +744,8 @@ class DB(object):
         Notes
         -----
         If there is no best aperture map for the given TIC id then no
-        operation will take place.
+        operation will take place. Any changes will require ``db.commit()``
+        to be made permanent.
         """
         check = self._session.query(models.BestApertureMap).filter(
             models.BestApertureMap.tic_id == tic_id
