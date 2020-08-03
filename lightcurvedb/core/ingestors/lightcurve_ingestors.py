@@ -9,6 +9,7 @@ with warnings.catch_warnings():
     warnings.simplefilter('ignore', category=FutureWarning)
     from h5py import File as H5File
 
+from collections import deque
 from math import ceil
 from sqlalchemy import Sequence, Column, BigInteger, Integer, func, text, Table, String, select, bindparam, join
 from sqlalchemy.orm.session import Session, sessionmaker
@@ -99,7 +100,7 @@ def h5_to_matrices(filepath):
                 yield result
 
 
-def h5_to_kwargs(filepath):
+def h5_to_kwargs(filepath, **constants):
     with H5File(filepath, 'r') as h5in:
         lc = h5in['LightCurve']
         tic = int(os.path.basename(filepath).split('.')[0])
@@ -122,18 +123,19 @@ def h5_to_kwargs(filepath):
                 else:
                     errors = np.full_like(cadences, np.nan, dtype=np.double)
 
-                yield {
-                    'tic_id': tic,
-                    'lightcurve_type_id': lc_type,
-                    'aperture_id': aperture,
-                    'cadences': cadences,
-                    'barycentric_julian_date': bjd,
-                    'values': values,
-                    'errors': errors,
-                    'x_centroids': x_centroids,
-                    'y_centroids': y_centroids,
-                    'quality_flags': quality_flags
-                }
+                yield dict(
+                    tic_id=tic,
+                    lightcurve_type_id=lc_type,
+                    aperture_id=aperture,
+                    cadences=cadences,
+                    barycentric_julian_date=bjd,
+                    values=values,
+                    errors=errors,
+                    x_centroids=x_centroids,
+                    y_centroids=y_centroids,
+                    quality_flags=quality_flags,
+                    **constants
+                )
 
 
 def lc_dict_to_df(dictionary, **constants):
@@ -298,6 +300,13 @@ def kwargs_to_df(*kwargs, **constants):
         main[k] = constant
     return main
 
+def commit_observations(observation_list, db):
+    df = pd.DataFrame(observation_list)
+    df = df.set_index(['tic_id', 'orbit_id'])
+    df = df[~df.index.duplicated(keep='last')]
+    df = df.reset_index()
+    db.session.execute(Observation.upsert_dicts(), df.to_dict('records'))
+
 
 def kwarg_merge(target, *sources):
     args = [
@@ -420,7 +429,7 @@ def parallel_h5_merge(config, process_id, ingest_qflags, tics):
             orbit = job.orbit_number
             camera = job.camera
             ccd = job.ccd
-            for kwarg in h5_to_kwargs(job.file_path, orbit=orbit, camera=camera, ccd=ccd):
+            for kwarg in h5_to_kwargs(job.file_path, orbit_number=orbit, camera=camera, ccd=ccd):
                 key = (
                     kwarg['tic_id'],
                     kwarg['aperture_id'],
@@ -612,6 +621,7 @@ def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_q
                 for lc_kwargs in h5_to_kwargs(job.file_path):
                     ap = lc_kwargs['aperture_id']
                     lc_type = lc_kwargs['lightcurve_type_id']
+                    lc_kwargs['tic_id'] = tic
 
                     id_key = (tic, ap, lc_type)
                     _id = id_map.get(id_key, None)
@@ -660,23 +670,24 @@ def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_q
 
             # Group by id, sort by cadence, and send merged lightcurve to queue
             for _id, lp in lightpoints.groupby('lightcurve_id'):
+                sorted_lp = lp.sort_values('cadences')
                 data = dict(
-                    cadences=lp['cadences'],
-                    bjd=lp['barycentric_julian_date'],
-                    values=lp['values'],
-                    errors=lp['errors'],
-                    x_centroids=lp['x_centroids'],
-                    y_centroids=lp['y_centroids'],
-                    quality_flags=lp['quality_flags'],
+                    cadences=list(sorted_lp['cadences']),
+                    bjd=list(sorted_lp['barycentric_julian_date']),
+                    values=list(sorted_lp['values']),
+                    errors=list(sorted_lp['errors']),
+                    x_centroids=list(sorted_lp['x_centroids']),
+                    y_centroids=list(sorted_lp['y_centroids']),
+                    quality_flags=list(sorted_lp['quality_flags']),
                     observations=observations
                 )
 
                 if _id < 0:
                     # Just need to insert, send needed data
-                    context = kwarg_keys[_id]
-                    data['tic_id'] = context[0]
-                    data['aperture_id'] = context[1]
-                    data['lightcurve_type_id'] = context[2]
+                    tic_id, ap_id, lc_t_id = kwarg_keys[_id]
+                    data['tic_id'] = tic_id
+                    data['aperture_id'] = ap_id
+                    data['lightcurve_type_id'] = lc_t_id
                     data['_id'] = None
                 else:
                     # Just need to provide id for update
@@ -711,6 +722,10 @@ def async_ingestor(config, lightcurve_queue, **ingestion_kwargs):
         }
         cur_item = 0
         current_elements = 0
+        seen_observations = []
+        insert_buffer = []
+        update_buffer = []
+        throughput = deque(100)
         while True:
             # Pull from queue
             try:
@@ -721,6 +736,7 @@ def async_ingestor(config, lightcurve_queue, **ingestion_kwargs):
                     first_ingestion = False
                 current_elements += len(lightcurve_kw['cadences'])
                 observations = lightcurve_kw.pop('observations')
+                seen_observations += observations
                 for observation in observations:
                     observation['orbit_id'] = orbit_id_map[
                         int(observation['orbit'])
@@ -747,22 +763,22 @@ def async_ingestor(config, lightcurve_queue, **ingestion_kwargs):
                     )
                     db.add(lc)
 
-                # Upsert observation table
-                db.session.execute(
-                    Observation.upsert_dicts(),
-                    pd.DataFrame(observations).to_dict('records')
-                )
-
                 cur_item += 1
-                logger.debug('{} processed lc'.format(name))
+                logger.debug('{} processed {}'.format(name, observations[0]['tic_id']))
                 if checkpoint > 0 and cur_item % checkpoint == 0:
+
+                    commit_observations(seen_observations, db)
+                    logger.debug('{} committing!'.format(name))
                     db.commit()
                     current_elements += 0
+                    seen_observations = []
                 lightcurve_queue.task_done()
             except queue.Empty:
                 logger.debug(
                     '{} timed-out. Assuming no more data'.format(name)
                 )
                 break
+        if len(seen_observations) > 0:
+            commit_observations(seen_observations, db)
         db.commit()
         logger.debug('{} finished'.format(name))

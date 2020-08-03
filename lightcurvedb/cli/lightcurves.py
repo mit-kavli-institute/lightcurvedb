@@ -21,6 +21,7 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries, TIC8_Base
 from lightcurvedb.core.ingestors.temp_table import TempSession, IngestionJob, TempObservation, TIC8Parameters, LightcurveIDMapper
+from lightcurvedb.core.ingestors.processes import DBLoader
 from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import db as closed_db
@@ -173,76 +174,7 @@ def get_from_tic8(tics):
 def determine_tic_info(orbits, cameras, tics, scratch_dir):
     # First attempt to read TIC8 Caches. Start by finding all
     # relevant cache files
-    catalogs = []
-    for orbit, camera in itertools.product(orbits, cameras):
-        # Catalogs are the same across CCDs
-        relevant_catalog = 'catalog_{}_{}_1_full.txt'.format(
-            orbit.orbit_number,
-            camera
-        )
-        path = os.path.join(
-            scratch_dir,
-            'tmp',
-            relevant_catalog
-        )
-        try:
-            df = pd.read_csv(
-                path,
-                delim_whitespace=True,
-                header=None,
-                names=[
-                    'tic_id',
-                    'right_ascension',
-                    'declination',
-                    'tmag',
-                    'prma',
-                    'pmdec',
-                    'jmag',
-                    'kmag',
-                    'vmag'
-                ]
-            )
-            df = df[['tic_id', 'right_ascension', 'declination', 'tmag']]
-            catalogs.append(df)
-        except FileNotFoundError:
-            click.echo(
-                'Could not find TIC catalog for orbit {} camera {}'.format(
-                    click.style(
-                        str(orbit.orbit_number),
-                        bold='True',
-                        fg='red'
-                    ),
-                    click.style(
-                        str(camera),
-                        bold='True'
-                    )
-                )
-            )
-            continue
-    if len(catalogs) > 0:
-        # Create master catalog to reference
-        master = pd.concat(catalogs).set_index('tic_id')
-        master = master[~master.index.duplicated(keep='last')]
-        master = master.reset_index()
-
-        # Determine what TICs need to be queried directly from TIC8 (if any)
-        found_tics = set(master['tic_id'].unique())
-        tics_not_found = set(tics) - found_tics
-    else:
-        click.echo('No catalogs found, mass-querying TIC8')
-        master = get_from_tic8(tics)
-        tics_not_found = set()
-
-    if len(tics_not_found) > 0:
-        click.echo('Could not find {} TICs from catalogs, grabbing from TIC8'.format(len(tics_not_found)))
-        data_from_tic8 = get_from_tic8(tics_not_found)
-        click.echo('Recovered:')
-        click.echo(data_from_tic8)
-        if master is not None:
-            master = pd.concat([master, data_from_tic8])
-        else:
-            master = data_from_tic8
-    return master
+    return get_from_tic8(tics)
 
 @lightcurve.command()
 @click.pass_context
@@ -582,17 +514,16 @@ def parallel_ingest(
             ),
             daemon=True
         )
+
+        for _ in range(n_producers)
     ]
     consumers = [
-        Process(
-            target=async_ingestor,
-            args=[ctx.obj['dbconf']._config, lightcurve_queue],
-            kwargs=dict(
-                engine_kwargs=engine_kwargs,
-                checkpoint=1000
-            ),
+        DBLoader(
+            ctx.obj['dbconf']._config,
+            lightcurve_queue,
             daemon=True
         )
+        for _ in range(n_consumers)
     ]
 
     for p in itertools.chain(producers, consumers):
@@ -613,7 +544,6 @@ def parallel_ingest(
     # Everything has been queued
     click.echo('Awaiting processing queues')
     lightcurve_queue.join()
-    tic8_parameters.join()
     job_sqlite.close()
     tic8.close()
     click.echo('Subprocesses joined. Exiting')
