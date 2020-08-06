@@ -76,6 +76,8 @@ class QlpQuery(object):
             Frame.cadence_type == cadence_type,
             Frame.camera == camera,
             Orbit.orbit_number == orbit_id
+        ).order_by(
+            Frame.cadence.asc()      
         ).all()
 
         return np.array(
@@ -90,6 +92,8 @@ class QlpQuery(object):
             Frame.cadence_type == cadence_type,
             Frame.camera == camera,
             Frame.cadence.in_(cadences)
+        ).order_by(
+            Frame.cadence.asc()       
         ).all()
 
         return np.array(
@@ -97,4 +101,6 @@ class QlpQuery(object):
         )
 
     def query_all_orbit_ids(self):
-        return self.db.query(Orbit.orbit_number).all()
+        return self.db.query(Orbit.orbit_number).order_by(
+            Orbit.orbit_number.asc()       
+        ).all()

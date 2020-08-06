@@ -256,6 +256,8 @@ class DB(object):
             models.Frame.cadence_type == cadence_type,
             models.Frame.camera == camera,
             models.Orbit.orbit_number == orbit_id
+        ).order_by(
+            models.Frame.cadence.asc()
         ).all()
 
         return np.array(
@@ -270,6 +272,8 @@ class DB(object):
             models.Frame.cadence_type == cadence_type,
             models.Frame.camera == camera,
             models.Frame.cadence.in_(cadences)
+        ).order_by(
+            models.Frame.cadence.asc()       
         ).all()
 
         return np.array(
@@ -277,7 +281,9 @@ class DB(object):
         )
 
     def query_all_orbit_ids(self):
-        return self.query(models.Orbit.orbit_number).all()
+        return self.query(models.Orbit.orbit_number).order_by(
+            models.Orbit.orbit_number.asc()
+        ).all()
 
     # Begin Lightcurve Methods
     def query_lightcurves(self, tics=[], apertures=[], types=[]):
