@@ -107,7 +107,7 @@ def h5_to_kwargs(filepath, **constants):
         cadences = lc['Cadence'][()].astype(int)
         bjd = lc['BJD'][()]
         apertures = lc['AperturePhotometry'].keys()
-        
+
         for aperture in apertures:
             lc_by_ap = lc['AperturePhotometry'][aperture]
             x_centroids = lc_by_ap['X'][()]
@@ -198,6 +198,23 @@ def align_orbit(lp_df, tmag):
     good_values = values[quality_flags == 0]
     offset = np.nanmedian(good_values) - tmag
     lp_df['value'] = values - offset
+
+
+def align_orbits(lp_df, id_tic_map, tic_parameters):
+    """
+    Performs mass orbit alignment. Requires that lp_df has the correct
+    quality flag check.
+    """
+
+    for key, lightpoints in lp_df.group_by(['lightcurve_id', 'orbit']):
+        lightcurve_id = key[0]
+        tic = id_tic_map[lightcurve_id]
+        tic_parameters = tic_parameters.loc[tic]
+
+        values = np.array(lp_df['values'])
+        mask = lp_df['quality_flags'] == 0
+        offset = np.nanmedian(lp_df[mask]) - tic_parameters['tmag']
+        lp_df['values'] = values - offset
 
 
 def align_values(tmag, values, quality_flags):
@@ -584,7 +601,7 @@ def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_q
             else:
                 tic, tic8_params = tic_queue.get(block=True)
                 first_ingestion = False
-            lightcurves =  [
+            lightcurves = [
                 lc.to_dict
                 for lc in db.lightcurves.filter(Lightcurve.tic_id == tic).all()
             ]
@@ -608,7 +625,7 @@ def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_q
                 lightpoints = kwargs_to_df(*lightcurves)
             else:
                 lightpoints = None
-            new_lightpoints = []
+
             observations = []
 
             # Find and merge the relevant files
@@ -653,7 +670,6 @@ def async_h5_merge(config, tic_queue, lightcurve_queue, time_corrector, ingest_q
                     new_lp['values'] = new_lp['values'] - offset
 
                     # Perform time correction
-                    mid_tjd = time_corrector.mid_tjd(new_lp)
                     corrected_times = time_corrector.correct_bjd(
                         ra, dec, new_lp
                     )

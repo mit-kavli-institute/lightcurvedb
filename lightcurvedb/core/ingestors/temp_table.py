@@ -55,12 +55,21 @@ class IngestionJob(TemporaryQLPModel):
     def __repr__(self):
         return self.file_path
 
+
 class TIC8Parameters(TemporaryQLPModel):
     __tablename__ = 'tic8_parameters'
     tic_id = Column(BigInteger, primary_key=True)
     right_ascension = Column(Float, nullable=False)
     declination = Column(Float, nullable=False)
     tmag = Column(Float, nullable=False)
+
+
+class QualityFlags(TemporaryQLPModel):
+    __tablename__ = 'quality_flags'
+    cadence = Column(BigInteger, primary_key=True)
+    camera = Column(Integer, primary_key=True)
+    ccd = Column(Integer, primary_key=True)
+    quality_flag = Column(Integer, index=True)
 
 
 TemporaryQLPModel.metadata.create_all(SQLITE_ENGINE)
