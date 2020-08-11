@@ -10,11 +10,11 @@ from sqlalchemy.ext.declarative import declared_attr, declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 
-SQLITE_ENGINE = create_engine(
-    'sqlite:///:memory:',
-    connect_args={'check_same_thread': False},
-    poolclass=StaticPool
-)
+#SQLITE_ENGINE = create_engine(
+#    'sqlite:///:memory:',
+#    connect_args={'check_same_thread': False},
+#    poolclass=StaticPool
+#)
 
 TemporaryQLPModel = declarative_base()
 
@@ -38,6 +38,25 @@ class TempObservation(TemporaryQLPModel):
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=False)
 
+    def to_h5_path(self, base_path='/pdo/qlp-data'):
+        return os.path.join(
+            base_path,
+            'orbit-{}'.format(self.orbit_number),
+            'cam{}'.format(self.camera),
+            'ccd{}'.format(self.ccd),
+            'LC',
+            '{}.h5'.format(self.tic_id)
+        )
+
+    @property
+    def to_dict(self):
+        return dict(
+            tic_id=self.tic_id,
+            orbit_number=self.orbit_number,
+            camera=self.camera,
+            ccd=self.ccd,
+            file_path=self.to_h5_path()
+        )
 
 class IngestionJob(TemporaryQLPModel):
     __tablename__ = 'ingestion_jobs'
@@ -72,6 +91,6 @@ class QualityFlags(TemporaryQLPModel):
     quality_flag = Column(Integer, index=True)
 
 
-TemporaryQLPModel.metadata.create_all(SQLITE_ENGINE)
-TempSessionFactory = sessionmaker(bind=SQLITE_ENGINE)
-TempSession = scoped_session(TempSessionFactory)
+#TemporaryQLPModel.metadata.create_all(SQLITE_ENGINE)
+#TempSessionFactory = sessionmaker(bind=SQLITE_ENGINE)
+#TempSession = scoped_session(TempSessionFactory)

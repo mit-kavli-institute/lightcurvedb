@@ -95,6 +95,10 @@ class TransactionHistory(object):
             return 1.0
         if new_buf_size > 1000:
             return 1000
+        if new_buf_size == 1 and slope == 0:
+            # Stuck in a rut, try and push up again
+            return 5
+
         return int(new_buf_size)
 
 

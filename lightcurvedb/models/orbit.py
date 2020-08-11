@@ -6,6 +6,7 @@ from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
 import numpy as np
 import click
+import os
 from astropy.io import fits
 from multiprocessing import Pool
 from .frame import Frame
@@ -173,23 +174,25 @@ class Orbit(QLPReference):
         return cls.declination
 
 
-    def get_qlp_directory(self, base_path='/pdo/qlp-data'):
+    def get_qlp_directory(self, base_path='/pdo/qlp-data', suffixes=[]):
         """
         Return the base QLP orbit directory for the orbit
         """
         return os.path.join(
             base_path,
-            'orbit-{}'.format(self.orbit_number)
+            'orbit-{}'.format(self.orbit_number),
+            *suffixes
         )
 
-    def get_poc_directory(self, base_path='/pdo/poc-data/orbits'):
+    def get_poc_directory(self, base_path='/pdo/poc-data/orbits', suffixes=[]):
         """
         Return the base POC orbit directory for the orbit.
         """
 
         return os.path.join(
             base_path,
-            'orbit-{}'.format(self.orbit_number)
+            'orbit-{}'.format(self.orbit_number),
+            *suffixes
         )
 
     def get_qlp_run_directory(self, base_path='/pdo/qlp-data'):

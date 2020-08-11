@@ -14,14 +14,15 @@ from sqlalchemy.orm import sessionmaker
 from collections import defaultdict
 from multiprocessing import Manager, Queue, Pool, cpu_count, Process
 from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation, QLPProcess, QLPAlteration
-from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge, async_h5_merge, async_ingestor
+from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge, async_h5_merge
 from lightcurvedb.managers.lightcurve_query import LightcurveManager
 from lightcurvedb.util.iter import partition, chunkify, partition_by
 from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.core.connection import db_from_config
-from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries, TIC8_Base
-from lightcurvedb.core.ingestors.temp_table import TempSession, IngestionJob, TempObservation, TIC8Parameters, LightcurveIDMapper
+from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.processes import DBLoader
+from lightcurvedb.core.ingestors.temp_table import IngestionJob
+from lightcurvedb.core.tic8 import TIC8_ENGINE
 from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import db as closed_db
@@ -113,35 +114,10 @@ def parallel_search_h5(queue, orbit_path, orbit, camera, ccd):
             )
 
 
-def prepare_ingestions(job_sqlite, smart_update, file_df, observation_df):
+def prepare_ingestions(cache, smart_ingest):
     click.echo('Determining needed ingestion jobs')
-    ref_tics = file_df['tic_id'].unique()
-
-    job_sqlite.bulk_insert_mappings(IngestionJob, file_df.to_dict('records'))
-    job_sqlite.bulk_insert_mappings(
-        TempObservation,
-        observation_df.to_dict('records')
-    )
-
-    job_sqlite.commit()
-    if smart_update:
-        # Only process new observations, delete any ingestion job that already
-        # has a defined observation
-        click.echo('Determining merge solutions')
-        bad_ids = job_sqlite.query(
-            IngestionJob.id
-        ).join(
-            TempObservation,
-            and_(
-                IngestionJob.tic_id == TempObservation.tic_id,
-                IngestionJob.orbit_number == TempObservation.orbit_number
-            )
-        )
-        n_bad = bad_ids.count()
-
-        job_sqlite.query(IngestionJob).filter(IngestionJob.id.in_(bad_ids.subquery())).delete(synchronize_session=False)
-
-        job_sqlite.commit()
+    if smart_ingest:
+        n_bad, remaining = cache.remove_duplicate_jobs()
         click.echo(
             'Removed {} jobs as these files have already been ingested'.format(
                 click.style(str(n_bad), fg='green', bold=True)
@@ -149,9 +125,10 @@ def prepare_ingestions(job_sqlite, smart_update, file_df, observation_df):
         )
         click.echo(
             'Will process {} h5 files!'.format(
-                click.style(str(job_sqlite.query(IngestionJob).count()), fg='yellow', bold=True)
+                click.style(str(remaining), fg='yellow', bold=True)
             )
         )
+        cache.commit()
 
 
 def get_from_tic8(tics):
@@ -176,6 +153,64 @@ def determine_tic_info(orbits, cameras, tics, scratch_dir):
     # relevant cache files
     return get_from_tic8(tics)
 
+
+def preload_qflags(t_db, orbits):
+    physical_labels = [1,2,3,4]
+
+    for cam, ccd, orbit in itertools.product(physical_labels, physical_labels, orbits):
+        path = os.path.join(
+            orbit.get_qlp_run_directory(),
+            'cam{}ccd{}_qflag.txt'.format(cam, ccd)
+        )
+        load_qflag_file(t_db, path)
+    t_db.commit()
+
+def perform_async_ingestion(tics, db):
+    m = Manager()
+    job_queue = m.Queue()
+    lightcurve_queue = m.Queue(maxsize=10000)
+    time_corrector = StaticTimeCorrector(
+        db.session
+    )
+    engine_kwargs = dict(
+        executemany_mode='values',
+        executemany_values_page_size=10000,
+        executemany_batch_page_size=500
+    )
+
+    producers = [
+        Process(
+            target=async_h5_merge,
+            args=(
+                ctx.obj['dbconf']._config,
+                job_queue,
+                lightcurve_queue,
+                time_corrector
+            ),
+            daemon=True
+        )
+
+        for _ in range(n_producers)
+    ]
+    consumers = [
+        DBLoader(
+            ctx.obj['dbconf']._config,
+            lightcurve_queue,
+            daemon=True
+        )
+        for _ in range(n_consumers)
+    ]
+
+    for p in itertools.chain(producers, consumers):
+        p.start()
+    for i, tic in enumerate(tics):
+        job_queue.put((
+            tic
+        ))
+    for p in itertools.chain(producers, consumers):
+        p.join()
+
+
 @lightcurve.command()
 @click.pass_context
 @click.argument('orbits', type=int, nargs=-1)
@@ -191,7 +226,7 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
     current_tmp_id = -1
 
     # Create a sqlite session to hold job contexts across processes
-    job_sqlite = TempSession()
+    job_sqlite = IngestionCache()
 
     with ctx.obj['dbconf'] as db:
         orbits = db.orbits.filter(Orbit.orbit_number.in_(orbits)).all()
@@ -352,7 +387,8 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
             parallel_h5_merge,
             ctx.obj['dbconf']._config,
             process_id,
-            ingest_qflags
+            ingest_qflags,
+
         )
         results = p.imap_unordered(func, jobs)
         for nth, result in enumerate(results):
@@ -369,64 +405,51 @@ def ingest_h5(ctx, orbits, n_process, n_tics, cameras, ccds, orbit_dir, scratch,
 
 @lightcurve.command()
 @click.pass_context
-@click.argument('ticlist', type=click.Path(exists=True, dir_okay=False))
+@click.argument('tics', type=int, nargs=-1)
 @click.option('--orbit-dir', type=click.Path(exists=True, file_okay=False), default='/pdo/qlp-data')
-def manual_ingest(ctx, ticlist, orbit_dir):
+def manual_ingest(ctx, tics, orbit_dir):
 
-    tics = [int(ticstr.split('.')[0]) for ticstr in open(ticlist, 'rt').readlines()]
-
-    job_sqlite = TempSession()
+    cache = IngestionCache()
 
     with closed_db as db:
         # Grab orbits
-        orbits = db.orbits.all()
+        click.echo('Loading orbits')
+        orbits = db.orbits.order_by(Orbit.orbit_number.asc()).all()
         numbers = {o.orbit_number for o in orbits}
         paths = [
             determine_orbit_path(orbit_dir, o, cam, ccd)
             for o, cam, ccd in itertools.product(numbers, [1,2,3,4],[1,2,3,4])
         ]
-        raw_lcs = []
-        for tic in tics:
-            raw_lcs += list(filter_for_tic(paths, tic))
-
-        job_sqlite.bulk_insert_mappings(IngestionJob, raw_lcs)
-        job_sqlite.commit()
 
         tic8 = TIC8Session()
-
-        params = pd.read_sql(
-            tic8.query(
-                TIC_Entries.c.id.label('tic_id'),
-                TIC_Entries.c.ra.label('right_ascension'),
-                TIC_Entries.c.dec.label('declination'),
-                TIC_Entries.c.tmag.label('tmag'),
-                TIC_Entries.c.e_tmag.label('tmag_error')
-            ).filter(TIC_Entries.c.id.in_(tics)).statement,
-                tic8.bind
+        click.echo('Building observation map')
+        cache.load_observations(
+            db.observation_df
         )
 
-        job_sqlite.bulk_insert_mappings(
-            TIC8Parameters,
-            params.to_dict('records')
-        )
+        click.echo('Parsing files...')
+        for path in paths:
+            cache.load_dir_to_jobs(
+                path,
+            )
 
-        q = db.query(
-                Lightcurve.id,
-                Lightcurve.tic_id,
-                Lightcurve.aperture_id.label('aperture'),
-                Lightcurve.lightcurve_type_id.label('lightcurve_type')
-            ).filter(Lightcurve.tic_id.in_(tics))
-        lc_kwargs = [dict(zip(row.keys(), row)) for row in q.all()]
+            click.echo('\tLoaded {}'.format(path))
 
-        job_sqlite.bulk_insert_mappings(
-            LightcurveIDMapper,
-            lc_kwargs
-        )
+        cache.session.query(
+            IngestionJob
+        ).filter(
+            ~IngestionJob.tic_id.in_(tics)
+        ).delete(synchronize_session=None)
 
+        cache.load_tic8_parameters(tic8)
         job_sqlite.commit()
+        tic8.close()
 
-        parallel_h5_merge(ctx.obj['dbconf']._config, tics)
-    job_sqlite.close()
+        perform_async_ingestion(
+            tics, db
+        )
+
+    cache.close()
 
 
 @lightcurve.command()
@@ -457,6 +480,7 @@ def parallel_ingest(
             Orbit.orbit_number.in_(orbits)
         ).all()
 
+
         m = Manager()
         q = m.Queue()
 
@@ -476,71 +500,30 @@ def parallel_ingest(
                 component = q.get()
                 accumulator.append(component)
 
-        file_df = pd.DataFrame(accumulator)
-        observation_df = observation_map(db)
 
-        job_sqlite = TempSession()
+        cache = IngestionCache()
 
-        prepare_ingestions(job_sqlite, smart_update, file_df, observation_df)
 
-        n_jobs = job_sqlite.query(IngestionJob.id).count()
-        tics = {r for r, in job_sqlite.query(IngestionJob.tic_id).distinct().all()}
+        tic8 = TIC8Session()
+        cache.load_observations(
+            db.observation_df
+        )
+        cache.load_jobs(
+            pd.DataFrame(accumulator)
+        )
 
+        if smart_update:
+            cache.remove_duplicate_jobs()
+
+        cache.consolidate_lc_ids(db)
+        cache.load_tic8_parameters(tic8)
+
+        tic8.close()
         job_sqlite.commit()
 
-        time_corrector = StaticTimeCorrector(
-            db.session
+        perform_async_ingestion(
+            cache.job_tics, db
         )
-
-    m = Manager()
-    job_queue = m.Queue()
-    lightcurve_queue = m.Queue(maxsize=10000)
-
-    engine_kwargs = dict(
-        executemany_mode='values',
-        executemany_values_page_size=10000,
-        executemany_batch_page_size=500
-    )
-
-    producers = [
-        Process(
-            target=async_h5_merge,
-            args=(
-                ctx.obj['dbconf']._config,
-                job_queue,
-                lightcurve_queue,
-                time_corrector,
-                ingest_qflags
-            ),
-            daemon=True
-        )
-
-        for _ in range(n_producers)
-    ]
-    consumers = [
-        DBLoader(
-            ctx.obj['dbconf']._config,
-            lightcurve_queue,
-            daemon=True
-        )
-        for _ in range(n_consumers)
-    ]
-
-    for p in itertools.chain(producers, consumers):
-        p.start()
-
-    tic8 = TIC8Session()
-    for i, tic in enumerate(tics):
-        ra, dec, tmag = tic8.query(
-            TIC_Entries.c.ra,
-            TIC_Entries.c.dec,
-            TIC_Entries.c.tmag
-        ).filter(TIC_Entries.c.id == tic).one()
-
-        job_queue.put((
-            tic,
-            dict(ra=ra, dec=dec, tmag=tmag),
-        ))
     # Everything has been queued
     click.echo('Awaiting processing queues')
     lightcurve_queue.join()

@@ -6,8 +6,8 @@ from .temp_table import QualityFlags
 
 
 def load_qflag_file(
-        qflag_file,
         db_session,
+        qflag_file,
         camera_override=None,
         ccd_override=None
         ):
@@ -78,7 +78,12 @@ def update_qflag(quality_flag_df, lp_df):
 
     Assumes that camera and ccd information is in the dataframe.
 
-    Returns the values matched and updated
+    Will modify the given dataframe
     """
-    aliased = lp_df.set_index(['cadences', 'camera', 'ccd'])
-    return aliased.update(quality_flag_df)['quality_flags']
+    lp_df.reset_index(inplace=True)
+    lp_df.set_index(['cadences', 'camera', 'ccd'], inplace=True)
+    lp_df.update(quality_flag_df)
+    lp_df['quality_flags'] = lp_df['quality_flags'].astype(int)
+
+    lp_df.reset_index(inplace=True)
+    lp_df.set_index(['cadences'])

@@ -1,4 +1,4 @@
-psycopg2-binary
+psycopg2>=2.8.4
 sqlalchemy>=1.13
 click
 astropy

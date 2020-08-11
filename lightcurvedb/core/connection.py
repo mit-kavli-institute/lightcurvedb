@@ -3,6 +3,7 @@ from __future__ import division, print_function
 import os
 import warnings
 import numpy as np
+from pandas import read_sql as pd_read_sql
 from sys import version_info
 
 from configparser import ConfigParser
@@ -23,6 +24,7 @@ from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
+from lightcurvedb.core.quality_flags import set_quality_flags
 from lightcurvedb.en_masse.temp_table import declare_lightcurve_cadence_map
 
 
@@ -786,77 +788,30 @@ class DB(object):
         rolledback and a commit is emitted in order to construct the
         temporary tables.
 
-        Saving the changes will still require a subsequent 'commit' call.
+        This automatically permanently changes the lightcurve models as it
+        contains ``commit`` calls.
 
         """
-        self.session.rollback()
-        QMap = declare_lightcurve_cadence_map(
-            Column('quality_flag', SmallInteger, nullable=False),
-            extend_existing=True,
-            keep_existing=False,
-        )
-        QMap.create(
-            bind=self.session.bind,
-            checkfirst=True)
-        self.commit()
-
-        # Insert relevant lightcurves
-        insert_q = QMap.insert().from_select(
-            ['lightcurve_id', 'cadence', 'quality_flag'],
-            self.query(
-                models.Lightcurve.id,
-                func.unnest(models.Lightcurve.cadences),
-                func.unnest(models.Lightcurve.quality_flags)
-            ).filter(
-                models.Lightcurve.tic_id.in_(
-                    self.tics_by_orbit(
-                        orbit_number,
-                        resolve=False
-                    ).filter(
-                        models.Observation.camera == camera,
-                        models.Observation.ccd == ccd
-                    ).subquery('observed_tics')
-                )
+        # Make a query of the relevant lightcurves
+        q = self.query(
+            models.Lightcurve.id,
+        ).filter(
+            models.Lightcurve.tic_id.in_(
+                self.tics_by_orbit(
+                    orbit_number,
+                    cameras=[camera],
+                    ccds=[ccd],
+                    resolve=False
+                ).subquery('tics')
             )
         )
-        self.session.execute(insert_q)
-
-        # Cadence map is populated
-        update_q = QMap.update().where(
-            QMap.c.cadence == bindparam('_cadence')
-        ).values({
-            QMap.c.quality_flag: bindparam('_quality_flag')
-        })
-
-        self.session.execute(
-            update_q,
-            [
-                {
-                    '_cadence': cadence,
-                    '_quality_flag': qflag
-                } for cadence, qflag in zip(cadences, quality_flags)
-            ]
+        set_quality_flags(
+            self.session,
+            q,
+            cadences,
+            quality_flags
         )
 
-        # Quality flags in the temp table are now updated, apply
-        # changes back to the Lightcurve table
-        updated_qflag = self.query(
-            QMap.c.lightcurve_id,
-            func.array_agg(
-                aggregate_order_by(
-                    QMap.c.quality_flag,
-                    QMap.c.cadence.desc()
-                )
-            ).label('qflags')
-        ).group_by(QMap.c.lightcurve_id).cte('updated_qflags')
-
-        update_q = models.Lightcurve.__table__.update().where(
-            models.Lightcurve.id == updated_qflag.c.lightcurve_id
-        ).values({
-            models.Lightcurve.quality_flags: updated_qflag.c.qflags
-        })
-
-        self.session.execute(update_q)
 
     def commit(self):
         """
@@ -881,6 +836,29 @@ class DB(object):
         self._session.delete(
             model_inst, synchronize_session=synchronize_session
         )
+
+    # Begin helper methods to quickly grab reference maps
+    @property
+    def observation_df(self):
+        """
+        Return an observation dataframe for client-side lookups. Best used to
+        avoid large amounts of rapid hits to the server-side database.
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe of ``tic_id``, the ``camera``, ``ccd``, and
+            ``orbit.orbit_number`` that the tic was observed in.
+        """
+        q = self.query(
+            models.Observation.tic_id, models.Observation.camera,
+            models.Observation.ccd, models.Orbit.orbit_number
+        ).join(
+            models.Observation.orbit
+        ).order_by(
+            models.Orbit.orbit_number.asc(), models.Observation.tic_id.asc()
+        )
+        return pd_read_sql(q.statement, self.session.bind)
 
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
