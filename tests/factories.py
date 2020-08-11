@@ -203,7 +203,7 @@ def lightcurve_kwargs(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    kwargs = draw(lightcurve_kwargs())
+    kwargs = draw(lightcurve_kwargs(**overrides))
     return models.Lightcurve(
         **kwargs
     )

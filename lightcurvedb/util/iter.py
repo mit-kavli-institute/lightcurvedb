@@ -1,16 +1,36 @@
 from __future__ import division, print_function
-import sys
-
-PY_V = sys.version_info
-
-if PY_V.major >= 3:
-    from itertools import zip_longest as zip
-else:
-    from itertools import izip_longest as zip
 import itertools
 
 
 def chunkify(iterable, chunksize, fillvalue=None):
+    """
+    Chunkify an iterable into equal sized partitions. The last chunk yielded
+    might contain leftovers and have a length less than specified. If a
+    ``fillvalue`` is specified then this value will be padded in the last
+    chunk until it meets the chunksize requirement.
+
+    Arguments
+    ---------
+    iterable : iterable
+        Some iterable to chunkify into partitions
+    chunksize : integer
+        The size of the returned partitions. Must be greater than 0 otherwise
+        a ``ValueError`` is raised.
+    fillvalue : any, optional
+        If the last partition ``length < chunksize`` then right pad the
+        partition with the `fillvalue`` until the wanted partition size is
+        reached.
+
+    Yields
+    ------
+    list
+        A partitioned list of length <= chunksize
+
+    Raises
+    ------
+    ValueError
+        For chunksize < 1.
+    """
     chunk = []
     if chunksize < 1:
         raise ValueError(
@@ -46,6 +66,7 @@ def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     # Cleanup
     if len(chunk) > 0:
         yield chunk
+
 
 def pop_chunkify(listlike, chunksize):
     if chunksize < 1:

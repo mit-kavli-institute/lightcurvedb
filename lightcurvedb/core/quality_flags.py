@@ -1,9 +1,9 @@
-from sqlalchemy import func, bindparam
-from sqlalchemy.dialects.postgresql import aggregate_order_by
-
-from lightcurvedb.models import Lightcurve
 from lightcurvedb.en_masse.temp_table import declare_lightcurve_cadence_map
+from lightcurvedb.models import Lightcurve
+from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util.logger import lcdb_logger as logger
+from sqlalchemy import Column, Integer, bindparam, func, text
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 
 def perform_update(
@@ -22,7 +22,7 @@ def perform_update(
     update_q = temp_table.update().where(
         temp_table.c.cadence == bindparam('_cadence')
     ).values({
-        update_q.c.quality_flag: bindparam('_quality_flag')
+        temp_table.c.quality_flag: bindparam('_quality_flag')
     })
 
     sql_session.execute(
@@ -46,29 +46,20 @@ def perform_update(
     ).group_by(temp_table.c.lightcurve_id).cte('updated_qflags')
 
     update_q = Lightcurve.__table__.update().where(
-        Lightcurve.id == lightcurve_update_q.lightcurve_id
+        Lightcurve.id == lightcurve_update_q.c.lightcurve_id
     ).values({
-        Lightcurve.quality_flags: update_qflag.c.new_qflags
+        Lightcurve.quality_flags: lightcurve_update_q.c.new_qflags
     })
 
     sql_session.execute(
         update_q
     )
 
-    # Ids in temp table are no longer needed
-    sql_session.execute(
-        temp_table.delete().where(
-            temp_table.c.lightcurve_id.in_(
-                lightcurve_iq.subquery('lightcurve_subq')
-            )
-        )
-    )
-
 
 def set_quality_flags(
         sql_session,
         lightcurve_id_q,
-        cadences, 
+        cadences,
         quality_flags,
         chunksize=1000,
         temp_buffers_mb=1024*8
@@ -111,7 +102,7 @@ def set_quality_flags(
     )
     sql_session.execute(PSQL_SET)
     QMap = declare_lightcurve_cadence_map(
-        Column('quality_flag', Integer, nullable=False)
+        Column('quality_flag', Integer, nullable=False),
         extend_existing=True,
         keep_existing=False
     )
@@ -120,7 +111,7 @@ def set_quality_flags(
         checkfirst=True
     )
 
-    for id_chunk in chunkify(lightcurve_id_q.all()):
+    for id_chunk in chunkify(lightcurve_id_q.all(), chunksize):
         q = sql_session.query(
             Lightcurve.id,
             func.unnest(Lightcurve.cadences),
@@ -134,11 +125,19 @@ def set_quality_flags(
             )
         )
         perform_update(
-            sqlsession,
+            sql_session,
             QMap,
             q,
             cadences,
             quality_flags
+        )
+        # Ids in temp table are no longer needed
+        sql_session.execute(
+            QMap.delete().where(
+                QMap.c.lightcurve_id.in_(
+                    id_chunk
+                )
+            )
         )
         sql_session.commit()
     logger.debug(

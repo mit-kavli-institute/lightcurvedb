@@ -1,12 +1,20 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import func
-from lightcurvedb.models import Lightcurve, Observation, Orbit
-from lightcurvedb.core.base_model import QLPModel
-from hypothesis import strategies as st, given, note, settings
+from hypothesis import given, note, settings
+from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_t
-from .factories import lightcurve as lightcurve_st, orbit as orbit_st, lightcurve_list, aperture as aperture_st, lightcurve_type as lightcurve_type_st
-from .fixtures import db_conn, clear_all
+
+from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.models import Lightcurve, Observation, Orbit
+from lightcurvedb.core.quality_flags import set_quality_flags
+from sqlalchemy import func
+
+from .factories import aperture as aperture_st
+from .factories import lightcurve as lightcurve_st
+from .factories import lightcurve_list
+from .factories import lightcurve_type as lightcurve_type_st
+from .factories import orbit as orbit_st
+from .fixtures import clear_all, db_conn
 from .util import import_lc_prereqs
 
 
@@ -43,6 +51,38 @@ def test_update_single_lc(db_conn, lc, orbit):
                 ).one()[0],
                 new_qflags
             )
+        finally:
+            # Cleanup
+            db.session.rollback()
+            clear_all(db)
+
+
+@given(
+    lightcurve_st(tic_id=st.just(1)),
+    lightcurve_st(tic_id=st.just(2)),
+    orbit_st(orbit_number=st.just(1)))
+@settings(deadline=None)
+def test_update_multiple_lc(db_conn, lc1, lc2, orbit):
+    with db_conn as db:
+        try:
+            cadences = sorted(set(lc1.cadences) | set(lc2.cadences))
+            quality_flags = np.ones(len(cadences))
+            lc2.lightcurve_type = lc1.lightcurve_type
+            lc2.aperture = lc1.aperture
+            db.add(lc1)
+            db.add(lc2)
+            db.commit()
+
+            set_quality_flags(
+                db.session,
+                db.query(Lightcurve.id),
+                cadences,
+                quality_flags
+            )
+
+            for lc in db.lightcurves.all():
+                assert all(lc.quality_flags == 1)
+
         finally:
             # Cleanup
             db.session.rollback()
