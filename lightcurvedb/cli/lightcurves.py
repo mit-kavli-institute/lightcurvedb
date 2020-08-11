@@ -1,37 +1,30 @@
 from __future__ import division, print_function
 
-import click
-import os
 import itertools
-import sys
-import numpy as np
+import os
 import re
-import pandas as pd
-from tabulate import tabulate
 from functools import partial
-from sqlalchemy import func, and_, Table, Column, BigInteger
-from sqlalchemy.orm import sessionmaker
-from collections import defaultdict
-from multiprocessing import Manager, Queue, Pool, cpu_count, Process
-from lightcurvedb.models import Aperture, Orbit, LightcurveType, Lightcurve, Observation, QLPProcess, QLPAlteration
-from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_dict_to_df, parallel_h5_merge, async_h5_merge
-from lightcurvedb.managers.lightcurve_query import LightcurveManager
-from lightcurvedb.util.iter import partition, chunkify, partition_by
-from lightcurvedb.util.logger import lcdb_logger as logger
-from lightcurvedb.core.connection import db_from_config
+from multiprocessing import Manager, Pool, Process, cpu_count
+
+import click
+import pandas as pd
+
+from lightcurvedb import db as closed_db
+from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.cli.types import CommaList
+from lightcurvedb.cli.utils import find_h5
+from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.lightcurve_ingestors import (
+    async_h5_merge, parallel_h5_merge)
 from lightcurvedb.core.ingestors.processes import DBLoader
 from lightcurvedb.core.ingestors.temp_table import IngestionJob
 from lightcurvedb.core.tic8 import TIC8_ENGINE
 from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
-from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb import db as closed_db
-from glob import glob
-from h5py import File as H5File
-from lightcurvedb.cli.base import lcdbcli
-from lightcurvedb.cli.utils import find_h5, extr_tic, group_h5
-from lightcurvedb.cli.types import CommaList
-
+from lightcurvedb.models import Lightcurve, Observation, Orbit, QLPProcess
+from lightcurvedb.util.iter import chunkify
+from sqlalchemy import BigInteger, Column, Table, and_
+from sqlalchemy.orm import sessionmaker
 
 TIC8Session = sessionmaker(autoflush=True)
 TIC8Session.configure(bind=TIC8_ENGINE)

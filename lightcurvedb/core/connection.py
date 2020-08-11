@@ -812,7 +812,6 @@ class DB(object):
             quality_flags
         )
 
-
     def commit(self):
         """
         Commit the executed queries in the database to make any
