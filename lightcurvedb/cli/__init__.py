@@ -7,3 +7,4 @@ from .lightcurves import ingest_h5
 from .spacecraft import spacecraft
 from .metrics import metrics
 from .ingestion_cache import cache
+from .quality_flags import ingest_files

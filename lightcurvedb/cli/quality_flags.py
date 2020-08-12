@@ -74,7 +74,7 @@ def ingest_files(ctx, orbit, quality_flag_files):
             camera, ccd = qflag_components(qflag_file)
             df = qflag_to_df(qflag_file)
             db.set_quality_flags(
-                orbit, camera, ccd, df.cadences, df.quality_flags
+                orbit, camera, ccd, df.cadence, df.quality_flag
             )
             click.echo(
                 'Set {} quality flags using {}'.format(

@@ -139,6 +139,9 @@ def set_quality_flags(
                 )
             )
         )
+        logger.debug(
+            'Updated {} lightcurves'.format(len(id_chunk))
+        )
         sql_session.commit()
     logger.debug(
         'Done assigning new quality flags'
