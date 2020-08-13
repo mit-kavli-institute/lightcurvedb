@@ -2,7 +2,13 @@ from __future__ import division, print_function
 
 import warnings
 import os
-from configparser import ConfigParser
+
+try:
+    from configparser import ConfigParser
+except ImportError:
+    # Python 2?
+    from ConfigParser import ConfigParser
+
 from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
