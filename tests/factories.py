@@ -1,10 +1,10 @@
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
-from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex, just, lists, tuples, sampled_from
+from hypothesis.strategies import floats, text, composite, characters, integers, booleans, one_of, none, from_regex, just, lists, tuples, sampled_from, builds
 from lightcurvedb import models
 
-from .constants import CONFIG_PATH, PSQL_INT_MAX
+from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
 
 
 define_strategy = lambda f: f
@@ -34,19 +34,16 @@ celestial_degrees = floats(
 @define_strategy
 @composite
 def aperture(draw):
-    name = draw(from_regex(r'^[aA]perture_[a-zA-Z0-9]{1,25}$', fullmatch=True))
-    star_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
-    inner_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
-    outer_radius = draw(floats(min_value=1, allow_nan=False, allow_infinity=False))
 
-    ap = models.Aperture(
-        name=name,
-        star_radius=star_radius,
-        inner_radius=inner_radius,
-        outer_radius=outer_radius
+    return draw(
+        builds(
+            models.Aperture,
+            name=just('Aperture_000'),
+            star_radius=floats(min_value=1, allow_nan=False, allow_infinity=False),
+            inner_radius=floats(min_value=1, allow_nan=False, allow_infinity=False),
+            outer_radius=floats(min_value=1, allow_nan=False, allow_infinity=False)
+        )
     )
-
-    return ap
 
 
 @define_strategy
@@ -82,11 +79,14 @@ def frame_type(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve_type(draw, **overrides):
-    lc_type = models.lightcurve.LightcurveType(
-        name=draw(overrides.pop('name', from_regex(r'^[a-zA-Z]{1,64}$'))),
-        description=draw(overrides.pop('description', postgres_text()))
+
+    return draw(
+        builds(
+            models.lightcurve.LightcurveType,
+            name=overrides.pop('name', just('lightcurve_type_0')),
+            description=just('lightcurve description')
+        )
     )
-    return lc_type
 
 
 @define_strategy
@@ -153,23 +153,7 @@ def orbit_frames(draw):
 @define_strategy
 @composite
 def lightcurve_kwargs(draw, **overrides):
-    length = draw(overrides.pop('length', integers(min_value=1, max_value=10)))
     kwargs = dict()
-
-    kwargs['cadences'] = np.arange(length)
-    kwargs['bjd'] = np.arange(length, dtype=np.float64)
-    kwargs['values'] = np.arange(length, dtype=np.float64)
-    kwargs['errors'] = np.arange(length, dtype=np.float64)
-    kwargs['x_centroids'] = np.arange(length, dtype=np.float64)
-    kwargs['y_centroids'] = np.arange(length, dtype=np.float64)
-    kwargs['quality_flags'] = draw(
-        np_st.arrays(
-            np.int32,
-            length,
-            elements=sampled_from([0, 1])
-        )
-    )
-
     kwargs['tic_id'] = draw(
         overrides.pop(
             'tic_id',
@@ -203,9 +187,13 @@ def lightcurve_kwargs(draw, **overrides):
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    kwargs = draw(lightcurve_kwargs(**overrides))
-    return models.Lightcurve(
-        **kwargs
+    return draw(
+        builds(
+            models.Lightcurve,
+            tic_id=overrides.get('tic_id', integers(min_value=1, max_value=TIC_ID_MAX)),
+            lightcurve_type=lightcurve_type(),
+            aperture=aperture()
+        )
     )
 
 

@@ -28,7 +28,6 @@ class QLPModel(object):
     __abstract__ = True
 
 
-
 class QLPDataProduct(QLPModel):
     """
         Mixin for describing QLP Dataproducts such as frames, lightcurves, and BLS results

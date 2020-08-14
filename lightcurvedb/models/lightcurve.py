@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, Sequence,
-                        SmallInteger, String, cast, inspect, join, select)
+                        SmallInteger, String, cast, inspect, join, select,
+                        DDL, event)
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, insert
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -22,6 +23,10 @@ from sqlalchemy.sql.expression import bindparam
 from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.util.merge import merge_arrays
+from lightcurvedb.core.partitioning import Partitionable, emit_ranged_partition_ddl
+
+
+LIGHTPOINT_PARTITION_RANGE = 10**6
 
 
 def adapt_as_is_type(type_class):
@@ -70,7 +75,7 @@ class LightcurveFrameMap(QLPModel):
     frame = relationship('Frame')
 
 
-class Lightcurve(QLPModel):
+class Lightcurve(QLPDataProduct):
     """
     This SQLAlchemy model is used to represent the magnitude or flux
     information as a time series. Each lightcurve instance represents
@@ -211,46 +216,7 @@ class Lightcurve(QLPModel):
     )
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
-
-    # Variables marked with '_' prefix are internal and
-    # should not be modified directly
-
-    _cadences = Column(
-        'cadences',
-        ARRAY(Integer, dimensions=1),
-        nullable=False
-    )
-    _bjd = Column(
-        'barycentric_julian_date',
-        ARRAY(DOUBLE_PRECISION, dimensions=1),
-        nullable=False
-    )
-    _values = Column(
-        'values',
-        ARRAY(DOUBLE_PRECISION, dimensions=1),
-        nullable=False
-    )
-    _errors = Column(
-        'errors',
-        ARRAY(DOUBLE_PRECISION, dimensions=1),
-        nullable=False
-    )
-    _x_centroids = Column(
-        'x_centroids',
-        ARRAY(DOUBLE_PRECISION, dimensions=1),
-        nullable=False
-    )
-    _y_centroids = Column(
-        'y_centroids',
-        ARRAY(DOUBLE_PRECISION, dimensions=1),
-        nullable=False
-    )
-    _quality_flags = Column(
-        'quality_flags',
-        ARRAY(Integer, dimensions=1),
-        nullable=False
-    )
-
+    
     def __len__(self):
         """
         Returns
@@ -429,154 +395,131 @@ class Lightcurve(QLPModel):
 
     @hybrid_property
     def cadences(self):
-        return np.array(self._cadences)
+        return [lp.cadence for lp in self.lightpoints]
 
     @hybrid_property
     def bjd(self):
-        return np.array(self._bjd)
+        return [lp.bjd for lp in self.lightpoints]
 
     @hybrid_property
     def barycentric_julian_date(self):
-        return np.array(self._bjd)
+        return [lp.bjd for lp in self.lightpoints]
 
     @hybrid_property
     def values(self):
-        return np.array(self._values)
+        return [lp.data for lp in self.lightpoints]
 
     @hybrid_property
     def errors(self):
-        return np.array(self._errors)
+        return [lp.error for lp in self.lightpoints]
 
     @hybrid_property
     def x_centroids(self):
-        return np.array(self._x_centroids)
+        return [lp.x for lp in self.lightpoints]
 
     @hybrid_property
     def y_centroids(self):
-        return np.array(self._y_centroids)
+        return [lp.y for lp in self.lightpoints]
 
     @hybrid_property
     def quality_flags(self):
-        return np.array(self._quality_flags)
+        return [lp.quality_flag for lp in self.lightpoints]
 
-    # Setters
-    @cadences.setter
-    def cadences(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._cadences = value
+
+class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
+    __tablename__ = 'lightpoints'
+    __abstract__ = False
+
+    lightcurve = relationship(
+        'Lightcurve',
+        backref='lightpoints'
+    )
+
+    lightcurve_id = Column(
+        ForeignKey(
+            'lightcurves.id',
+            onupdate='CASCADE',
+            ondelete='CASCADE'
+        ),
+        primary_key=True
+    )
+
+    cadence = Column(
+        BigInteger,
+        primary_key=True,
+        nullable=False
+    )
+
+    barycentric_julian_date = Column(
+        DOUBLE_PRECISION,
+        nullable=False
+    )
+
+    data = Column(
+        DOUBLE_PRECISION
+    )
+
+    error = Column(
+        DOUBLE_PRECISION
+    )
+
+    x_centroid = Column(
+        DOUBLE_PRECISION
+    )
+
+    y_centroid = Column(
+        DOUBLE_PRECISION
+    )
+
+    quality_flag = Column(
+        Integer,
+        nullable=False
+    )
+
+    @hybrid_property
+    def bjd(self):
+        return self.barycentric_julian_date
 
     @bjd.setter
     def bjd(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._bjd = value
-
-    @barycentric_julian_date.setter
-    def barycentric_julian_date(self, value):
-        self._bjd = value
-
-    @values.setter
-    def values(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._values = value
-
-    @errors.setter
-    def errors(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._errors = value
-
-    @x_centroids.setter
-    def x_centroids(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._x_centroids = value
-
-    @y_centroids.setter
-    def y_centroids(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._y_centroids = value
-
-    @quality_flags.setter
-    def quality_flags(self, value):
-        if isinstance(value, np.ndarray):
-            value = value.tolist()
-        self._quality_flags = value
-
-    # Expressions
-    @cadences.expression
-    def cadences(cls):
-        return cls._cadences
-
-    @barycentric_julian_date.expression
-    def barycentric_julian_date(cls):
-        return cls._bjd
+        self.barycentric_julian_date = value
 
     @bjd.expression
     def bjd(cls):
-        return cls._bjd
+        return cls.barycentric_julian_date
 
-    @values.expression
-    def values(cls):
-        return cls._values
+    @hybrid_property
+    def x(self):
+        return self.x_centroid
 
-    @errors.expression
-    def errors(cls):
-        return cls._errors
+    @x.setter
+    def x(self, value):
+        self.x_centroid = value
 
-    @x_centroids.expression
-    def x_centroids(cls):
-        return cls._x_centroids
+    @x.expression
+    def x(cls):
+        return cls.x_centroid
 
-    @y_centroids.expression
-    def y_centroids(cls):
-        return cls._y_centroids
+    @hybrid_property
+    def y(self):
+        return self.y_centroid
 
-    @quality_flags.expression
-    def quality_flags(cls):
-        return cls._quality_flags
+    @y.setter
+    def y(self, value):
+        self.y_centroid = value
 
-    @classmethod
-    def create_mappings(cls, **mappings):
-        mapping = {}
-        for field, binding in mappings.items():
-            if binding is None:
-                # If binding is None, do not map to the field
-                continue
-            mapper_field = '{}'.format(field)
-            binding = bindparam(binding)
-            mapping[mapper_field] = binding
+    @y.expression
+    def y(cls):
+        return cls.y_centroid
 
-        return mapping
 
-    @classmethod
-    def insert_with(cls, stmt):
-        stmt = insert(cls).from_select(
-            [cls.tic_id, cls.aperture_id, cls.lightcurve_type_id,
-             cls.cadences, cls.barycentric_julian_date, cls.values,
-             cls.errors, cls.x_centroids, cls.y_centroids,
-             cls.quality_flags
-            ],
-            stmt
-        )
-        return stmt
-
-    @classmethod
-    def update_with(cls, cte):
-        T = cls.__table__
-        q = T.update().values({
-            cls.cadences: cte.c.cadences,
-            cls.barycentric_julian_date: cte.c.bjd,
-            cls.values: cte.c._values,
-            cls.errors: cte.c.errors,
-            cls.x_centroids: cte.c.x_centroids,
-            cls.y_centroids: cte.c.y_centroids,
-            cls.quality_flags: cte.c.quality_flags
-        }).where(
-            cls.id == cte.c.lightcurve_id
-        )
-
-        return q
+# Setup initial lightpoint Partition
+event.listen(
+    Lightpoint.__table__,
+    'after_create',
+    emit_ranged_partition_ddl(
+        Lightpoint.__tablename__,
+        0,
+        LIGHTPOINT_PARTITION_RANGE
+    )
+)

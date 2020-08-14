@@ -26,6 +26,7 @@ from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_che
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
 from lightcurvedb.core.quality_flags import set_quality_flags
 from lightcurvedb.en_masse.temp_table import declare_lightcurve_cadence_map
+from lightcurvedb.core.partitioning import get_partition_q, extract_partition_df
 
 
 # Bring legacy capability
@@ -858,6 +859,17 @@ class DB(object):
             models.Orbit.orbit_number.asc(), models.Observation.tic_id.asc()
         )
         return pd_read_sql(q.statement, self.session.bind)
+
+    def get_partitions_df(self, model):
+        q = get_partition_q(model.__tablename__)
+        raw_df = pd_read_sql(
+            q.statement,
+            self.session.bind,
+        )
+        ranged_df = extract_partition_df(raw_df)
+        raw_df['begin_range'] = ranged_df['begin_range']
+        raw_df['end_range'] = ranged_df['end_range']
+        return raw_df
 
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
