@@ -863,7 +863,7 @@ class DB(object):
     def get_partitions_df(self, model):
         q = get_partition_q(model.__tablename__)
         raw_df = pd_read_sql(
-            q.statement,
+            q,
             self.session.bind,
         )
         ranged_df = extract_partition_df(raw_df)

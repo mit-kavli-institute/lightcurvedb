@@ -13,3 +13,5 @@ numpy
 pandas
 flake8
 isort
+tabulate
+scipy

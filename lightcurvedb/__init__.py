@@ -1,4 +1,4 @@
-__version__ = '0.1.15'
+__version__ = '0.2.0'
 
 
 from lightcurvedb.core.engines import __SESSION_FACTORY__, __DEFAULT_PATH__

@@ -30,6 +30,8 @@ flake8 = "*"
 coverage = "*"
 doq = "*"
 packaging = "*"
+scipy = "*"
+tabulate = "*"
 
 [requires]
 python_version = "3.7"

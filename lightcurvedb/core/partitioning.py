@@ -4,6 +4,7 @@ This module describes partitioning of the lightcurve database.
 from sqlalchemy import DDL, text
 from math import ceil
 import re
+from pandas import to_numeric
 
 
 def Partitionable(partition_type, *columns):
@@ -135,7 +136,7 @@ def get_partition_q(table):
         A text object representing the desired query.
     """
     q = text(
-            "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\:\:regclass"
+            "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
     ).bindparams(t=table)
     return q
 
@@ -156,7 +157,11 @@ def extract_partition_df(partition_df):
         The columns extracted via regex capture groups.
     """
     regex = re.compile(
-        r'^FOR VALUES FROM \((?P<begin_range>\d+)\) TO \((?P<end_range>\d+)\)$'
+        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) TO \('(?P<end_range>\d+)'\)$"
     )
 
-    return df['partition_expression'].extract(regex)
+    result = partition_df['partition_expression'].str.extract(regex)
+    result[['begin_range', 'end_range']] = result[['begin_range', 'end_range']].apply(
+        to_numeric, errors='coerce'
+    )
+    return result

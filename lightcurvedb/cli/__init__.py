@@ -8,3 +8,4 @@ from .spacecraft import spacecraft
 from .metrics import metrics
 from .ingestion_cache import cache
 from .quality_flags import ingest_files
+from .partitioning import partitioning

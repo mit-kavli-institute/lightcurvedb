@@ -2,7 +2,11 @@ from hypothesis import strategies as st, given, note, example, assume
 from lightcurvedb.models.lightcurve import Lightpoint, LIGHTPOINT_PARTITION_RANGE
 from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q
 from math import ceil
-from .fixtures import db_conn
+import traceback
+from click.testing import CliRunner
+from lightcurvedb.cli.base import lcdbcli
+from .fixtures import db_conn, clear_all
+from .constants import CONFIG_PATH
 
 
 @given(st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1), st.integers(min_value=1))
@@ -55,3 +59,43 @@ def test_partition_info_q(db_conn):
             )
             assert bound_str == expected_bound_str
             cur_bound += LIGHTPOINT_PARTITION_RANGE
+
+        db.rollback()
+        clear_all(db)
+
+
+@given(st.just(1))
+def test_cli_creation_of_partition(db_conn, n_partitions):
+    with db_conn as db:
+        orig_n_partitions = len(db.get_partitions_df(Lightpoint))
+        runner = CliRunner(
+            mix_stderr=False  # Dunno why this defaults to TRUE :(
+        )
+        result = runner.invoke(
+            lcdbcli,
+            [
+                '--dbconf', CONFIG_PATH,
+                '--scratch', '.',
+                '--qlp-data', '.',
+                'partitioning',
+                'create-partitions',
+                'Lightpoint', str(n_partitions), str(LIGHTPOINT_PARTITION_RANGE)
+            ],
+            input='yes'
+        )
+        df = db.get_partitions_df(Lightpoint)
+        note(df)
+        new_len = len(df)
+
+        note(result.exit_code)
+        note(result.output)
+        note(result.stderr)
+        note(
+            traceback.format_list(
+                traceback.extract_tb(result.exc_info[2])
+            )
+        )
+
+        assert not result.exception
+        assert result.exit_code == 0
+        assert new_len - orig_n_partitions == 1

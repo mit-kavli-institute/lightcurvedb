@@ -9,3 +9,4 @@ pandas
 packaging
 datetime
 tabulate
+scipy
