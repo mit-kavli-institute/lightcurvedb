@@ -9,13 +9,12 @@ import numpy as np
 import pandas as pd
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, Sequence,
-                        SmallInteger, String, cast, inspect, join, select,
+                        SmallInteger, Index, cast, inspect, join, select,
                         DDL, event)
-from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, insert
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
-from sqlalchemy.orm.collections import collection
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import bindparam
@@ -441,13 +440,20 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
             onupdate='CASCADE',
             ondelete='CASCADE'
         ),
-        primary_key=True
+        primary_key=True,
+        nullable=False
     )
 
     cadence = Column(
         BigInteger,
+        nullable=False,
         primary_key=True,
-        nullable=False
+        index=Index(
+            'lightpoints_cadence_idx',
+            'cadence',
+            postgresql_using='brin',
+            postgresql_concurrently=True
+        )
     )
 
     barycentric_julian_date = Column(

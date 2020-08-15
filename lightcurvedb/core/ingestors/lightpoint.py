@@ -1,22 +1,22 @@
-from .lightcurve_ingestors import h5_to_matrices
-from lightcurvedb.models import Lightcurve
+from lightcurvedb.models import Lightcurve, Lightpoint
 from sqlalchemy import Integer
 from sqlalchemy.sql import select, func, cast
-from sqlalchemy.dialects.postgresql import ARRAY
-import bisect
 
 
-def get_raw_h5(filepath):
-    return list(h5_to_matrices(filepath))
+def remove_old_points_q(lightcurves):
+    """
+    Create a query that deletes existing lightcurve points
+    """
+    q = Lightpoint.__table__.delete().where(
+        Lightpoint.lightcurve_id.in_(
+            set(lc.id for lc in lightcurves)
+        )
+    )
+    return q
 
 
-def get_cadence_info(tics):
-    lc_map_q = select(
-        [
-            Lightcurve.id,
-            Lightcurve.min_cadence,
-            Lightcurve.max_cadence
-        ]
-    ).where(Lightcurve.tic_id.in_(tics))
-
-    return lc_map_q
+def async_h5_merge(config, job_queue, data_queue, time_corrector):
+    """
+    Merge h5 with given lightcurves within the given TICs.
+    """
+    pass

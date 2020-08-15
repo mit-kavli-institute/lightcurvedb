@@ -3,13 +3,16 @@ from __future__ import division, print_function
 import click
 import os
 import pandas as pd
+from glob import glob
 from itertools import product
 from sqlalchemy.orm import sessionmaker
 from lightcurvedb import db
 from lightcurvedb.models import Orbit 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
+from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.core.tic8 import TIC8_ENGINE
 
 TIC8Session = sessionmaker(autoflush=True)
@@ -20,6 +23,60 @@ TIC8Session.configure(bind=TIC8_ENGINE)
 @click.pass_context
 def cache(ctx):
     pass
+
+
+@cache.command()
+@click.pass_context
+@click.argument('LC_paths', nargs=-1, type=click.Path(file_okay=False, exists=True))
+def update_file_cache(ctx, LC_paths):
+    needed_contexts = {'camera', 'ccd', 'orbit_number'}
+    cache = IngestionCache()
+    for path in LC_paths:
+        context = extract_pdo_path_context(path)
+        if all(x in context for x in needed_contexts):
+            click.echo(
+                'Could not find needed contexts for path {}'.format(path)
+            )
+            continue
+        h5s = glob(os.path.join(path, '*.h5'))
+        existing_files = cache.query(
+            FileObservation
+        ).filter(
+            FileObservation.camera == context['camera'],
+            FileObservation.ccd == context['ccd'],
+            FileObservation.orbit_number == context['orbit_number']
+        ).all()
+        existing_file_map = {
+            (fo.tic_id, fo.camera, fo.ccd, fo.orbit_number): fo.id
+            for fo in existing_files
+        }
+
+        to_add = []
+        for h5 in h5s:
+            tic_id = int(h5.split('.')[0])
+            key = (
+                tic_id,
+                int(context['camera']),
+                int(context['ccd']),
+                int(context['orbit_number'])
+            )
+            check = existing_file_map.get(key, None)
+            if not check:
+                check = FileObservation(
+                    tic_id=tic_id,
+                    file_path=os.path.join(
+                        path, h5
+                    ),
+                    **context
+                )
+                to_add.append(check)
+        cache.add_all(to_add)
+        click.echo(
+            'Added {} new FileObservations'.format(
+                len(to_add)
+            )
+        )
+    cache.commit()
 
 
 @cache.command()

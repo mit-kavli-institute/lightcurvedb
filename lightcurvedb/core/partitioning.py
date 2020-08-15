@@ -24,14 +24,16 @@ def Partitionable(partition_type, *columns):
 
     if len(columns) == 0:
         raise ValueError(
-            'Cannot make a partition on {} since the columns that are passed are empty'.format(partition_type)
+            "Cannot make a partition on {} since the columns that are passed are empty".format(
+                partition_type
+            )
         )
 
     class __PartitionMeta__(object):
         __abstract__ = True
         __table_args__ = dict(
             postgresql_partition_by="{}({})".format(
-                partition_type, ','.join(columns)
+                partition_type, ",".join(columns)
             )
         )
 
@@ -49,12 +51,13 @@ def Partitionable(partition_type, *columns):
 
             """
             raise NotImplementedError
-           
 
     return __PartitionMeta__
 
 
-def n_new_partitions(current_value, current_part_val, est_new_vals, partition_range):
+def n_new_partitions(
+    current_value, current_part_val, est_new_vals, partition_range
+):
     """
     Calculate the number of new partitions that would be needed for the
     given ``est_new_vals``.
@@ -109,14 +112,10 @@ def emit_ranged_partition_ddl(table, begin_range, end_range):
     sqlalchemy.DDL
     """
 
-    fmt_args = dict(
-        table=table,
-        begin=begin_range,
-        end=end_range,
-    )
+    fmt_args = dict(table=table, begin=begin_range, end=end_range,)
 
     return DDL(
-        'CREATE TABLE {table}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})'.format(
+        "CREATE TABLE {table}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
             **fmt_args
         )
     )
@@ -136,7 +135,7 @@ def get_partition_q(table):
         A text object representing the desired query.
     """
     q = text(
-            "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
+        "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
     ).bindparams(t=table)
     return q
 
@@ -160,8 +159,8 @@ def extract_partition_df(partition_df):
         r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) TO \('(?P<end_range>\d+)'\)$"
     )
 
-    result = partition_df['partition_expression'].str.extract(regex)
-    result[['begin_range', 'end_range']] = result[['begin_range', 'end_range']].apply(
-        to_numeric, errors='coerce'
-    )
+    result = partition_df["partition_expression"].str.extract(regex)
+    result[["begin_range", "end_range"]] = result[
+        ["begin_range", "end_range"]
+    ].apply(to_numeric, errors="coerce")
     return result

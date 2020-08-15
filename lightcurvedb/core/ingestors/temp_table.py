@@ -31,6 +31,20 @@ class LightcurveIDMapper(TemporaryQLPModel):
         return (self.tic_id, self.aperture, self.lightcurve_type), self.id
 
 
+class FileObservation(TemporaryQLPModel):
+    __tablename__ = 'fileobservations'
+    __table_args__ = {
+        'sqlite_autoincrement': True
+    }
+
+    id = Column(Integer, primary_key=True)
+    tic_id = Column(BigInteger, index=True, nullable=False)
+    camera = Column(Integer, index=True, nullable=False)
+    ccd = Column(Integer, index=True, nullable=False)
+    orbit_number = Column(Integer, index=True, nullable=False)
+    file_path = Column(String(255), unique=True, nullable=False)
+
+
 class TempObservation(TemporaryQLPModel):
     __tablename__ = 'temp_observations'
     tic_id = Column(BigInteger, primary_key=True)
