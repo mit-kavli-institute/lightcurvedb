@@ -114,6 +114,42 @@ def partition(listlike, n):
     return split_every(max_partition_length, listlike)
 
 
+def eq_partitions(iterable, n):
+    """
+    Create ``n`` partitions and distribute the iterable as equally as
+    possible between the partitions.
+
+    Parameters
+    ----------
+    iterable : iterable
+        Some iterable to partition into ``n`` lists
+    n : int
+        The number of partitions to create. Cannot be less than 1.
+        If this number is greater than the number of items within the
+        given iterable, then it is guaranteed that some lists will be
+        empty.
+
+    Raises
+    ------
+    ValueError
+        Raised if ``n`` is less than 1.
+
+    Returns
+    -------
+    tuple
+        Returns a tuple of lists. The tuple is length of ``n``. The
+        lists contained within will be variant in length.
+    """
+
+    partitions = tuple(list() for _ in range(n))
+
+    for i, item in enumerate(iterable):
+        partition = partitions[i % n]
+        partition.append(item)
+
+    return partitions
+
+
 def partition_by(listlike, n, key=lambda x: x):
     if n < 1:
         raise ValueError(
