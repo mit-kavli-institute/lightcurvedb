@@ -3,6 +3,7 @@ from __future__ import division, print_function
 import click
 from sys import exit
 import lightcurvedb.models as defined_models
+from sqlalchemy import text
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
 from lightcurvedb.cli.base import lcdbcli
 
@@ -26,6 +27,25 @@ def list_partitions(ctx, model):
     """
     List the partitions of MODEL
     """
+    with ctx.obj['dbconf'] as db:
+        # Get current partition of the table.
+        try:
+            target_model = getattr(defined_models, model)
+        except AttributeError:
+            click.echo('No known model {}'.format(model))
+            exit(1)
+
+        partitions = db.get_partitions_df(target_model)
+        click.echo(partitions)
+        click.echo(
+            'A total of {} partitions!'.format(
+                click.style(
+                    str(len(partitions)),
+                    bold=True
+                )
+            )
+        )
+
 
 @partitioning.command()
 @click.pass_context
@@ -46,7 +66,10 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize):
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
-        current_max = max(partitions['end_range'])
+        if len(partitions) > 0:
+            current_max = max(partitions['end_range'])
+        else:
+            current_max = 0
 
         if current_max is None:
             click.echo(
@@ -72,7 +95,10 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize):
             )
             current_max += blocksize
 
-        original_begin = max(partitions['end_range'])
+        try:
+            original_begin = max(partitions['end_range'])
+        except ValueError:
+            original_begin = 0
         click.echo(
             'Will create {} partitions spanning values from {} to {}'.format(
                 len(new_partition_models),
@@ -109,7 +135,55 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize):
             click.confirm('Do the following changes look okay?', abort=True)
             for partition in new_partition_models:
                 db.session.execute(partition)
-            db.commit()
+                db.commit()
+                click.echo(
+                    '\tMade {}'.format(partition)
+                )
             click.echo(
                 'Committed {} new partitions!'.format(len(new_partition_models))
             )
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument('model', type=str)
+@click.option('--pattern', '-p', type=str, default='.*')
+def delete_partitions(ctx, model, pattern):
+    with ctx.obj['dbconf'] as db:
+        # Get current partition of the table.
+        try:
+            target_model = getattr(defined_models, model)
+        except AttributeError:
+            click.echo('No known model {}'.format(model))
+            exit(1)
+    
+        partitions = db.get_partitions_df(target_model)
+        if len(partitions) > 0:
+            current_max = max(partitions['end_range'])
+        else:
+            current_max = 0
+
+        if current_max is None:
+            click.echo(
+                'Model {} has no partitions! Please define a partition rule in the PSQL shell'.format(model)
+            )
+            exit(1)
+        names = partitions['partition_name']
+        mask = names.str.contains(pattern)
+        names = names[mask]
+
+        click.echo(
+            names
+        )
+        click.echo(
+            'Will remove {} partitions!'.format(
+                len(names)
+            )
+        )
+        if not ctx.obj['dryrun']:
+            click.confirm('Does this look okay?', abort=True)
+            for name in names:
+                q = text('DROP TABLE {}'.format(name))
+                db.session.execute(q)
+                db.commit()
+                click.echo('\tDeleted {}'.format(name))

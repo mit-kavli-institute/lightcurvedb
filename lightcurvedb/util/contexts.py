@@ -6,6 +6,7 @@ CONTEXTS = []
 
 def REGISTER(regex):
     """Registers the given regex to the CONTEXT array"""
+    global CONTEXTS
     CONTEXTS.append(
         re.compile(regex)
     )

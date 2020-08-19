@@ -28,18 +28,18 @@ def cache(ctx):
 @cache.command()
 @click.pass_context
 @click.argument('LC_paths', nargs=-1, type=click.Path(file_okay=False, exists=True))
-def update_file_cache(ctx, LC_paths):
+def update_file_cache(ctx, lc_paths):
     needed_contexts = {'camera', 'ccd', 'orbit_number'}
     cache = IngestionCache()
-    for path in LC_paths:
+    for path in lc_paths:
         context = extract_pdo_path_context(path)
-        if all(x in context for x in needed_contexts):
+        if not all(x in context for x in needed_contexts):
             click.echo(
-                'Could not find needed contexts for path {}'.format(path)
+                    'Could not find needed contexts for path {} found: {}'.format(path, context)
             )
             continue
         h5s = glob(os.path.join(path, '*.h5'))
-        existing_files = cache.query(
+        existing_files = cache.session.query(
             FileObservation
         ).filter(
             FileObservation.camera == context['camera'],
@@ -53,7 +53,9 @@ def update_file_cache(ctx, LC_paths):
 
         to_add = []
         for h5 in h5s:
-            tic_id = int(h5.split('.')[0])
+            tic_id = int(
+                os.path.basename(h5).split('.')[0]
+            )
             key = (
                 tic_id,
                 int(context['camera']),
@@ -64,13 +66,11 @@ def update_file_cache(ctx, LC_paths):
             if not check:
                 check = FileObservation(
                     tic_id=tic_id,
-                    file_path=os.path.join(
-                        path, h5
-                    ),
+                    file_path=h5,
                     **context
                 )
                 to_add.append(check)
-        cache.add_all(to_add)
+        cache.session.add_all(to_add)
         click.echo(
             'Added {} new FileObservations'.format(
                 len(to_add)
@@ -114,12 +114,12 @@ def quality_flags(ctx, orbits, cameras, ccds):
                     'quality_flags': int
                 }
             )
-            df['camera'] = camera
-            df['ccd'] = ccd
+            df['cameras'] = camera
+            df['ccds'] = ccd
             qflag_dfs.append(df)
 
         qflags = pd.concat(qflag_dfs)
-        qflags = qflags.set_index(['cadences', 'camera', 'ccd'])
+        qflags = qflags.set_index(['cadences', 'cameras', 'ccds'])
         qflags = qflags[~qflags.index.duplicated(keep='last')]
         click.echo(
             click.style(

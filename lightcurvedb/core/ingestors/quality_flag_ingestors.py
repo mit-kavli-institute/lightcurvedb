@@ -86,4 +86,4 @@ def update_qflag(quality_flag_df, lp_df):
     lp_df['quality_flags'] = lp_df['quality_flags'].astype(int)
 
     lp_df.reset_index(inplace=True)
-    lp_df.set_index(['cadences'])
+    lp_df.set_index(['lightcurve_id', 'cadences'])

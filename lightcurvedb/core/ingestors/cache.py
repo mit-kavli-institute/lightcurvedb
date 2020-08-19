@@ -9,7 +9,7 @@ from sqlalchemy.sql.expression import bindparam
 
 from lightcurvedb.core.ingestors.temp_table import (
     TemporaryQLPModel, LightcurveIDMapper, TempObservation, IngestionJob,
-    TIC8Parameters, QualityFlags
+    TIC8Parameters, QualityFlags, FileObservation
 )
 from lightcurvedb.core.tic8 import TIC_Entries
 from lightcurvedb.models import Lightcurve
@@ -199,6 +199,33 @@ class IngestionCache(object):
             new_mappers.append(mapper)
         self.session.add_all(new_mappers)
 
+    def get_observations(self, tics):
+        q = self.session.query(
+            FileObservation.tic_id,
+            FileObservation.camera,
+            FileObservation.ccd,
+            FileObservation.orbit_number,
+            FileObservation.file_path
+        ).filter(
+            FileObservation.tic_id.in_(tics)
+        ).order_by(FileObservation.orbit_number)
+        return pd.read_sql(
+            q.statement, self.session.bind
+        )
+
+
+    def get_tic8_parameters(self, tics):
+        q = self.session.query(
+            TIC8Parameters.tic_id,
+            TIC8Parameters.right_ascension,
+            TIC8Parameters.declination,
+            TIC8Parameters.tmag
+        )
+        return pd.read_sql(
+            q.statement, self.session.bind,
+            index_col=['tic_id']
+        )
+
     def load_tic8_parameters(self, tic8):
         tics = set(self.job_tics)
         defined_tics = set(
@@ -228,14 +255,14 @@ class IngestionCache(object):
     def consolidate_quality_flags(self, quality_flag_df):
         q = self.session.query(
             QualityFlags.cadence.label('cadences'),
-            QualityFlags.camera,
-            QualityFlags.ccd,
+            QualityFlags.camera.label('cameras'),
+            QualityFlags.ccd.label('ccds'),
             QualityFlags.quality_flag.label('quality_flags')
         )
         existing_flags = pd.read_sql(
             q.statement,
             self.session.bind,
-            index_col=['cadences', 'camera', 'ccd']
+            index_col=['cadences', 'cameras', 'ccds']
         )
 
         to_update = quality_flag_df.loc[existing_flags.index]
@@ -246,8 +273,8 @@ class IngestionCache(object):
         update_q = QualityFlags.__table__.update().where(
             and_(
                 QualityFlags.cadence == bindparam('cadences'),
-                QualityFlags.camera == bindparam('camera'),
-                QualityFlags.ccd == bindparam('ccd')
+                QualityFlags.camera == bindparam('cameras'),
+                QualityFlags.ccd == bindparam('ccds')
             )
         ).values(
             {
@@ -258,8 +285,8 @@ class IngestionCache(object):
         insert_q = QualityFlags.__table__.insert().values(
             {
                 QualityFlags.cadence: bindparam('cadences'),
-                QualityFlags.camera: bindparam('camera'),
-                QualityFlags.ccd: bindparam('ccd'),
+                QualityFlags.camera: bindparam('cameras'),
+                QualityFlags.ccd: bindparam('ccds'),
                 QualityFlags.quality_flag: bindparam('quality_flags')
             }
         )

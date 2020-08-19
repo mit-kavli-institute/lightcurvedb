@@ -145,16 +145,13 @@ def lc_dict_to_df(dictionary, **constants):
 
     df = pd.DataFrame(
          {
-            'cadence': dictionary['cadences'],
+            'cadences': dictionary['cadences'],
             'barycentric_julian_date': dictionary['barycentric_julian_date'],
-            'value': dictionary['values'],
-            'error': dictionary['errors'],
-            'x_centroid': dictionary['x_centroids'],
-            'y_centroid': dictionary['y_centroids'],
-            'quality_flag': dictionary['quality_flags'],
-            'orbit_number': dictionary['orbit_number'],
-            'camera': dictionary['camera'],
-            'ccd': dictionary['ccd']
+            'values': dictionary['values'],
+            'errors': dictionary['errors'],
+            'x_centroids': dictionary['x_centroids'],
+            'y_centroids': dictionary['y_centroids'],
+            'quality_flags': dictionary['quality_flags'],
         }
     )
     for name, value in constants.items():

@@ -871,6 +871,18 @@ class DB(object):
         raw_df['end_range'] = ranged_df['end_range']
         return raw_df
 
+    def get_cadences_in_orbits(self, orbits):
+        """
+        Get the defined cadences observed in the given orbits.
+        """
+        q = (
+            self.query(models.Frame.cadence)
+                .join(models.Frame.orbit)
+                .filter(models.Orbit.orbit_number.in_(orbits))
+                .distinct(models.Frame.cadence)
+                .order_by(models.Frame.cadence.asc())
+        )
+        return [r for r, in q.all()]
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
     """

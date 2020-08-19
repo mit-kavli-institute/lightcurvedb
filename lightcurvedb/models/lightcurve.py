@@ -518,6 +518,37 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
     def y(cls):
         return cls.y_centroid
 
+    @classmethod
+    def get_as_df(cls, lightcurve_ids, db):
+        
+        q = db.query(
+            cls.lightcurve_id,
+            cls.cadence.label('cadences'),
+            cls.bjd.label('barycentric_julian_date'),
+            cls.data.label('values'),
+            cls.error.label('errors'),
+            cls.x.label('x_centroids'),
+            cls.y.label('y_centroids'),
+            cls.quality_flag.label('quality_flags')
+        )
+
+        if isinstance(lightcurve_ids, int):
+            # Just compare against scalar
+            q = q.filter(
+                cls.lightcurve_id == lightcurve_ids
+            )
+        else:
+            # Assume iterable
+            q = q.filter(
+                cls.lightcurve_id.in_(lightcurve_ids)
+            )
+
+        return pd.read_sql(
+            q.statement,
+            db.session.bind,
+            index_col=['lightcurve_id', 'cadences']
+        )
+
 
 # Setup initial lightpoint Partition
 event.listen(

@@ -89,7 +89,7 @@ class TimeCorrector:
 
 
     def mid_tjd(self, lightpoint_df):
-        index = [tuple(r) for r in lightpoint_df[['cadence', 'camera']].values]
+        index = [tuple(r) for r in lightpoint_df[['cadences', 'camera']].values]
         return self.mid_tjd_map.loc[
             index
         ]['mid_tjd'].values
