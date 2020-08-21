@@ -293,10 +293,16 @@ def ingest_h5(ctx, orbits, n_producers, n_consumers, cameras, ccds, orbit_dir, s
                 FileObservation.tic_id == tic
             ).order_by(FileObservation.orbit_number.asc())
 
-            if update_type in ('ignore', 'smart'):
-                seen_orbits = [r for r, in db.query(Observation.orbit).filter(
-                    Observation.tic_id == tic
-                ).all()]
+            if update_type != 'full':
+                seen_orbits = [
+                    r for r, in db.query(
+                        Orbit.orbit_number
+                    ).join(
+                        Observation.orbit  
+                    ).filter(
+                        Observation.tic_id == tic
+                    ).all()
+                ]
 
                 if len(seen_orbits) > 0:
                     file_q = file_q.filter(

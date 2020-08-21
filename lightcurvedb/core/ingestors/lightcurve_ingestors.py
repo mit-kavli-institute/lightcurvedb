@@ -144,7 +144,7 @@ def h5_to_kwargs(filepath, **constants):
 def lc_dict_to_df(dictionary, **constants):
 
     df = pd.DataFrame(
-         {
+         data={
             'cadences': dictionary['cadences'],
             'barycentric_julian_date': dictionary['barycentric_julian_date'],
             'values': dictionary['values'],
@@ -309,7 +309,7 @@ def kwargs_to_df(*kwargs, **constants):
                 k: kwarg[k] for k in keys
             }
         )
-        df['lightcurve_id'] = kwarg.get('id', None)
+        df['lightcurve_id'] = kwarg['id']
         df = df.set_index(['lightcurve_id', 'cadences'])
         dfs.append(df)
     main = pd.concat(dfs)

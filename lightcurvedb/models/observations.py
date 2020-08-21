@@ -33,12 +33,8 @@ class Observation(QLPModel):
             cls.ccd: bindparam('ccd'),
             cls.orbit_id: bindparam('orbit_id')
         })
-        q = q.on_conflict_do_update(
+        q = q.on_conflict_do_nothing(
             constraint='observations_pkey',
-            set_=dict(
-                camera=q.excluded.camera,
-                ccd=q.excluded.ccd
-            )
         )
 
         return q

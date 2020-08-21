@@ -13,16 +13,65 @@ from lightcurvedb.cli.types import CommaList
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import FileObservation
-from lightcurvedb.core.tic8 import TIC8_ENGINE
+from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
 
 TIC8Session = sessionmaker(autoflush=True)
 TIC8Session.configure(bind=TIC8_ENGINE)
+
+
+def catalog_df(*catalog_files):
+    dfs = []
+    for csv in catalog_files:
+        df = pd.read_csv(
+            csv,
+            delim_whitespace=True,
+            names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q' 'k']
+        )[['tic_id', 'ra', 'dec', 'tmag']]
+    else:
+        return None
+    dfs = pd.concat(dfs).set_index('tic_id')
+    dfs = dfs[~dfs.index.duplicated(keep='last')]
+    return dfs
+
 
 
 @lcdbcli.group()
 @click.pass_context
 def cache(ctx):
     pass
+
+
+@cache.command()
+@click.pass_context
+@click.argument('orbits', type=int, nargs=-1)
+@click.option('--force-tic8-query', is_flag=True)
+def load_stellar_param(ctx, orbit, force_tic8_query):
+    cache = IngestionCache()
+    tic8 = TIC8Session() if force_tic8_query else None
+    with ctx.obj['dbconf'] as db:
+        for orbit_number in orbits:
+            orbit = db.query(Orbit).filter(Orbit.orbit_number == orbit_number).one()
+            obs_tics = {r for r, in cache.session.query(FileObservation.tic_id).filter(FileObservation.orbit_number == orbit_number).distinct().all()}
+            if force_tic8_query:
+                q = tic8.query(
+                    TIC_Entries.c.id.label('tic_id'),
+                    TIC_Entries.c.ra,
+                    TIC_Entries.c.dec,
+                    TIC_Entries.c.tmag
+                ).filter(TIC_Entries.c.id.in_(obs_tics))
+
+                tic_params = pd.read_sql(
+                    q.statement,
+                    tic8.bind,
+                    index_col=['tic_id']
+                )
+            else:
+                run_dir = orbit.get_qlp_directory(suffixes=['ffi', 'run'])
+                catalogs = glob(os.path.join(run_dir, 'catalog*full.txt'))
+                tic_params = catalog_df(*catalogs)
+    pass
+
+
 
 
 @cache.command()
