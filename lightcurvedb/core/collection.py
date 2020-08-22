@@ -4,6 +4,20 @@ many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
 
 from sqlalchemy.orm.collections import Collection
+from collections import namedtuple
+
+RawLightpoint = namedtuple(
+    'RawLightpoint',
+    [
+        'cadence',
+        'barycentric_julian_date',
+        'data',
+        'error',
+        'x_centroid',
+        'y_centroid',
+        'quality_flag'
+    ]
+)
 
 
 class MassTrackedLightpoints(Collection):
@@ -22,7 +36,7 @@ class MassTrackedLightpoints(Collection):
         raise NotImplementedError
 
     def append(self, value):
-        raise NotImplementedError
+        pass
 
     def remove(self, value):
         raise NotImplementedError
@@ -33,7 +47,6 @@ class MassTrackedLightpoints(Collection):
         deleting all current related models and performing an insert.
         """
         pass
-
 
     @property
     def to_add(self):

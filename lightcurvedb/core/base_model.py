@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import datetime
 from sqlalchemy.ext.declarative import declared_attr, as_declarative, has_inherited_table
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import relationship
 from sqlalchemy import Column, String, DateTime, BigInteger, ForeignKey, Sequence
 from sqlalchemy.schema import UniqueConstraint
@@ -23,14 +24,22 @@ from psycopg2.extensions import register_adapter, AsIs
 @as_declarative()
 class QLPModel(object):
     """
-        Common SQLAlchemy base model for all QLP Models
+    Common SQLAlchemy base model for all QLP Models
     """
     __abstract__ = True
+
+    @classmethod
+    def insert(cls, *args, **kwargs):
+        """
+        Return a SQLAlchemy Core query object representing an insert statement
+        for this model.
+        """
+        return insert(cls.__table__, *args, **kwargs)
 
 
 class QLPDataProduct(QLPModel):
     """
-        Mixin for describing QLP Dataproducts such as frames, lightcurves, and BLS results
+    Mixin for describing QLP Dataproducts such as frames, lightcurves, and BLS results
     """
     __abstract__ = True
 
@@ -39,7 +48,7 @@ class QLPDataProduct(QLPModel):
 
 class QLPDataSubType(QLPModel):
     """
-        Mixin for describing QLP data subtypes such as lightcurve types.
+    Mixin for describing QLP data subtypes such as lightcurve types.
     """
     __abstract__ = True
 

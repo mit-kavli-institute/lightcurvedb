@@ -15,8 +15,9 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, lc_di
 from lightcurvedb.core.ingestors.quality_flag_ingestors import update_qflag
 from lightcurvedb.core.ingestors.temp_table import QualityFlags
 from lightcurvedb.util.logger import lcdb_logger as logger
+from lightcurvedb.util.iter import chunkify
 from lightcurvedb import db_from_config
-from sqlalchemy import Integer, text
+from sqlalchemy import Integer, text, bindparam
 from sqlalchemy.sql import select, func, cast
 from multiprocessing import Process
 
@@ -51,6 +52,70 @@ def remove_old_points_q(lightcurves):
         )
     )
     return q
+
+
+def lightpoint_upsert_q(
+        lightcurve_id='lightcurve_id',
+        cadence='cadence',
+        bjd='barycentric_julian_date',
+        data='data',
+        error='error',
+        x='x_centroid',
+        y='y_centroid',
+        quality_flag='quality_flag',
+        mode='overwrite'):
+    """
+    Create an insertion sql expression that takes a certain action
+    on collision with the primary key.
+
+    Parameters
+    ----------
+    mode: str
+        The name of the behavior to use. Currently accepted values are
+        'overwrite' and 'nothing'.
+    Raises
+    ------
+    ValueError
+        Raised if given an unknown mode.
+    """
+
+    mapping = {
+        getattr(Lightpoint, 'lightcurve_id'): bindparam(lightcurve_id),
+        getattr(Lightpoint, 'cadence'): bindparam(cadence),
+        getattr(Lightpoint, 'bjd'): bindparam(bjd),
+        getattr(Lightpoint, 'data'): bindparam(data),
+        getattr(Lightpoint, 'error'): bindparam(error),
+        getattr(Lightpoint, 'x'): bindparam(x),
+        getattr(Lightpoint, 'y'): bindparam(y),
+        getattr(Lightpoint, 'quality_flag'): bindparam(quality_flag)
+    }
+
+    q = Lightpoint.insert().values(mapping)
+    constraint = 'lightpoints_pkey'
+
+    if mode == 'overwrite':
+        q = q.on_conflict_do_update(
+            constraint=constraint,
+            set_=dict(
+                barycentric_julian_date=q.excluded.barycentric_julian_date,
+                data=q.excluded.data,
+                error=q.excluded.error,
+                x_centroid=q.excluded.x_centroid,
+                y_centroid=q.excluded.y_centroid,
+                quality_flag=q.excluded.quality_flag
+            )
+        )
+    elif mode == 'nothing':
+        q = q.on_conflict_do_nothing(
+            constraint=constraint
+        )
+    elif mode is None:
+        return q
+    else:
+        raise ValueError('Unknown mode {}'.format(mode))
+
+    return q
+
 
 class LightpointProcessor(Process):
     def log(self, msg, level='debug'):
@@ -95,7 +160,6 @@ class LightpointInserter(LightpointProcessor):
                 Lightpoint.lightcurve_id.in_(lightcurve_ids)
             ).group_by(Lightpoint.lightcurve_id)
 
-            ids_to_replace = set()
             colliding_ids = []
             colliding_lps = []
 
@@ -132,12 +196,10 @@ class LightpointInserter(LightpointProcessor):
     @property
     def cache_threshold(self):
         ids = {lc.id for lc in self.lc_cache}
-        #lp_length = len(self.lp)
 
         if len(ids) >= 50:
             return True
         return False
-
 
     def flush(self):
         """
@@ -160,13 +222,12 @@ class LightpointInserter(LightpointProcessor):
             inplace=True
         )
 
-        self.lp_cache[LP_COLS].to_sql(
-            'lightpoints',
-            db.session.bind,
-            if_exists='append',
-            method='multi',
-            index=False
-        )
+        lp = self.lp_cache[LP_COLS]
+        q = lightpoint_upsert_q(mode='update')
+        for chunk in chunkify(lp.to_dict('records'), 10000):
+            db.execute(q, chunk)
+        
+
         q = Observation.upsert_dicts()
         db.session.execute(
             q,
@@ -218,8 +279,8 @@ class LightpointInserter(LightpointProcessor):
             self.lp_cache = pd.concat((self.lp_cache, lp))
 
         # Resolve and merge known lightcurves with potentially new data...
-        if len(ids_to_update) > 0:
-            self.resolve_lcs(ids_to_update)
+        # if len(ids_to_update) > 0:
+        #    self.resolve_lcs(ids_to_update)
 
         self.flush()
 

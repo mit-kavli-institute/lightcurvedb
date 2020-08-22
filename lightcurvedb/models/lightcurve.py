@@ -7,10 +7,16 @@ and directly related models
 
 import numpy as np
 import pandas as pd
+
+from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
+                                          QLPModel)
+from lightcurvedb.core.partitioning import (Partitionable,
+                                            emit_ranged_partition_ddl)
+from lightcurvedb.util.merge import merge_arrays
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import (BigInteger, Column, ForeignKey, Integer, Sequence,
-                        SmallInteger, Index, cast, inspect, join, select,
-                        DDL, event)
+from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
+                        Sequence, SmallInteger, cast, event, inspect, join,
+                        select)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -18,11 +24,6 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import bindparam
-
-from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
-                                          QLPModel)
-from lightcurvedb.util.merge import merge_arrays
-from lightcurvedb.core.partitioning import Partitionable, emit_ranged_partition_ddl
 
 
 LIGHTPOINT_PARTITION_RANGE = 10**6
@@ -95,9 +96,6 @@ class Lightcurve(QLPDataProduct):
         The TIC identifier for this Lightcurve. While the TIC 8 relation
         cannot be directly mapped to TIC 8 (you cannot build foreign keys
         across databases) you can assume this identifier is unique in TIC 8.
-    cadence_type : int
-        Deprecated. Lightcurves will have mixed cadences starting with the
-        reduction of Sector 27 (End of July 2020).
     lightcurve_type_id : str
         The lightcurve type associated with this lightcurve. It is not
         advisable to modify this attribute directly as this is a Foreign
@@ -215,17 +213,15 @@ class Lightcurve(QLPDataProduct):
     )
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
-    
+
     def __len__(self):
         """
         Returns
         -------
         int
-            The length of the lightcurve. Since cadences are the base
-            reference for all time-series fields, specifically the length
-            of the cadences is returned.
+            The length of the lightcurve.
         """
-        return len(self._cadences)
+        return len(self.lightpoints)
 
     def __repr__(self):
         return '<Lightcurve {} {} {}>'.format(
@@ -274,123 +270,7 @@ class Lightcurve(QLPDataProduct):
         """An alias for lightcurve_type"""
         return self.lightcurve_type
 
-    @property
-    def to_df(self):
-        """
-        Convert this lightcurve into a pandas dataframe
-        Returns
-        -------
-        pd.DataFrame
-        """
-        df = pd.DataFrame(
-            index=self.cadences,
-            data={
-                'barycentric_julian_date': self._bjd,
-                'values': self._values,
-                'errors': self._errors,
-                'x_centroids': self.x_centroids,
-                'y_centroids': self.y_centroids,
-                'quality_flags': self._quality_flags
-                },
-        )
-        return df
-
-    @property
-    def to_dict(self):
-        """
-        Represent this lightcurve as a dictionary
-        Returns
-        -------
-        dict
-        """
-        return dict(
-            id=self.id,
-            tic_id=self.tic_id,
-            aperture_id=self.aperture_id,
-            lightcurve_type_id=self.lightcurve_type_id,
-            cadences=self.cadences,
-            barycentric_julian_date=self.bjd,
-            values=self.values,
-            errors=self.errors,
-            x_centroids=self.x_centroids,
-            y_centroids=self.y_centroids,
-            quality_flags=self.quality_flags
-        )
-
-    def merge_df(self, *dataframes):
-        """
-        Merge the current lightcurve with the given Lightpoint dataframes.
-        This merge will handle all cadence orderings and duplicate entries
-        """
-        frames = [self.to_df]
-        frames += dataframes
-
-        current_data = pd.concat(frames)
-
-        # Remove duplicates
-        current_data = current_data[
-            ~current_data.index.duplicated(keep='last')
-        ]
-        current_data.sort_index(inplace=True)
-
-        self.cadences = current_data.index
-        self.bjd = current_data['barycentric_julian_date']
-        self.values = current_data['values']
-        self.errors = current_data['errors']
-        self.x_centroids = current_data['x_centroids']
-        self.y_centroids = current_data['y_centroids']
-        self.quality_flags = current_data['quality_flags']
-
-        return self
-
-    def merge_np(
-            self,
-            cadences,
-            bjd,
-            values,
-            errors,
-            x_centroids,
-            y_centroids,
-            quality_flags):
-
-        raw_cadences = np.concatenate((self.cadences, cadences))
-        raw_bjd = np.concatenate((self.bjd, bjd))
-        raw_values = np.concatenate((self.values, values))
-        raw_errors = np.concatenate((self.errors, errors))
-        raw_x = np.concatenate((self.x_centroids, x_centroids))
-        raw_y = np.concatenate((self.y_centroids, y_centroids))
-        raw_qflag = np.concatenate((self.quality_flags, quality_flags))
-
-        # Determine sort and diff of cadences
-        merged_cadences, merged_data = merge_arrays(
-            raw_cadences,
-            bjd=raw_bjd,
-            values=raw_values,
-            errors=raw_errors,
-            x_centroids=raw_x,
-            y_centroids=raw_y,
-            quality_flags=raw_qflag
-        )
-
-        self.cadences = merged_cadences
-        self.bjd = merged_data['bjd']
-        self.values = merged_data['values']
-        self.errors = merged_data['errors']
-        self.x_centroids = merged_data['x_centroids']
-        self.y_centroids = merged_data['y_centroids']
-        self.quality_flags = merged_data['quality_flags']
-
-        return self
-
-    def merge(self, other_lc):
-        if self.id != other_lc.id:
-            raise ValueError(
-                '{} does not have the same ID as {}, cannot merge'.format(
-                    self,
-                    other_lc
-                )
-            )
-        self.merge_df(other_lc.to_df)
+    # Define lightpoint hybrid properties
 
     @hybrid_property
     def cadences(self):
@@ -426,6 +306,10 @@ class Lightcurve(QLPDataProduct):
 
 
 class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
+    """
+    This SQLAlchemy model is used to represent individual datapoints of
+    a ``Lightcurve``.
+    """
     __tablename__ = 'lightpoints'
     __abstract__ = False
 
@@ -520,7 +404,26 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
 
     @classmethod
     def get_as_df(cls, lightcurve_ids, db):
-        
+        """
+        Helper method to quickly query and return the requested
+        lightcurves as a dataframe of lightpoints.
+
+        Parameters
+        ----------
+        lightcurve_ids : int or iter of ints
+            The ``Lightcurve.id`` to query against. If scalar is passed
+            an SQL equivalency check is emitted otherwise if an
+            iterable is passed an ``IN`` statement is emitted. Keep this
+            in mind when your query might pass through partition ranges.
+
+        db : lightcurvedb.DB
+            The database to manage the query.
+        Returns
+        -------
+        pd.DataFrame
+            A pandas dataframe representing the lightcurves. This dataframe
+            is multi-indexed by ``lightcurve_id`` and then ``cadences``.
+        """
         q = db.query(
             cls.lightcurve_id,
             cls.cadence.label('cadences'),
@@ -547,6 +450,20 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
             q.statement,
             db.session.bind,
             index_col=['lightcurve_id', 'cadences']
+        )
+
+    # Conversion
+    @property
+    def to_dict(self):
+        return dict(
+            lightcurve_id=self.lightcurve_id,
+            cadence=self.cadence,
+            barycentric_julian_date=self.bjd,
+            data=self.data,
+            error=self.error,
+            x_centroid=self.x,
+            y_centroid=self.y,
+            quality_flag=self.quality_flag
         )
 
 

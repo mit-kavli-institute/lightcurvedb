@@ -48,69 +48,41 @@ class Manager(object):
     and update lightcurves."""
     __metaclass__ = ABCMeta
     __managed_class__ = None
-    __PK_tuple__ = None
+    __uniq_tuple__ = None
 
-    __model_registry__ = dict()  # Will be keyed by __PK_tuple__
-    __unique_col_registery__ = defaultdict(dict)  # Keyed by unique_constraints
+    def __init__(self, initial_models):
+        self._interior_data = dict()
 
-    __resolvers__ = set()  # A set of sets
+    def __get_key__(self, model_inst):
+        key = tuple(
+            getattr(model_inst, col) for col in self.__uniq_tuple__
+        )
+        return key
 
-    __new_ids__ = set()
-    __existing_ids__ = set()
+    def get_model(self, val, *uniq_vals):
+        key = tuple([val].extend(uniq_vals))
+        return self._interior_data[key]
 
-    def __init__(self):
-        # Use the defined managed class to determine identifiers
-        pk_cols, self.__PK_tuple__ = self.__get_pk_namedtuple__()
+    def add_model(self, model_inst):
+        """
+        Add the model to be tracked by the Manager
+        """
+        _uniq_key = self.__get_key__(model_inst)
+        if _uniq_key in self._interior_data:
+            raise DuplicateEntryException()
+        self._interior_data[_uniq_key] = model_inst
 
-        self.__resolvers__.add(set(c.name for c in pk_cols))
-
-        # Create additional resolution rules to allow deduction of a singular
-        # object instance
-        for cols, constraint_tuple in self.__yield_unique_namedtuples__():
-            raise NotImplementedError
-
-    def __get_pk_namedtuple__(self):
-        Model = self.__managed_class__
-        inspector = inspect(Model)
-
-        pk_constraint = inspector.primary_key
-        return pk_constraint, namedtuple('PrimaryKey', pk_constraint)
-
-    def __yield_unique_namedtuples__(self):
-        Model = self.__managed_class__
-        constraints = Model.__table__
-
-        for constraint in constraints:
-            if isinstance(constraint, UniqueConstraint):
-                cols = constraint.columns
-                yield cols, namedtuple(constraint.name, cols)
-
-    def __attempt_to_resolve_id__(self, **columns):
-        # Return the first set of identifiers that match a resolution rule
-        raise NotImplementedError
-
-    def __reduce_items__(self, *identifier_values):
+    def add_model_kw(self, **kwargs):
         pass
 
-    @abstractmethod
-    def get_id(self, **identifiers):
-        pass
 
-    @abstractmethod
-    def get_item_by_id(self, id_):
-        pass
+def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
+    class Managed(Manager):
+        __managed_class__ = sqlalchemy_model
+        __uniq_tuple__ = tuple([uniq_col].extend(additional_uniq_cols))
 
-    @abstractmethod
-    def create_id(self, **identifiers):
-        pass
+    return Managed
 
-    @abstractmethod
-    def upsert_data(self, **data):
-        pass
-
-    @abstractmethod
-    def remove_data(self, **identifiers):
-        pass
 
 
 class LightcurveManager(object):
@@ -231,37 +203,6 @@ class LightcurveManager(object):
             An iterator over all the lightcurves within this manager.
         """
         return iter(self.id_map.values())
-
-    def __validate__(self, tic_id, aperture, lightcurve_type, **data):
-        lengths = list(map(
-            len,
-            (data[attr] for attr in self.array_attrs if attr in data)
-        ))
-        length_0 = lengths[0]
-        if not all(length == length_0 for length in lengths[1:]):
-            raise IncongruentLightcurve(
-                'Lightcurve is being improperly modified with array lengths {}'.format(lengths)
-            )
-
-        if lightcurve_type in self.DEFAULT_RESOLUTION:
-            sister_type = self.DEFAULT_RESOLUTION[lightcurve_type]
-            check = self[tic_id][aperture]
-            if not isinstance(check, Lightcurve):
-                check = check[sister_type]
-
-            sister_item = check.to_df
-
-            if 'errors' not in data:
-                data['errors'] = np.empty(len(data['cadences']))
-                data['errors'][:] = np.nan
-            if 'x_centroids' not in data:
-                data['x_centroids'] = sister_item.loc[data['cadences']].x_centroids.values
-            if 'y_centroids' not in data:
-                data['y_centroids'] = sister_item.loc[data['cadences']].y_centroids.values
-            if 'quality_flags' not in data:
-                data['quality_flags'] = np.zeros(len(data['cadences']))
-
-        return data
 
     @classmethod
     def from_q(cls, q):
