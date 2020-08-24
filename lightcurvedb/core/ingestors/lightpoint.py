@@ -274,9 +274,9 @@ class LightpointInserter(LightpointProcessor):
         )
 
         lp = self.lp_cache[LP_COLS]
-        q = lightpoint_upsert_q(mode='update')
+        q = lightpoint_upsert_q(mode='overwrite')
         for chunk in chunkify(lp.to_dict('records'), 10000):
-            db.execute(q, chunk)
+            db.session.execute(q, chunk)
         
         q = Observation.upsert_dicts()
         obs = pd.DataFrame(self.observation_cache)
@@ -327,7 +327,7 @@ class LightpointInserter(LightpointProcessor):
 
         lp.set_index(['lightcurve_id', 'cadences'], inplace=True)
         # Resolve and merge known lightcurves with current data
-        self.resolve_lcs(ids_to_update)
+        #self.resolve_lcs(ids_to_update)
 
     def insert(self, job):
         observations, tmp_id_mapper, lp = job
