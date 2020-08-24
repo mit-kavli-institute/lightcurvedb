@@ -26,7 +26,8 @@ def catalog_df(*catalog_files):
             csv,
             delim_whitespace=True,
             names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q' 'k']
-        )[['tic_id', 'ra', 'dec', 'tmag']]
+        )
+        dfs.append(df)
     else:
         return None
     dfs = pd.concat(dfs).set_index('tic_id')
@@ -69,9 +70,19 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 run_dir = orbit.get_qlp_directory(suffixes=['ffi', 'run'])
                 catalogs = glob(os.path.join(run_dir, 'catalog*full.txt'))
                 tic_params = catalog_df(*catalogs)
-    pass
 
+    to_update = set(cache.session.query(TIC8Parameters.tic_id).distinct()) - set(tic_params['tic_id'].index.values)
+    to_update = tic_params.loc[to_update]
 
+    to_update.to_sql(
+        TIC8Paramters.__tablename__,
+        cache.session.bind,
+        if_exists='append',
+        method='multi',
+    )
+    cache.commit()
+    click.echo('Added {} definitions'.format(len(to_update)))
+    click.echo('Done')
 
 
 @cache.command()
