@@ -271,9 +271,7 @@ class IngestionCache(object):
             to_update = []
 
         try:
-            to_insert = quality_flag_df.loc[
-                ~quality_flag_df.index.isin(to_update.index)
-            ]
+            to_insert = quality_flag_df
         except KeyError:
             to_insert = []
 
