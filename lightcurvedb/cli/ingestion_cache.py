@@ -45,7 +45,7 @@ def cache(ctx):
 @click.pass_context
 @click.argument('orbits', type=int, nargs=-1)
 @click.option('--force-tic8-query', is_flag=True)
-def load_stellar_param(ctx, orbit, force_tic8_query):
+def load_stellar_param(ctx, orbits, force_tic8_query):
     cache = IngestionCache()
     tic8 = TIC8Session() if force_tic8_query else None
     with ctx.obj['dbconf'] as db:
