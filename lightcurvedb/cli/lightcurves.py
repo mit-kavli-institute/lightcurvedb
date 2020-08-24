@@ -290,7 +290,8 @@ def ingest_h5(ctx, orbits, n_producers, n_consumers, cameras, ccds, orbit_dir, s
                 FileObservation.ccd,
                 FileObservation.file_path
             ).filter(
-                FileObservation.tic_id == tic
+                FileObservation.tic_id == tic,
+                FileObservation.orbit_number.in_(orbits)
             ).order_by(FileObservation.orbit_number.asc())
 
             if update_type != 'full':
