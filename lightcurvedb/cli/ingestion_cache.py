@@ -12,7 +12,7 @@ from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.temp_table import FileObservation
+from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
 
 TIC8Session = sessionmaker(autoflush=True)
@@ -71,7 +71,7 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 catalogs = glob(os.path.join(run_dir, 'catalog*full.txt'))
                 tic_params = catalog_df(*catalogs)
 
-    to_update = set(cache.session.query(TIC8Parameters.tic_id).distinct()) - set(tic_params['tic_id'].index.values)
+    to_update = set(cache.session.query(TIC8Parameters.tic_id).distinct()) - set(tic_params.index.values)
     to_update = tic_params.loc[to_update]
 
     to_update.to_sql(
