@@ -2,9 +2,9 @@
 This module describes custom collection objects for handling
 many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
-
 from sqlalchemy.orm.collections import Collection
 from collections import namedtuple
+
 
 RawLightpoint = namedtuple(
     'RawLightpoint',
@@ -19,43 +19,61 @@ RawLightpoint = namedtuple(
     ]
 )
 
-
-class MassTrackedLightpoints(Collection):
-    """
-    Track the lightpoints using the bisect module to
-    maintain an ordering.
-    """
-
-    __emulates__ = list
-
-    def __init__(self):
-        self._to_add = set()
-        self._to_update = set()
-        self._to_remove = set()
-
-        raise NotImplementedError
-
-    def append(self, value):
-        pass
-
-    def remove(self, value):
-        raise NotImplementedError
-
-    def bulk_replace(self, values, existing_adaptor, new_adaptor, initiator=None):
+def TrackedModel(Model):
+    class MassTrackedLightpoints(Collection):
         """
-        Bulk replaces the collection. For the database this means
-        deleting all current related models and performing an insert.
+        Track the lightpoints using the bisect module to
+        maintain an ordering.
         """
-        pass
 
-    @property
-    def to_add(self):
-        return self._to_add
+        __emulates__ = list
 
-    @property
-    def to_update(self):
-        return self._to_update
+        def __init__(self):
+            self._to_add = set()
+            self._to_update = set()
+            self._to_remove = set()
+            raise NotImplementedError
 
-    @property
-    def to_remove(self):
-        return self._to_remove
+        def __interpret__(self, value):
+            # Attempt to determine what the given value is and load it into the
+            # collection
+            if isinstance(value, Model):
+                # Pretty tautological
+                instance = value
+            elif isinstance(value, tuple):
+                # Attempt to expand tuple
+                instance = Model(
+                    *value
+                )
+            elif isinstance(value, dict):
+                instance = Model(**value)
+            else:
+                raise ValueError(
+                    'Could not transform {} into {}'.format(value, Model)
+                )
+            return instance
+
+        def append(self, value):
+            instance = value
+
+        def remove(self, value):
+            raise NotImplementedError
+
+        def bulk_replace(self, values, existing_adaptor, new_adaptor, initiator=None):
+            """
+            Bulk replaces the collection. For the database this means
+            deleting all current related models and performing an insert.
+            """
+            pass
+
+        @property
+        def to_add(self):
+            return self._to_add
+
+        @property
+        def to_update(self):
+            return self._to_update
+
+        @property
+        def to_remove(self):
+            return self._to_remove
