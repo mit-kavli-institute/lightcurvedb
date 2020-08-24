@@ -84,7 +84,7 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
         if check:
             continue
         param = TIC8Parameters(**kw)
-        params.add(param)
+        params.append(param)
 
     click.echo('Updating {} entries'.format(len(params)))
     cache.session.add_all(params)
