@@ -83,7 +83,7 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
         if kw['tic_id'] not in observed_tics:
             continue
         param = TIC8Parameters(**kw)
-        cache.session.merge(param, load=False)
+        cache.session.merge(param)
 
     click.echo('Updating {} entries'.format(len(params)))
 
