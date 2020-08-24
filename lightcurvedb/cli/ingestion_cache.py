@@ -74,7 +74,8 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
     click.echo(tic_params)
 
     click.echo('Determining what needs to be updated in cache')
-    to_update = set(cache.session.query(TIC8Parameters.tic_id).distinct()) - set(tic_params.index.values)
+    current_tics {r for r, in cache.session.query(TIC8Parameters.tic_id).distinct())}
+    to_update = current_tics - set(tic_params.index.values)
     to_update = tic_params.loc[to_update]
     click.echo('Updating {} entries'.format(len(to_update)))
     to_update.to_sql(
