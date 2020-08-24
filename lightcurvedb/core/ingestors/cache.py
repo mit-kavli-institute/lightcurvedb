@@ -265,10 +265,17 @@ class IngestionCache(object):
             index_col=['cadences', 'cameras', 'ccds']
         )
 
-        to_update = quality_flag_df.loc[existing_flags.index]
-        to_insert = quality_flag_df.loc[
-            ~quality_flag_df.index.isin(to_update.index)
-        ]
+        try:
+            to_update = quality_flag_df.loc[existing_flags.index]
+        except KeyError:
+            to_update = []
+
+        try:
+            to_insert = quality_flag_df.loc[
+                ~quality_flag_df.index.isin(to_update.index)
+            ]
+        except KeyError:
+            to_insert = []
 
         update_q = QualityFlags.__table__.update().where(
             and_(
