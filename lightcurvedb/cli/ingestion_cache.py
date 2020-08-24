@@ -83,13 +83,15 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
         if kw['tic_id'] not in observed_tics:
             continue
         param = TIC8Parameters(**kw)
-        params.append(param)
+        cache.session.merge(param, load=False)
 
     click.echo('Updating {} entries'.format(len(params)))
-    cache.session.add_all(params)
 
     if not ctx.obj['dryrun']:
         cache.commit()
+    else:
+        cache.session.rollback()
+
     click.echo('Added {} definitions'.format(len(params)))
     click.echo('Done')
 
