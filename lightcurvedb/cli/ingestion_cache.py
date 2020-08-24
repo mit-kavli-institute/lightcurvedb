@@ -25,12 +25,10 @@ def catalog_df(*catalog_files):
         df = pd.read_csv(
             csv,
             delim_whitespace=True,
-            names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q' 'k']
+            names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q', 'k']
         )
         dfs.append(df)
-    else:
-        return None
-    dfs = pd.concat(dfs).set_index('tic_id')
+    dfs = pd.concat(dfs).set_index('tic_id')[['ra', 'dec', 'tmag']]
     dfs = dfs[~dfs.index.duplicated(keep='last')]
     return dfs
 
@@ -68,19 +66,25 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 )
             else:
                 run_dir = orbit.get_qlp_directory(suffixes=['ffi', 'run'])
+                click.echo('Looking for catalogs in {}'.format(run_dir))
                 catalogs = glob(os.path.join(run_dir, 'catalog*full.txt'))
                 tic_params = catalog_df(*catalogs)
 
+    click.echo('Processing')
+    click.echo(tic_params)
+
+    click.echo('Determining what needs to be updated in cache')
     to_update = set(cache.session.query(TIC8Parameters.tic_id).distinct()) - set(tic_params.index.values)
     to_update = tic_params.loc[to_update]
-
+    click.echo('Updating {} entries'.format(len(to_update)))
     to_update.to_sql(
         TIC8Paramters.__tablename__,
         cache.session.bind,
         if_exists='append',
         method='multi',
     )
-    cache.commit()
+    if not ctx.obj['dryrun']:
+        cache.commit()
     click.echo('Added {} definitions'.format(len(to_update)))
     click.echo('Done')
 
