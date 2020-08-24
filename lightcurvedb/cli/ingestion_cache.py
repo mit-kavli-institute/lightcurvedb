@@ -25,10 +25,10 @@ def catalog_df(*catalog_files):
         df = pd.read_csv(
             csv,
             delim_whitespace=True,
-            names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q', 'k']
+            names=['tic_id', 'right_ascension', 'declination', 'tmag', 'x', 'y', 'z', 'q', 'k']
         )
         dfs.append(df)
-    dfs = pd.concat(dfs).set_index('tic_id')[['ra', 'dec', 'tmag']]
+    dfs = pd.concat(dfs).set_index('tic_id')[['right_ascension', 'declination', 'tmag']]
     dfs = dfs[~dfs.index.duplicated(keep='last')]
     return dfs
 
@@ -47,10 +47,13 @@ def cache(ctx):
 def load_stellar_param(ctx, orbits, force_tic8_query):
     cache = IngestionCache()
     tic8 = TIC8Session() if force_tic8_query else None
+    observed_tics = set()
     with ctx.obj['dbconf'] as db:
         for orbit_number in orbits:
             orbit = db.query(Orbit).filter(Orbit.orbit_number == orbit_number).one()
             obs_tics = {r for r, in cache.session.query(FileObservation.tic_id).filter(FileObservation.orbit_number == orbit_number).distinct().all()}
+            for tic in obs_tics:
+                observed_tics.add(tic)
             if force_tic8_query:
                 q = tic8.query(
                     TIC_Entries.c.id.label('tic_id'),
@@ -74,19 +77,20 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
     click.echo(tic_params)
 
     click.echo('Determining what needs to be updated in cache')
-    current_tics = {r for r, in cache.session.query(TIC8Parameters.tic_id).distinct()}
-    to_update = current_tics - set(tic_params.index.values)
-    to_update = tic_params.loc[to_update]
-    click.echo('Updating {} entries'.format(len(to_update)))
-    to_update.to_sql(
-        TIC8Paramters.__tablename__,
-        cache.session.bind,
-        if_exists='append',
-        method='multi',
-    )
+    params = []
+    tic_params.reset_index(inplace=True)
+    for kw in tic_params.to_dict('records'):
+        if kw['tic_id'] not in observed_tics:
+            continue
+        param = TIC8Parameters(**kw)
+        params.append(param)
+
+    click.echo('Updating {} entries'.format(len(params)))
+    cache.session.add_all(params)
+
     if not ctx.obj['dryrun']:
         cache.commit()
-    click.echo('Added {} definitions'.format(len(to_update)))
+    click.echo('Added {} definitions'.format(len(params)))
     click.echo('Done')
 
 
