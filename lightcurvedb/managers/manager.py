@@ -24,6 +24,22 @@ class Manager(object):
 
     def __init__(self, initial_models):
         self._interior_data = dict()
+        self._mappers = {
+            k: set() for k in self.__uniq_tuple__
+        }
+
+    def __repr__(self):
+        return '<{} Manager: {} items>'.format(
+            self.__managed_class__,
+            len(self._interior_data)
+        )
+
+    def __getitem__(self, key):
+        """
+        Filter the management base down. If a new filter would
+        have all the columns have a single mapped instance. Return
+        that instance.
+        """
 
     def __get_key__(self, model_inst):
         key = tuple(
@@ -31,11 +47,27 @@ class Manager(object):
         )
         return key
 
+    def __add_key__(self, key, model_inst):
+        self._interior_data[key] = model_inst
+        for col in self.__uniq_tuple__:
+            mapper = self._mappers[col]
+            mapper.add(getattr(model_inst, col))
+
     def __attempt_to_find_key__(self, **kwargs):
         """
         Attempt to create the unique tuble from the passed kwargs.
         """
-        return self.__get_key__(kwargs)
+        key = []
+        for col in self.__uniq_tuple__:
+            if not col in kwargs:
+                raise AmbiguousIdentifierDeduction(
+                    'Unable to find attribute {} in {}'.format(col, kwargs)
+                )
+            key.append(kwargs[col])
+        return tuple(key)
+
+    def __reduce__(self, col):
+        raise NotImplementedError
 
     def get_model(self, val, *uniq_vals):
         key = tuple([val].extend(uniq_vals))
@@ -48,10 +80,13 @@ class Manager(object):
         _uniq_key = self.__get_key__(model_inst)
         if _uniq_key in self._interior_data:
             raise DuplicateEntryException()
-        self._interior_data[_uniq_key] = model_inst
+        self.__add_key__(_uniq_key, model_inst)
 
     def add_model_kw(self, **kwargs):
-        pass
+        self.__attempt_to_find_key__(**kwargs)
+        # Model can be safely 'inserted' into the manager
+        instance = self.__managed_class__(**kwargs)
+        self.add_model(instance)
 
 
 def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
