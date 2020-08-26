@@ -42,6 +42,3 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
         assert np.isnan(lc.bjd[0])
     else:
         assert lc.bjd[0] == lp.bjd
-
-
-t
