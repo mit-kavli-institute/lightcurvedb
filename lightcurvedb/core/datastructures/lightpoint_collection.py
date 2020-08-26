@@ -30,3 +30,8 @@ class MassTrackedLightpoints(Collection):
             cadence = lightpoint['cadence']
         elif isinstance(lightpoint, Lightpoint):
             cadence = lightpoint.cadence
+        else:
+            raise ValueError(
+                "Could not append type {}".format(type(lightpoint))
+            )
+        raise NotImplementedError

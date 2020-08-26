@@ -1,5 +1,6 @@
 from hypothesis import strategies as st, given, note, example, assume
-from lightcurvedb.models.lightcurve import Lightpoint, LIGHTPOINT_PARTITION_RANGE
+from lightcurvedb.models import Lightpoint
+from lightcurvedb.models.lightpoint import LIGHTPOINT_PARTITION_RANGE
 from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q
 from math import ceil
 import traceback

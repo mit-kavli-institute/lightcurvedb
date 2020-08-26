@@ -1,4 +1,4 @@
-from lightcurvedb.models.lightcurve import Lightpoint
+from lightcurvedb.models import Lightpoint
 from lightcurvedb.core.ingestors.lightpoint import lightpoint_upsert_q
 from hypothesis import strategies as st, given, settings
 from .fixtures import db_conn, clear_all

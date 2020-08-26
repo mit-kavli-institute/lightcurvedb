@@ -1,7 +1,8 @@
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
-from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence)
+import pandas as pd
+from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -30,6 +31,11 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
             ondelete='CASCADE'
         ),
         primary_key=True,
+        index=Index(
+            'ix_lightpoints_lightcurve_id',
+            'lightpoint_id',
+            postgresql_using='brin'
+        ),
         nullable=False
     )
 

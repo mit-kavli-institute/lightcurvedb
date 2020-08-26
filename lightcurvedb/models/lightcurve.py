@@ -26,8 +26,6 @@ from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import bindparam
 
 
-
-
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
         return AsIs(type_instance)
