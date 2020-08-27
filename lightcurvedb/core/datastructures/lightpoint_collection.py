@@ -110,3 +110,67 @@ class MassTrackedLightpoints(object):
     def quality_flags(self):
         return [lp.quality_flag for lp in self]
 
+    # Begin setters
+    # Don't support setting of cadences this way
+    def __scalar_or_array__assign__(self, col, values):
+        """
+        Assign the values to the specified column. If the values are a
+        listlike attempt to assign via one-to-one assignment. If a scalar,
+        set all values to the given value.
+
+        Parameters
+        ----------
+        col : str
+            The column of values to assign.
+        values : scalar or list
+            The value(s) to assign to the specified ``col``.
+
+        Raises
+        ------
+        IndexError:
+            Raised if ``len(to_assign) != target_column``.
+        """
+        if isinstance(values, list):
+            if not len(values) == len(self):
+                raise IndexError(
+                    'Was given assigments of length {} but collection only has {}'.format(len(values), len(self))
+                )
+            for value, lp in zip(values, self):
+                setattr(lp, col, value)
+        else:
+            # Given a scalar
+            for lp in self:
+                setattr(lp, col, value)
+
+    @barycentric_julian_date.setter
+    def barycentric_julian_date(self, values):
+        self.__scalar_or_array__assign__(
+            'barycentric_julian_date',
+            values
+        )
+
+    @values.setter
+    def values(self, _values):
+        self.__scalar_or_array__assign__(
+            'data',
+            values
+        )
+
+    @errors.setter
+    def errors(self, values):
+        self.__scalar_or_array__assign__(
+            'error',
+            values
+        )
+
+    @x_centroids.setter
+    def x_centroids(self, values):
+        raise NotImplementedError
+
+    @y_centroids.setter
+    def y_centroids(self, values):
+        raise NotImplementedError
+
+    @quality_flags.setter
+    def quality_flags(self, values):
+        raise NotImplementedError
