@@ -183,6 +183,17 @@ def lightcurve_kwargs(draw, **overrides):
 
     return kwargs
 
+lightpoint = lambda : builds(
+        models.Lightpoint,
+        lightcurve_id=integers(min_value=1, max_value=99999),
+        cadence=integers(min_value=0, max_value=PSQL_INT_MAX),
+        bjd=floats(),
+        data=floats(),
+        error=floats(),
+        x=floats(),
+        y=floats(),
+        quality_flag=integers(min_value=0, max_value=PSQL_INT_MAX)
+    )
 
 @define_strategy
 @composite

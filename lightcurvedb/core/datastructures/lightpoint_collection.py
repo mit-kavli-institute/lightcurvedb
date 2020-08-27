@@ -56,13 +56,18 @@ class MassTrackedLightpoints(object):
         return self.__extr_cadence__(lightpoint) in self.data
 
     @collection.appender
+    @collection.replaces(1)
     def append(self, lightpoint):
         cadence = self.__extr_cadence__(lightpoint)
         if cadence in self.data:
             cur_lightpoint = self.data[cadence]
             cur_lightpoint.update_with(lightpoint)
         else:
-            self.data[cadence] = self.__clean__(lightpoint)
+            self.data[cadence] = lightpoint 
+
+    def add(self, data):
+        lightpoint = self.__clean__(data)
+        self.append(lightpoint)
 
     @collection.remover
     def remove(self, lightpoint):

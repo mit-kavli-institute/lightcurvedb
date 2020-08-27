@@ -80,6 +80,13 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
         nullable=False
     )
 
+    def __repr__(self):
+        return '<Lightpoint {}-{} {}>'.format(
+            self.lightcurve_id,
+            self.cadence,
+            self.data
+        )
+
     @hybrid_property
     def bjd(self):
         return self.barycentric_julian_date

@@ -387,3 +387,14 @@ def manual_ingest(ctx, tics, orbit_dir):
         )
 
     cache.close()
+
+@lightcurve.command()
+@click.pass_context
+@click.argument('tic', type=int)
+def print(ctx, tic):
+    """
+    Prints a tabular view of the lightcurve to stdout
+    """
+    with closed_db as db:
+        lcs = db.lightcurves.filter(Lightcurve.tic_id == tic).all()
+

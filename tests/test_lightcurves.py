@@ -94,7 +94,7 @@ def test_dict_collection_append(lp, tic, aperture, lc_type):
 
     assert len(lc) == 0
 
-    lc.lightpoints.append(lp.to_dict)
+    lc.lightpoints.add(lp.to_dict)
 
     assert len(lc) == 1
     assert lc.cadences[0] == lp.cadence
