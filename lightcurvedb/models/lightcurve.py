@@ -211,7 +211,7 @@ class Lightcurve(QLPDataProduct):
     )
     lightpoints = relationship(
         'Lightpoint',
-        back_populates='lightcurve',
+        backref='lightcurve',
         collection_class=MassTrackedLightpoints)
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')

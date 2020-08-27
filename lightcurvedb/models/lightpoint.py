@@ -27,11 +27,6 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
     __tablename__ = 'lightpoints'
     __abstract__ = False
 
-    lightcurve = relationship(
-        'Lightcurve',
-        back_populates='lightpoints'
-    )
-
     lightcurve_id = Column(
         ForeignKey(
             'lightcurves.id',

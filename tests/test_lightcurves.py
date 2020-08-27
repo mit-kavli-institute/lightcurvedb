@@ -1,4 +1,4 @@
-from hypothesis import strategies as st, given, note
+from hypothesis import strategies as st, given, note, settings
 from lightcurvedb.models import Lightcurve, Lightpoint
 from .factories import lightcurve, lightcurve_type, aperture
 from .constants import PSQL_INT_MAX
@@ -14,6 +14,7 @@ def test_lightcurve_instantiation(tic, aperture, lc_type):
     assert lc.type == lc_type
 
 
+@settings(deadline=None)
 @given(
     st.builds(
         Lightpoint,
@@ -36,11 +37,10 @@ def test_lightpoint_collection_init(db_conn, lp, lc):
             db.commit()
 
             result = db.query(Lightcurve).get(lc.id)
-            assert result.cadences == lp.cadence
+            assert result.cadences[0] == lp.cadence
         finally:
             db.rollback()
             clear_all(db)
-
 
 
 @given(

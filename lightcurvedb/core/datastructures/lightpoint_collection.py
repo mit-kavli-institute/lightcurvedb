@@ -31,6 +31,48 @@ class MassTrackedLightpoints(object):
     def __getitem__(self, key):
         return self.data[key]
 
+    @collection.iterator
+    def __iter__(self):
+        for c in sorted(self.data.keys()):
+            yield self.data[c]
+
+    def __extr_cadence__(self, lightpoint):
+        if isinstance(lightpoint, dict):
+            cadence = lightpoint['cadence']
+        elif isinstance(lightpoint, Lightpoint):
+            cadence = lightpoint.cadence
+        else:
+            raise ValueError(
+                "Could not get cadence of type {}".format(type(lightpoint))
+            )
+        return cadence
+
+    def __clean__(self, lightpoint):
+        if isinstance(lightpoint, Lightpoint):
+            return lightpoint
+        return Lightpoint(**lightpoint)
+
+    def __contains__(self, lightpoint):
+        return self.__extr_cadence__(lightpoint) in self.data
+
+    @collection.appender
+    def append(self, lightpoint):
+        cadence = self.__extr_cadence__(lightpoint)
+        if cadence in self.data:
+            cur_lightpoint = self.data[cadence]
+            cur_lightpoint.update_with(lightpoint)
+        else:
+            self.data[cadence] = self.__clean__(lightpoint)
+
+    @collection.remover
+    def remove(self, lightpoint):
+        cadence = self.__extr_cadence__(lightpoint)
+        del self.data[cadence]
+
+    def extend(self, lightpoints):
+        for lp in lightpoints:
+            self.append(lp)
+
     @property
     def cadences(self):
         return [lp.cadence for lp in self]
@@ -63,42 +105,3 @@ class MassTrackedLightpoints(object):
     def quality_flags(self):
         return [lp.quality_flag for lp in self]
 
-    def __extr_cadence__(self, lightpoint):
-        if isinstance(lightpoint, dict):
-            cadence = lightpoint['cadence']
-        elif isinstance(lightpoint, Lightpoint):
-            cadence = lightpoint.cadence
-        else:
-            raise ValueError(
-                "Could not get cadence of type {}".format(type(lightpoint))
-            )
-        return cadence
-
-    def __clean__(self, lightpoint):
-        if isinstance(lightpoint, Lightpoint):
-            return lightpoint
-        return Lightpoint(**lightpoint)
-
-    def __contains__(self, lightpoint):
-        return self.__extr_cadence__(lightpoint) in self.data
-
-    @collection.appender
-    def append(self, lightpoint):
-        cadence = self.__extr_cadence__(lightpoint)
-        if cadence in self.data:
-            cur_lightpoint = self.data[cadence]
-            cut_lightpoint.update_with(lightpoint)
-        else:
-            self.data[cadence] = self.__clean__(lightpoint)
-
-    def remove(self, lightpoint):
-        cadence = self.__extr_cadence__(lightpoint)
-        del self.data[cadence]
-
-    def extend(self, lightpoints):
-        for lp in lightpoints:
-            self.append(lp)
-
-    def __iter__(self):
-        for c in sorted(self.data.keys()):
-            yield self.data[c]
