@@ -9,6 +9,14 @@ from sqlalchemy.orm import relationship
 
 
 LIGHTPOINT_PARTITION_RANGE = 10**6
+UPDATEABLE_PARAMS = [
+    'barycentric_julian_date',
+    'data',
+    'error',
+    'x_centroid',
+    'y_centroid',
+    'quality_flags'
+]
 
 
 class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
@@ -21,7 +29,7 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
 
     lightcurve = relationship(
         'Lightcurve',
-        backref='lightpoints'
+        back_populates='lightpoints'
     )
 
     lightcurve_id = Column(
@@ -176,6 +184,30 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
             y_centroid=self.y,
             quality_flag=self.quality_flag
         )
+
+    def update_with(self, data):
+        """
+        Updates using the given object. The following parameters are pulled
+        from the object: ``barycentric_julian_date``, ``data``, ``error``,
+        ``x_centroid``, ``y_centroid``, ``quality_flag``. If these values do
+        not exist within the data structure then no change is applied.
+        This mean passing an empty dict() or an object that contains `none`
+        of these values will have no effect.
+
+        Parameters
+        ----------
+        data : any
+            Data to update the lightpoint with.
+        """
+        for param in UPDATEABLE_PARAMS:
+            try:
+                new_value = getattr(data, param)
+                setattr(self, param, new_value)
+            except AttributeError:
+                # Do not edit, fail softly
+                continue
+        # All edits, if any have been made
+
 
 
 # Setup initial lightpoint Partition

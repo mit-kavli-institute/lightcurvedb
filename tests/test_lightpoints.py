@@ -120,7 +120,7 @@ def test_lightpoint_upsert_update(db_conn, lp, lc):
                 [kw]
             )
             db.commit()
-            assert lc.lightpoints[0].data == kw['data']
+            assert lc.values[0] == kw['data']
         finally:
             db.rollback()
             clear_all(db)
@@ -156,7 +156,7 @@ def test_lightpoint_upsert_nothing(db_conn, lp, lc):
                 [kw]
             )
             db.commit()
-            assert lc.lightpoints[0].data == lp.data
+            assert lc.values[0] == lp.data
         finally:
             db.rollback()
             clear_all(db)

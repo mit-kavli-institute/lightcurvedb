@@ -12,6 +12,7 @@ from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
+from lightcurvedb.core.datastructures.lightpoint_collection import MassTrackedLightpoints
 from lightcurvedb.util.merge import merge_arrays
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
@@ -208,6 +209,10 @@ class Lightcurve(QLPDataProduct):
         'LightcurveType',
         back_populates='lightcurves'
     )
+    lightpoints = relationship(
+        'Lightpoint',
+        back_populates='lightcurve',
+        collection_class=MassTrackedLightpoints)
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 
@@ -271,32 +276,32 @@ class Lightcurve(QLPDataProduct):
 
     @hybrid_property
     def cadences(self):
-        return [lp.cadence for lp in self.lightpoints]
+        return self.lightpoints.cadences
 
     @hybrid_property
     def bjd(self):
-        return [lp.bjd for lp in self.lightpoints]
+        return self.lightpoints.bjd
 
     @hybrid_property
     def barycentric_julian_date(self):
-        return [lp.bjd for lp in self.lightpoints]
+        return self.lightpoints.bjd
 
     @hybrid_property
     def values(self):
-        return [lp.data for lp in self.lightpoints]
+        return self.lightpoints.values
 
     @hybrid_property
     def errors(self):
-        return [lp.error for lp in self.lightpoints]
+        return self.lightpoints.errors
 
     @hybrid_property
     def x_centroids(self):
-        return [lp.x for lp in self.lightpoints]
+        return self.lightpoints.x_centroids
 
     @hybrid_property
     def y_centroids(self):
-        return [lp.y for lp in self.lightpoints]
+        return self.lightpoints.y_centroids
 
     @hybrid_property
     def quality_flags(self):
-        return [lp.quality_flag for lp in self.lightpoints]
+        return self.lightpoints.quality_flags
