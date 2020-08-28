@@ -1,6 +1,7 @@
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
+from lightcurvedb.util.iter import keyword_zip
 import pandas as pd
 from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
@@ -211,6 +212,57 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
         # All edits, if any have been made
 
 
+# Define some factories
+def lightpoints_from_kw(cadences=[], bjd=[], **other_data):
+    """
+    A factory method to construct raw Lightpoints from keyword data
+    comprising of lists.
+
+    Parameters
+    ----------
+    cadences : list or list-like of integers
+        The cadences to align the given data. The cadence array need not be
+        in ascending or descending order. However the ``bjd`` and other
+        data columns will be interpreted in the order of the cadences given.
+
+    bjd : list or list-like of floats
+        The barycentric julian dates to assign to lightpoint instances. Will
+        be interpreted in order of the given cadences
+
+    **other_data : optional keyword arg of additional list-like data.
+        Other keyword data to assign to lightpoints. Must have the same
+        lengths as the given cadences.
+
+    Yields
+    ------
+    Lightpoint
+        A lightpoint instance instantiated with a column of the given
+        data.
+    Raises
+    ------
+    ValueError:
+        Raised if the given data does not agree in length.
+    """
+    if not len(bjd) == len(cadences):
+        raise ValueError(
+            'bjd length {} does not match cadence length {}'.format(
+                len(bjd), len(cadences)
+            )
+        )
+    data_keys = other_data.keys()
+    for col in data_keys:
+        if not len(other_data[col]) == len(cadences):
+            raise ValueError(
+                '{} length {} does not match cadence length {}'.format(
+                    col, len(other_data[col]), len(cadences)
+                )
+            )
+    # Everything is aligned
+    # iterate through columnwise
+    for kw in keyword_zip(cadence=cadences, bjd=bjd, **other_data):
+        yield Lightpoint(
+            **kw
+        )
 
 # Setup initial lightpoint Partition
 event.listen(

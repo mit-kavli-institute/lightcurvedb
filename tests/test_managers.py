@@ -1,36 +1,24 @@
 from .factories import lightcurve_kwargs as lc_kw_st, lightcurve as lc_st
+from itertools import chain
+from collections import namedtuple
+from hypothesis import strategies as st, given
 from hypothesis.stateful import RuleBasedStateMachine, Bundle, rule
-from lightcurvedb import LightcurveManager
+from lightcurvedb.managers.manager import manager_factory
 
 
-class ManagerComparison(RuleBasedStateMachine):
-    lightcurves = Bundle('lightcurves')
-    lightcurve_kwargs = Bundle('kwargs')
+UNIQ_COL_EXAMPLES = [
+    x for x in 'abcdefghijklmnopqrstuvwxyz'
+]
 
-    def __init__(self):
-        super(ManagerComparison, self).__init__()
-        self.lm = LightcurveManager
+DATA_COL_EXAMPLES = [
+    'data_{}'.format(x) for x in 'abcdefghijklmnopqrstuvwxyz'
+]
 
-    @rule(target=lightcurves, lc=lc_st())
-    def add_defined_lightcurve(self, lc):
-        return lc
 
-    @rule(target=lightcurve_kwargs, kw=lc_kw_st())
-    def add_lightcurve_kwargs(self, kw):
-        return kw
+@given(st.from_regex(r'^[a-z]+$', fullmatch=True), st.sets(st.sampled_from(UNIQ_COL_EXAMPLES), min_size=1), st.sets(st.sampled_from(DATA_COL_EXAMPLES)))
+def test_manager_class_definition(model_name, uniq_cols, data_cols):
+    model_name = 'Model_{}'.format(model_name)
+    cols = list(chain(uniq_cols, data_cols))
+    TestModel = namedtuple(model_name, cols)
+    Manager = manager_factory(TestModel, *uniq_cols)
 
-    @rule(lc=lightcurves)
-    def add_defined_lc_to_manager(self, lc):
-        self.lm.add_defined_lightcurve(lc)
-
-    @rule(kw=lightcurve_kwargs)
-    def upsert_kwargs(self, kw):
-        self.lm.upsert(
-            kw['tic_id'],
-            kw['aperture'].name,
-            kw['lightcurve_type'].name
-        )
-
-    @rule(lc=lightcurves, kw=lightcurve_kwargs)
-    def check_merging(self, lc, kw):
-        pass

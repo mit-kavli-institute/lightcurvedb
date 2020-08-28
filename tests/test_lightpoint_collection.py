@@ -42,8 +42,11 @@ class CollectionComparison(RuleBasedStateMachine):
     @rule(lp=consumes(lightpoints))
     def remove_lightpoint(self, lp):
         cadence = lp.cadence
-        self.reference[cadence]
-        self.lightcurve.lightpoints.remove(lp)
+        if cadence in self.reference:
+            del self.reference[cadence]
+            self.lightcurve.lightpoints.remove(lp)
+        else:
+            assert lp not in self.lightcurve.lightpoints
 
     @rule(lp=lightpoints)
     def assert_validity(self, lp):
@@ -66,6 +69,15 @@ def test_scalar_assignment(attr, lc, lightpoints):
 
     new = getattr(lc, attr)
     assert all(value == new_val for new_val in new)
+
+@given(assignable_attr(), lightcurve(), st.lists(lightpoint()))
+def test_list_assignment(attr, lc, lightpoints):
+    lc.lightpoints.extend(lightpoints)
+    value = np.arange(len(lc))
+    setattr(lc, attr, value)
+
+    new = getattr(lc, attr)
+    np.testing.assert_equal(value, new)
 
 
 TestCollectionComparison = CollectionComparison.TestCase

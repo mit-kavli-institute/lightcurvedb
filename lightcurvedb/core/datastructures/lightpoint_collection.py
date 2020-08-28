@@ -130,7 +130,7 @@ class MassTrackedLightpoints(object):
         IndexError:
             Raised if ``len(to_assign) != target_column``.
         """
-        if isinstance(values, list):
+        try:
             if not len(values) == len(self):
                 raise IndexError(
                     (
@@ -140,7 +140,7 @@ class MassTrackedLightpoints(object):
                 )
             for value, lp in zip(values, self):
                 setattr(lp, col, value)
-        else:
+        except TypeError:
             # Assume given a scalar
             for lp in self:
                 setattr(lp, col, values)

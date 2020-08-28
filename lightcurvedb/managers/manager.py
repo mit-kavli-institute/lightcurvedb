@@ -82,16 +82,20 @@ class Manager(object):
             raise DuplicateEntryException()
         self.__add_key__(_uniq_key, model_inst)
 
+        return model_inst
+
     def add_model_kw(self, **kwargs):
         self.__attempt_to_find_key__(**kwargs)
-        # Model can be safely 'inserted' into the manager
+        # **kwargs contains a valid key
         instance = self.__managed_class__(**kwargs)
-        self.add_model(instance)
+        return self.add_model(instance)
 
 
 def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
+    cols = [uniq_col]
+    cols.extend(additional_uniq_cols)
     class Managed(Manager):
         __managed_class__ = sqlalchemy_model
-        __uniq_tuple__ = tuple([uniq_col].extend(additional_uniq_cols))
+        __uniq_tuple__ = tuple(cols)
 
     return Managed

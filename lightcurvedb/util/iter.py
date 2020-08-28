@@ -157,3 +157,15 @@ def partition_by(listlike, n, key=lambda x: x):
         )
     groups = [(k, list(g)) for k, g in itertools.groupby(listlike, key=key)]
     return partition(groups, n)
+
+
+def keyword_zip(**keywords):
+    cols = list(keywords.keys())
+
+    data = (iter(data[col]) for col in cols)
+
+    for row in zip(*data):
+        result = dict()
+        for ith, col_name in enumerate(cols):
+            result[col_name] = row[ith]
+        yield result

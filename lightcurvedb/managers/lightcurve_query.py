@@ -13,10 +13,18 @@ from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.sql.expression import bindparam
 
 from lightcurvedb.exceptions import LightcurveDBException
-from lightcurvedb.models import Lightcurve
+from lightcurvedb.models import Lightcurve, Lightpoint
+from lightcurvedb.models.lightpoint import lightpoints_from_kw
 from lightcurvedb.models.aperture import BestApertureMap
-from lightcurvedb.managers.manager import Manager
+from lightcurvedb.managers.manager import manager_factory
 
+
+BaseLightcurveManager = manager_factory(
+    Lightcurve,
+    'tic_id',
+    'aperture_id',
+    'lightcurve_type_id'
+)
 
 
 class IncongruentLightcurve(LightcurveDBException):
@@ -30,7 +38,7 @@ def set_dict():
     return defaultdict(set)
 
 
-class LightcurveManager(object):
+class LightcurveManager(BaseLightcurveManager):
     """LightcurveManager. A class to help manager and keep track of
     lists of lightcurve objects.
     """
@@ -48,106 +56,8 @@ class LightcurveManager(object):
         'KSPMagnitude': 'RawMagnitude'
     }
 
-    def __init__(self, lightcurves):
-        """__init__.
-
-        Parameters
-        ----------
-        lightcurves : iterable of ``Lightcurve`` instances
-            An iterable collection of lightcurves to manage.
-        """
-        self.tics = set_dict()
-        self.apertures = set_dict()
-        self.types = set_dict()
-        self.id_map = dict()
-
-        self.cur_tmp_id = -1  # All IDs < 0 are 'new' lightcurves
-
-        self.aperture_defs = {}
-        self.type_defs = {}
-
-        self._to_add = list()
-        self._to_update = list()
-        self._to_upsert = list()
-
-        for lightcurve in lightcurves:
-            self.tics[lightcurve.tic_id].add(lightcurve.id)
-            self.apertures[lightcurve.aperture_id].add(lightcurve.id)
-            self.types[lightcurve.lightcurve_type_id].add(lightcurve.id)
-            self.id_map[lightcurve.id] = lightcurve
-
-        self.searchables = (
-            self.tics,
-            self.apertures,
-            self.types
-        )
-
     def __repr__(self):
         return '<LightcurveManager: {} lightcurves>'.format(len(self))
-
-    def __getitem__(self, key):
-        """__getitem__.
-
-        Arguments
-        ----------
-        key : obj
-            The key to search for
-
-        Raises
-        ------
-        KeyError
-            If the key is not found within the LightcurveManager.
-        """
-
-        found_ids = []
-
-        for searchable in self.searchables:
-            if key in searchable:
-                ids = searchable[key]
-                found_ids.append(ids)
-        # If found_ids is empty, raise an error
-        if len(found_ids) == 0:
-            raise KeyError(
-                'The keyword \'{}\' was not found in the query'.format(key)
-            )
-
-        # Grab the union of all found ids. If it's a single id, return the
-        # lightcurve
-        result = set.intersection(*found_ids)
-        if len(result) == 0:
-            raise KeyError(
-                'The keyword \'{}\' was not found in the query'.format(key)
-            )
-        if all(len(s) <= 1 for s in found_ids):
-            id = next(iter(result))
-            return self.id_map[id]
-        elif len(result) > 1:
-            return LightcurveManager([self.id_map[id_] for id_ in result])
-        raise KeyError(
-            'The keyword \'{}\' was not found in the query'.format(key)
-        )
-
-    def __len__(self):
-        """
-        The length of the manager in terms of number of stored lightcurves.
-
-        Returns
-        -------
-        int
-            The number of lightcurves managed.
-        """
-        return len(self.id_map)
-
-    def __iter__(self):
-        """
-        Iterate over the stored lightcurves.
-
-        Returns
-        -------
-        iterator
-            An iterator over all the lightcurves within this manager.
-        """
-        return iter(self.id_map.values())
 
     @classmethod
     def from_q(cls, q):
@@ -168,21 +78,29 @@ class LightcurveManager(object):
         for lightcurve in q.all():
             self.add_defined_lightcurve(lightcurve)
 
-    def resolve_id(self, tic_id, aperture, lightcurve_type):
-        lc_by_tics = self.tics.get(tic_id, set())
-        lc_by_aps = self.apertures.get(aperture, set())
-        lc_by_types = self.types.get(lightcurve_type, set())
+    def __keyword_data_to_lightpoints__(self, **data):
+        # Check for basic information that is needed
+        if not 'cadences' in data or not 'bjd' in data:
+            raise ValueError(
+                "'cadences' and 'bjd' need to be specified in given data"
+            )
+        # Ensure that all data is of the same length
+        cadences = data.pop('cadences')
+        cadence_length = len(cadences)  # Use cadences as reference
 
-        try:
-            return set.intersection(lc_by_tics, lc_by_aps, lc_by_types).pop()
-        except KeyError:
-            # Nothing to resolve
-            return None
+        if any(len(col) != cadence_length for col in data):
+            raise ValueError(
+                ('Given data {} does not '
+                 'match the length of the '
+                 'given cadences {}'
+                ).format(len(col), cadence_length)
+            )
 
-    def clear_tracked(self):
-        self._to_add = list()
-        self._to_update = list()
-        self._to_upsert = list()
+        # All data is aligned, assume user has provided everything in the
+        # order of the given cadences
+        return lightpoints_from_kw(
+            **data
+        )
 
     def add_defined_lightcurve(self, lightcurve):
         """
@@ -195,80 +113,14 @@ class LightcurveManager(object):
         lightcurve : ``Lightcurve``
             The lightcurve to add to the manager.
 
-        Raises
-        ------
-        ValueError
-            The given lightcurve does not have a valid ID.
-
         Returns
         -------
         ``Lightcurve``
             The merged lightcurve as viewed by the manager.
         """
+        self.add_model(lightcurve)
 
-        id_check = self.resolve_id(
-            lightcurve.tic_id,
-            lightcurve.aperture_id,
-            lightcurve.lightcurve_type_id
-        )
-        if id_check is None:
-            if lightcurve.id:
-                # Add the lightcurve
-                id_ = lightcurve.id
-            else:
-                id_ = self.cur_tmp_id
-                self.cur_tmp_id -= 1
-
-            self.id_map[id_] = lightcurve
-            self.tics[lightcurve.tic_id].add(id_)
-            self.apertures[lightcurve.aperture_id].add(id_)
-            self.types[lightcurve.lightcurve_type_id].add(id_)
-
-            return lightcurve
-
-        if id_check < 0 and not lightcurve.id:
-            # Both lightcurves are "temporary", merge them
-            cur_lc = self.id_map[id_check]
-            cur_lc.merge(lightcurve)
-            return cur_lc
-        elif id_check < 0 and lightcurve.id:
-            # Re-assign current id
-            cur_lc = self.id_map[id_check]
-            merged_lc = lightcurve.merge(cur_lc)
-            self.id_map[lightcurve.id] = merged_lc
-
-            # Remove old references
-            del self.id_map[id_check]
-            self.tics[lightcurve.tic_id].remove(id_check)
-            self.apertures[lightcurve.aperture_id].remove(id_check)
-            self.types[lightcurve.lightcurve_type_id].remove(id_check)
-            return lightcurve
-        elif id_check > 0 and not lightcurve.id:
-            cur_lc = self.id_map[id_check]
-            cur_lc.merge(lightcurve)
-            return cur_lc
-        else:
-            # Impossible, lightcurve id has a defined conflict
-            conflicting = self.id_map[id_check]
-            msg = 'Given lightcurve has defined id {} but manager has {}'.format(
-                    lightcurve.id,
-                    id_check
-            )
-            msg += '\n{} has ({}, {}, {})\n'.format(
-                    lightcurve.id,
-                    lightcurve.tic_id,
-                    lightcurve.aperture_id,
-                    lightcurve.lightcurve_type_id
-            )
-            msg += '{} has ({}, {}, {})'.format(
-                    conflicting.id,
-                    conflicting.tic_id,
-                    conflicting.aperture_id,
-                    conflicting.lightcurve_type_id
-            )
-
-            raise ValueError(msg)
-
+        
     def add(self, tic_id, aperture, lightcurve_type, **data):
         """Adds a new lightcurve to the manager. This will create a new
         Lightcurve model instance and track it for batch insertions.
@@ -298,30 +150,15 @@ class LightcurveManager(object):
         ``Lightcurve``
             The constructed Lightcurve object.
         """
-        try:
-            assert self.resolve_id(tic_id, aperture, lightcurve_type) is None
-        except AssertionError:
-            raise DuplicateEntryException(
-                '{} already exists in the manager'.format(
-                    (tic_id, aperture, lightcurve_type)
-                )
-             )
-        checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
-
-        # Update definitions
-        self.tics[tic_id].add(self.cur_tmp_id)
-        self.apertures[aperture].add(self.cur_tmp_id)
-        self.types[lightcurve_type].add(self.cur_tmp_id)
-
         lc = Lightcurve(
             tic_id=tic_id,
-            aperture_id=aperture,
-            lightcurve_type_id=lightcurve_type,
-            **checked_data
+            aperture_id=aperture_id,
+            lightcurve_type_id=lightcurve_type
         )
-
-        self.id_map[self.cur_tmp_id] = lc
-        self.cur_tmp_id -= 1
+        self.add_model(lc)
+        lc.lightpoints.extend(
+            self.__keyword_data_to_lightpoints__(**data)
+        )
 
         return lc
 
@@ -342,123 +179,63 @@ class LightcurveManager(object):
             The ``Aperture.name`` of the target.
         lightcurve_type : str
             The ``LightcurveType.name`` of the target.
-        """
-        id_ = self.resolve_id(tic_id, aperture, lightcurve_type)
-        checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
-        self.update_w_id(id_, **checked_data)
-
-    def update_w_id(self, id_, **data):
-        """Updates a lightcurve with the given PSQL id.
-        **data will apply assignments via keyword to the lightcurve.
-
-        Any updates will set the manager to track the target for updating.
-
-        See the lightcurve model docs to see what fields can be assigned
-        using keyword arguments.
-
-        Arguments
-        ---------
-        id : int
-            The given PSQL integer for the lightcurve
-
-        **data : Arbitrary keyword arguments
-            Passed to ``Lightcurve`` for merging parameters.
 
         Returns
         -------
-        ``Lightcurve``
-            The updated lightcurve.
+        Lightcurve
+            Returns the updated lc model
         """
-
-        target_lc = self.id_map[id_]
-        target_lc.merge_np(
-            data['cadences'],
-            data['bjd'],
-            data['values'],
-            data['errors'],
-            data['x_centroids'],
-            data['y_centroids'],
-            data['quality_flags']
+        lc = self.get_model(tic_id, aperture, lightcurve_type)
+        lc.lightpoints.extend(
+            self.__keyword_data_to_lightpoints__(
+                **data
+            )
         )
-        return target_lc
+
+        return lc
 
     def upsert(self, tic_id, aperture, lightcurve_type, **data):
-        id_check = self.resolve_id(tic_id, aperture, lightcurve_type)
+        """
+        A complex method that attempts to find an existing lightcurve
+        and update it with the provided ``**data`` interpreted as
+        `Lightpoints`. If no such lightcurve could be found, one is
+        instead instantiated and it's lightpoint data is constructed
+        using the passed ``**data``.
 
-        if id_check:
-            # Must update
-            checked_data = self.__validate__(tic_id, aperture, lightcurve_type, **data)
-            self.update_w_id(id_check, **checked_data)
-        else:
-            # Must insert
-            self.add(tic_id, aperture, lightcurve_type, **data)
+        Parameters
+        ----------
+        tic_id : int
+            The TIC identifier of the lightcurve.
+        aperture : str
+            The ``Aperture.name`` of the lightcurve. Must reference an
+            existing Aperture.
+        lightcurve_type : str
+            The ``LightcurveType.name`` of the lightcurve. Must reference an
+            existing LightcurveType.
+        **data : keyword arguments of listlikes
+            `Must` contain the keyword parameters of ``cadences`` and `bjd`.
+            These keyword parameters must contain equal length lists that will
+            be given to instantiate a list of Lightpoints.
+        """
+
+        try:
+            lc = self.get_model(tic_id, aperture, lightcurve_type)
+        except KeyError:
+            lc = self.add_model_kw(
+                tic_id=tic_id,
+                aperture_id=aperture,
+                lightcurve_type_id=lightcurve_type
+            )
+
+        lc.lightpoints.extend(
+            self.__keyword_data_to_lightpoints__(
+                **data
+            )
+        )
+        return lc
 
     def upsert_kwarg(self, **kwargs):
         tic_id = kwargs.pop('tic_id')
         aperture = kwargs.pop('aperture_id')
         lightcurve_type = kwargs.pop('lightcurve_type_id')
         self.upsert(tic_id, aperture, lightcurve_type, **kwargs)
-        
-
-    def resolve_to_db(self, db, resolve_conflicts=True):
-        """
-        Execute add and update statements to the database.
-
-        Arguments
-        ---------
-        db : ``lightcurvedb.core.connection.DB``
-            The given lightcurvedb Session Wrapper to mediate
-            the connection to the database.
-        resolve_conflicts : bool, optional
-            If ``True`` (default), attempt to resolve unique
-            constraint conflicts with the database.
-        """
-        if resolve_conflicts:
-            # Determine if any of the lightcurves to be inserted need to
-            # be merged, filter using defined tic ids in the manager
-            q = db.lightcurve_id_map(
-                [Lightcurve.tic_id.in_(self.tics)],
-                resolve=False
-            )
-            id_mapper = pd.read_sql(
-                q.statement,
-                db.session.bind,
-                index_col=['tic_id', 'aperture_id', 'lightcurve_type_id']
-            )
-
-            # Resolve insertions into updates if needed
-            ids_to_remove = set()
-            for id_, lightcurve in self.id_map.items():
-                if id_ > 0:
-                    continue
-                # "New" lightcurve
-                try:
-                    _ = id_mapper.loc[
-                        (
-                            Lightcurve.tic_id,
-                            Lightcurve.aperture_id,
-                            Lightcurve.lightcurve_type_id
-                        )
-                    ]['id']
-                    # This would have resulted in a unique-constraint
-                    # collision. Perform update
-                    defined_lightcurve = db.get_lightcurve(
-                        lightcurve.tic_id,
-                        lightcurve.aperture_id,
-                        lightcurve.lightcurve_type_id
-                    )
-                    defined_lightcurve.merge(lightcurve)
-
-                    # Remove refs to "add" lightcurve
-                    ids_to_remove.add(id_)
-                except KeyError:
-                    # Lightcurve is indeed "new"
-                    continue
-
-            for id_ in ids_to_remove:
-                del self.id_map[id_]
-
-        ids_to_add = set(filter(lambda id_: id_ < 0, self.id_map.keys()))
-        db.session.bulk_save_objects(
-            [self.id_map[id_] for id_ in ids_to_add]
-        )
