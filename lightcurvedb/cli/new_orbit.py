@@ -25,6 +25,11 @@ else:
         )
 
 
+FITS_CHECK = re.compile(
+    r'tess\d+-\d+-[1-4]-crm-ffi\.fits$'
+)
+
+
 TYPE_MAP = {
     'ffi_fits': 'Raw FFI',
     'cal_ffi_fits': 'TICA Calibrated FFI',
@@ -43,7 +48,7 @@ CCD_EXTR = re.compile(
 )
 
 
-def ingest_directory(ctx, session, path, cadence_type, extensions):
+def ingest_directory(ctx, session, path, cadence_type):
     orbit_context = ORBIT_EXTR.search(path)
     cam_context = CAM_EXTR.search(path)
     ccd_context = CCD_EXTR.search(path)
@@ -69,13 +74,25 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
         if not ctx.obj['dryrun']:
             session.commit()
 
+    files = os.listdir(path)
+    accepted = []
+    rejected = []
+    for filename in files:
+        fullpath = os.path.join(path, filename)
+        check = FITS_CHECK.search(fullpath)
+        if check:
+            accepted.append(fullpath)
+        else:
+            rejected.append(fullpath)
 
-    for extension in extensions:
-        found = glob(os.path.join(path, '*.{}'.format(extension)))
-        files += found
     click.echo(
         'Found {} fits files'.format(
-            click.style(str(len(files)), bold=True)
+            click.style(str(len(accepted)), bold=True, fg='green')
+        )
+    )
+    click.echo(
+        'Rejected {} files'.format(
+            click.style(str(len(rejected)), bold=True, fg='red')
         )
     )
 
@@ -111,7 +128,7 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
                     'has a smaller sector ID {}'.format(sanity_check.orbit_number, sanity_check.sector)
                 )
             click.confirm('Are you sure this is OK?', abort=True)
-        orbit = Orbit.generate_from_fits(files)
+        orbit = Orbit.generate_from_fits(accepted)
         orbit.sector = sector
         click.echo(
             click.style('Generated {}'.format(orbit), fg='green')
@@ -123,12 +140,12 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
     func = partial(Frame.from_fits, cadence_type=cadence_type)
     with Pool() as p:
         click.echo('Generating frames')
-        frames = p.map(func, files)
+        frames = p.map(func, accepted)
         for frame in frames:
             frame.orbit = orbit
             frame.frame_type = frame_type
 
-    click.echo('Generated {} frames from {} files'.format(len(frames), len(files)))
+    click.echo('Generated {} frames from {} files'.format(len(frames), len(accepted)))
     return frames
 
 
@@ -137,12 +154,11 @@ def ingest_directory(ctx, session, path, cadence_type, extensions):
 @click.argument('ingest_directories', nargs=-1)
 @click.option('--new-orbit/--no-new-orbit', default=False)
 @click.option('--cadence-type', default=30, type=int)
-@click.option('--extensions', '-x', multiple=True, default=['fits', 'gz', 'bz2'])
-def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type, extensions):
+def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type):
     with ctx.obj['dbconf'] as db:
         added_frames = []
         for directory in ingest_directories:
-            frames = ingest_directory(ctx, db, directory, cadence_type, extensions)
+            frames = ingest_directory(ctx, db, directory, cadence_type)
             db.session.add_all(frames)
             added_frames += frames
 
