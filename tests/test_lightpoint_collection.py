@@ -2,6 +2,24 @@ from hypothesis import strategies as st, given
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, rule, consumes
 from lightcurvedb.models import Lightcurve
 from .factories import lightpoint, lightcurve
+import numpy as np
+
+
+ASSIGNABLE_ATTRS = {
+    'barycentric_julian_date',
+    'bjd',
+    'values',
+    'errors',
+    'x_centroids',
+    'y_centroids',
+    'quality_flags'
+}
+
+
+assignable_attr = lambda: st.one_of(
+    st.just(col) for col in ASSIGNABLE_ATTRS
+)
+
 
 class CollectionComparison(RuleBasedStateMachine):
 
@@ -38,6 +56,16 @@ class CollectionComparison(RuleBasedStateMachine):
             assert check == (lp.data == self.lightcurve.lightpoints[cadence].data)
         else:
             assert lp not in self.lightcurve.lightpoints
+
+
+@given(assignable_attr(), lightcurve(), st.lists(lightpoint()))
+def test_scalar_assignment(attr, lc, lightpoints):
+    lc.lightpoints.extend(lightpoints)
+    value = 0.0
+    setattr(lc, attr, value)
+
+    new = getattr(lc, attr)
+    assert all(value == new_val for new_val in new)
 
 
 TestCollectionComparison = CollectionComparison.TestCase

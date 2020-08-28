@@ -305,3 +305,33 @@ class Lightcurve(QLPDataProduct):
     @hybrid_property
     def quality_flags(self):
         return self.lightpoints.quality_flags
+
+
+    # Lightcurve instance setters
+    @bjd.setter
+    def bjd(self, values):
+        self.lightpoints.bjd = values
+
+    @barycentric_julian_date.setter
+    def barycentric_julian_date(self, values):
+        self.bjd = values
+
+    @values.setter
+    def values(self, _values):
+        self.lightpoints.values = _values
+
+    @errors.setter
+    def errors(self, values):
+        self.lightpoints.errors = values
+
+    @x_centroids.setter
+    def x_centroids(self, values):
+        self.lightpoints.x_centroids = values
+
+    @y_centroids.setter
+    def y_centroids(self, values):
+        self.lightpoints.y_centroids = values
+
+    @quality_flags.setter
+    def quality_flags(self, values):
+        self.lightpoints.quality_flags = values

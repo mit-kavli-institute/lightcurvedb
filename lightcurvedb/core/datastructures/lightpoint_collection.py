@@ -103,7 +103,7 @@ class MassTrackedLightpoints(object):
         return [lp.x for lp in self]
 
     @property
-    def y_centroid(self):
+    def y_centroids(self):
         return [lp.y for lp in self]
 
     @property
@@ -112,7 +112,7 @@ class MassTrackedLightpoints(object):
 
     # Begin setters
     # Don't support setting of cadences this way
-    def __scalar_or_array__assign__(self, col, values):
+    def __scalar_or_array_assign__(self, col, values):
         """
         Assign the values to the specified column. If the values are a
         listlike attempt to assign via one-to-one assignment. If a scalar,
@@ -133,44 +133,60 @@ class MassTrackedLightpoints(object):
         if isinstance(values, list):
             if not len(values) == len(self):
                 raise IndexError(
-                    'Was given assigments of length {} but collection only has {}'.format(len(values), len(self))
+                    (
+                        'Was given assigments of length'
+                        '{} but collection only has {}'
+                    ).format(len(values), len(self))
                 )
             for value, lp in zip(values, self):
                 setattr(lp, col, value)
         else:
-            # Given a scalar
+            # Assume given a scalar
             for lp in self:
-                setattr(lp, col, value)
+                setattr(lp, col, values)
 
     @barycentric_julian_date.setter
     def barycentric_julian_date(self, values):
-        self.__scalar_or_array__assign__(
+        self.__scalar_or_array_assign__(
             'barycentric_julian_date',
             values
         )
 
+    @bjd.setter
+    def bjd(self, values):
+        self.barycentric_julian_date = values
+
     @values.setter
     def values(self, _values):
-        self.__scalar_or_array__assign__(
+        self.__scalar_or_array_assign__(
             'data',
-            values
+            _values
         )
 
     @errors.setter
     def errors(self, values):
-        self.__scalar_or_array__assign__(
+        self.__scalar_or_array_assign__(
             'error',
             values
         )
 
     @x_centroids.setter
     def x_centroids(self, values):
-        raise NotImplementedError
+        self.__scalar_or_array_assign__(
+            'x_centroid',
+            values
+        )
 
     @y_centroids.setter
     def y_centroids(self, values):
-        raise NotImplementedError
+        self.__scalar_or_array_assign__(
+            'y_centroid',
+            values
+        )
 
     @quality_flags.setter
     def quality_flags(self, values):
-        raise NotImplementedError
+        self.__scalar_or_array_assign__(
+            'quality_flag',
+            values
+        )
