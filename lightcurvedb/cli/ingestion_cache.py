@@ -12,7 +12,7 @@ from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.temp_table import FileObservation
+from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
 
 TIC8Session = sessionmaker(autoflush=True)
@@ -25,11 +25,10 @@ def catalog_df(*catalog_files):
         df = pd.read_csv(
             csv,
             delim_whitespace=True,
-            names=['tic_id', 'ra', 'dec', 'tmag', 'x', 'y', 'z', 'q' 'k']
-        )[['tic_id', 'ra', 'dec', 'tmag']]
-    else:
-        return None
-    dfs = pd.concat(dfs).set_index('tic_id')
+            names=['tic_id', 'right_ascension', 'declination', 'tmag', 'x', 'y', 'z', 'q', 'k']
+        )
+        dfs.append(df)
+    dfs = pd.concat(dfs).set_index('tic_id')[['right_ascension', 'declination', 'tmag']]
     dfs = dfs[~dfs.index.duplicated(keep='last')]
     return dfs
 
@@ -45,13 +44,16 @@ def cache(ctx):
 @click.pass_context
 @click.argument('orbits', type=int, nargs=-1)
 @click.option('--force-tic8-query', is_flag=True)
-def load_stellar_param(ctx, orbit, force_tic8_query):
+def load_stellar_param(ctx, orbits, force_tic8_query):
     cache = IngestionCache()
     tic8 = TIC8Session() if force_tic8_query else None
+    observed_tics = set()
     with ctx.obj['dbconf'] as db:
         for orbit_number in orbits:
             orbit = db.query(Orbit).filter(Orbit.orbit_number == orbit_number).one()
             obs_tics = {r for r, in cache.session.query(FileObservation.tic_id).filter(FileObservation.orbit_number == orbit_number).distinct().all()}
+            for tic in obs_tics:
+                observed_tics.add(tic)
             if force_tic8_query:
                 q = tic8.query(
                     TIC_Entries.c.id.label('tic_id'),
@@ -67,11 +69,33 @@ def load_stellar_param(ctx, orbit, force_tic8_query):
                 )
             else:
                 run_dir = orbit.get_qlp_directory(suffixes=['ffi', 'run'])
+                click.echo('Looking for catalogs in {}'.format(run_dir))
                 catalogs = glob(os.path.join(run_dir, 'catalog*full.txt'))
                 tic_params = catalog_df(*catalogs)
-    pass
 
+    click.echo('Processing')
+    click.echo(tic_params)
 
+    click.echo('Determining what needs to be updated in cache')
+    params = []
+    tic_params.reset_index(inplace=True)
+    for kw in tic_params.to_dict('records'):
+        check = cache.session.query(TIC8Parameters).filter(TIC8Parameters.tic_id == kw['tic_id']).one_or_none()
+        if check:
+            continue
+        param = TIC8Parameters(**kw)
+        params.append(param)
+
+    click.echo('Updating {} entries'.format(len(params)))
+    cache.session.add_all(params)
+
+    if not ctx.obj['dryrun']:
+        cache.commit()
+    else:
+        cache.session.rollback()
+
+    click.echo('Added {} definitions'.format(len(params)))
+    click.echo('Done')
 
 
 @cache.command()

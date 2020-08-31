@@ -18,6 +18,7 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.util.iter import chunkify
 from lightcurvedb import db_from_config
 from sqlalchemy import Integer, text, bindparam
+from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import select, func, cast
 from multiprocessing import Process
 
@@ -149,15 +150,64 @@ class LightpointProcessor(Process):
         self.name = '{}-{}'.format(self.prefix, os.getpid())
 
 
+class MassIngestor(LightpointProcessor):
+    prefix = 'MassIngestor'
+
+    def __init__(self, lcdb_config, tic_queue, mode='ignore', **process_kwargs):
+        super(MassIngestor, self).__init__(**process_kwargs)
+        self.engine_kwargs = dict(
+            executemany_mode='values',
+            executemany_values_page_size=10000,
+            executemany_batch_page_size=500
+        )
+
+        self.config = lcdb_config
+        self.tic_queue = tic_queue
+        self.mode = mode
+        self.db = None
+        self.cadence_to_orbit_map = dict()
+
+    def process(self, tic, job):
+        current_lightcurves = self.db.query(
+            Lightcurve,
+        ).options(joinedload(Lightcurve.lightpoints))
+
+        # For each tic determine what cadences can be inserted
+        # and which can be ignored.
+        for ingest in job.file_observations:
+            pass
+
+    def run(self):
+        self.db = db_from_config(self.config).open()
+        self.cadence_to_orbit_map = {
+            cadence: orbit_number
+            for cadence, orbit_number in
+            db.query(Frame.cadence, Orbit.orbit_number).join(Frame.orbit
+                ).distinct(Frame.cadence, Orbit.orbit_number).filter(
+                    Frame.cadence_type.in_(10, 30)
+                ).all()
+        }
+        try:
+            while True:
+                tic, jobs = self.tic_queue.get(timeout=60*2)
+        except queue.Empty:
+            # Timed out :(
+            self.log('TIC queue timed out. Flushing any remaining data')
+        finally:
+            # Cleanup!
+            self.db.close()
+
+
 class LightpointInserter(LightpointProcessor):
     prefix = 'Inserter'
-    def __init__(self, lcdb_config, insertion_queue, resolution_mode, **process_kwargs):
+    def __init__(self, lcdb_config, insertion_queue, resolution_mode, mode='nothing', **process_kwargs):
         super(LightpointInserter, self).__init__(**process_kwargs)
         self.engine_kwargs = dict(
             executemany_mode='values',
             executemany_values_page_size=10000,
             executemany_batch_page_size=500
         )
+        self.mode = mode
         self.queue = insertion_queue
         self.config = lcdb_config
         self.resolution_mode = resolution_mode
@@ -171,79 +221,12 @@ class LightpointInserter(LightpointProcessor):
 
         self.id_map_cache = []
 
-    def resolve_lcs(self, lightcurve_ids):
-        if self.resolution_mode == 'ignore':
-            # Drop lightpoints from the lightpoint cache
-            idx = self.lp_cache.loc[list(lightcurve_ids)].index
-            self.lp_cache.drop(idx, inplace=True)
-        else:
-            self.log('consolidating {} lightcurves from db'.format(
-                len(lightcurve_ids)
-            ))
-            q = self.db.query(
-                Lightpoint.lightcurve_id,
-                func.array_agg(Lightpoint.cadence)
-            ).filter(
-                Lightpoint.lightcurve_id.in_(lightcurve_ids)
-            ).group_by(Lightpoint.lightcurve_id)
-
-            colliding_ids = []
-            colliding_lps = []
-
-            for id_, cadences in q.all():
-                try:
-                    new_cadences = set(
-                        self.lp_cache.loc[id_].index.values
-                    )
-                except KeyError:
-                    self.log('Could not find {} in {}'.format(
-                        id_,
-                        set(self.lp_cache.index.get_level_values('lightcurve_id'))
-                    ))
-                    raise
-                colliding = set(cadences) & new_cadences
-                if len(colliding) > 0:
-                    # We need to update this lightcurve
-                    colliding_ids.append(id_)
-
-            self.log('Found colliding IDs {}'.format(colliding_ids))
-
-            colliding_lps = Lightpoint.get_as_df(colliding_ids, self.db)
-
-            if len(colliding_lps) == 0:
-                # Got an empty lightcurve, we can go ahead and just
-                # insert
-                return
-
-            # Check for redundancy, if redundant, drop redundant values
-            is_redundant, redundant_idx = redundant(self.lp_cache, colliding_lps)
-            if is_redundant:
-                self.log('found {} redundant lps, dropping'.format(len(redundant_idx)))
-                self.lp_cache.drop(
-                    index=redundant_idx,
-                    inplace=True
-                )
-                return
-
-            if len(colliding_lps) > 0:
-                # We need to replace all relevant ids
-                self.db.query(Lightpoint).filter(
-                    Lightpoint.lightcurve_id.in_(colliding_ids)
-                ).delete(synchronize_session=False)
-
-                merged = pd.concat((
-                    colliding_lps,
-                    self.lp_cache
-                ), sort=True)
-                merged = merged[~merged.index.duplicated(keep='last')]
-                self.lp_cache = merged
-
     @property
     def cache_threshold(self):
         if self.lp_cache is None:
             return False
 
-        if len(self.lp_cache) >= 10**6:
+        if len(self.lp_cache) >= 10**9:
             return True
         return False
 
@@ -274,13 +257,12 @@ class LightpointInserter(LightpointProcessor):
         )
 
         lp = self.lp_cache[LP_COLS]
-        q = lightpoint_upsert_q(mode='overwrite')
+        q = lightpoint_upsert_q(mode=self.mode)
         for chunk in chunkify(lp.to_dict('records'), 10000):
             db.session.execute(q, chunk)
         
         q = Observation.upsert_dicts()
         obs = pd.DataFrame(self.observation_cache)
-        self.log(obs)
         obs.set_index('tic_id', 'orbit_id', inplace=True)
         obs.sort_index(inplace=True)
         obs = obs[~obs.index.duplicated(keep='last')]
@@ -326,8 +308,6 @@ class LightpointInserter(LightpointProcessor):
         )
 
         lp.set_index(['lightcurve_id', 'cadences'], inplace=True)
-        # Resolve and merge known lightcurves with current data
-        #self.resolve_lcs(ids_to_update)
 
     def insert(self, job):
         observations, tmp_id_mapper, lp = job
@@ -340,7 +320,8 @@ class LightpointInserter(LightpointProcessor):
         else:
             self.lp_cache = pd.concat((self.lp_cache, lp))
 
-        self.flush()
+        if self.cache_threshold:
+            self.flush()
 
     def resolve_tmp_ids(self, mapper):
         to_resolve = {k for k, v in mapper.items() if v < 0}
@@ -395,7 +376,6 @@ class LightpointInserter(LightpointProcessor):
                     first_ingestion = False
                 else:
                     job = self.queue.get(timeout=20)
-                self.log('was given {} lightpoints'.format(len(job[2])))
                 self.insert(job)
                 self.queue.task_done()
         except queue.Empty:
