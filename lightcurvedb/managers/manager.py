@@ -28,6 +28,19 @@ class Manager(object):
             k: set() for k in self.__uniq_tuple__
         }
 
+    def __contains__(self, obj):
+        """
+        Checks to see if the given obj is in the Manager. If this obj is
+        an instance of the `tracked` class then this method checks if this
+        object is tracked verbatim. Otherwise, this object is assumed to be
+        a unique key within the Manager.
+        """
+        if isinstance(obj, self.__managed_class__):
+            key = self.__get_key__(obj)
+        else:
+            key = obj
+        return key in self._interior_data
+
     def __repr__(self):
         return '<{} Manager: {} items>'.format(
             self.__managed_class__,
@@ -46,6 +59,20 @@ class Manager(object):
             getattr(model_inst, col) for col in self.__uniq_tuple__
         )
         return key
+
+    def __get_key_by_kw__(self, **kwargs):
+        try:
+            key = tuple(
+                kwargs[col] for col in self.__uniq_tuple__
+            )
+            return key
+        except KeyError:
+            raise AmbiguousIdentifierDeduction(
+                '{} does not contain the needed {} parameters'.format(
+                    kwargs.keys(),
+                    self.__uniq_tuple__
+                )
+            )
 
     def __add_key__(self, key, model_inst):
         self._interior_data[key] = model_inst

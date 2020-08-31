@@ -17,9 +17,9 @@ from .constants import PSQL_INT_MAX
         error=st.floats(),
         x=st.floats(),
         y=st.floats(),
-        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX)
+        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX),
     ),
-    lc_st()
+    lc_st(),
 )
 def test_lightpoint_retrieval(db_conn, lp, lc):
     with db_conn as db:
@@ -29,10 +29,7 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
             db.add(lp)
             db.commit()
 
-            result = db.query(Lightpoint).get((
-                lp.lightcurve_id,
-                lp.cadence
-            ))
+            result = db.query(Lightpoint).get((lp.lightcurve_id, lp.cadence))
 
             assert result == lp
             assert result.lightcurve == lc
@@ -63,9 +60,9 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
 #             lc.id = lp.lightcurve_id
 #             db.add(lc)
 #             db.commit()
-# 
+#
 #             assert len(lc) == 0
-# 
+#
 #             q = lightpoint_upsert_q()
 #             db.session.execute(
 #                 q, [
@@ -82,13 +79,13 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
 #                 ]
 #             )
 #             db.commit()
-# 
+#
 #             assert len(lc) == 1
 #         finally:
 #             db.rollback()
 #             clear_all(db)
-# 
-# 
+#
+#
 # @settings(deadline=None)
 # @given(
 #     st.builds(
@@ -113,7 +110,7 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
 #             db.commit()
 #             kw = lp.to_dict
 #             kw['data'] = -1.0
-# 
+#
 #             q = lightpoint_upsert_q()
 #             db.session.execute(
 #                 q,
@@ -124,7 +121,7 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
 #         finally:
 #             db.rollback()
 #             clear_all(db)
-# 
+#
 # @settings(deadline=None)
 # @given(
 #     st.builds(
@@ -149,7 +146,7 @@ def test_lightpoint_retrieval(db_conn, lp, lc):
 #             db.commit()
 #             kw = lp.to_dict
 #             kw['data'] = -1.0
-# 
+#
 #             q = lightpoint_upsert_q(mode='nothing')
 #             db.session.execute(
 #                 q,

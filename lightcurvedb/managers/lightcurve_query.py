@@ -120,7 +120,6 @@ class LightcurveManager(BaseLightcurveManager):
         """
         self.add_model(lightcurve)
 
-        
     def add(self, tic_id, aperture, lightcurve_type, **data):
         """Adds a new lightcurve to the manager. This will create a new
         Lightcurve model instance and track it for batch insertions.

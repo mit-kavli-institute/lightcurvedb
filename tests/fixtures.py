@@ -6,10 +6,10 @@ from .constants import CONFIG_PATH
 
 
 def near_equal(a, b, rel_tol=1e-09, abs_tol=0.0):
-    return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+    return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
 
-@pytest.yield_fixture(scope='session')
+@pytest.yield_fixture(scope="session")
 def db_conn():
     db = db_from_config(CONFIG_PATH).open()
     QLPModel.metadata.create_all(db.session.bind)
@@ -21,8 +21,6 @@ def db_conn():
 def clear_all(db):
     for tbl in reversed(QLPModel.metadata.sorted_tables):
         db.session.execute(
-            text(
-                'TRUNCATE TABLE {} RESTART IDENTITY CASCADE'.format(tbl.name)
-            )
+            text("TRUNCATE TABLE {} RESTART IDENTITY CASCADE".format(tbl.name))
         )
     db.commit()

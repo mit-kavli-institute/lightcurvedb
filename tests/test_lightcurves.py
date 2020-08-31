@@ -25,13 +25,14 @@ def test_lightcurve_instantiation(tic, aperture, lc_type):
         error=st.floats(),
         x=st.floats(),
         y=st.floats(),
-        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX)
+        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX),
     ),
-    lightcurve())
+    lightcurve(),
+)
 def test_lightpoint_collection_init(db_conn, lp, lc):
     with db_conn as db:
         try:
-            lc.id = lp.lightcurve_id,
+            lc.id = (lp.lightcurve_id,)
             db.add(lc)
             db.add(lp)
             db.commit()
@@ -53,11 +54,12 @@ def test_lightpoint_collection_init(db_conn, lp, lc):
         error=st.floats(),
         x=st.floats(),
         y=st.floats(),
-        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX)
+        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX),
     ),
     st.integers(min_value=1),
     aperture(),
-    lightcurve_type())
+    lightcurve_type(),
+)
 def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
     lc = Lightcurve(tic_id=tic, aperture=aperture, lightcurve_type=lc_type)
 
@@ -84,11 +86,12 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
         error=st.floats(),
         x=st.floats(),
         y=st.floats(),
-        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX)
+        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX),
     ),
     st.integers(min_value=1),
     aperture(),
-    lightcurve_type())
+    lightcurve_type(),
+)
 def test_dict_collection_append(lp, tic, aperture, lc_type):
     lc = Lightcurve(tic_id=tic, aperture=aperture, lightcurve_type=lc_type)
 

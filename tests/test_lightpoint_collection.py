@@ -6,30 +6,27 @@ import numpy as np
 
 
 ASSIGNABLE_ATTRS = {
-    'barycentric_julian_date',
-    'bjd',
-    'values',
-    'errors',
-    'x_centroids',
-    'y_centroids',
-    'quality_flags'
+    "barycentric_julian_date",
+    "bjd",
+    "values",
+    "errors",
+    "x_centroids",
+    "y_centroids",
+    "quality_flags",
 }
 
 
-assignable_attr = lambda: st.one_of(
-    st.just(col) for col in ASSIGNABLE_ATTRS
-)
+assignable_attr = lambda: st.one_of(st.just(col) for col in ASSIGNABLE_ATTRS)
 
 
 class CollectionComparison(RuleBasedStateMachine):
-
     @given(lightcurve())
     def __init__(self, lc):
         super(CollectionComparison, self).__init__()
         self.reference = dict()
         self.lightcurve = lc
 
-    lightpoints = Bundle('lightpoints')
+    lightpoints = Bundle("lightpoints")
 
     @rule(target=lightpoints, lp=lightpoint())
     def add_lightpoint(self, lp):
@@ -56,7 +53,9 @@ class CollectionComparison(RuleBasedStateMachine):
 
             # Assert correct data in collection
             check = lp.data == self.reference[cadence].data
-            assert check == (lp.data == self.lightcurve.lightpoints[cadence].data)
+            assert check == (
+                lp.data == self.lightcurve.lightpoints[cadence].data
+            )
         else:
             assert lp not in self.lightcurve.lightpoints
 
@@ -69,6 +68,7 @@ def test_scalar_assignment(attr, lc, lightpoints):
 
     new = getattr(lc, attr)
     assert all(value == new_val for new_val in new)
+
 
 @given(assignable_attr(), lightcurve(), st.lists(lightpoint()))
 def test_list_assignment(attr, lc, lightpoints):
