@@ -18,6 +18,7 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb.util.iter import chunkify
 from lightcurvedb import db_from_config
 from sqlalchemy import Integer, text, bindparam
+from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import select, func, cast
 from multiprocessing import Process
 
@@ -152,7 +153,7 @@ class LightpointProcessor(Process):
 class MassIngestor(LightpointProcessor):
     prefix = 'MassIngestor'
 
-    def __init__(self, lcdb_config, tic_queue, mode='nothing', **process_kwargs):
+    def __init__(self, lcdb_config, tic_queue, mode='ignore', **process_kwargs):
         super(MassIngestor, self).__init__(**process_kwargs)
         self.engine_kwargs = dict(
             executemany_mode='values',
@@ -164,21 +165,31 @@ class MassIngestor(LightpointProcessor):
         self.tic_queue = tic_queue
         self.mode = mode
         self.db = None
+        self.cadence_to_orbit_map = dict()
 
-    def process(self, tic):
-        observations = self.db.query(
-            Observation
-        ).filter(Observation.tic_id == tic).all()
+    def process(self, tic, job):
+        current_lightcurves = self.db.query(
+            Lightcurve,
+        ).options(joinedload(Lightcurve.lightpoints))
 
-        current_lightcurves = self.db.lightcurves.filter(
-            Lightcurve.tic_id == tic
-        )
+        # For each tic determine what cadences can be inserted
+        # and which can be ignored.
+        for ingest in job.file_observations:
+            pass
 
     def run(self):
         self.db = db_from_config(self.config).open()
+        self.cadence_to_orbit_map = {
+            cadence: orbit_number
+            for cadence, orbit_number in
+            db.query(Frame.cadence, Orbit.orbit_number).join(Frame.orbit
+                ).distinct(Frame.cadence, Orbit.orbit_number).filter(
+                    Frame.cadence_type.in_(10, 30)
+                ).all()
+        }
         try:
             while True:
-                pass
+                tic, jobs = self.tic_queue.get(timeout=60*2)
         except queue.Empty:
             # Timed out :(
             self.log('TIC queue timed out. Flushing any remaining data')
