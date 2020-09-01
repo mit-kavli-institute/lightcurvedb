@@ -267,6 +267,9 @@ class Lightcurve(QLPDataProduct):
             else:
                 raise
 
+    def plot(self, plot_visitor):
+        raise NotImplementedError
+
     @hybrid_property
     def type(self):
         """An alias for lightcurve_type"""
@@ -305,7 +308,6 @@ class Lightcurve(QLPDataProduct):
     @hybrid_property
     def quality_flags(self):
         return self.lightpoints.quality_flags
-
 
     # Lightcurve instance setters
     @bjd.setter

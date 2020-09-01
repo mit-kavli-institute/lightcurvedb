@@ -3,6 +3,13 @@ from pandas import read_csv
 from datetime import datetime
 import os
 
+def mass_ingest(cursor, filelike, target_table, **options):
+    cursor.copy_from(
+        filelike,
+        target_table,
+        **options
+    )
+
 
 class DataPacker(object):
     """
@@ -15,14 +22,15 @@ class DataPacker(object):
     Data should arrive in the form of a pandas dataframe or a list of
     dictionaries.
     """
-    __target_table__ = None
+    __target_table__ = 'lightpoints'
 
-    def __init__(self, dir_path):
+    def __init__(self, dir_path, pack_options={}):
+        self.pack_options = pack_options
         self.dir_path = dir_path
         path = os.path.join(
             dir_path,
             'datapack_{}.blob'.format(
-                datetime.now().strftime('%Y%m%dT%H%M%S')        
+                datetime.now().strftime('%Y%m%dT%H%M%S_%f')        
             )
         )
         self._internal_path = path
@@ -49,13 +57,15 @@ class DataPacker(object):
         return self.length
 
     def pack(self, dataframe):
+        if len(dataframe) == 0:
+            return
         if not self.has_written_header:
-            dataframe.to_csv(self._internal_path)
+            dataframe.to_csv(self._internal_path, **self.pack_options)
             self.has_written_header = True
             # set permissions
             os.chmod(self._internal_path, 0o664)
         else:
-            dataframe.to_csv(self._internal_path, mode='a', header=False)
+            dataframe.to_csv(self._internal_path, mode='a', **self.pack_options)
 
         self.length += len(dataframe)
 
@@ -63,13 +73,15 @@ class DataPacker(object):
         return read_csv(self._internal_path)
 
     def serialize_to_database(self, lcdb):
-        cursor = lcdb.session.connection().connection.cursor()
+        if len(self) > 0:
+            cursor = lcdb.session.connection().connection.cursor()
 
-        cursor.copy_from(
-            open(self._internal_path, 'r'),
-            self.__target_table__,
-            sep=','
-        )
+            mass_ingest(
+                cursor,
+                open(self._internal_path, 'r'),
+                self.__target_table__,
+                sep=','
+            )
 
-        # Cleanup :)
-        cursor.close()
+            # Cleanup :)
+            cursor.close()

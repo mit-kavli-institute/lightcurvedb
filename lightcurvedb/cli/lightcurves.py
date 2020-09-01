@@ -5,6 +5,7 @@ import os
 import re
 from functools import partial
 from multiprocessing import Manager, Pool, Process, cpu_count
+from glob import glob
 
 import click
 import pandas as pd
@@ -13,8 +14,9 @@ from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
 from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters, QualityFlags
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.datastructures.data_packers import mass_ingest
 from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
-from lightcurvedb.core.ingestors.lightpoint import LightpointH5Merger, LightpointInserter, MergeJob, MassIngestor
+from lightcurvedb.core.ingestors.lightpoint import MergeJob, MassIngestor
 from lightcurvedb.models import Lightcurve, Observation, Orbit, QLPProcess
 from lightcurvedb.util.iter import chunkify, eq_partitions
 from sqlalchemy import BigInteger, Column, Table, and_
@@ -212,18 +214,27 @@ def perform_async_ingestion(tics, db):
 @click.option('--n-processes', default=48, type=click.IntRange(min=1))
 @click.option('--cameras', type=CommaList(int), default='1,2,3,4')
 @click.option('--ccds', type=CommaList(int), default='1,2,3,4')
-@click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/lcdb_ingestion')
+@click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/tmp/lcdb_ingestion')
 @click.option('--update-type', type=IngestionMode, default=INGESTION_MODES[0])
 def ingest_h5(ctx, orbits, n_processes, cameras, ccds, scratch, update_type):
 
     cache = IngestionCache()
     click.echo('Connected to ingestion cache, determining filepaths')
-    tic_q = cache.session.query(
-        FileObservation.tic_id
+    file_obs_q = cache.session.query(
+        FileObservation.tic_id,
+        FileObservation.orbit_number,
+        FileObservation.camera,
+        FileObservation.ccd,
+        FileObservation.file_path
     ).filter(
         FileObservation.orbit_number.in_(orbits),
         FileObservation.camera.in_(cameras),
         FileObservation.ccd.in_(ccds)
+    )
+
+    file_observations = pd.read_sql(
+        file_obs_q.statement,
+        cache.session.bind,
     )
 
     quality_flags = pd.read_sql(
@@ -237,7 +248,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, scratch, update_type):
         index_col=['cadences', 'camera', 'ccd']
     )
 
-    tics = [r for r, in tic_q.distinct().all()]
+    tics = file_observations.tic_id.unique()
 
     click.echo(
         'Will process {} TICs'.format(
@@ -248,12 +259,29 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, scratch, update_type):
         )
     )
 
+    previously_seen = set()
+
     with ctx.obj['dbconf'] as db:
         m = Manager()
         job_queue = m.Queue(maxsize=10000)
         time_corrector = StaticTimeCorrector(db.session)
         click.echo('Preparing {} threads'.format(n_processes))
         workers = []
+
+        click.echo(
+            'Looking at observation table to reduce duplicate work'
+        )
+        q = db.query(
+            Observation.tic_id,
+            Orbit.orbit_number
+        ).join(Observation.orbit).filter(
+            Observation.camera.in_(cameras),
+            Observation.ccd.in_(ccds),
+            Orbit.orbit_number.in_(orbits)
+        )
+
+        for tic_id, orbit_number in q.all():
+            previously_seen.add((tic_id, orbit_number))
 
         for i in range(n_processes):
             producer = MassIngestor(
@@ -266,36 +294,39 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, scratch, update_type):
             )
             workers.append(producer)
 
-        click.echo('Starting processes...')
-        for process in workers:
-            process.start()
+    click.echo('Starting processes...')
+    for process in workers:
+        process.start()
 
-        for tic in tics:
-            stellar_parameters = cache.session.query(
-                TIC8Parameters
-            ).get(tic)
+    for tic, df in file_observations.groupby('tic_id'):
+        files = []
+        for _, file_ in df.iterrows():
+            tic, orbit, _, _, _  = file_
+            if (file_.tic_id, file_.orbit_number) not in previously_seen:
+                files.append((
+                    file_.tic_id,
+                    file_.orbit_number,
+                    file_.camera,
+                    file_.ccd,
+                    file_.file_path
+                ))
 
-            file_q = cache.session.query(
-                FileObservation.tic_id,
-                FileObservation.orbit_number,
-                FileObservation.camera,
-                FileObservation.ccd,
-                FileObservation.file_path
-            ).filter(
-                FileObservation.tic_id == tic,
-                FileObservation.orbit_number.in_(orbits)
-            ).order_by(FileObservation.orbit_number.asc())
+        if len(files) == 0:
+            # Skip this work
+            continue
 
-            files = file_q.all()
-
-            job = MergeJob(
-                tic_id=tic,
-                ra=stellar_parameters.right_ascension,
-                dec=stellar_parameters.declination,
-                tmag=stellar_parameters.tmag,
-                file_observations=files
-            )
-            merge_queue.put(job)
+        stellar_parameters = cache.session.query(
+            TIC8Parameters
+        ).get(tic)
+    
+        job = MergeJob(
+            tic_id=tic,
+            ra=stellar_parameters.right_ascension,
+            dec=stellar_parameters.declination,
+            tmag=stellar_parameters.tmag,
+            file_observations=files
+        )
+        job_queue.put(job)
 
     for process in workers:
         process.join()
@@ -310,7 +341,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, scratch, update_type):
 @click.pass_context
 @click.argument('tics', type=int, nargs=-1)
 @click.option('--n-processes', default=48, type=click.IntRange(min=1))
-@click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/lcdb_ingestion')
+@click.option('--scratch', type=click.Path(exists=True, file_okay=False), default='/scratch/tmp/lcdb_ingestion')
 def manual_ingest(ctx, tics, n_processes, scratch):
     cache = IngestionCache()
     click.echo('Connected to ingestion cache, determining filepaths')
@@ -326,6 +357,7 @@ def manual_ingest(ctx, tics, n_processes, scratch):
         index_col=['cadences', 'camera', 'ccd']
     )
 
+
     click.echo(
         'Will process {} TICs'.format(
             click.style(
@@ -353,37 +385,38 @@ def manual_ingest(ctx, tics, n_processes, scratch):
             )
             workers.append(producer)
 
-        click.echo('Starting processes...')
-        for process in workers:
-            process.start()
 
-        for tic in tics:
-            stellar_parameters = cache.session.query(
-                TIC8Parameters
-            ).get(tic)
+    click.echo('Starting processes...')
+    for process in workers:
+        process.start()
 
-            file_q = cache.session.query(
-                FileObservation.tic_id,
-                FileObservation.orbit_number,
-                FileObservation.camera,
-                FileObservation.ccd,
-                FileObservation.file_path
-            ).filter(
-                FileObservation.tic_id == tic,
-                FileObservation.orbit_number.in_(orbits)
-            ).order_by(FileObservation.orbit_number.asc())
+    for tic in tics:
+        stellar_parameters = cache.session.query(
+            TIC8Parameters
+        ).get(tic)
 
-            files = file_q.all()
+        file_q = cache.session.query(
+            FileObservation.tic_id,
+            FileObservation.orbit_number,
+            FileObservation.camera,
+            FileObservation.ccd,
+            FileObservation.file_path
+        ).filter(
+            FileObservation.tic_id == tic,
+            FileObservation.orbit_number.in_(orbits)
+        ).order_by(FileObservation.orbit_number.asc())
+
+        files = file_q.all()
 
 
-            job = MergeJob(
-                tic_id=tic,
-                ra=stellar_parameters.right_ascension,
-                dec=stellar_parameters.declination,
-                tmag=stellar_parameters.tmag,
-                file_observations=files,
-            )
-            merge_queue.put(job)
+        job = MergeJob(
+            tic_id=tic,
+            ra=stellar_parameters.right_ascension,
+            dec=stellar_parameters.declination,
+            tmag=stellar_parameters.tmag,
+            file_observations=files,
+        )
+        job_queue.put(job)
 
     for process in workers:
         process.join()
@@ -396,6 +429,67 @@ def manual_ingest(ctx, tics, n_processes, scratch):
 
 @lightcurve.command()
 @click.pass_context
+@click.option('--scratch', type=click.Path(file_okay=False, exists=True), default='/scratch/tmp/')
+@click.option('--cache-name', type=str, default='lcdb_ingestion')
+def recover_blobs(ctx, scratch, cache_name):
+    path = os.path.join(
+        scratch, cache_name, '*.blob'
+    )
+    files = glob(path)
+    click.echo(
+        'Found {} orphan blobs'.format(
+            click.style(
+                str(len(files)),
+                bold=True,
+                fg='green'
+            )
+        )
+    )
+    with ctx.obj['dbconf'] as db:
+        click.echo(
+            'Loading defined Lightcurve ids...'
+        )
+        ids = {r for r, in db.query(Lightcurve.id)}
+        cursor = db.session.connection().connection.cursor()
+        click.echo(
+            'Preprocessing files, ensuring data validity...'
+        )
+        total_ingested = 0
+        for filepath in files:
+            df = pd.read_csv(filepath, header=None, names=[
+                'lightcurve_id', 'cadence', 'barycentric_julian_date', 'data',
+                'error', 'x_centroid', 'y_centroid', 'quality_flag'
+            ])
+            lightcurve_ids = set(df.lightcurve_id.unique())
+
+            incongruent_ids = lightcurve_ids - ids
+            if len(incongruent_ids) > 0:
+                click.echo(
+                    'Blob is missing {} IDs! Cannot ingest'.format(len(incongruent_ids))
+                )
+            else:
+                mass_ingest(cursor, open(filepath, 'rt'), 'lightpoints', sep=',')
+                db.commit()
+                total_ingested += len(df)
+                click.echo(
+                    '\tInserted {} lightpoints'.format(
+                        click.style(str(len(df)), bold=True, fg='green')
+                    )
+                )
+                os.remove(filepath)
+
+        click.echo(
+            'Done! Sent {} points to the database.'.format(
+                click.style(
+                    str(total_ingested),
+                    bold=True,
+                    fg='green'
+                )
+            )
+        )
+
+@lightcurve.command()
+@click.pass_context
 @click.argument('tic', type=int)
 def print(ctx, tic):
     """
@@ -403,4 +497,3 @@ def print(ctx, tic):
     """
     with closed_db as db:
         lcs = db.lightcurves.filter(Lightcurve.tic_id == tic).all()
-
