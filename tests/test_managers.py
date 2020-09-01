@@ -38,7 +38,7 @@ class LCManagerComparison(RuleBasedStateMachine):
     def __init__(self):
         super(LCManagerComparison, self).__init__()
         self.reference = dict()
-        self.manager = LightcurveManager()
+        self.manager = LightcurveManager([])
         self.uniq_cols = ("tic_id", "aperture_id", "lightcurve_type_id")
 
     lightcurves = Bundle("lightcurves")
@@ -56,13 +56,26 @@ class LCManagerComparison(RuleBasedStateMachine):
 
     @rule(target=lightcurves, lc_kw=lc_kw_st())
     def add_lightcurve_by_kwargs(self, lc_kw):
-        key = self.manager.__get_key_by_kw__(**lc_kw)
+        key = self.manager.__get_key_by_kw__(
+            tic_id=lc_kw['tic_id'],
+            aperture_id=lc_kw['aperture'].name,
+            lightcurve_type_id=lc_kw['lightcurve_type'].name
+        )
 
         if key in self.manager:
             with raises(DuplicateEntryException):
-                self.manager.add_model_kw(**lc_kw)
+                self.manager.add_model_kw(
+                    tic_id=lc_kw['tic_id'],
+                    aperture_id=lc_kw['aperture'].name,
+                    lightcurve_type_id=lc_kw['lightcurve_type'].name
+                )
             return None
-        return self.manager.add_model_kw(**lc_kw)
+
+        return self.manager.add_model_kw(
+            tic_id=lc_kw['tic_id'],
+            aperture_id=lc_kw['aperture'].name,
+            lightcurve_type_id=lc_kw['lightcurve_type'].name
+        )
 
     @rule(lc=lightcurves)
     def assert_in_lightcurve_manager(self, lc):
