@@ -488,6 +488,7 @@ def recover_blobs(ctx, scratch, cache_name):
             )
         )
 
+
 @lightcurve.command()
 @click.pass_context
 @click.argument('tic', type=int)

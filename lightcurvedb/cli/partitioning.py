@@ -1,11 +1,23 @@
 from __future__ import division, print_function
 
 import click
+import multiprocessing as mp
 from sys import exit
 import lightcurvedb.models as defined_models
 from sqlalchemy import text
+from lightcurvedb import db_from_config
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
 from lightcurvedb.cli.base import lcdbcli
+
+
+def mp_execute(db_config, q, **parameters):
+    with db_from_config(db_config) as db:
+        try:
+            db.session.execute(q, **parameters)
+            db.commit()
+            return True
+        except:
+            return False
 
 
 @lcdbcli.group()
@@ -187,3 +199,56 @@ def delete_partitions(ctx, model, pattern):
                 db.session.execute(q)
                 db.commit()
                 click.echo('\tDeleted {}'.format(name))
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument('model', type=str)
+@click.option('--pattern', '-p', type=str, default='.*')
+def set_unlogged(ctx, model, pattern):
+    try:
+        target_model = getattr(defined_models, model)
+    except AttributeError:
+        click.echo('No known model {}'.format(model))
+        exit(1)
+    with ctx.obj['dbconf'] as db:
+        partitions = db.get_partitions_df(target_model)
+        tablenames = list(partitions.partition_name)
+
+        for table in tablenames:
+            q = text('ALTER TABLE {} SET UNLOGGED'.format(table))
+            click.echo('Altering {}'.format(
+                click.style(table, bold=True)
+            ))
+            db.session.execute(
+                q
+            )
+            db.commit()
+        click.echo('Altered {} tables! Done'.format(len(tablenames)))
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument('model', type=str)
+@click.option('--pattern', '-p', type=str, default='.*')
+def set_logged(ctx, model, pattern):
+    try:
+        target_model = getattr(defined_models, model)
+    except AttributeError:
+        click.echo('No known model {}'.format(model))
+        exit(1)
+
+    with ctx.obj['dbconf'] as db:
+        partitions = db.get_partitions_df(target_model)
+        tablenames = list(partitions.partition_name)
+
+        for table in tablenames:
+            q = text('ALTER TABLE {} SET LOGGED'.format(table))
+            click.echo('Altering {}'.format(
+                click.style(table, bold=True)
+            ))
+            db.session.execute(
+                q
+            )
+            db.commit()
+        click.echo('Altered {} tables! Done'.format(len(tablenames)))

@@ -320,7 +320,7 @@ class MassIngestor(LightpointProcessor):
                 self.merge(job)
                 self.tic_queue.task_done()
 
-                if len(self.packer) > 10**6:
+                if len(self.packer) > 10**9:
                     # Flush
                     self.flush()
 

@@ -1,4 +1,4 @@
-from abc import ABCMeta
+from abc import ABCMeta, abstractmethod
 from pandas import read_csv
 from datetime import datetime
 import os
@@ -56,6 +56,20 @@ class DataPacker(object):
     def __len__(self):
         return self.length
 
+    @abstractmethod
+    def pack(self, dataframe):
+        pass
+
+    @abstractmethod
+    def unpack(self):
+        pass
+
+    @abstractmethod
+    def serialize_to_database(self):
+        pass
+
+
+class CSVPacker(DataPacker):
     def pack(self, dataframe):
         if len(dataframe) == 0:
             return
@@ -85,3 +99,5 @@ class DataPacker(object):
 
             # Cleanup :)
             cursor.close()
+
+

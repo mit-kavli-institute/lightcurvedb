@@ -232,6 +232,9 @@ class Lightcurve(QLPDataProduct):
             self.aperture.name
         )
 
+    def __str__(self):
+        pass
+
     def __getitem__(self, key):
         """
         TODO Cleanup & move aliases to some configurable constant
