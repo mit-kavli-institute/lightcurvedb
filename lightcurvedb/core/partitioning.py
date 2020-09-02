@@ -164,3 +164,11 @@ def extract_partition_df(partition_df):
         ["begin_range", "end_range"]
     ].apply(to_numeric, errors="coerce")
     return result
+
+
+def get_partition_tables(psql_meta, model, db):
+    tablename = model.__tablename__
+    pg_partitioned_table = psql_meta.classes.pg_partitioned_table
+    pg_class = psql_meta.classes.pg_class
+
+    q = db.select(pg_partitioned_table)

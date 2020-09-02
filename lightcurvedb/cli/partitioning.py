@@ -7,6 +7,7 @@ import lightcurvedb.models as defined_models
 from sqlalchemy import text
 from lightcurvedb import db_from_config
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from lightcurvedb.core.admin import psql_tables
 from lightcurvedb.cli.base import lcdbcli
 
 
@@ -252,3 +253,27 @@ def set_logged(ctx, model, pattern):
             )
             db.commit()
         click.echo('Altered {} tables! Done'.format(len(tablenames)))
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument('partition-tablename', type=str)
+@click.argument('new-range', type=click.IntRange(min=1))
+def repartition(ctx, partition_tablename, new_range):
+    try:
+        target_model = getattr(defined_models, model)
+    except AttributeError:
+        click.echo('No known model {}'.format(model))
+        exit(1)
+
+    with ctx.obj['dbconf'] as db:
+        psql_admin = psql_tables(db)
+        pg_partitions = psql_admin.classes.pg_partitioned_table
+        pg_class = psql_admin.classes.pg_class
+
+        q = pg_partitions.join(
+            pg_class,
+            pg_partitions.c.partrelid = pg_class.c.oid
+        ).filter(
+            pg_class.c.relname == partition_tablename
+        )
