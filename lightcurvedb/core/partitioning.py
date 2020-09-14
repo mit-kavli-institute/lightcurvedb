@@ -89,7 +89,7 @@ def n_new_partitions(
     return required_partitions
 
 
-def emit_ranged_partition_ddl(table, begin_range, end_range):
+def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     """
     Construct a DDL object representing the creation of a partition.
 
@@ -112,10 +112,12 @@ def emit_ranged_partition_ddl(table, begin_range, end_range):
     sqlalchemy.DDL
     """
 
-    fmt_args = dict(table=table, begin=begin_range, end=end_range,)
+    table_noun = '{}.{}'.format(schema, table) if schema else table
+
+    fmt_args = dict(partition=table_noun,table=table, begin=begin_range, end=end_range,)
 
     return DDL(
-        "CREATE TABLE {table}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
+        "CREATE TABLE {partition}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
             **fmt_args
         )
     )
@@ -164,3 +166,11 @@ def extract_partition_df(partition_df):
         ["begin_range", "end_range"]
     ].apply(to_numeric, errors="coerce")
     return result
+
+
+def make_fake_mapper(Model, tablename, schema=None):
+    class Fake(Model):
+        __tablename__ = tablename
+
+        __table_args__ = {'schema': schema} if schema else {}
+    return Fake
