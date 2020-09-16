@@ -92,8 +92,6 @@ class MassIngestor(LightpointProcessor):
             quality_flags,
             time_corrector,
             tic_queue,
-            observation_table,
-            lc_id_table,
             mode='ignore',
             **process_kwargs):
         super(MassIngestor, self).__init__(**process_kwargs)
@@ -108,7 +106,6 @@ class MassIngestor(LightpointProcessor):
         self.mode = mode
         self.q_flags = quality_flags
         self.time_corrector = time_corrector
-        self.observation_table = observation_table,
 
         self.db = None
         self.cadence_to_orbit_map = dict()
@@ -118,7 +115,7 @@ class MassIngestor(LightpointProcessor):
         self.table_cache = dict()
 
         self.new_ids = set()
-        self.id_map = lc_id_table
+        self.id_map = dict()
 
     def update_ids(self, tic):
         for lc in self.db.lightcurves.filter(Lightcurve.tic_id == tic).all():
