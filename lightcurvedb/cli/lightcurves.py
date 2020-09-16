@@ -78,7 +78,7 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
         time_corrector = StaticTimeCorrector(db.session)
         workers = []
 
-        click.echo('Grabbing current observatiob table to reduce duplicate work')
+        click.echo('Grabbing current observation table to reduce duplicate work')
         q = db.query(
             Observation.tic_id,
             Orbit.orbit_number
@@ -92,7 +92,6 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
                 quality_flags,
                 time_corrector,
                 job_queue,
-                scratch,
                 daemon=True
             )
             workers.append(producer)
@@ -229,8 +228,7 @@ def manual_ingest(ctx, tics, n_processes, scratch):
     )
     file_observations = pd.read_sql(
         file_obs_q.statement,
-        cache.session.bind,
-        index_col=['tic_id']
+        cache.session.bind
     )
 
     ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch)
@@ -267,8 +265,7 @@ def tic_list(ctx, tic_file, n_processes, scratch):
     )
     file_observations = pd.read_sql(
         file_obs_q.statement,
-        cache.session.bind,
-        index_col=['tic_id']
+        cache.session.bind
     )
 
     ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch)
