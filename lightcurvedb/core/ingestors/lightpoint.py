@@ -245,6 +245,7 @@ class MassIngestor(LightpointProcessor):
                 Lightpoint.bjd: bindparam('bjd'),
                 Lightpoint.cadence: bindparam('cadences'),
                 Lightpoint.data: bindparam('values'),
+                Lightpoint.error: bindparam('errors'),
                 Lightpoint.x_centroid: bindparam('x_centroids'),
                 Lightpoint.y_centroid: bindparam('y_centroids'),
                 Lightpoint.quality_flag: bindparam('quality_flags'),
