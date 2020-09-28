@@ -401,7 +401,7 @@ class CopyProcess(LightpointProcessor):
     def run(self):
         self.db = db_from_config(self.config, **self.engine_kwargs).open()
         self.set_name()
-        
+
         try:
             while True:
                 job = self.lp_queue.get()
