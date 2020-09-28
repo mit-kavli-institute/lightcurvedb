@@ -2,6 +2,7 @@
 This module describes partitioning of the lightcurve database.
 """
 from sqlalchemy import DDL, text
+from sqlalchemy.orm import aliased
 from math import ceil
 import re
 from pandas import to_numeric
@@ -89,7 +90,7 @@ def n_new_partitions(
     return required_partitions
 
 
-def emit_ranged_partition_ddl(table, begin_range, end_range):
+def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     """
     Construct a DDL object representing the creation of a partition.
 
@@ -106,13 +107,18 @@ def emit_ranged_partition_ddl(table, begin_range, end_range):
     end_range : int or float
         The exclusive end of the range for the table. Used in naming and
         setting the constraints of the table.
+    schema : str, optional
+        The schema to place the table under. None implies the use of the
+        "public" schema.
 
     Returns
     -------
     sqlalchemy.DDL
     """
 
-    fmt_args = dict(table=table, begin=begin_range, end=end_range,)
+    table_verb = '{}.{}'.format(schema, table) if schema else table
+
+    fmt_args = dict(table=table_verb, begin=begin_range, end=end_range,)
 
     return DDL(
         "CREATE TABLE {table}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
@@ -166,9 +172,42 @@ def extract_partition_df(partition_df):
     return result
 
 
-def get_partition_tables(psql_meta, model, db):
-    tablename = model.__tablename__
-    pg_partitioned_table = psql_meta.classes.pg_partitioned_table
-    pg_class = psql_meta.classes.pg_class
+def get_partition_tables(psql_meta, model, db, resolve=True):
+    """
+    Query for the partition tables of the given SQLAlchemy Model.
+    This will return ``pg_class`` rows of partition tables that
+    are partitioned on ``model.__tablename__``.
 
-    q = db.select(pg_partitioned_table)
+    Parameters
+    ----------
+    psql_meta : sqlalchemy.MetaData
+        The metadata object that is a reflection of the POSTGRESQL
+        catalogs.
+    model : lightcurvedb.core.base_model.QLPModel
+        The Model class to reference for partitions.
+    db : lightcurvedb.db
+        The current and open db class instance.
+
+    Returns
+    -------
+    list
+        Returns a list of tuples of the executed query. Potentially
+        empty.
+    """
+    tablename = model.__tablename__
+    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
+    pg_partitioned_table = psql_meta.tables['pg_catalog.pg_partitioned_table']
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    parent = aliased(pg_class, alias='parent')
+    child = aliased(pg_class, alias='child')
+
+    q = db.query(child).join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid).join(
+        parent, parent.c.oid == pg_inherits.c.inhparent == parent.c.oid).filter(
+            parent.c.relname == tablename
+        )
+    return q.all() if resolve else q
+
+
+def get_partition_info(psql_meta, parent_oid, db):
+    pass

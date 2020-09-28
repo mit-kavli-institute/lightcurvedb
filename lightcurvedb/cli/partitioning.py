@@ -6,7 +6,7 @@ from sys import exit
 import lightcurvedb.models as defined_models
 from sqlalchemy import text
 from lightcurvedb import db_from_config
-from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from lightcurvedb.core.partitioning import emit_ranged_partition_ddl, get_partition_tables
 from lightcurvedb.core.admin import psql_tables
 from lightcurvedb.cli.base import lcdbcli
 
@@ -65,7 +65,8 @@ def list_partitions(ctx, model):
 @click.argument('model', type=str)
 @click.argument('number_of_new_partitions', type=click.IntRange(min=1))
 @click.argument('blocksize', type=click.IntRange(min=1))
-def create_partitions(ctx, model, number_of_new_partitions, blocksize):
+@click.option('--schema', type=str, help='Schema space to place the partition under (organization)')
+def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
     Create ranged partitions on the given MODEL with ranges equivalent to the
     BLOCKSIZE.
@@ -96,7 +97,8 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize):
             ddl = emit_ranged_partition_ddl(
                 target_model.__tablename__,
                 current_max,
-                current_max + blocksize
+                current_max + blocksize,
+                schema=schema
             )
             new_partition_models.append(ddl)
 
@@ -148,10 +150,11 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize):
             click.confirm('Do the following changes look okay?', abort=True)
             for partition in new_partition_models:
                 db.session.execute(partition)
-                db.commit()
                 click.echo(
                     '\tMade {}'.format(partition)
                 )
+
+            db.commit()
             click.echo(
                 'Committed {} new partitions!'.format(len(new_partition_models))
             )
@@ -258,8 +261,8 @@ def set_logged(ctx, model, pattern):
 @partitioning.command()
 @click.pass_context
 @click.argument('partition-tablename', type=str)
-@click.argument('new-range', type=click.IntRange(min=1))
-def repartition(ctx, partition_tablename, new_range):
+@click.argument('n-subpartitions', type=click.IntRange(min=2))
+def subpartition(ctx, partition_tablename, n_subpartitions):
     try:
         target_model = getattr(defined_models, model)
     except AttributeError:
@@ -268,12 +271,9 @@ def repartition(ctx, partition_tablename, new_range):
 
     with ctx.obj['dbconf'] as db:
         psql_admin = psql_tables(db)
-        pg_partitions = psql_admin.classes.pg_partitioned_table
-        pg_class = psql_admin.classes.pg_class
-
-        q = pg_partitions.join(
-            pg_class,
-            pg_partitions.c.partrelid = pg_class.c.oid
-        ).filter(
-            pg_class.c.relname == partition_tablename
+        partitions = get_partition_tables(
+            psql_admin,
+            target_model,
+            db
         )
+        click.echo(partitions)

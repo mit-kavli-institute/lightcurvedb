@@ -154,6 +154,29 @@ class DB(object):
             )
         return self._session
 
+    @property
+    def bind(self):
+        """
+        Return the underlying SQLAlchemy Engine powering this connection.
+
+        Returns
+        -------
+        sqlalchemy.Engine
+            The Engine object powering the python side rendering of transactions.
+
+        Raises
+        ------
+        RuntimeError
+            Attempted to access this propery without first calling ``open()``.
+        """
+        if not self._active:
+            raise RuntimeError(
+                'Session is not open. Please call `db_inst.open()`'
+                'or use `with db_inst as opendb:`'
+            )
+        return self._session.bind
+
+
     def query(self, *args):
         """
         Constructs a query attached to this session.

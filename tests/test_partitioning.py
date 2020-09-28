@@ -1,7 +1,8 @@
 from hypothesis import strategies as st, given, note, example, assume
 from lightcurvedb.models import Lightpoint
 from lightcurvedb.models.lightpoint import LIGHTPOINT_PARTITION_RANGE
-from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q
+from lightcurvedb.core.admin import psql_tables
+from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q, get_partition_tables
 from math import ceil
 import traceback
 from click.testing import CliRunner
@@ -100,3 +101,13 @@ def test_cli_creation_of_partition(db_conn, n_partitions):
         assert not result.exception
         assert result.exit_code == 0
         assert new_len - orig_n_partitions == 1
+
+
+def test_can_get_partitions(db_conn):
+    with db_conn as db:
+        db.commit()
+        admin_meta = psql_tables(db)
+        print(str(get_partition_tables(admin_meta, Lightpoint, db, resolve=False)))
+        tables = get_partition_tables(admin_meta, Lightpoint, db)
+
+        assert len(tables) == 1
