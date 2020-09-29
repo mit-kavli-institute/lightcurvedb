@@ -107,7 +107,6 @@ def test_can_get_partitions(db_conn):
     with db_conn as db:
         db.commit()
         admin_meta = psql_tables(db)
-        print(str(get_partition_tables(admin_meta, Lightpoint, db, resolve=False)))
+        print(get_partition_tables(admin_meta, Lightpoint, db))
         tables = get_partition_tables(admin_meta, Lightpoint, db)
-
         assert len(tables) == 1
