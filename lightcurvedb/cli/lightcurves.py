@@ -144,6 +144,10 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
         stellar_parameters = cache.session.query(
             TIC8Parameters
         ).get(tic)
+
+        if stellar_parameters is None:
+            click.echo('Could not find parameters for {}'.format(tic))
+            continue
     
         job = MergeJob(
             tic_id=tic,

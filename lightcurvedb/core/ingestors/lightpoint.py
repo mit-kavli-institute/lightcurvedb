@@ -193,6 +193,7 @@ class MassIngestor(LightpointProcessor):
                 )
                 h5_lp['barycentric_julian_date'] = corrected_bjd
                 h5_lp.drop(columns=['camera'], inplace=True)
+                h5_lp.sort_index(inplace=True)
                 h5_lp.reset_index(inplace=True)
 
                 # Orbital data has been corrected for Earth observation
@@ -308,111 +309,4 @@ class MassIngestor(LightpointProcessor):
             self.flush()
         finally:
             # Cleanup!
-            self.db.close()
-
-
-
-class CopyProcess(LightpointProcessor):
-    prefix = 'Copier'
-
-    def __init__(self, db_config, lp_queue, copy_args, **process_kwargs):
-        super(CopyProcess, self).__init__(**process_kwargs)
-        self.lp_queue = lp_queue
-        self.threshold_time = copy_args['threshold_time']
-        self.expected_tics = copy_args['expected_tics']
-        self.db = None
-        self.config = db_config
-
-        self.lightcurve_cache = []
-        self.internal_cache = []
-        self.observation_cache = []
-        self.last_copy_time = time()
-        self.mgr = None
-        self.dirty = False
-        self.seen_tics = set()
-        self.track_count = 0
-        self.pg_map = None
-
-        self.engine_kwargs = dict(
-            executemany_mode='values',
-            executemany_values_page_size=10000,
-            executemany_batch_page_size=500
-        )
-
-
-    def process(self, job):
-        lightcurves = job['lightcurves']
-        records = job['lightpoints']
-        observations = job['observations']
-        self.lightcurve_cache.extend(lightcurves)
-        self.internal_cache.append(records)
-        self.observation_cache.extend(observations)
-
-        if any(len(x) > 0 for x in [lightcurves, records, observations]):
-            self.dirty = True
-
-    def iter_lps(self):
-        for df in self.internal_cache:
-            for row in df.to_records():
-                yield row
-                self.track_count += 1
-
-    def flush(self):
-        if self.dirty:
-            lcs = []
-            for id_, tic_id, ap_id, lc_type_id in self.lightcurve_cache:
-                lc = Lightcurve(
-                    id=id_,
-                    tic_id=tic_id,
-                    aperture_id=ap_id,
-                    lightcurve_type_id=lc_type_id
-                )
-                lcs.append(lc)
-                self.seen_tics.add(lc.tic_id)
-
-            self.db.session.add_all(lcs)
-            self.db.commit()
-            mgr = CopyManager(
-                self.db.session.connection().connection,
-                'lightpoints',
-                ['lightcurve_id', 'cadence', 'barycentric_julian_date',
-                    'data', 'error', 'x_centroid', 'y_centroid',
-                    'quality_flag']
-            )
-            mgr.threading_copy(self.iter_lps())
-            obs = [Observation(**kw) for kw in self.observation_cache]
-            self.db.session.add_all(obs)
-            self.db.commit()
-            self.last_copy_time = time()
-            self.dirty = False
-
-            self.log(
-                'Committed {} lightpoints. Seen ~ {} / {} tics'.format(
-                    self.track_count,
-                    len(self.seen_tics),
-                    len(self.expected_tics)
-                )
-            )
-            self.track_count = 0
-            self.lightpoint_cache = []
-            self.lightcurve_cache = []
-            self.observation_cache = []
-
-    def run(self):
-        self.db = db_from_config(self.config, **self.engine_kwargs).open()
-        self.set_name()
-        
-        try:
-            while True:
-                job = self.lp_queue.get()
-                self.process(job)
-                self.flush()
-        except queue.Empty:
-            # Looks like we're done.
-            self.log('Finishing up')
-            self.flush()
-            self.db.close()
-        except KeyboardInterrupt:
-            self.log('Received interrupt')
-            self.flush()
             self.db.close()
