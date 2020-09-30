@@ -12,7 +12,10 @@ def near_equal(a, b, rel_tol=1e-09, abs_tol=0.0):
 @pytest.yield_fixture(scope="session")
 def db_conn():
     db = db_from_config(CONFIG_PATH).open()
+    partition_q = text('CREATE SCHEMA partitions')
+    db.session.execute(partition_q)
     QLPModel.metadata.create_all(db.session.bind)
+    db.commit()
     db.close()
 
     yield db

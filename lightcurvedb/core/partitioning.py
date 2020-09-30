@@ -121,7 +121,7 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     fmt_args = dict(table=table_verb, begin=begin_range, end=end_range,)
 
     return DDL(
-        "CREATE TABLE {table}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
+        "CREATE TABLE {partition}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
             **fmt_args
         )
     )
@@ -140,8 +140,6 @@ def get_partition_q(table):
     sqlalchemy.text
         A text object representing the desired query.
     """
-
-
 
     q = text(
         "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
@@ -175,6 +173,7 @@ def extract_partition_df(partition_df):
     return result
 
 
+<<<<<<< HEAD
 def get_partition_tables(psql_meta, model, db, resolve=True):
     """
     Query for the partition tables of the given SQLAlchemy Model.

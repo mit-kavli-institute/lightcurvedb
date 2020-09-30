@@ -65,7 +65,8 @@ def list_partitions(ctx, model):
 @click.argument('model', type=str)
 @click.argument('number_of_new_partitions', type=click.IntRange(min=1))
 @click.argument('blocksize', type=click.IntRange(min=1))
-@click.option('--schema', type=str, help='Schema space to place the partition under (organization)')
+@click.option('--schema', type=str, default='partitions', help='Schema space to place the partition under (organization)')
+@click.option('--schema', type=str, default='partitions')
 def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
     Create ranged partitions on the given MODEL with ranges equivalent to the
@@ -205,11 +206,16 @@ def delete_partitions(ctx, model, pattern):
                 click.echo('\tDeleted {}'.format(name))
 
 
+def schemaed_table(table, schema):
+    return '{}.{}'.format(schema, table) if schema else table
+
+
 @partitioning.command()
 @click.pass_context
 @click.argument('model', type=str)
 @click.option('--pattern', '-p', type=str, default='.*')
-def set_unlogged(ctx, model, pattern):
+@click.option('--schema', type=str, default='partitions')
+def set_unlogged(ctx, model, pattern, schema):
     try:
         target_model = getattr(defined_models, model)
     except AttributeError:
@@ -220,6 +226,7 @@ def set_unlogged(ctx, model, pattern):
         tablenames = list(partitions.partition_name)
 
         for table in tablenames:
+            table = schemaed_table(table, schema)
             q = text('ALTER TABLE {} SET UNLOGGED'.format(table))
             click.echo('Altering {}'.format(
                 click.style(table, bold=True)
@@ -235,7 +242,8 @@ def set_unlogged(ctx, model, pattern):
 @click.pass_context
 @click.argument('model', type=str)
 @click.option('--pattern', '-p', type=str, default='.*')
-def set_logged(ctx, model, pattern):
+@click.option('--schema', type=str, default='partitions')
+def set_logged(ctx, model, pattern, schema):
     try:
         target_model = getattr(defined_models, model)
     except AttributeError:
@@ -247,6 +255,7 @@ def set_logged(ctx, model, pattern):
         tablenames = list(partitions.partition_name)
 
         for table in tablenames:
+            table = schemaed_table(table, schema)
             q = text('ALTER TABLE {} SET LOGGED'.format(table))
             click.echo('Altering {}'.format(
                 click.style(table, bold=True)

@@ -2,6 +2,8 @@ from abc import ABCMeta, abstractmethod
 from pandas import read_csv
 from datetime import datetime
 import os
+import struct
+from io import BytesIO
 
 def mass_ingest(cursor, filelike, target_table, **options):
     cursor.copy_from(
@@ -65,7 +67,7 @@ class DataPacker(object):
         pass
 
     @abstractmethod
-    def serialize_to_database(self):
+    def serialize_to_database(self, lcdb):
         pass
 
 
@@ -99,5 +101,3 @@ class CSVPacker(DataPacker):
 
             # Cleanup :)
             cursor.close()
-
-
