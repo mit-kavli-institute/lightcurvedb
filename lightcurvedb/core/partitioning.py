@@ -140,6 +140,9 @@ def get_partition_q(table):
     sqlalchemy.text
         A text object representing the desired query.
     """
+
+
+
     q = text(
         "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
     ).bindparams(t=table)
@@ -209,5 +212,19 @@ def get_partition_tables(psql_meta, model, db, resolve=True):
     return q.all() if resolve else q
 
 
-def get_partition_info(psql_meta, parent_oid, db):
-    pass
+def get_partition_columns(psql_meta, model, cols, db, resolve=True):
+    tablename = model.__tablename__
+    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
+    pg_partitioned_table = psql_meta.tables['pg_catalog.pg_partitioned_table']
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    parent = aliased(pg_class, alias='parent')
+    child = aliased(pg_class, alias='child')
+
+    columns = (getattr(child.c, column) for column in cols)
+
+    q = db.query(*columns).join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid).join(
+        parent, parent.c.oid == pg_inherits.c.inhparent == parent.c.oid).filter(
+            parent.c.relname == tablename
+        )
+    return q.all() if resolve else q

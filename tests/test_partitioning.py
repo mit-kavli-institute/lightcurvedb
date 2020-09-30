@@ -2,7 +2,7 @@ from hypothesis import strategies as st, given, note, example, assume
 from lightcurvedb.models import Lightpoint
 from lightcurvedb.models.lightpoint import LIGHTPOINT_PARTITION_RANGE
 from lightcurvedb.core.admin import psql_tables
-from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q, get_partition_tables
+from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q, get_partition_tables, get_partition_columns
 from math import ceil
 import traceback
 from click.testing import CliRunner
@@ -42,27 +42,6 @@ def test_ranged_partition_calculation(
         assert n_required_new_partitions >= 1
     else:
         assert n_required_new_partitions == 0
-
-
-def test_partition_info_q(db_conn):
-    """
-    Test that we can query for partition info. Assumes that the initial
-    partition for lightpoints has been made.
-    """
-    with db_conn as db:
-        proxy = db.session.execute(get_partition_q(Lightpoint.__tablename__))
-
-        cur_bound = 0
-        for partition_name, bound_str in proxy:
-            assert "lightpoints" in partition_name
-            expected_bound_str = "FOR VALUES FROM ('{}') TO ('{}')".format(
-                cur_bound, cur_bound + LIGHTPOINT_PARTITION_RANGE,
-            )
-            assert bound_str == expected_bound_str
-            cur_bound += LIGHTPOINT_PARTITION_RANGE
-
-        db.rollback()
-        clear_all(db)
 
 
 @given(st.just(1))
@@ -107,6 +86,5 @@ def test_can_get_partitions(db_conn):
     with db_conn as db:
         db.commit()
         admin_meta = psql_tables(db)
-        print(get_partition_tables(admin_meta, Lightpoint, db))
         tables = get_partition_tables(admin_meta, Lightpoint, db)
-        assert len(tables) == 1
+        assert len(tables) >= 1

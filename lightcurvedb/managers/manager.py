@@ -96,6 +96,9 @@ class Manager(object):
     def __reduce__(self, col):
         raise NotImplementedError
 
+    def __iter__(self):
+        return iter(self._interior_data.values())
+
     def get_model(self, val, *uniq_vals):
         key = tuple([val].extend(uniq_vals))
         return self._interior_data[key]
@@ -116,6 +119,18 @@ class Manager(object):
         # **kwargs contains a valid key
         instance = self.__managed_class__(**kwargs)
         return self.add_model(instance)
+
+    @property
+    def keys(self):
+        """
+        Returns a setlike collection of all the primary
+        identifiers used to discern individual items.
+
+        Returns
+        -------
+        set
+        """
+        return set(self._interior_data.keys())
 
 
 def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
