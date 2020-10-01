@@ -4,11 +4,10 @@ import os
 import warnings
 import numpy as np
 from pandas import read_sql as pd_read_sql
-from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, SmallInteger, create_engine, and_, func, bindparam
+from sqlalchemy import and_, func
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.event import listens_for
