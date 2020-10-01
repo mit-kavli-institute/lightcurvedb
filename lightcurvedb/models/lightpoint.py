@@ -3,8 +3,8 @@ from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
 from lightcurvedb.util.iter import keyword_zip
 import pandas as pd
-from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event)
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
+from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event, func)
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
@@ -123,6 +123,16 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
     @y.expression
     def y(cls):
         return cls.y_centroid
+
+    @classmethod
+    def ordered_column(cls, column):
+        col = getattr(cls, column)
+        return func.array_agg(
+            aggregate_order_by(
+                col,
+                cls.cadence.asc()
+            )
+        )
 
     @classmethod
     def get_as_df(cls, lightcurve_ids, db):
