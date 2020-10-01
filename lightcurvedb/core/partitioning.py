@@ -35,7 +35,8 @@ def Partitionable(partition_type, *columns):
         __table_args__ = dict(
             postgresql_partition_by="{}({})".format(
                 partition_type, ",".join(columns)
-            )
+            ),
+            extend_existing=True
         )
 
         def emit_new_partition(self, constraint_str):
@@ -116,9 +117,14 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     sqlalchemy.DDL
     """
 
-    table_verb = '{}.{}'.format(schema, table) if schema else table
+    namespaced_t = '{}.{}'.format(schema, table) if schema else table
 
-    fmt_args = dict(table=table_verb, begin=begin_range, end=end_range,)
+    fmt_args = dict(
+        partition=namespaced_t,
+        table=table,
+        begin=begin_range,
+        end=end_range
+        )
 
     return DDL(
         "CREATE TABLE {partition}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
@@ -173,7 +179,6 @@ def extract_partition_df(partition_df):
     return result
 
 
-<<<<<<< HEAD
 def get_partition_tables(psql_meta, model, db, resolve=True):
     """
     Query for the partition tables of the given SQLAlchemy Model.
