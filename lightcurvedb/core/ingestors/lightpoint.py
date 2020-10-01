@@ -193,6 +193,7 @@ class MassIngestor(LightpointProcessor):
                 )
                 h5_lp['barycentric_julian_date'] = corrected_bjd
                 h5_lp.drop(columns=['camera'], inplace=True)
+                h5_lp.sort_index(inplace=True)
                 h5_lp.reset_index(inplace=True)
 
                 # Orbital data has been corrected for Earth observation
@@ -309,7 +310,6 @@ class MassIngestor(LightpointProcessor):
         finally:
             # Cleanup!
             self.db.close()
-
 
 
 class CopyProcess(LightpointProcessor):

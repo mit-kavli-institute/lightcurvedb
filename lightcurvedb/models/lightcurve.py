@@ -233,7 +233,11 @@ class Lightcurve(QLPDataProduct):
         )
 
     def __str__(self):
-        pass
+        return '<Lightcurve {} {} {}>'.format(
+            self.lightcurve_type.name,
+            self.tic_id,
+            self.aperture.name
+        )
 
     def __getitem__(self, key):
         """
@@ -272,6 +276,21 @@ class Lightcurve(QLPDataProduct):
 
     def plot(self, plot_visitor):
         raise NotImplementedError
+
+    @property
+    def to_dict(self):
+        return dict(
+            tic_id=self.tic_id,
+            aperture=self.aperture_id,
+            type=self.lightcurve_type_id,
+            cadences=self.cadences,
+            bjd=self.bjd,
+            mag=self.values,
+            errors=self.errors,
+            x_centroids=self.x_centroids,
+            y_centroids=self.y_centroids,
+            quality_flags=self.quality_flags
+        )
 
     @hybrid_property
     def type(self):

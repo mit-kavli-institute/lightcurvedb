@@ -906,6 +906,21 @@ class DB(object):
         )
         return [r for r, in q.all()]
 
+    def get_baked_lcs(self, ids):
+
+        return self.query(
+            models.Lightpoint.lightcurve_id,
+            models.Lightpoint.ordered_column('cadence').label('cadences'),
+            models.Lightpoint.ordered_column('bjd').label('bjd'),
+            models.Lightpoint.ordered_column('data').label('values'),
+            models.Lightpoint.ordered_column('quality_flag').label(
+                'quality_flags'
+            )
+        ).join(models.Lightpoint.lightcurve).filter(
+            models.Lightpoint.lightcurve_id.in_(ids)
+        ).group_by(models.Lightpoint.lightcurve_id)
+
+
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
