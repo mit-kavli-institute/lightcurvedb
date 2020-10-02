@@ -492,6 +492,8 @@ class DB(object):
         list of integers or ``sqlalchemy.orm.Query``
             Returns either the result of the query or the Query object itself.
         """
+        if isinstance(orbit_numbers, str):
+            orbit_numbers = [int(orbit_numbers)]
 
         if not isiterable(orbit_numbers):
             orbit_numbers = [orbit_numbers]
@@ -550,19 +552,22 @@ class DB(object):
         list of integers or ``sqlalchemy.orm.Query``
             Returns either the result of the query or the Query object itself.
         """
+        if isinstance(sectors, str):
+            sectors = [int(sectors)]
 
         if not isiterable(sectors):
             sectors = [sectors]
 
-        col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
-
         q = self.query(
-            col
+            models.Observation.tic_id
         ).join(
             models.Observation.orbit
         ).filter(
             models.Orbit.sector.in_(sectors)
         )
+
+        if unique:
+            q = q.distinct()
 
         if cameras:
             q = q.filter(models.Observation.camera.in_(cameras))
