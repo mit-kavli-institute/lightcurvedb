@@ -1,12 +1,16 @@
 from __future__ import print_function, division
 import sys
 
+
 if sys.version_info.major < 3:
     from abc import abstractmethod, ABCMeta
+    from six import add_metaclass
+
+    @add_metaclass(ABCMeta)
     class Ingestor(object):
-        __metaclass__ = ABCMeta
-        def __init__(self, context_kwargs={}):
-            self.context = context_kwargs
+
+        def __init__(self, context_kwargs=None):
+            self.context = context_kwargs if context_kwargs else {}
 
         @abstractmethod
         def parse(self, descriptor):
@@ -36,8 +40,8 @@ else:
 
         EmissionModel = None
 
-        def __init__(self, context_kwargs={}):
-            self.context = context_kwargs
+        def __init__(self, context_kwargs=None):
+            self.context = context_kwargs if context_kwargs else {}
 
         @abstractmethod
         def parse(self, descriptor):
@@ -68,6 +72,7 @@ class MultiIngestor(Ingestor):
             for parsed_info in self.parse(f):
                 yield self.translate(**parsed_info)
         self.postingesthook()
+
 
 class PyObjIngestor(Ingestor):
 

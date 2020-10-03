@@ -37,7 +37,7 @@ class IngestionCache(object):
 
         path = os.path.join(scratch_dir, name)
         self._ENGINE = create_engine(
-            'sqlite:///{}'.format(path),
+            'sqlite:///{0}'.format(path),
             connect_args={'check_same_thread': False},
             poolclass=StaticPool
         )
@@ -99,7 +99,6 @@ class IngestionCache(object):
             file_df.to_dict('records')
         )
 
-
     @property
     def job_tics(self):
         return self.session.query(
@@ -109,10 +108,10 @@ class IngestionCache(object):
     @property
     def quality_flag_df(self):
         q = self.session.query(
-            QualityFlag.cadence.label('cadences'),
-            QualityFlag.camera,
-            QualityFlag.ccd,
-            QualityFlag.quality_flag.label('quality_flags')
+            QualityFlags.cadence.label('cadences'),
+            QualityFlags.camera,
+            QualityFlags.ccd,
+            QualityFlags.quality_flag.label('quality_flags')
         )
 
         return pd.read_sql(
@@ -155,7 +154,7 @@ class IngestionCache(object):
             TempObservation,
             and_(
                 IngestionJob.tic_id == TempObservation.tic_id,
-                InjectionJob.orbit_number == TempObservation.orbit_number
+                IngestionJob.orbit_number == TempObservation.orbit_number
             )
         )
         n_bad = bad_ids.count()
@@ -212,7 +211,6 @@ class IngestionCache(object):
         return pd.read_sql(
             q.statement, self.session.bind
         )
-
 
     def get_tic8_parameters(self, tics):
         q = self.session.query(

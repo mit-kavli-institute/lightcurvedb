@@ -1,20 +1,19 @@
-from astropy.io import fits
 from .base import PyObjIngestor
 from lightcurvedb.models.orbit import Orbit
-from click import echo, style
+from click import echo
 import re
 
 EXTR = re.compile(r'^(?P<basename>tess[0-9]+)')
 
 
 class OrbitIngestor(PyObjIngestor):
-    
+
     EmissionModel = Orbit
 
     def check_congruence(self, headers, *fields):
         reference = headers[0]
         others = headers[1:]
-        
+
         for field in fields:
             assert all(reference[field] == o[field] for o in others)
 
@@ -29,7 +28,7 @@ class OrbitIngestor(PyObjIngestor):
             match = EXTR.match(header['FILENAME'])
             if match is None:
                 raise RuntimeError(
-                    '{} does not look like a valid TESS basename'.format(
+                    '{0} does not look like a valid TESS basename'.format(
                         header['FILENAME']
                     )
                 )
@@ -38,18 +37,26 @@ class OrbitIngestor(PyObjIngestor):
         return basenames.pop()
 
     def parse(self, headers):
-        echo('Checking congruence of {} objects'.format(len(headers)))
+        echo('Checking congruence of {0} objects'.format(len(headers)))
         if 'orbit_id' in self.context:
-            assert all(self.context['orbit_id'] == header['ORBIT_ID'] for header in headers)
+            assert all(
+                self.context['orbit_id'] == header['ORBIT_ID']
+                for header in headers
+            )
             orbit_number = self.context['orbit_id']
         else:
             orbit_number = self.check_congruence(headers, 'ORBIT_ID')
 
-        echo('Validating orbit {} for sector {}'.format(
+        echo('Validating orbit {0} for sector {1}'.format(
             orbit_number, self.context['sector']
         ))
 
-        ra, dec, roll = self.check_congruence(headers, 'SC_RA', 'SC_DEC', 'SC_ROLL')
+        ra, dec, roll = self.check_congruence(
+            headers,
+            'SC_RA',
+            'SC_DEC',
+            'SC_ROLL'
+        )
         qx, qy, qz, qq = self.check_congruence(
             headers, 'SC_QUATX', 'SC_QUATY', 'SC_QUATZ', 'SC_QUATQ'
         )
@@ -70,4 +77,3 @@ class OrbitIngestor(PyObjIngestor):
             'crm_n': crm_n,
             'basename': basename
         }
-        

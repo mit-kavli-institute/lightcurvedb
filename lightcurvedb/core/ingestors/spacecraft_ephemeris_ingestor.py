@@ -1,8 +1,8 @@
 import pandas as pd
-from astropy.time import Time
+
+from lightcurvedb.models.spacecraft import SpacecraftEphemeris
 
 from .base import Ingestor
-from lightcurvedb.models.spacecraft import SpacecraftEphemeris
 
 
 class SpacecraftEphemerisIngestor(Ingestor):
@@ -11,7 +11,6 @@ class SpacecraftEphemerisIngestor(Ingestor):
 
     def parse(self, descriptor):
         csv = pd.read_csv(descriptor, comment='#')
-        #tdb = Time(csv['JDTDB'], format='jd')
         for row in csv.iterrows():
             yield {
                 'barycentric_dynamical_time': row['JDTDB'],

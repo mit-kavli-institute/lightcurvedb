@@ -1,20 +1,7 @@
 import os
-import pandas as pd
-from itertools import product
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-from sqlalchemy.event import listens_for
-from sqlalchemy.exc import DisconnectionError
-from sqlalchemy import Column, Boolean, BigInteger, Integer, SmallInteger, Float, String, func, select, bindparam, and_, update
-from sqlalchemy.ext.declarative import declared_attr, declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy import Column, BigInteger, Integer, SmallInteger, Float, String
+from sqlalchemy.ext.declarative import declarative_base
 
-
-#SQLITE_ENGINE = create_engine(
-#    'sqlite:///:memory:',
-#    connect_args={'check_same_thread': False},
-#    poolclass=StaticPool
-#)
 
 TemporaryQLPModel = declarative_base()
 
@@ -55,11 +42,11 @@ class TempObservation(TemporaryQLPModel):
     def to_h5_path(self, base_path='/pdo/qlp-data'):
         return os.path.join(
             base_path,
-            'orbit-{}'.format(self.orbit_number),
-            'cam{}'.format(self.camera),
-            'ccd{}'.format(self.ccd),
+            'orbit-{0}'.format(self.orbit_number),
+            'cam{0}'.format(self.camera),
+            'ccd{0}'.format(self.ccd),
             'LC',
-            '{}.h5'.format(self.tic_id)
+            '{0}.h5'.format(self.tic_id)
         )
 
     @property
@@ -71,6 +58,7 @@ class TempObservation(TemporaryQLPModel):
             ccd=self.ccd,
             file_path=self.to_h5_path()
         )
+
 
 class IngestionJob(TemporaryQLPModel):
     __tablename__ = 'ingestion_jobs'
@@ -103,8 +91,3 @@ class QualityFlags(TemporaryQLPModel):
     camera = Column(Integer, primary_key=True)
     ccd = Column(Integer, primary_key=True)
     quality_flag = Column(Integer, index=True)
-
-
-#TemporaryQLPModel.metadata.create_all(SQLITE_ENGINE)
-#TempSessionFactory = sessionmaker(bind=SQLITE_ENGINE)
-#TempSession = scoped_session(TempSessionFactory)
