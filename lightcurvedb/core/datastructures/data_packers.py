@@ -1,9 +1,8 @@
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 from pandas import read_csv
 from datetime import datetime
 import os
-import struct
-from io import BytesIO
+
 
 def mass_ingest(cursor, filelike, target_table, **options):
     cursor.copy_from(
@@ -26,13 +25,13 @@ class DataPacker(object):
     """
     __target_table__ = 'lightpoints'
 
-    def __init__(self, dir_path, pack_options={}):
-        self.pack_options = pack_options
+    def __init__(self, dir_path, pack_options=None):
+        self.pack_options = pack_options if pack_options else {}
         self.dir_path = dir_path
         path = os.path.join(
             dir_path,
-            'datapack_{}.blob'.format(
-                datetime.now().strftime('%Y%m%dT%H%M%S_%f')        
+            'datapack_{0}.blob'.format(
+                datetime.now().strftime('%Y%m%dT%H%M%S_%f')
             )
         )
         self._internal_path = path
@@ -81,7 +80,11 @@ class CSVPacker(DataPacker):
             # set permissions
             os.chmod(self._internal_path, 0o664)
         else:
-            dataframe.to_csv(self._internal_path, mode='a', **self.pack_options)
+            dataframe.to_csv(
+                self._internal_path,
+                mode='a',
+                **self.pack_options
+            )
 
         self.length += len(dataframe)
 

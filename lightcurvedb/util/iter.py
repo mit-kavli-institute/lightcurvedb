@@ -141,7 +141,7 @@ def eq_partitions(iterable, n):
         lists contained within will be variant in length.
     """
 
-    partitions = tuple(list() for _ in range(n))
+    partitions = tuple([] for _ in range(n))
 
     for i, item in enumerate(iterable):
         partition = partitions[i % n]
@@ -162,10 +162,10 @@ def partition_by(listlike, n, key=lambda x: x):
 def keyword_zip(**keywords):
     cols = list(keywords.keys())
 
-    data = (iter(data[col]) for col in cols)
+    data = (iter(keywords[col]) for col in cols)
 
     for row in zip(*data):
-        result = dict()
+        result = {}
         for ith, col_name in enumerate(cols):
             result[col_name] = row[ith]
         yield result

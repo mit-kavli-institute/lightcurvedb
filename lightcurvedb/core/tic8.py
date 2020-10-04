@@ -42,8 +42,11 @@ try:
         def checkout(dbapi_connection, connection_record, connection_proxy):
             pid = os.getpid()
             if connection_record.info['pid'] != pid:
-                connection_record.connection = connection_proxy.connection = None
-                raise DisconnectionError('Attempting to disassociate database connection')
+                connection_record.connection = None
+                connection_proxy.connection = None
+                raise DisconnectionError(
+                    'Attempting to disassociate database connection'
+                )
 
         TIC8_Base.prepare(TIC8_ENGINE)
         TIC_Entries = Table(
@@ -53,9 +56,10 @@ try:
                 autoload_with=TIC8_ENGINE
         )
 except IOError:
-    sys.stderr.write(
-        '{} was not found, please check your configuration environment\n'.format(CONFIG_PATH)
-    )
+    sys.stderr.write((
+        '{0} was not found, '
+        'please check your configuration environment\n'.format(CONFIG_PATH)
+    ))
     TIC8_Base = None
     TIC8_ENGINE = None
     TIC_Entries = None

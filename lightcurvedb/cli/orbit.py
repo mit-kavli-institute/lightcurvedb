@@ -1,5 +1,4 @@
 import click
-import os
 from tabulate import tabulate
 from lightcurvedb.models import Orbit
 from . import lcdbcli
@@ -18,10 +17,10 @@ def orbit(ctx):
 @click.pass_context
 def lookup(ctx, orbit_numbers, parameter):
     with ctx.obj['dbconf'] as db:
-        cols = [Orbit.orbit_number] + [getattr(Orbit, param) for param in parameter]
+        cols = [getattr(Orbit, param) for param in parameter]
         q = db.query(*cols).filter(Orbit.orbit_number.in_(orbit_numbers))
         click.echo(
-            tabulate(q.all(), headers=['orbit_number'] + list(parameter))
+            tabulate(q.all(), headers=list(parameter))
         )
 
 

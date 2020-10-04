@@ -19,6 +19,7 @@ RawLightpoint = namedtuple(
     ]
 )
 
+
 def TrackedModel(Model):
     class MassTrackedLightpoints(Collection):
         """
@@ -49,17 +50,23 @@ def TrackedModel(Model):
                 instance = Model(**value)
             else:
                 raise ValueError(
-                    'Could not transform {} into {}'.format(value, Model)
+                    'Could not transform {0} into {1}'.format(value, Model)
                 )
             return instance
 
         def append(self, value):
-            instance = value
+            raise NotImplementedError
 
         def remove(self, value):
             raise NotImplementedError
 
-        def bulk_replace(self, values, existing_adaptor, new_adaptor, initiator=None):
+        def bulk_replace(
+                self,
+                values,
+                existing_adaptor,
+                new_adaptor,
+                initiator=None
+                ):
             """
             Bulk replaces the collection. For the database this means
             deleting all current related models and performing an insert.

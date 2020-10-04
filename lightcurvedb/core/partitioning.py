@@ -1,7 +1,7 @@
 """
 This module describes partitioning of the lightcurve database.
 """
-from sqlalchemy import DDL, text
+from sqlalchemy import DDL
 from sqlalchemy.orm import aliased
 from math import ceil
 import re
@@ -25,7 +25,8 @@ def Partitionable(partition_type, *columns):
 
     if len(columns) == 0:
         raise ValueError(
-            "Cannot make a partition on {} since the columns that are passed are empty".format(
+            "Cannot make a partition on {0} since the columns that "
+            "are passed are empty".format(
                 partition_type
             )
         )
@@ -33,7 +34,7 @@ def Partitionable(partition_type, *columns):
     class __PartitionMeta__(object):
         __abstract__ = True
         __table_args__ = dict(
-            postgresql_partition_by="{}({})".format(
+            postgresql_partition_by="{0}({1})".format(
                 partition_type, ",".join(columns)
             ),
             extend_existing=True
@@ -117,7 +118,7 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     sqlalchemy.DDL
     """
 
-    namespaced_t = '{}.{}'.format(schema, table) if schema else table
+    namespaced_t = '{0}.{1}'.format(schema, table) if schema else table
 
     fmt_args = dict(
         partition=namespaced_t,
@@ -127,30 +128,12 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
         )
 
     return DDL(
-        "CREATE TABLE {partition}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
+        "CREATE TABLE {partition}_{begin}_{end} "
+        "PARTITION OF {table} FOR VALUES FROM ({begin}) "
+        "TO ({end})".format(
             **fmt_args
         )
     )
-
-
-def get_partition_q(table):
-    """
-    Create a query searching for partitions of the given table.
-
-    Parameters
-    ----------
-    table : str or sqlalchemy.Table
-
-    Returns
-    -------
-    sqlalchemy.text
-        A text object representing the desired query.
-    """
-
-    q = text(
-        "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
-    ).bindparams(t=table)
-    return q
 
 
 def extract_partition_df(partition_df):
@@ -168,15 +151,35 @@ def extract_partition_df(partition_df):
     pd.DataFrame
         The columns extracted via regex capture groups.
     """
-    regex = re.compile(
-        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) TO \('(?P<end_range>\d+)'\)$"
-    )
+    regex = re.compile((
+        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
+        r"TO \('(?P<end_range>\d+)'\)$"
+    ))
 
     result = partition_df["partition_expression"].str.extract(regex)
     result[["begin_range", "end_range"]] = result[
         ["begin_range", "end_range"]
     ].apply(to_numeric, errors="coerce")
     return result
+
+
+def inheritance_join(db, psql_meta, tablename, attributes):
+    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    parent = aliased(pg_class, alias='parent')
+    child = aliased(pg_class, alias='child')
+
+    q = db.query(*attributes).join(
+        pg_inherits,
+        child.c.oid == pg_inherits.c.inhrelid
+    ).join(
+        parent,
+        parent.c.oid == pg_inherits.c.inhparent
+    ).filter(
+            parent.c.relname == tablename
+    )
+    return q
 
 
 def get_partition_tables(psql_meta, model, db, resolve=True):
@@ -202,33 +205,23 @@ def get_partition_tables(psql_meta, model, db, resolve=True):
         empty.
     """
     tablename = model.__tablename__
-    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
-    pg_partitioned_table = psql_meta.tables['pg_catalog.pg_partitioned_table']
     pg_class = psql_meta.tables['pg_catalog.pg_class']
 
-    parent = aliased(pg_class, alias='parent')
     child = aliased(pg_class, alias='child')
 
-    q = db.query(child).join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid).join(
-        parent, parent.c.oid == pg_inherits.c.inhparent == parent.c.oid).filter(
-            parent.c.relname == tablename
-        )
+    q = inheritance_join(db, psql_meta, tablename, [child])
+
     return q.all() if resolve else q
 
 
-def get_partition_columns(psql_meta, model, cols, db, resolve=True):
+def get_partition_columns(psql_meta, model, attrs, db, resolve=True):
     tablename = model.__tablename__
-    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
-    pg_partitioned_table = psql_meta.tables['pg_catalog.pg_partitioned_table']
     pg_class = psql_meta.tables['pg_catalog.pg_class']
 
-    parent = aliased(pg_class, alias='parent')
     child = aliased(pg_class, alias='child')
 
-    columns = (getattr(child.c, column) for column in cols)
+    columns = (getattr(child.c, column) for column in attrs)
 
-    q = db.query(*columns).join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid).join(
-        parent, parent.c.oid == pg_inherits.c.inhparent == parent.c.oid).filter(
-            parent.c.relname == tablename
-        )
+    q = inheritance_join(db, psql_meta, tablename, columns)
+
     return q.all() if resolve else q
