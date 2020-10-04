@@ -225,3 +225,7 @@ def get_partition_columns(psql_meta, model, attrs, db, resolve=True):
     q = inheritance_join(db, psql_meta, tablename, columns)
 
     return q.all() if resolve else q
+
+
+def get_partition_q(tablename):
+    return None

@@ -6,25 +6,24 @@ and directly related models
 """
 
 import numpy as np
-import pandas as pd
 
 from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
-from lightcurvedb.core.datastructures.lightpoint_collection import MassTrackedLightpoints
-from lightcurvedb.util.merge import merge_arrays
+from lightcurvedb.core.collection import TrackedModel
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
-                        Sequence, SmallInteger, cast, event, inspect, join,
-                        select)
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, insert
+                        Sequence, SmallInteger, cast, event, inspect, join)
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
-from sqlalchemy.sql import func
-from sqlalchemy.sql.expression import bindparam
+
+
+def init_collection():
+    from lightcurvedb.models.lightpoint import Lightpoint
+    return TrackedModel(Lightpoint)
 
 
 def adapt_as_is_type(type_class):
@@ -212,7 +211,8 @@ class Lightcurve(QLPDataProduct):
     lightpoints = relationship(
         'Lightpoint',
         backref='lightcurve',
-        collection_class=MassTrackedLightpoints)
+        collection_class=init_collection()
+    )
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
 

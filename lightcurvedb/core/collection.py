@@ -2,7 +2,7 @@
 This module describes custom collection objects for handling
 many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
-from sqlalchemy.orm.collections import Collection
+from sqlalchemy.orm.collections import collection
 from collections import namedtuple
 
 
@@ -21,7 +21,7 @@ RawLightpoint = namedtuple(
 
 
 def TrackedModel(Model):
-    class MassTrackedLightpoints(Collection):
+    class MassTrackedLightpoints(list):
         """
         Track the lightpoints using the bisect module to
         maintain an ordering.
@@ -54,10 +54,12 @@ def TrackedModel(Model):
                 )
             return instance
 
+        @collection.appender
         def append(self, value):
             raise NotImplementedError
 
-        def remove(self, value):
+        @collection.remover
+        def remove(self, vmlue):
             raise NotImplementedError
 
         def bulk_replace(
