@@ -34,10 +34,10 @@ def chunkify(iterable, chunksize, fillvalue=None):
     chunk = []
     if chunksize < 1:
         raise ValueError(
-            'Chunkify command cannot have a chunksize < 1'
-        )
-    for item in iterable:
-        chunk.append(item)
+                'Chunkify command cannot have a chunksize < 1'
+                )
+        for item in iterable:
+            chunk.append(item)
         if len(chunk) >= chunksize:
             yield chunk
             chunk = []
@@ -50,15 +50,15 @@ def chunkify(iterable, chunksize, fillvalue=None):
 def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     """
     Chunkify's an iterable and provides the nth iteration to each chunk
-    element. This can be offset by the :start_id: value.
+    element. This can be offset by the ``offset`` value.
     """
     chunk = []
     if chunksize < 1:
         raise ValueError(
-            'Chunkify command cannot have a chunksize < 1'
-        )
-    for ith, item in enumerate(iterable):
-        chunk.append((ith+offset, item))
+                'Chunkify command cannot have a chunksize < 1'
+                )
+        for ith, item in enumerate(iterable):
+            chunk.append((ith+offset, item))
         if len(chunk) >= chunksize:
             yield chunk
             chunk = []
@@ -71,9 +71,9 @@ def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
 def pop_chunkify(listlike, chunksize):
     if chunksize < 1:
         raise ValueError(
-            'Chunkify command cannot have a chunksize < 1'
-        )
-    starting_len = len(listlike)
+                'Chunkify command cannot have a chunksize < 1'
+                )
+        starting_len = len(listlike)
     chunk = []
     try:
         for _ in range(starting_len):
@@ -107,10 +107,10 @@ def split_every(nth, iterable):
 def partition(listlike, n):
     if n < 1:
         raise ValueError(
-            'Cannot create a partition of size < 1'
-        )
+                'Cannot create a partition of size < 1'
+                )
 
-    max_partition_length = len(listlike) // n
+        max_partition_length = len(listlike) // n
     return split_every(max_partition_length, listlike)
 
 
@@ -153,9 +153,9 @@ def eq_partitions(iterable, n):
 def partition_by(listlike, n, key=lambda x: x):
     if n < 1:
         raise ValueError(
-            'Cannot create partitions of size < 1'
-        )
-    groups = [(k, list(g)) for k, g in itertools.groupby(listlike, key=key)]
+                'Cannot create partitions of size < 1'
+                )
+        groups = [(k, list(g)) for k, g in itertools.groupby(listlike, key=key)]
     return partition(groups, n)
 
 
@@ -184,3 +184,40 @@ def keyword_zip(**keywords):
         for ith, col_name in enumerate(cols):
             result[col_name] = row[ith]
         yield result
+
+
+def yield_ordered_result(items, attr, ordering):
+    """
+    Returns items in order specified. This ordering is pulled from
+    the specified ``attr``. If values in the ``ordering`` do not
+    exist within the ``items`` then ``None`` is yielded before moving
+    onto the next ordering.
+
+
+    Parameters
+    ----------
+    items : iterable of objects
+        A list of objects to be ordered.
+    attr : str
+        The attribute of the item to be interpreted for
+        ordering.
+    ordering : list of keys
+        A list of keys to be used as an ordering for yielding items.
+
+
+    Yields
+    ------
+    object or None
+        Returns the item found or None if no value within the ordering
+        could be found in the items list.
+    """
+    bucket = defaultdict(list)
+    for item in items:
+        keyword = getattr(item, attr)
+        bucket[keyword].append(item)
+    for key in ordering:
+        item_list = bucket[key]
+        if not item_list:
+            yield None
+        for item in item_list:
+            yield item
