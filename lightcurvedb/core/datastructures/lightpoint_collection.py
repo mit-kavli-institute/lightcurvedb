@@ -4,6 +4,7 @@ many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
 from sqlalchemy.orm.collections import collection
 from lightcurvedb.models.lightpoint import Lightpoint
+import numpy as np
 
 
 class MassTrackedLightpoints(object):
@@ -80,35 +81,35 @@ class MassTrackedLightpoints(object):
 
     @property
     def cadences(self):
-        return [lp.cadence for lp in self]
+        return np.array([lp.cadence for lp in self])
 
     @property
     def barycentric_julian_date(self):
-        return [lp.barycentric_julian_date for lp in self]
+        return np.array([lp.barycentric_julian_date for lp in self])
 
     @property
     def bjd(self):
-        return [lp.barycentric_julian_date for lp in self]
+        return np.array([lp.barycentric_julian_date for lp in self])
 
     @property
     def values(self):
-        return [lp.data for lp in self]
+        return np.array([lp.data for lp in self])
 
     @property
     def errors(self):
-        return [lp.error for lp in self]
+        return np.array([lp.error for lp in self])
 
     @property
     def x_centroids(self):
-        return [lp.x for lp in self]
+        return np.array([lp.x for lp in self])
 
     @property
     def y_centroids(self):
-        return [lp.y for lp in self]
+        return np.array([lp.y for lp in self])
 
     @property
     def quality_flags(self):
-        return [lp.quality_flag for lp in self]
+        return np.array([lp.quality_flag for lp in self])
 
     # Begin setters
     # Don't support setting of cadences this way

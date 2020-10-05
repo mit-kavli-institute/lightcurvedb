@@ -14,6 +14,7 @@ from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
 from lightcurvedb.core.datastructures.lightpoint_collection import MassTrackedLightpoints
 from lightcurvedb.util.merge import merge_arrays
+from lightcurvedb.util.decorators import cast_to
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
                         Sequence, SmallInteger, cast, event, inspect, join,
