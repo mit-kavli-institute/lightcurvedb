@@ -12,6 +12,7 @@
 #
 import os
 import sys
+from datetime import datetime
 sys.path.insert(0, os.path.abspath('../../'))
 
 
@@ -22,11 +23,12 @@ copyright = '2020, William Fong'
 author = 'William Fong'
 
 # The full version, including alpha/beta/rc tags
-release = 'July 16, 2020'
+#release = 'July 16, 2020'
+release = datetime.now().strftime('%B %-d, %Y')
 
 
 # -- General configuration ---------------------------------------------------
-
+master_doc = 'index'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.

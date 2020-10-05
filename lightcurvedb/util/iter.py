@@ -160,6 +160,21 @@ def partition_by(listlike, n, key=lambda x: x):
 
 
 def keyword_zip(**keywords):
+    """
+    Perform the same operation as ``zip`` but instead of returning Tuples
+    this function returns dictionaries.
+
+    Parameters
+    ----------
+    **keywords
+        Abitrary keyword parameters. These parameters should be equal length
+        iterables.
+    Yields
+    ------
+    dict
+        A dictionary containing an equivalently indexed slice across all
+        keyword parameters.
+    """
     cols = list(keywords.keys())
 
     data = (iter(data[col]) for col in cols)

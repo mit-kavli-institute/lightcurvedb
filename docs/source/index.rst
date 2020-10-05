@@ -32,12 +32,12 @@ Submodule Documentation
 #######################
 .. toctree::
     :maxdepth: 2
-    :caption: Contents:
 
     db/db
     lightcurves/lightcurves
     managers/managers
     metrics/metrics
+    util/utils
 
 
 Indices and tables
