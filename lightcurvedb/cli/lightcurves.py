@@ -16,7 +16,7 @@ from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Paramete
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.datastructures.data_packers import mass_ingest
 from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
-from lightcurvedb.core.ingestors.lightpoint import MergeJob, MassIngestor, CopyProcess
+from lightcurvedb.core.ingestors.lightpoint import MergeJob, MassIngestor
 from lightcurvedb.models import Lightcurve, Observation, Orbit, QLPProcess
 from lightcurvedb.util.iter import chunkify, eq_partitions
 from sqlalchemy import BigInteger, Column, Table, and_
