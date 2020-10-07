@@ -86,7 +86,7 @@ class Manager(object):
         """
         key = []
         for col in self.__uniq_tuple__:
-            if not col in kwargs:
+            if col not in kwargs:
                 raise AmbiguousIdentifierDeduction(
                     'Unable to find attribute {} in {}'.format(col, kwargs)
                 )

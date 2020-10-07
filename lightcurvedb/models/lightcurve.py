@@ -11,7 +11,7 @@ from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
-from lightcurvedb.core.collection import TrackedModel
+from lightcurvedb.core.collection import CadenceTracked
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
                         Sequence, SmallInteger, cast, event, inspect, join)
@@ -19,11 +19,6 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
-
-
-def init_collection():
-    from lightcurvedb.models.lightpoint import Lightpoint
-    return TrackedModel(Lightpoint)
 
 
 def adapt_as_is_type(type_class):
@@ -211,7 +206,7 @@ class Lightcurve(QLPDataProduct):
     lightpoints = relationship(
         'Lightpoint',
         backref='lightcurve',
-        collection_class=init_collection()
+        collection_class=CadenceTracked
     )
     aperture = relationship('Aperture', back_populates='lightcurves')
     frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')

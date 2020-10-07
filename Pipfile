@@ -35,6 +35,7 @@ doq = "*"
 packaging = "*"
 scipy = "*"
 tabulate = "*"
+pgcopy = "*"
 
 [requires]
 python_version = "3.7"

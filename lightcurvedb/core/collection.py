@@ -20,69 +20,57 @@ RawLightpoint = namedtuple(
 )
 
 
-def TrackedModel(Model):
-    class MassTrackedLightpoints(list):
+class CadenceTracked(list):
+    """
+    """
+
+    __emulates__ = list
+
+    def __init__(self):
+        self._to_add = set()
+        self._to_update = set()
+        self._to_remove = set()
+        self._internal_data = {}
+
+    def __getattr__(self, attribute):
         """
-        Track the lightpoints using the bisect module to
-        maintain an ordering.
+        Called and no defined attribute has been defined. Assume that
+        the user wants to grab the related attribute from the tracked
+        items instead. Automatically order by cadence information.
         """
+        values = [
+            getattr(self[cadence], attribute) for cadence in self.cadences
+        ]
+        return values
 
-        __emulates__ = list
+    def __iter__(self):
+        for cadence in self.cadences:
+            yield self[cadence]
 
-        def __init__(self):
-            self._to_add = set()
-            self._to_update = set()
-            self._to_remove = set()
-            raise NotImplementedError
+    @collection.appender
+    def append(self, value):
+        self._internal_data[value.cadence] = value
 
-        def __interpret__(self, value):
-            # Attempt to determine what the given value is and load it into the
-            # collection
-            if isinstance(value, Model):
-                # Pretty tautological
-                instance = value
-            elif isinstance(value, tuple):
-                # Attempt to expand tuple
-                instance = Model(
-                    *value
-                )
-            elif isinstance(value, dict):
-                instance = Model(**value)
-            else:
-                raise ValueError(
-                    'Could not transform {0} into {1}'.format(value, Model)
-                )
-            return instance
+    @collection.remover
+    def remove(self, value):
+        del self._internal_data[value.cadence]
 
-        @collection.appender
-        def append(self, value):
-            raise NotImplementedError
+    def bulk_replace(
+            self,
+            values,
+            existing_adaptor,
+            new_adaptor,
+            initiator=None
+            ):
+        """
+        Bulk replaces the collection. For the database this means
+        deleting all current related models and performing an insert.
+        """
+        raise NotImplementedError
 
-        @collection.remover
-        def remove(self, vmlue):
-            raise NotImplementedError
-
-        def bulk_replace(
-                self,
-                values,
-                existing_adaptor,
-                new_adaptor,
-                initiator=None
-                ):
-            """
-            Bulk replaces the collection. For the database this means
-            deleting all current related models and performing an insert.
-            """
-            pass
-
-        @property
-        def to_add(self):
-            return self._to_add
-
-        @property
-        def to_update(self):
-            return self._to_update
-
-        @property
-        def to_remove(self):
-            return self._to_remove
+    @property
+    def cadences(self):
+        """
+        Always return cadences in ascending order
+        """
+        return sorted(self._internal_data.keys())
