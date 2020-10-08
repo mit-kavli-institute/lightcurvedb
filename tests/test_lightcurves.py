@@ -39,6 +39,8 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
 
     assert len(lc) == 1
     assert lc.cadences[0] == lp.cadence
+    assert len(lc.values) == 1
+    assert len(lc['mag']) == 1
 
     if np.isnan(lp.bjd):
         assert np.isnan(lc.bjd[0])

@@ -308,7 +308,7 @@ class Lightcurve(QLPDataProduct):
 
     @hybrid_property
     def values(self):
-        return self.lightpoints.values
+        return self.lightpoints.data
 
     @hybrid_property
     def errors(self):
@@ -337,7 +337,7 @@ class Lightcurve(QLPDataProduct):
 
     @values.setter
     def values(self, _values):
-        self.lightpoints.values = _values
+        self.lightpoints.data = _values
 
     @errors.setter
     def errors(self, values):
