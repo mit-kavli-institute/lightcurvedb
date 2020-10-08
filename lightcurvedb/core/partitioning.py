@@ -55,6 +55,12 @@ def Partitionable(partition_type, *columns):
             """
             raise NotImplementedError
 
+        @hybridproperty
+        def get_parent_oid(self):
+            pg_class, pg_inherits = get_psql_catalog_tables(
+                'pg_class', 'pg_inherits'
+            )
+
     return __PartitionMeta__
 
 
@@ -163,12 +169,19 @@ def extract_partition_df(partition_df):
     return result
 
 
-def inheritance_join(db, psql_meta, tablename, attributes):
+def inheritance_join(
+        db,
+        psql_meta,
+        tablename,
+        child,
+        parent,
+        attributes
+        ):
+
     pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
     pg_class = psql_meta.tables['pg_catalog.pg_class']
 
     parent = aliased(pg_class, alias='parent')
-    child = aliased(pg_class, alias='child')
 
     q = db.query(*attributes).join(
         pg_inherits,
@@ -228,4 +241,7 @@ def get_partition_columns(psql_meta, model, attrs, db, resolve=True):
 
 
 def get_partition_q(tablename):
-    return None
+    tablename = model.__tablename__
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    child = aliased(pg_class, alias='child')

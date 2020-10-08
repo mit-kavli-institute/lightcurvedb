@@ -60,7 +60,7 @@ class DB(object):
 
     """
 
-    def __init__(self, FACTORY, SESSIONCLASS=None):
+    def __init__(self, FACTORY, SESSIONCLASS=None, pg_catalog=False):
 
         if SESSIONCLASS:
             # Createdb instance opened

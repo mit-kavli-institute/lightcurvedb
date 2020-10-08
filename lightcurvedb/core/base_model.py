@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 
-from sqlalchemy import Column, DateTime, String
+from lightcurvedb.core.admin import get_psql_catalog_tables
+from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.sql import func
@@ -20,6 +21,20 @@ class QLPModel(object):
         for this model.
         """
         return insert(cls.__table__, *args, **kwargs)
+
+    @hybridproperty
+    def oid(self):
+        pg_class = get_psql_catalog_tables('pg_class')
+        return select(
+            pg_class.c.oid
+        ).where(pg_class.c.relname == self.__tablename__)
+
+    @oid.expression
+    def oid(cls):
+        pg_class = get_psql_catalog_tables('pg_class')
+        return select(
+            pg_class.c.oid
+        ).where(pg_class.c.relname == self.__tablename__)
 
 
 class QLPDataProduct(QLPModel):

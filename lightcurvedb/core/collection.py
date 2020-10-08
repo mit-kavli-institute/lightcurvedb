@@ -20,7 +20,7 @@ RawLightpoint = namedtuple(
 )
 
 
-class CadenceTracked(list):
+class CadenceTracked(object):
     """
     """
 
@@ -31,6 +31,9 @@ class CadenceTracked(list):
         self._to_update = set()
         self._to_remove = set()
         self._internal_data = {}
+
+    def __len__(self):
+        return len(self._internal_data)
 
     def __getattr__(self, attribute):
         """
@@ -43,17 +46,39 @@ class CadenceTracked(list):
         ]
         return values
 
+    def __contains__(self, key):
+        return key in self._internal_data
+
+    def __getitem__(self, key):
+        return self._internal_data[key]
+
     def __iter__(self):
         for cadence in self.cadences:
             yield self[cadence]
 
     @collection.appender
+    @collection.replaces(1)
     def append(self, value):
+        if value.cadence in self:
+            previous = self[value.cadence]
+        else:
+            previous = None
+
         self._internal_data[value.cadence] = value
+        return previous
+
+    @collection.appender
+    @collection.replaces(1)
+    def add(self, value):
+        return self.append(value)
 
     @collection.remover
     def remove(self, value):
         del self._internal_data[value.cadence]
+
+    def extend(self, values):
+        for value in values:
+            self._internal_data[value.cadence] = value
 
     def bulk_replace(
             self,

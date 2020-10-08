@@ -6,7 +6,6 @@ verify_ssl = true
 [dev-packages]
 sphinx = "*"
 flake8 = "*"
-black = "*"
 
 [packages]
 sqlalchemy = "*"
@@ -36,6 +35,7 @@ packaging = "*"
 scipy = "*"
 tabulate = "*"
 pgcopy = "*"
+psycopg2 = "*"
 
 [requires]
 python_version = "3.7"
