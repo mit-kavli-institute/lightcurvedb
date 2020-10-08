@@ -4,19 +4,19 @@ try:
 except ImportError:
     import Queue as queue
 
-from collections import deque, namedtuple
+from collections import deque
 from multiprocessing import Process
 from sqlalchemy.sql.expression import bindparam
 from datetime import datetime
 from psycopg2.errors import DeadlockDetected
-from sqlalchemy.exc import OperationalError, IntegrityError
+from sqlalchemy.exc import OperationalError
 from time import sleep
 from random import random
 import pandas as pd
 import numpy as np
 import os
 
-from lightcurvedb.models import Lightcurve, Observation, Orbit
+from lightcurvedb.models import Lightcurve, Observation
 from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb import db_from_config
 
@@ -25,7 +25,7 @@ class TransactionTime(object):
     def __init__(self, n_rows, time_start, time_end):
         if not isinstance(n_rows, int):
             raise ValueError(
-                'Received {} instead of an integer'.format(n_rows)
+                'Received {0} instead of an integer'.format(n_rows)
             )
         self.n_rows = n_rows
         self.time_start = time_start
@@ -131,17 +131,17 @@ class DBLoader(Process):
         self.cur_n_update_rows = 10
 
         # Buffers
-        self.insert_buffer = list()
-        self.update_buffer = list()
-        self.observation_buffer = list()
+        self.insert_buffer = []
+        self.update_buffer = []
+        self.observation_buffer = []
 
         self.set_name()
 
     def log(self, msg, level='debug'):
-        getattr(logger, level)('{}: {}'.format(self.name, msg))
+        getattr(logger, level)('{0}: {1}'.format(self.name, msg))
 
     def set_name(self):
-        self.name = 'Ingestion Worker {}'.format(os.getpid())
+        self.name = 'Ingestion Worker {0}'.format(os.getpid())
 
     def flush_insert(self):
         q = Lightcurve.__table__.insert().values({
@@ -172,7 +172,7 @@ class DBLoader(Process):
         )
 
         self.log(
-            'inserted {} rows. Setting new buffer from {} to {}'.format(
+            'inserted {0} rows. Setting new buffer from {1} to {2}'.format(
                 len(self.insert_buffer),
                 self.cur_n_insert_rows,
                 new_insert_buffer
@@ -180,7 +180,7 @@ class DBLoader(Process):
             level='info'
         )
 
-        self.insert_buffer = list()
+        self.insert_buffer = []
         self.cur_n_insert_rows = new_insert_buffer
 
     def flush_update(self):
@@ -211,7 +211,7 @@ class DBLoader(Process):
         )
 
         self.log(
-            'updated {} rows. Setting new buffer from {} to {}'.format(
+            'updated {0} rows. Setting new buffer from {1} to {2}'.format(
                 len(self.update_buffer),
                 self.cur_n_update_rows,
                 new_update_buffer
@@ -219,7 +219,7 @@ class DBLoader(Process):
             level='info'
         )
 
-        self.update_buffer = list()
+        self.update_buffer = []
         self.cur_n_update_rows = new_update_buffer
 
     def flush_observations(self):
@@ -237,7 +237,7 @@ class DBLoader(Process):
                     Observation.upsert_dicts(),
                     df.to_dict('records')
                 )
-                self.observation_buffer = list()
+                self.observation_buffer = []
                 break
             except (DeadlockDetected, OperationalError):
                 self.log('retrying observation upsert')
@@ -301,6 +301,7 @@ class DBLoader(Process):
             except queue.Empty:
                 self.log('debug', 'timed out. Assuming no more data')
                 break
+
         # Clean up any straggling data
         self.flush_insert()
         self.flush_update()

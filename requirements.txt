@@ -10,3 +10,4 @@ packaging
 datetime
 tabulate
 scipy
+pgcopy

@@ -1,11 +1,19 @@
 """
 This module describes partitioning of the lightcurve database.
 """
-from sqlalchemy import DDL, text
+from sqlalchemy import DDL, select, func
+from sqlalchemy.orm import aliased
+from sqlalchemy.ext.hybrid import hybrid_property
 from math import ceil
 import re
-from pandas import to_numeric
+from pandas import to_numeric, read_sql as pd_read_sql
+from lightcurvedb.core.admin import get_psql_catalog_tables
 
+
+partition_range_extr = re.compile((
+    r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
+    r"TO \('(?P<end_range>\d+)'\)$"
+))
 
 def Partitionable(partition_type, *columns):
     """
@@ -24,7 +32,8 @@ def Partitionable(partition_type, *columns):
 
     if len(columns) == 0:
         raise ValueError(
-            "Cannot make a partition on {} since the columns that are passed are empty".format(
+            "Cannot make a partition on {0} since the columns that "
+            "are passed are empty".format(
                 partition_type
             )
         )
@@ -32,9 +41,10 @@ def Partitionable(partition_type, *columns):
     class __PartitionMeta__(object):
         __abstract__ = True
         __table_args__ = dict(
-            postgresql_partition_by="{}({})".format(
+            postgresql_partition_by="{0}({1})".format(
                 partition_type, ",".join(columns)
-            )
+            ),
+            extend_existing=True
         )
 
         def emit_new_partition(self, constraint_str):
@@ -51,6 +61,78 @@ def Partitionable(partition_type, *columns):
 
             """
             raise NotImplementedError
+
+        @hybrid_property
+        def partition_oids(self):
+            pg_class, pg_inherits = get_psql_catalog_tables(
+                'pg_class', 'pg_inherits'
+            )
+
+        @partition_oids.expression
+        def partition_oids(cls):
+            pg_inherits = get_psql_catalog_tables(
+                'pg_inherits'
+            )
+
+            return select(
+                [pg_inherits.c.inhrelid]
+            ).where(
+                pg_inherits.c.inhparent == cls.oid
+            ).label('partition_oids')
+
+        @hybrid_property
+        def partition_info(self):
+            raise NotImplementedError
+
+        @partition_info.expression
+        def partition_info(cls):
+            return select([
+                pg_class.c.relname,
+                func.pg_get_expr(
+                    pg_class.c.relpartbound,
+                    pg_class.c.oid
+                ).label('expression')
+            ]).where(
+                pg_class.c.oid.in_(cls.partition_oids)
+            )
+
+        @classmethod
+        def partition_df(cls, db):
+            pg_class, pg_inherits = get_psql_catalog_tables(
+                'pg_class',
+                'pg_inherits'
+            )
+
+            child = aliased(pg_class, alias='child')
+            parent = aliased(pg_class, alias='parent')
+
+            info_q = db.query(
+                child.c.relname,
+                func.pg_get_expr(
+                    child.c.relpartbound,
+                    child.c.oid
+                ).label('expression')
+            ).join(
+                pg_inherits,
+                child.c.oid == pg_inherits.c.inhrelid
+            ).join(
+                parent,
+                parent.c.oid == pg_inherits.c.inhparent
+            ).filter(
+                parent.c.relname == cls.__tablename__
+            )
+
+
+            df = pd_read_sql(
+                info_q.statement,
+                db.session.bind
+            )
+
+            result = df["expression"].str.extract(partition_range_extr)
+            result[["begin_range", "end_range"]] = result[
+                ["begin_range", "end_range"]
+            ].apply(to_numeric, errors="coerce")
+            return result
 
     return __PartitionMeta__
 
@@ -106,40 +188,31 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     end_range : int or float
         The exclusive end of the range for the table. Used in naming and
         setting the constraints of the table.
+    schema : str, optional
+        The schema to place the table under. None implies the use of the
+        "public" schema.
 
     Returns
     -------
     sqlalchemy.DDL
     """
 
-    table_noun = '{}.{}'.format(schema, table) if schema else table
+    namespaced_t = '{0}.{1}'.format(schema, table) if schema else table
 
-    fmt_args = dict(partition=table_noun,table=table, begin=begin_range, end=end_range,)
+    fmt_args = dict(
+        partition=namespaced_t,
+        table=table,
+        begin=begin_range,
+        end=end_range
+        )
 
     return DDL(
-        "CREATE TABLE {partition}_{begin}_{end} PARTITION OF {table} FOR VALUES FROM ({begin}) TO ({end})".format(
+        "CREATE TABLE {partition}_{begin}_{end} "
+        "PARTITION OF {table} FOR VALUES FROM ({begin}) "
+        "TO ({end})".format(
             **fmt_args
         )
     )
-
-
-def get_partition_q(table):
-    """
-    Create a query searching for partitions of the given table.
-
-    Parameters
-    ----------
-    table : str or sqlalchemy.Table
-
-    Returns
-    -------
-    sqlalchemy.text
-        A text object representing the desired query.
-    """
-    q = text(
-        "SELECT pt.relname AS partition_name, pg_get_expr(pt.relpartbound, pt.oid, true) AS partition_expression FROM pg_class base_tb JOIN pg_inherits i ON i.inhparent = base_tb.oid JOIN pg_class pt ON pt.oid = i.inhrelid WHERE base_tb.oid = :t\\:\\:regclass"
-    ).bindparams(t=table)
-    return q
 
 
 def extract_partition_df(partition_df):
@@ -157,9 +230,10 @@ def extract_partition_df(partition_df):
     pd.DataFrame
         The columns extracted via regex capture groups.
     """
-    regex = re.compile(
-        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) TO \('(?P<end_range>\d+)'\)$"
-    )
+    regex = re.compile((
+        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
+        r"TO \('(?P<end_range>\d+)'\)$"
+    ))
 
     result = partition_df["partition_expression"].str.extract(regex)
     result[["begin_range", "end_range"]] = result[
@@ -168,9 +242,79 @@ def extract_partition_df(partition_df):
     return result
 
 
-def make_fake_mapper(Model, tablename, schema=None):
-    class Fake(Model):
-        __tablename__ = tablename
+def inheritance_join(
+        db,
+        psql_meta,
+        tablename,
+        child,
+        parent,
+        attributes
+        ):
 
-        __table_args__ = {'schema': schema} if schema else {}
-    return Fake
+    pg_inherits = psql_meta.tables['pg_catalog.pg_inherits']
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    parent = aliased(pg_class, alias='parent')
+
+    q = db.query(*attributes).join(
+        pg_inherits,
+        child.c.oid == pg_inherits.c.inhrelid
+    ).join(
+        parent,
+        parent.c.oid == pg_inherits.c.inhparent
+    ).filter(
+            parent.c.relname == tablename
+    )
+    return q
+
+
+def get_partition_tables(psql_meta, model, db, resolve=True):
+    """
+    Query for the partition tables of the given SQLAlchemy Model.
+    This will return ``pg_class`` rows of partition tables that
+    are partitioned on ``model.__tablename__``.
+
+    Parameters
+    ----------
+    psql_meta : sqlalchemy.MetaData
+        The metadata object that is a reflection of the POSTGRESQL
+        catalogs.
+    model : lightcurvedb.core.base_model.QLPModel
+        The Model class to reference for partitions.
+    db : lightcurvedb.db
+        The current and open db class instance.
+
+    Returns
+    -------
+    list
+        Returns a list of tuples of the executed query. Potentially
+        empty.
+    """
+    tablename = model.__tablename__
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    child = aliased(pg_class, alias='child')
+
+    q = inheritance_join(db, psql_meta, tablename, [child])
+
+    return q.all() if resolve else q
+
+
+def get_partition_columns(psql_meta, model, attrs, db, resolve=True):
+    tablename = model.__tablename__
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    child = aliased(pg_class, alias='child')
+
+    columns = (getattr(child.c, column) for column in attrs)
+
+    q = inheritance_join(db, psql_meta, tablename, columns)
+
+    return q.all() if resolve else q
+
+
+def get_partition_q(tablename):
+    tablename = model.__tablename__
+    pg_class = psql_meta.tables['pg_catalog.pg_class']
+
+    child = aliased(pg_class, alias='child')

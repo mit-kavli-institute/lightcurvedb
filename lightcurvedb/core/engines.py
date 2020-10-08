@@ -1,6 +1,5 @@
 from __future__ import division, print_function
 
-import warnings
 import os
 
 try:
@@ -12,7 +11,7 @@ except ImportError:
 from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import scoped_session, sessionmaker, create_session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DisconnectionError
 
 
@@ -23,6 +22,7 @@ DEFAULT_ENGINE_KWARGS = dict(
     executemany_mode='values',
     executemany_values_page_size=10000
 )
+
 
 def __config_to_url__(path):
     parser = ConfigParser()
@@ -53,14 +53,10 @@ def __register_process_guards__(engine):
     def checkout(dbabi_connection, connection_record, connection_proxy):
         pid = os.getpid()
         if connection_record.info['pid'] != pid:
-            # warnings.warn(
-            #     'Parent process {} forked {} with an open database connection, '
-            #     'which is being discarded and remade'.format(
-            #         connection_record.info['pid'], pid
-            #     )
-            # )
             connection_record.connection = connection_proxy.connection = None
-            raise DisconnectionError('Attempting to disassociate database connection')
+            raise DisconnectionError(
+                'Attempting to disassociate database connection'
+            )
     return engine
 
 

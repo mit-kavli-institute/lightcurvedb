@@ -1,5 +1,4 @@
 from astropy.io import fits
-from glob import glob
 from .base import MultiIngestor
 from lightcurvedb.models.frame import Frame
 

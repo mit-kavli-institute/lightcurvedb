@@ -44,13 +44,13 @@ def load_qflag_file(
         )
     except FileNotFoundError:
         logger.debug(
-            'Could not find specified quality flag file {}'.format(
+            'Could not find specified quality flag file {0}'.format(
                 qflag_file
             )
         )
     except OSError:
         logger.debug(
-            'Could not open specified quality flag file {}'.format(
+            'Could not open specified quality flag file {0}'.format(
                 qflag_file
             )
         )

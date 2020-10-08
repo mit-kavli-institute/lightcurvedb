@@ -1,7 +1,7 @@
 from collections import namedtuple
-from itertools import chain
+from itertools import chain, permutations
 
-from hypothesis import given
+from hypothesis import given, note
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, rule
 from pytest import raises
@@ -11,6 +11,7 @@ from lightcurvedb.managers.manager import (
     DuplicateEntryException,
     manager_factory,
 )
+from lightcurvedb.models import Lightcurve
 
 from .factories import lightcurve
 from .factories import lightcurve_kwargs as lc_kw_st
@@ -50,7 +51,7 @@ class LCManagerComparison(RuleBasedStateMachine):
         if key in self.manager:
             with raises(DuplicateEntryException):
                 self.manager.add_model(lc)
-            return None
+            return self.manager._interior_data[key]
 
         return self.manager.add_model(lc)
 
@@ -69,7 +70,7 @@ class LCManagerComparison(RuleBasedStateMachine):
                     aperture_id=lc_kw['aperture'].name,
                     lightcurve_type_id=lc_kw['lightcurve_type'].name
                 )
-            return None
+            return self.manager._interior_data[key]
 
         return self.manager.add_model_kw(
             tic_id=lc_kw['tic_id'],
@@ -82,5 +83,15 @@ class LCManagerComparison(RuleBasedStateMachine):
         if lc:
             assert lc in self.manager
 
+    @rule(lc=lightcurves)
+    def grab_from_manager(self, lc):
+        keys = (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)
+        for key in permutations(keys):
+            check = self.manager
+            for scalar_key in key:
+                check = check[scalar_key]
+                if isinstance(check, Lightcurve):
+                    assert check == lc
+                    break
 
 TestLCManager = LCManagerComparison.TestCase

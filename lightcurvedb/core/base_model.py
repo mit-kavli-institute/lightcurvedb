@@ -1,24 +1,11 @@
-from __future__ import print_function, division
-import datetime
-from sqlalchemy.ext.declarative import declared_attr, as_declarative, has_inherited_table
+from __future__ import division, print_function
+
+from lightcurvedb.core.admin import get_psql_catalog_tables
+from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import relationship
-from sqlalchemy import Column, String, DateTime, BigInteger, ForeignKey, Sequence
-from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.sql import func
-import numpy as np
-from psycopg2.extensions import register_adapter, AsIs
-
-
-# Forward Declare Type mappings for psycopg2 to understand numpy types
-#def __adapt_np__(np_type):
-#    def __adaptor__(type_inst):
-#        return AsIs(type_inst)
-#
-#register_adapter(np.int32, __adapt_np__(int))
-#register_adapter(np.int64, __adapt_np__(int))
-#register_adapter(np.float32, __adapt_np__(float))
-#register_adapter(np.float64, __adapt_np__(float))
 
 
 @as_declarative()
@@ -36,10 +23,26 @@ class QLPModel(object):
         """
         return insert(cls.__table__, *args, **kwargs)
 
+    @hybrid_property
+    def oid(self):
+        pg_class = get_psql_catalog_tables('pg_class')
+        return select(
+            [pg_class.c.oid]
+        ).where(pg_class.c.relname == self.__tablename__)
+
+    @oid.expression
+    def oid(cls):
+        pg_class = get_psql_catalog_tables('pg_class')
+        print(cls.__tablename__)
+        return select(
+            [pg_class.c.oid]
+        ).where(pg_class.c.relname == cls.__tablename__).label('oid')
+
 
 class QLPDataProduct(QLPModel):
     """
-    Mixin for describing QLP Dataproducts such as frames, lightcurves, and BLS results
+    Mixin for describing QLP Dataproducts such as frames, lightcurves,
+    and BLS results
     """
     __abstract__ = True
 

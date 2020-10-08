@@ -4,29 +4,23 @@ import os
 import warnings
 import numpy as np
 from pandas import read_sql as pd_read_sql
-from sys import version_info
 
 from configparser import ConfigParser
 
-from sqlalchemy import Column, SmallInteger, create_engine, and_, func, bindparam
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy import and_, func
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.event import listens_for
-from sqlalchemy.exc import DisconnectionError
-from sqlalchemy.orm import scoped_session, sessionmaker, joinedload
+from sqlalchemy.orm import scoped_session
 from sqlalchemy.engine.url import URL
 
-from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models
 from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
-from lightcurvedb.util.uri import construct_uri, uri_from_config
 from lightcurvedb.util.type_check import isiterable
-from lightcurvedb.comparators.types import qlp_type_check, qlp_type_multiple_check
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
-from lightcurvedb.core.quality_flags import set_quality_flags
-from lightcurvedb.en_masse.temp_table import declare_lightcurve_cadence_map
-from lightcurvedb.core.partitioning import get_partition_q, extract_partition_df
+from lightcurvedb.core.partitioning import (
+        get_partition_q,
+        extract_partition_df
+)
 
 
 # Bring legacy capability
@@ -66,7 +60,7 @@ class DB(object):
 
     """
 
-    def __init__(self, FACTORY, SESSIONCLASS=None):
+    def __init__(self, FACTORY, SESSIONCLASS=None, pg_catalog=False):
 
         if SESSIONCLASS:
             # Createdb instance opened
@@ -88,7 +82,7 @@ class DB(object):
         """Exit from the current SQLAlchemy session"""
         self.close()
 
-    def open(self):
+    def open(self):   # noqa: B006
         """
         Establish a connection to the database. If this session has already
         been opened it will issue a warning before a no-op.
@@ -154,6 +148,29 @@ class DB(object):
             )
         return self._session
 
+    @property
+    def bind(self):
+        """
+        Return the underlying SQLAlchemy Engine powering this connection.
+
+        Returns
+        -------
+        sqlalchemy.Engine
+            The Engine object powering the python side rendering of
+            transactions.
+
+        Raises
+        ------
+        RuntimeError
+            Attempted to access this propery without first calling ``open()``.
+        """
+        if not self._active:
+            raise RuntimeError(
+                'Session is not open. Please call `db_inst.open()`'
+                'or use `with db_inst as opendb:`'
+            )
+        return self._session.bind
+
     def query(self, *args):
         """
         Constructs a query attached to this session.
@@ -192,9 +209,6 @@ class DB(object):
         sqlalchemy.orm.query.Query
             Returns the Query object.
 
-        Notes
-        -----
-        See .. _SQLAlchemy Query Docs: https://docs.sqlalchemy.org/en/13/orm/query.html
         """
         return self._session.query(*args)
 
@@ -226,7 +240,14 @@ class DB(object):
             .order_by(models.Orbit.orbit_number)
         return np.array(orbits.all(), dtype=ORBIT_DTYPE)
 
-    def query_orbit_cadence_limit(self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID):
+    def query_orbit_cadence_limit(
+            self,
+            orbit_id,
+            cadence_type,
+            camera,
+            frame_type=LEGACY_FRAME_TYPE_ID
+            ):
+
         cadence_limit = self.query(
             func.min(models.Frame.cadence), func.max(models.Frame.cadence)
         ).join(models.Orbit, models.Frame.orbit_id == models.Orbit.id).filter(
@@ -252,7 +273,10 @@ class DB(object):
     def query_frames_by_orbit(self, orbit_id, cadence_type, camera):
         # Differs from PATools in that orbit_id != orbit number
         # so we need to record that.
-        cols = [models.Orbit.orbit_number] + list(models.Frame.get_legacy_attrs())
+        cols = (
+            [models.Orbit.orbit_number] +
+            list(models.Frame.get_legacy_attrs())
+        )
         values = self.query(
             *cols
         ).join(models.Frame.orbit).filter(
@@ -268,7 +292,10 @@ class DB(object):
         )
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
-        cols = [models.Orbit.orbit_number] + list(models.Frame.get_legacy_attrs())
+        cols = (
+            [models.Orbit.orbit_number] +
+            list(models.Frame.get_legacy_attrs())
+        )
         values = self.query(
             *cols
         ).join(models.Frame.orbit).filter(
@@ -276,7 +303,7 @@ class DB(object):
             models.Frame.camera == camera,
             models.Frame.cadence.in_(cadences)
         ).order_by(
-            models.Frame.cadence.asc()       
+            models.Frame.cadence.asc()
         ).all()
 
         return np.array(
@@ -289,7 +316,7 @@ class DB(object):
         ).all()
 
     # Begin Lightcurve Methods
-    def query_lightcurves(self, tics=[], apertures=[], types=[]):
+    def query_lightcurves(self, tics=None, apertures=None, types=None):
         """
         Make a query of lightcurves that meet the provided
         parameters. The emitted SQL clause is an IN statement for the given
@@ -316,23 +343,23 @@ class DB(object):
             A query of lightcurves that match the given parameters.
         """
         q = self.lightcurves
-        if len(apertures) > 0:
+        if apertures:
             q = q.filter(
                 models.Lightcurve.aperture_id.in_(
                     apertures
                 )
             )
-        if len(types) > 0:
+        if types:
             q = q.filter(
                 models.Lightcurve.lightcurve_type_id.in_(
                     types
                 )
             )
-        if len(tics) > 0:
+        if tics:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
-    def load_from_db(self, tics=[], apertures=[], types=[]):
+    def load_from_db(self, tics=None, apertures=None, types=None):
         """
         A quick method to return a list of lightcurves that meet the provided
         parameters. The emitted SQL clause is an IN statement for the given
@@ -363,7 +390,7 @@ class DB(object):
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.all()
 
-    def yield_from_db(self, chunksize, tics=[], apertures=[], types=[]):
+    def yield_from_db(self, chunksize, tics=None, apertures=None, types=None):
         """
         Akin to ``load_from_db`` but instead of a list we return an iterator
         over a `server-side` PSQL cursor. This may be beneficial when
@@ -457,10 +484,20 @@ class DB(object):
         **kw_filters : Keyword arguments, optional
             Keyword arguments to pass into ``filter_by``.
         """
-        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tics)).filter_by(**kw_filters)
+        q = self.lightcurves.filter(
+            models.Lightcurve.tic_id.in_(tics)
+        ).filter_by(**kw_filters)
         return q
 
-    def tics_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True, unique=True, sort=True):
+    def tics_by_orbit(
+            self,
+            orbit_numbers,
+            cameras=None,
+            ccds=None,
+            resolve=True,
+            unique=True,
+            sort=True
+            ):
         """
         Return tics by observed in the given orbit numbers. This query can be
         filtered for specific cameras/ccds.
@@ -498,7 +535,10 @@ class DB(object):
         if not isiterable(orbit_numbers):
             orbit_numbers = [orbit_numbers]
 
-        col = models.Observation.tic_id.distinct() if unique else models.Observation.tic_id
+        col = models.Observation.tic_id
+
+        if unique:
+            col = col.distinct()
 
         q = self.query(
             col
@@ -520,7 +560,15 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def tics_by_sector(self, sectors, cameras=None, ccds=None, resolve=True, unique=True, sort=True):
+    def tics_by_sector(
+            self,
+            sectors,
+            cameras=None,
+            ccds=None,
+            resolve=True,
+            unique=True,
+            sort=True
+            ):
         """
         Return tics by observed in the given sector numbers. This query can be
         filtered for specific cameras/ccds.
@@ -558,6 +606,10 @@ class DB(object):
         if not isiterable(sectors):
             sectors = [sectors]
 
+        col = models.Observation.tic_id
+        if unique:
+            col = col.distinct()
+
         q = self.query(
             models.Observation.tic_id
         ).join(
@@ -580,7 +632,13 @@ class DB(object):
             return [r for r, in q.all()]
         return q
 
-    def lightcurves_by_orbit(self, orbit_numbers, cameras=None, ccds=None, resolve=True):
+    def lightcurves_by_orbit(
+            self,
+            orbit_numbers,
+            cameras=None,
+            ccds=None,
+            resolve=True
+            ):
         """
         Retrieve lightcurves that have been observed in the given
         orbit numbers. This method can also filter by camera and ccd.
@@ -619,7 +677,13 @@ class DB(object):
             return q.all()
         return q
 
-    def lightcurves_by_sector(self, sectors, cameras=None, ccds=None, resolve=True):
+    def lightcurves_by_sector(
+            self,
+            sectors,
+            cameras=None,
+            ccds=None,
+            resolve=True
+            ):
         """
         Retrieve lightcurves that have been observed in the given
         sector numbers. This method can also filter by camera and ccd.
@@ -701,14 +765,20 @@ class DB(object):
             # Retrives lcs that appear in orbit 23 and filtered
             # for best aperture.
         """
+        bestap_tic_id = models.BestApertureMap.tic_id
+        bestap_aperture_id = models.BestApertureMap.aperture_id
+
+        and_clause = and_(
+            models.Lightcurve.tic_id == bestap_tic_id,
+            models.Lightcurve.aperture_id == bestap_aperture_id
+        )
+
         if q is None:
             q = self.lightcurves
+
         q = q.join(
             models.BestApertureMap,
-            and_(
-                models.Lightcurve.tic_id == models.BestApertureMap.tic_id,
-                models.Lightcurve.aperture_id == models.BestApertureMap.aperture_id
-            )
+            and_clause
         )
         if resolve:
             return q.all()
@@ -767,7 +837,14 @@ class DB(object):
         if check:
             check.delete()
 
-    def set_quality_flags(self, orbit_number, camera, ccd, cadences, quality_flags):
+    def set_quality_flags(
+            self,
+            orbit_number,
+            camera,
+            ccd,
+            cadences,
+            quality_flags
+            ):
         """
         Assign quality flags en masse by orbit and camera and ccds. Updates
         are performed using the passed cadences and quality flag
@@ -866,15 +943,7 @@ class DB(object):
         return pd_read_sql(q.statement, self.session.bind)
 
     def get_partitions_df(self, model):
-        q = get_partition_q(model.__tablename__)
-        raw_df = pd_read_sql(
-            q,
-            self.session.bind,
-        )
-        ranged_df = extract_partition_df(raw_df)
-        raw_df['begin_range'] = ranged_df['begin_range']
-        raw_df['end_range'] = ranged_df['end_range']
-        return raw_df
+        return model.partition_df(self)
 
     def get_cadences_in_orbits(self, orbits):
         """
@@ -916,7 +985,6 @@ def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
         from the user's ``~`` space using ``os.path.expanduser``.
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
-        See _SQLAlchemy Engine : https://docs.sqlalchemy.org/en/13/core/engines.html
     """
     parser = ConfigParser()
     parser.read(

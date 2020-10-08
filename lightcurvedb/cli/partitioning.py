@@ -6,7 +6,8 @@ from sys import exit
 import lightcurvedb.models as defined_models
 from sqlalchemy import text
 from lightcurvedb import db_from_config
-from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from lightcurvedb.core.partitioning import emit_ranged_partition_ddl, get_partition_tables
+from lightcurvedb.core.admin import psql_tables
 from lightcurvedb.cli.base import lcdbcli
 
 
@@ -64,6 +65,7 @@ def list_partitions(ctx, model):
 @click.argument('model', type=str)
 @click.argument('number_of_new_partitions', type=click.IntRange(min=1))
 @click.argument('blocksize', type=click.IntRange(min=1))
+@click.option('--schema', type=str, default='partitions', help='Schema space to place the partition under (organization)')
 @click.option('--schema', type=str, default='partitions')
 def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
@@ -149,10 +151,11 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
             click.confirm('Do the following changes look okay?', abort=True)
             for partition in new_partition_models:
                 db.session.execute(partition)
-                db.commit()
                 click.echo(
                     '\tMade {}'.format(partition)
                 )
+
+            db.commit()
             click.echo(
                 'Committed {} new partitions!'.format(len(new_partition_models))
             )
@@ -170,7 +173,7 @@ def delete_partitions(ctx, model, pattern):
         except AttributeError:
             click.echo('No known model {}'.format(model))
             exit(1)
-    
+
         partitions = db.get_partitions_df(target_model)
         if len(partitions) > 0:
             current_max = max(partitions['end_range'])
@@ -262,3 +265,24 @@ def set_logged(ctx, model, pattern, schema):
             )
             db.commit()
         click.echo('Altered {} tables! Done'.format(len(tablenames)))
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument('partition-tablename', type=str)
+@click.argument('n-subpartitions', type=click.IntRange(min=2))
+def subpartition(ctx, partition_tablename, n_subpartitions):
+    try:
+        target_model = getattr(defined_models, model)
+    except AttributeError:
+        click.echo('No known model {}'.format(model))
+        exit(1)
+
+    with ctx.obj['dbconf'] as db:
+        psql_admin = psql_tables(db)
+        partitions = get_partition_tables(
+            psql_admin,
+            target_model,
+            db
+        )
+        click.echo(partitions)

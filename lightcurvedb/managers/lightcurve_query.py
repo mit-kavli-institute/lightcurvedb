@@ -1,11 +1,12 @@
 from abc import ABCMeta, abstractmethod
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, OrderedDict
 from functools import partial
 from itertools import groupby
 
 import numpy as np
 import pandas as pd
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert, aggregate_order_by
 from sqlalchemy.ext.serializer import dumps
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm.query import Query
@@ -101,6 +102,45 @@ class LightcurveManager(BaseLightcurveManager):
         return lightpoints_from_kw(
             **data
         )
+
+    def yield_baked_lightcurves(self, db, column_map, chunksize=1):
+        lcs = list(self)
+        lc_chunks = chunkify(lcs, chunksize)
+
+        col_map = OrderedDict()
+        col_map.update(column_map)
+
+        agg = (
+            func.array_agg(
+                aggregate_order_by(
+                    getattr(Lightpoint, column),
+                    Lightpoint.cadence.asc()
+                )
+            ).label(alias)
+            for column, alias in col_map.items()
+        )
+
+        for chunk in lc_chunks:
+            lc_map = {lc.id: lc for lc in chunk}
+            results = db.query(
+                Lightpoint.lightcurve_id,
+                *agg
+            ).filter(Lightpoint.lightcurve_id.in_(lc_map.keys()))
+            for result in results:
+                id_ = result[0]
+                cols = result[1:]
+                return_data = dict(
+                    id=id_,
+                    tic_id = lc_map[id_].tic_id
+
+                )
+
+                for ith, alias in enumerate(col_map.values()):
+                    col = cols[ith]
+                    return_data[alias] = col
+
+                yield return_data
+
 
     def add_defined_lightcurve(self, lightcurve):
         """

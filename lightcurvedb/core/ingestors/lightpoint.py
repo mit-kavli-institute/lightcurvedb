@@ -4,26 +4,20 @@ try:
 except ImportError:
     import Queue as queue
 
-import h5py
 import numpy as np
-import pandas as pd
 import os
 from collections import namedtuple, defaultdict
 from time import time
 from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
-from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
-from lightcurvedb.core.ingestors.lightcurve_ingestors import h5_to_kwargs, kwargs_to_df
-from lightcurvedb.core.ingestors.quality_flag_ingestors import update_qflag
-from lightcurvedb.core.ingestors.temp_table import QualityFlags
+from lightcurvedb.core.ingestors.lightcurve_ingestors import (
+        h5_to_kwargs, kwargs_to_df
+)
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.util.logger import lcdb_logger as logger
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb import db_from_config
-from sqlalchemy import Integer, text, bindparam, Sequence, Table
-from sqlalchemy.orm import joinedload
-from sqlalchemy.sql import select, func, cast
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import bindparam, Sequence, Table
 from multiprocessing import Process
+from pgcopy import CopyManager
 
 try:
     from math import isclose
@@ -32,9 +26,16 @@ except ImportError:
     def isclose(x, y):
         return np.isclose([x], [y])[0]
 
-LP_COLS = ['lightcurve_id', 'cadence', 'barycentric_julian_date',
-        'data', 'error', 'x_centroid', 'y_centroid', 'quality_flag'
-        ]
+LP_COLS = [
+    'lightcurve_id',
+    'cadence',
+    'barycentric_julian_date',
+    'data',
+    'error',
+    'x_centroid',
+    'y_centroid',
+    'quality_flag'
+]
 
 LP_COL_RENAME = dict(
     cadences='cadence',
@@ -53,8 +54,13 @@ DIFF_COLS = [
 
 MergeJob = namedtuple(
     'MergeJob',
-    ('tic_id', 'ra', 'dec', 'tmag',
-    'file_observations')
+    (
+        'tic_id',
+        'ra',
+        'dec',
+        'tmag',
+        'file_observations'
+    )
 )
 
 
@@ -77,10 +83,10 @@ def remove_redundant(id_cadence_map, current_lp):
 
 class LightpointProcessor(Process):
     def log(self, msg, level='debug'):
-        getattr(logger, level)('{}: {}'.format(self.name, msg))
+        getattr(logger, level)('{0}: {1}'.format(self.name, msg))
 
     def set_name(self):
-        self.name = '{}-{}'.format(self.prefix, os.getpid())
+        self.name = '{0}-{1}'.format(self.prefix, os.getpid())
 
 
 class MassIngestor(LightpointProcessor):
@@ -108,14 +114,14 @@ class MassIngestor(LightpointProcessor):
         self.time_corrector = time_corrector
 
         self.db = None
-        self.cadence_to_orbit_map = dict()
-        self.orbit_map = dict()
+        self.cadence_to_orbit_map = {}
+        self.orbit_map = {}
         self.observations = []
         self.lp_cache = defaultdict(list)
-        self.table_cache = dict()
+        self.table_cache = {}
 
         self.new_ids = set()
-        self.id_map = dict()
+        self.id_map = {}
 
     def update_ids(self, tic):
         for lc in self.db.lightcurves.filter(Lightcurve.tic_id == tic).all():
@@ -138,7 +144,6 @@ class MassIngestor(LightpointProcessor):
             return self.id_map[key]
 
     def merge(self, job):
-        bundled_lps = []
         self.update_ids(job.tic_id)
         observed_orbits = {
             r for r, in self.db.query(
@@ -153,7 +158,7 @@ class MassIngestor(LightpointProcessor):
         for obs in job.file_observations:
             tic, orbit, camera, ccd, file_path = obs
             if orbit in observed_orbits or orbit in processed_orbits:
-                self.log('Found duplicate orbit {}'.format(orbit))
+                self.log('Found duplicate orbit {0}'.format(orbit))
                 continue
             self.observations.append(dict(
                 tic_id=tic,
@@ -172,7 +177,8 @@ class MassIngestor(LightpointProcessor):
 
                 # Update quality flags
                 idx = [(cadence, camera, ccd) for cadence in kw['cadences']]
-                updated_qflag = self.q_flags.loc[idx]['quality_flags'].to_numpy()
+                updated_qflag = self.q_flags.loc[idx]['quality_flags']
+                updated_qflag = updated_qflag.to_numpy()
                 kw['quality_flags'] = updated_qflag
 
                 h5_lp = kwargs_to_df(
@@ -181,7 +187,8 @@ class MassIngestor(LightpointProcessor):
                 )
 
                 # Align data
-                good_values = h5_lp.loc[h5_lp['quality_flags'] == 0]['values'].to_numpy()
+                mask = h5_lp['quality_flags'] == 0
+                good_values = h5_lp.loc[mask]['values'].to_numpy()
                 offset = np.nanmedian(good_values) - job.tmag
                 h5_lp['values'] = h5_lp['values'] - offset
 
@@ -201,14 +208,17 @@ class MassIngestor(LightpointProcessor):
                 # Send to the appropriate table
                 partition_begin = (lc_id // 1000) * 1000
                 partition_end = partition_begin + 1000
-                table = 'lightpoints_{}_{}'.format(partition_begin, partition_end)
+                table = 'lightpoints_{0}_{1}'.format(
+                    partition_begin,
+                    partition_end
+                )
 
                 self.lp_cache[table].append(h5_lp)
 
                 total_len += len(h5_lp)
 
         self.log(
-            'processed {} with {} orbits for {} new lightpoints'.format(
+            'processed {0} with {1} orbits for {2} new lightpoints'.format(
                 job.tic_id, len(job.file_observations), total_len
             )
         )
@@ -222,7 +232,10 @@ class MassIngestor(LightpointProcessor):
                 continue
             tic_id, ap_id, lc_type_id = key
             lcs.append(Lightcurve(
-                id=id_, tic_id=tic_id, aperture_id=ap_id, lightcurve_type_id=lc_type_id
+                id=id_,
+                tic_id=tic_id,
+                aperture_id=ap_id,
+                lightcurve_type_id=lc_type_id
             ))
 
         self.db.session.add_all(lcs)
@@ -276,7 +289,7 @@ class MassIngestor(LightpointProcessor):
         self.new_ids = set()
         self.observations = []
         self.lp_cache = defaultdict(list)
-        self.log('flushed {} lightpoints'.format(points))
+        self.log('flushed {0} lightpoints'.format(points))
 
     def run(self):
         self.db = db_from_config(self.config, **self.engine_kwargs).open()
@@ -309,4 +322,109 @@ class MassIngestor(LightpointProcessor):
             self.flush()
         finally:
             # Cleanup!
+            self.db.close()
+
+
+class CopyProcess(LightpointProcessor):
+    prefix = 'Copier'
+
+    def __init__(self, db_config, lp_queue, copy_args, **process_kwargs):
+        super(CopyProcess, self).__init__(**process_kwargs)
+        self.lp_queue = lp_queue
+        self.threshold_time = copy_args['threshold_time']
+        self.expected_tics = copy_args['expected_tics']
+        self.db = None
+        self.config = db_config
+
+        self.lightcurve_cache = []
+        self.internal_cache = []
+        self.observation_cache = []
+        self.last_copy_time = time()
+        self.mgr = None
+        self.dirty = False
+        self.seen_tics = set()
+        self.track_count = 0
+        self.pg_map = None
+
+        self.engine_kwargs = dict(
+            executemany_mode='values',
+            executemany_values_page_size=10000,
+            executemany_batch_page_size=500
+        )
+
+    def process(self, job):
+        lightcurves = job['lightcurves']
+        records = job['lightpoints']
+        observations = job['observations']
+        self.lightcurve_cache.extend(lightcurves)
+        self.internal_cache.append(records)
+        self.observation_cache.extend(observations)
+
+        if any(len(x) > 0 for x in [lightcurves, records, observations]):
+            self.dirty = True
+
+    def iter_lps(self):
+        for df in self.internal_cache:
+            for row in df.to_records():
+                yield row
+                self.track_count += 1
+
+    def flush(self):
+        if self.dirty:
+            lcs = []
+            for id_, tic_id, ap_id, lc_type_id in self.lightcurve_cache:
+                lc = Lightcurve(
+                    id=id_,
+                    tic_id=tic_id,
+                    aperture_id=ap_id,
+                    lightcurve_type_id=lc_type_id
+                )
+                lcs.append(lc)
+                self.seen_tics.add(lc.tic_id)
+
+            self.db.session.add_all(lcs)
+            self.db.commit()
+            mgr = CopyManager(
+                self.db.session.connection().connection,
+                'lightpoints',
+                ['lightcurve_id', 'cadence', 'barycentric_julian_date',
+                    'data', 'error', 'x_centroid', 'y_centroid',
+                    'quality_flag']
+            )
+            mgr.threading_copy(self.iter_lps())
+            obs = [Observation(**kw) for kw in self.observation_cache]
+            self.db.session.add_all(obs)
+            self.db.commit()
+            self.last_copy_time = time()
+            self.dirty = False
+
+            self.log(
+                'Committed {0} lightpoints. Seen ~ {1} / {2} tics'.format(
+                    self.track_count,
+                    len(self.seen_tics),
+                    len(self.expected_tics)
+                )
+            )
+            self.track_count = 0
+            self.lightpoint_cache = []
+            self.lightcurve_cache = []
+            self.observation_cache = []
+
+    def run(self):
+        self.db = db_from_config(self.config, **self.engine_kwargs).open()
+        self.set_name()
+
+        try:
+            while True:
+                job = self.lp_queue.get()
+                self.process(job)
+                self.flush()
+        except queue.Empty:
+            # Looks like we're done.
+            self.log('Finishing up')
+            self.flush()
+            self.db.close()
+        except KeyboardInterrupt:
+            self.log('Received interrupt')
+            self.flush()
             self.db.close()
