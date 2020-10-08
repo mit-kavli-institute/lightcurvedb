@@ -1,5 +1,5 @@
 import re
-from sqlalchemy import Column, ForeignKey, Integer, String, BigInteger, Float, Boolean, Sequence, select, func
+from sqlalchemy import Column, Integer, String, Boolean, Sequence, func
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
@@ -9,7 +9,8 @@ import click
 import os
 from astropy.io import fits
 from multiprocessing import Pool
-from .frame import Frame
+from lightcurvedb.core.constants import QLP_ORBITS, POC_ORBITS
+from lightcurvedb.models.frame import Frame
 
 
 def _extr_fits_header(f):
@@ -27,6 +28,7 @@ ORBIT_DTYPE = [
     ('quaternion_z', np.float64),
     ('quaternion_q', np.float64)
 ]
+
 
 class Orbit(QLPReference):
     """
@@ -49,7 +51,7 @@ class Orbit(QLPReference):
     quaternion_z = high_precision_column(nullable=False)
     quaternion_q = high_precision_column(nullable=False)
 
-    crm = Column(Boolean, nullable=False) # Has been correct for CRM
+    crm = Column(Boolean, nullable=False)  # Has been correct for CRM
     crm_n = Column(Integer, nullable=False)  # Cosmic Ray Mitigation Number
     basename = Column(String(256), nullable=False)
 
@@ -64,7 +66,7 @@ class Orbit(QLPReference):
     )
 
     def __repr__(self):
-        return 'Orbit-{} Sector-{} ({:.3f}, {:.3f}, {:.3f}) {}'.format(
+        return 'Orbit-{0} Sector-{1} ({2:.3f}, {3:.3f}, {4:.3f}) {5}'.format(
             self.orbit_number,
             self.sector,
             self.right_ascension,
@@ -118,9 +120,15 @@ class Orbit(QLPReference):
         }
 
         for column in require_congruency_map.keys():
-            assert all(headers[0].get(column) == cmpr.get(column) for cmpr in headers[1:])
+            assert all(
+                headers[0].get(column) == cmpr.get(column)
+                for cmpr in headers[1:]
+            )
 
-        basename = re.search(r'(?P<basename>tess[0-9]+)', files[0]).groupdict()['basename']
+        basename = re.search(
+            r'(?P<basename>tess[0-9]+)',
+            files[0]
+        ).groupdict()['basename']
 
         attrs = {
             v: headers[0][k] for k, v in require_congruency_map.items()
@@ -173,26 +181,25 @@ class Orbit(QLPReference):
     def dec(cls):
         return cls.declination
 
-
-    def get_qlp_directory(self, base_path='/pdo/qlp-data', suffixes=[]):
+    def get_qlp_directory(self, base_path=QLP_ORBITS, suffixes=None):
         """
         Return the base QLP orbit directory for the orbit
         """
         return os.path.join(
             base_path,
-            'orbit-{}'.format(self.orbit_number),
-            *suffixes
+            'orbit-{0}'.format(self.orbit_number),
+            *suffixes if suffixes else []
         )
 
-    def get_poc_directory(self, base_path='/pdo/poc-data/orbits', suffixes=[]):
+    def get_poc_directory(self, base_path=POC_ORBITS, suffixes=None):
         """
         Return the base POC orbit directory for the orbit.
         """
 
         return os.path.join(
             base_path,
-            'orbit-{}'.format(self.orbit_number),
-            *suffixes
+            'orbit-{0}'.format(self.orbit_number),
+            *suffixes if suffixes else []
         )
 
     def get_qlp_run_directory(self, base_path='/pdo/qlp-data'):

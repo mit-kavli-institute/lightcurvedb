@@ -2,6 +2,7 @@
 This module describes custom collection objects for handling
 many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
+from numpy import array as np_array
 from sqlalchemy.orm.collections import collection
 from collections import namedtuple
 
@@ -44,7 +45,7 @@ class CadenceTracked(object):
         values = [
             getattr(self[cadence], attribute) for cadence in self.cadences
         ]
-        return values
+        return np_array(values)
 
     def __contains__(self, key):
         return key in self._internal_data
@@ -98,4 +99,4 @@ class CadenceTracked(object):
         """
         Always return cadences in ascending order
         """
-        return sorted(self._internal_data.keys())
+        return np_array(sorted(self._internal_data.keys()))

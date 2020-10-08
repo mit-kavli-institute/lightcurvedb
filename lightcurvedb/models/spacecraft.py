@@ -1,9 +1,8 @@
-from sqlalchemy import Column, ForeignKey, Float, DateTime
-from sqlalchemy.orm import relationship
-from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy import Column, Float, DateTime
 from sqlalchemy.ext.hybrid import hybrid_property
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
+
 
 class SpacecraftEphemris(QLPReference):
     __tablename__ = 'spacecraftephemeris'
@@ -19,11 +18,20 @@ class SpacecraftEphemris(QLPReference):
     range_rate = high_precision_column()
 
     def __repr__(self):
-        return '<SpacecraftEph {} ({}, {}, {}) />'.format(
-            self.barycentric_dynamical_time,
-            self.x,
-            self.y,
-            self.x
+        return (
+            '<SpacecraftEph {barycentric_dynamical_time} '
+            '({x}, {y}, {z}) />'.format(
+                **self.to_dict
+            )
+        )
+
+    @property
+    def to_dict(self):
+        return dict(
+            barycentric_dynamical_type=self.barycentric_dynamical_time,
+            x=self.x,
+            y=self.y,
+            z=self.x
         )
 
     @hybrid_property

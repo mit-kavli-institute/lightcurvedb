@@ -1,4 +1,5 @@
 from __future__ import division, print_function
+from collections import defaultdict
 import itertools
 
 
@@ -154,8 +155,10 @@ def partition_by(listlike, n, key=lambda x: x):
     if n < 1:
         raise ValueError(
                 'Cannot create partitions of size < 1'
-                )
-        groups = [(k, list(g)) for k, g in itertools.groupby(listlike, key=key)]
+        )
+        groups = [
+            (k, list(g)) for k, g in itertools.groupby(listlike, key=key)
+        ]
     return partition(groups, n)
 
 

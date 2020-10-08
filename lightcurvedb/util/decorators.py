@@ -11,7 +11,7 @@ def cast_to(type_):
         @wraps(func)
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
-            return type_(func)
+            return type_(result)
         return wrapper
     return external_wrap
 

@@ -312,19 +312,19 @@ class Lightcurve(QLPDataProduct):
 
     @hybrid_property
     def errors(self):
-        return self.lightpoints.errors
+        return self.lightpoints.error
 
     @hybrid_property
     def x_centroids(self):
-        return self.lightpoints.x_centroids
+        return self.lightpoints.x_centroid
 
     @hybrid_property
     def y_centroids(self):
-        return self.lightpoints.y_centroids
+        return self.lightpoints.y_centroid
 
     @hybrid_property
     def quality_flags(self):
-        return self.lightpoints.quality_flags
+        return self.lightpoints.quality_flag
 
     # Lightcurve instance setters
     @bjd.setter
@@ -341,16 +341,16 @@ class Lightcurve(QLPDataProduct):
 
     @errors.setter
     def errors(self, values):
-        self.lightpoints.errors = values
+        self.lightpoints.error = values
 
     @x_centroids.setter
     def x_centroids(self, values):
-        self.lightpoints.x_centroids = values
+        self.lightpoints.x_centroid = values
 
     @y_centroids.setter
     def y_centroids(self, values):
-        self.lightpoints.y_centroids = values
+        self.lightpoints.y_centroid = values
 
     @quality_flags.setter
     def quality_flags(self, values):
-        self.lightpoints.quality_flags = values
+        self.lightpoints.quality_flag = values

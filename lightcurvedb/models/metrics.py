@@ -1,15 +1,16 @@
 from importlib import import_module  # Say that 5 times
 
 from packaging.version import Version, parse
-from sqlalchemy import (BigInteger, Column, DateTime, ForeignKey, Index,
-                        Integer, Sequence, SmallInteger, String, Text,
-                        between)
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship
-from sqlalchemy.orm.query import Query
 
 from lightcurvedb.core.base_model import QLPMetric
+from sqlalchemy import (BigInteger, Column, DateTime,
+                        ForeignKey, Index, Integer,
+                        Sequence, SmallInteger, String,
+                        Text, between)
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
+from sqlalchemy.orm.query import Query
 
 SUPPORTED_VERSION_ARGS = (
     'public',
@@ -147,10 +148,10 @@ class QLPProcess(QLPMetric):
             __module = module
 
         try:
-            version = getattr(__module, 'version')
+            version = __module.version
         except AttributeError:
             # Attempt to fallback
-            version = getattr(__module, '__version__')
+            version = __module.__version__
 
         inst = cls(
             job_type=job_type,

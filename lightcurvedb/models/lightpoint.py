@@ -6,7 +6,6 @@ import pandas as pd
 from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event, func)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
 
 
 LIGHTPOINT_PARTITION_RANGE = 10**6
@@ -82,7 +81,7 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
     )
 
     def __repr__(self):
-        return '<Lightpoint {}-{} {}>'.format(
+        return '<Lightpoint {0}-{1} {2}>'.format(
             self.lightcurve_id,
             self.cadence,
             self.data
@@ -223,7 +222,7 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
 
 
 # Define some factories
-def lightpoints_from_kw(cadences=[], bjd=[], **other_data):
+def lightpoints_from_kw(cadences, bjd, **other_data):
     """
     A factory method to construct raw Lightpoints from keyword data
     comprising of lists.
@@ -255,7 +254,7 @@ def lightpoints_from_kw(cadences=[], bjd=[], **other_data):
     """
     if not len(bjd) == len(cadences):
         raise ValueError(
-            'bjd length {} does not match cadence length {}'.format(
+            'bjd length {0} does not match cadence length {1}'.format(
                 len(bjd), len(cadences)
             )
         )
@@ -263,7 +262,7 @@ def lightpoints_from_kw(cadences=[], bjd=[], **other_data):
     for col in data_keys:
         if not len(other_data[col]) == len(cadences):
             raise ValueError(
-                '{} length {} does not match cadence length {}'.format(
+                '{0} length {1} does not match cadence length {}'.format(
                     col, len(other_data[col]), len(cadences)
                 )
             )
@@ -273,6 +272,7 @@ def lightpoints_from_kw(cadences=[], bjd=[], **other_data):
         yield Lightpoint(
             **kw
         )
+
 
 # Setup initial lightpoint Partition
 event.listen(

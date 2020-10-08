@@ -6,6 +6,19 @@ from .fixtures import db_conn, clear_all
 import numpy as np
 
 
+NP_ATTRS = {
+    'cadences',
+    'bjd',
+    'barycentric_julian_date',
+    'values',
+    'mag',
+    'errors',
+    'x_centroids',
+    'y_centroids',
+    'quality_flags'
+}
+
+
 @given(st.integers(min_value=1), aperture(), lightcurve_type())
 def test_lightcurve_instantiation(tic, aperture, lc_type):
     lc = Lightcurve(tic_id=tic, aperture=aperture, lightcurve_type=lc_type)
@@ -39,8 +52,10 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
 
     assert len(lc) == 1
     assert lc.cadences[0] == lp.cadence
-    assert len(lc.values) == 1
-    assert len(lc['mag']) == 1
+
+    for attr in NP_ATTRS:
+        assert len(lc[attr]) == 1
+        assert isinstance(lc[attr], np.ndarray)
 
     if np.isnan(lp.bjd):
         assert np.isnan(lc.bjd[0])
