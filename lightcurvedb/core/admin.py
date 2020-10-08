@@ -42,6 +42,9 @@ def psql_catalog_tables():
 
 def get_psql_catalog_tables(*tables):
     catalogs = psql_catalog_tables()
-    return (
+    results = tuple(
         catalogs['pg_catalog.{0}'.format(table)] for table in tables
     )
+    if len(results) == 1:
+        return results[0]
+    return results

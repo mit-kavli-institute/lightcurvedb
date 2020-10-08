@@ -14,36 +14,6 @@ def test_lightcurve_instantiation(tic, aperture, lc_type):
     assert lc.type == lc_type
 
 
-@settings(deadline=None)
-@given(
-    st.builds(
-        Lightpoint,
-        lightcurve_id=st.integers(min_value=1, max_value=99999),
-        cadence=st.integers(min_value=0, max_value=PSQL_INT_MAX),
-        bjd=st.floats(),
-        data=st.floats(),
-        error=st.floats(),
-        x=st.floats(),
-        y=st.floats(),
-        quality_flag=st.integers(min_value=0, max_value=PSQL_INT_MAX),
-    ),
-    lightcurve(),
-)
-def test_lightpoint_collection_init(db_conn, lp, lc):
-    with db_conn as db:
-        try:
-            lc.id = (lp.lightcurve_id,)
-            db.add(lc)
-            db.add(lp)
-            db.commit()
-
-            result = db.query(Lightcurve).get(lc.id)
-            assert result.cadences[0] == lp.cadence
-        finally:
-            db.rollback()
-            clear_all(db)
-
-
 @given(
     st.builds(
         Lightpoint,

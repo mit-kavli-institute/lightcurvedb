@@ -60,4 +60,4 @@ class CollectionComparison(RuleBasedStateMachine):
             assert lp not in self.lightcurve.lightpoints
 
 
-TestCollectionComparison = CollectionComparison.TestCase
+# TestCollectionComparison = CollectionComparison.TestCase

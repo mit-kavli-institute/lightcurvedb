@@ -936,15 +936,7 @@ class DB(object):
         return pd_read_sql(q.statement, self.session.bind)
 
     def get_partitions_df(self, model):
-        q = get_partition_q(model.__tablename__)
-        raw_df = pd_read_sql(
-            q,
-            self.session.bind,
-        )
-        ranged_df = extract_partition_df(raw_df)
-        raw_df['begin_range'] = ranged_df['begin_range']
-        raw_df['end_range'] = ranged_df['end_range']
-        return raw_df
+        return model.partition_df(self)
 
     def get_cadences_in_orbits(self, orbits):
         """

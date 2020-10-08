@@ -173,7 +173,7 @@ def delete_partitions(ctx, model, pattern):
         except AttributeError:
             click.echo('No known model {}'.format(model))
             exit(1)
-    
+
         partitions = db.get_partitions_df(target_model)
         if len(partitions) > 0:
             current_max = max(partitions['end_range'])

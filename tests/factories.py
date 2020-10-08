@@ -254,7 +254,7 @@ lightpoint = lambda: builds(
 @define_strategy
 @composite
 def lightcurve(draw, **overrides):
-    return draw(
+    item = draw(
         builds(
             models.Lightcurve,
             tic_id=overrides.get(
@@ -264,6 +264,10 @@ def lightcurve(draw, **overrides):
             aperture=aperture(),
         )
     )
+    item.lightcurve_type_id = item.lightcurve_type.name
+    item.aperture_id = item.aperture.name
+
+    return item
 
 
 @define_strategy

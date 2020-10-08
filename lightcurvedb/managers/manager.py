@@ -1,3 +1,5 @@
+from collections import defaultdict
+from itertools import chain
 from lightcurvedb.exceptions import LightcurveDBException
 
 
@@ -25,8 +27,14 @@ class Manager(object):
     def __init__(self, initial_models):
         self._interior_data = dict()
         self._mappers = {
-            k: set() for k in self.__uniq_tuple__
+            k: defaultdict(set) for k in self.__uniq_tuple__
         }
+
+        for model in initial_models:
+            self.add_model(model)
+
+    def __len__(self):
+        return len(self._interior_data)
 
     def __contains__(self, obj):
         """
@@ -47,12 +55,39 @@ class Manager(object):
             len(self._interior_data)
         )
 
-    def __getitem__(self, key):
+    def __getitem__(self, scalar_key):
         """
         Filter the management base down. If a new filter would
         have all the columns have a single mapped instance. Return
         that instance.
         """
+        keys = set()
+
+        for attribute, pair_mappings in self._mappers.items():
+            try:
+                tuple_identifiers = pair_mappings[scalar_key]
+                keys.update(tuple_identifiers)
+            except KeyError:
+                continue
+
+
+        if len(keys) == 0:
+            raise KeyError(
+                'Key {0} not found in any of the '
+                'tracked keys in {1}.'.format(
+                    scalar_key, self
+                )
+            )
+        if len(keys) == 1:
+            return self._interior_data[
+                next(iter(keys))
+            ]
+
+        # Return a new Manager with the filtered items
+        return self.__class__(
+            self._interior_data[key] for key in keys
+        )
+
 
     def __get_key__(self, model_inst):
         key = tuple(
@@ -76,9 +111,10 @@ class Manager(object):
 
     def __add_key__(self, key, model_inst):
         self._interior_data[key] = model_inst
-        for col in self.__uniq_tuple__:
+        for ith, col in enumerate(self.__uniq_tuple__):
             mapper = self._mappers[col]
-            mapper.add(getattr(model_inst, col))
+            internal_key = key[ith]
+            mapper[internal_key].add(key)
 
     def __attempt_to_find_key__(self, **kwargs):
         """

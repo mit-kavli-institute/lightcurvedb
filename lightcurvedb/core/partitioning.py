@@ -1,12 +1,19 @@
 """
 This module describes partitioning of the lightcurve database.
 """
-from sqlalchemy import DDL
+from sqlalchemy import DDL, select, func
 from sqlalchemy.orm import aliased
+from sqlalchemy.ext.hybrid import hybrid_property
 from math import ceil
 import re
-from pandas import to_numeric
+from pandas import to_numeric, read_sql as pd_read_sql
+from lightcurvedb.core.admin import get_psql_catalog_tables
 
+
+partition_range_extr = re.compile((
+    r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
+    r"TO \('(?P<end_range>\d+)'\)$"
+))
 
 def Partitionable(partition_type, *columns):
     """
@@ -55,11 +62,77 @@ def Partitionable(partition_type, *columns):
             """
             raise NotImplementedError
 
-        @hybridproperty
-        def get_parent_oid(self):
+        @hybrid_property
+        def partition_oids(self):
             pg_class, pg_inherits = get_psql_catalog_tables(
                 'pg_class', 'pg_inherits'
             )
+
+        @partition_oids.expression
+        def partition_oids(cls):
+            pg_inherits = get_psql_catalog_tables(
+                'pg_inherits'
+            )
+
+            return select(
+                [pg_inherits.c.inhrelid]
+            ).where(
+                pg_inherits.c.inhparent == cls.oid
+            ).label('partition_oids')
+
+        @hybrid_property
+        def partition_info(self):
+            raise NotImplementedError
+
+        @partition_info.expression
+        def partition_info(cls):
+            return select([
+                pg_class.c.relname,
+                func.pg_get_expr(
+                    pg_class.c.relpartbound,
+                    pg_class.c.oid
+                ).label('expression')
+            ]).where(
+                pg_class.c.oid.in_(cls.partition_oids)
+            )
+
+        @classmethod
+        def partition_df(cls, db):
+            pg_class, pg_inherits = get_psql_catalog_tables(
+                'pg_class',
+                'pg_inherits'
+            )
+
+            child = aliased(pg_class, alias='child')
+            parent = aliased(pg_class, alias='parent')
+
+            info_q = db.query(
+                child.c.relname,
+                func.pg_get_expr(
+                    child.c.relpartbound,
+                    child.c.oid
+                ).label('expression')
+            ).join(
+                pg_inherits,
+                child.c.oid == pg_inherits.c.inhrelid
+            ).join(
+                parent,
+                parent.c.oid == pg_inherits.c.inhparent
+            ).filter(
+                parent.c.relname == cls.__tablename__
+            )
+
+
+            df = pd_read_sql(
+                info_q.statement,
+                db.session.bind
+            )
+
+            result = df["expression"].str.extract(partition_range_extr)
+            result[["begin_range", "end_range"]] = result[
+                ["begin_range", "end_range"]
+            ].apply(to_numeric, errors="coerce")
+            return result
 
     return __PartitionMeta__
 

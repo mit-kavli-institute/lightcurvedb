@@ -82,9 +82,8 @@ def test_cli_creation_of_partition(db_conn, n_partitions):
         assert new_len - orig_n_partitions == 1
 
 
-def test_can_get_partitions(db_conn):
+def test_partitioning_classes(db_conn):
     with db_conn as db:
         db.commit()
-        admin_meta = psql_tables(db)
-        tables = get_partition_tables(admin_meta, Lightpoint, db)
-        assert len(tables) >= 1
+        psql_tables(db)
+        assert db.query(Lightpoint.partition_oids).count() >= 1
