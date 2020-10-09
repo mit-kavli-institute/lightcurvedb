@@ -3,27 +3,36 @@ from importlib import import_module  # Say that 5 times
 from packaging.version import Version, parse
 
 from lightcurvedb.core.base_model import QLPMetric
-from sqlalchemy import (BigInteger, Column, DateTime,
-                        ForeignKey, Index, Integer,
-                        Sequence, SmallInteger, String,
-                        Text, between)
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Sequence,
+    SmallInteger,
+    String,
+    Text,
+    between,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query
 
 SUPPORTED_VERSION_ARGS = (
-    'public',
-    'base_version',
-    'epoch',
-    'release',
-    'major',
-    'minor',
-    'micro',
-    'local',
-    'is_prerelease',
-    'is_devrelease',
-    'is_postrelease'
+    "public",
+    "base_version",
+    "epoch",
+    "release",
+    "major",
+    "minor",
+    "micro",
+    "local",
+    "is_prerelease",
+    "is_devrelease",
+    "is_postrelease",
 )
 
 
@@ -59,25 +68,21 @@ class QLPProcess(QLPMetric):
     version : packaging.version.Version
         Return a Version object.
     """
-    __tablename__ = 'qlpprocesses'
-    id = Column(Integer, Sequence('qlpprocess_id_seq'), primary_key=True)
+
+    __tablename__ = "qlpprocesses"
+    id = Column(Integer, Sequence("qlpprocess_id_seq"), primary_key=True)
     job_type = Column(String(255), index=True)
     job_version_major = Column(SmallInteger, index=True, nullable=False)
     job_version_minor = Column(SmallInteger, index=True, nullable=False)
     job_version_revision = Column(Integer, index=True, nullable=False)
 
     additional_version_info = Column(
-        postgresql.JSONB,
-        index=True,
-        nullable=True
+        postgresql.JSONB, index=True, nullable=True
     )
 
     job_description = Text()
 
-    alterations = relationship(
-        'QLPAlteration',
-        back_populates='process'
-    )
+    alterations = relationship("QLPAlteration", back_populates="process")
 
     @property
     def to_dict(self):
@@ -89,21 +94,23 @@ class QLPProcess(QLPMetric):
             job_type=self.job_type,
             version=str(self.version),
             version_info=self.additional_version_info,
-            description=self.job_description
+            description=self.job_description,
         )
 
     @hybrid_property
     def version(self):
         try:
-            return parse(
-                self.additional_version_info['base_version']
-            )
+            return parse(self.additional_version_info["base_version"])
         except KeyError:
-            return parse('.'.join((
-                str(self.job_version_major),
-                str(self.job_version_minor),
-                str(self.job_version_revision)
-            )))
+            return parse(
+                ".".join(
+                    (
+                        str(self.job_version_major),
+                        str(self.job_version_minor),
+                        str(self.job_version_revision),
+                    )
+                )
+            )
 
     @version.setter
     def version(self, value):
@@ -153,10 +160,7 @@ class QLPProcess(QLPMetric):
             # Attempt to fallback
             version = __module.__version__
 
-        inst = cls(
-            job_type=job_type,
-            job_description=description
-        )
+        inst = cls(job_type=job_type, job_description=description)
         inst.version = version
 
         return inst
@@ -175,9 +179,7 @@ class QLPProcess(QLPMetric):
             The description of this process.
         """
         return cls.make_from_module(
-            'lightcurvedb',
-            job_type,
-            description=description
+            "lightcurvedb", job_type, description=description
         )
 
 
@@ -229,28 +231,24 @@ class QLPAlteration(QLPMetric):
         This property attempts to import the python model associated with
         this aleration.
     """
-    __tablename__ = 'qlpalterations'
+
+    __tablename__ = "qlpalterations"
     id = Column(
         BigInteger,
-        Sequence('qlpalteration_id_seq', cache=1000),
-        primary_key=True)
+        Sequence("qlpalteration_id_seq", cache=1000),
+        primary_key=True,
+    )
     process_id = Column(
-        ForeignKey(
-            QLPProcess.id,
-            onupdate='CASCADE',
-            ondelete='CASCADE'
-        ),
-        nullable=False
+        ForeignKey(QLPProcess.id, onupdate="CASCADE", ondelete="CASCADE"),
+        nullable=False,
     )
 
     target_model = Column(
         String(255),
         index=Index(
-            'alteration_model',
-            'target_model',
-            postgresql_using='gin'
+            "alteration_model", "target_model", postgresql_using="gin"
         ),
-        nullable=False
+        nullable=False,
     )
 
     _alteration_type = Column(String(255), index=True, nullable=False)
@@ -262,17 +260,10 @@ class QLPAlteration(QLPMetric):
     _query = Column(
         Text,
         nullable=True,
-        index=Index(
-            'alertation_query',
-            'query',
-            postgresql_using='gin'
-        )
+        index=Index("alertation_query", "query", postgresql_using="gin"),
     )
 
-    process = relationship(
-        'QLPProcess',
-        back_populates='alterations'
-    )
+    process = relationship("QLPProcess", back_populates="alterations")
 
     @property
     def to_dict(self):
@@ -286,7 +277,7 @@ class QLPAlteration(QLPMetric):
             est_time_size=self.est_item_size,
             elapsed=self.time_end - self.time_start,
             time_start=self.time_start,
-            time_end=self.time_end
+            time_end=self.time_end,
         )
 
     @hybrid_property
@@ -300,9 +291,7 @@ class QLPAlteration(QLPMetric):
     @query.setter
     def query(self, value):
         if isinstance(value, Query):
-            self._query = value.compile(
-                dialect=postgresql.dialect()
-            )
+            self._query = value.compile(dialect=postgresql.dialect())
         else:
             self._query = str(value)
 
@@ -331,10 +320,5 @@ class QLPAlteration(QLPMetric):
         """
         Attempt to import the target model
         """
-        classpath = self.target_model.split('.')
-        return getattr(
-            import_module(
-                '.'.join(classpath[:-1])
-            ),
-            classpath[-1]
-        )
+        classpath = self.target_model.split(".")
+        return getattr(import_module(".".join(classpath[:-1])), classpath[-1])

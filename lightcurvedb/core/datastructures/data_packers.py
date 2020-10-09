@@ -5,11 +5,7 @@ import os
 
 
 def mass_ingest(cursor, filelike, target_table, **options):
-    cursor.copy_from(
-        filelike,
-        target_table,
-        **options
-    )
+    cursor.copy_from(filelike, target_table, **options)
 
 
 class DataPacker(object):
@@ -23,16 +19,17 @@ class DataPacker(object):
     Data should arrive in the form of a pandas dataframe or a list of
     dictionaries.
     """
-    __target_table__ = 'lightpoints'
+
+    __target_table__ = "lightpoints"
 
     def __init__(self, dir_path, pack_options=None):
         self.pack_options = pack_options if pack_options else {}
         self.dir_path = dir_path
         path = os.path.join(
             dir_path,
-            'datapack_{0}.blob'.format(
-                datetime.now().strftime('%Y%m%dT%H%M%S_%f')
-            )
+            "datapack_{0}.blob".format(
+                datetime.now().strftime("%Y%m%dT%H%M%S_%f")
+            ),
         )
         self._internal_path = path
         self.session = None
@@ -81,9 +78,7 @@ class CSVPacker(DataPacker):
             os.chmod(self._internal_path, 0o664)
         else:
             dataframe.to_csv(
-                self._internal_path,
-                mode='a',
-                **self.pack_options
+                self._internal_path, mode="a", **self.pack_options
             )
 
         self.length += len(dataframe)
@@ -97,9 +92,9 @@ class CSVPacker(DataPacker):
 
             mass_ingest(
                 cursor,
-                open(self._internal_path, 'r'),
+                open(self._internal_path, "r"),
                 self.__target_table__,
-                sep=','
+                sep=",",
             )
 
             # Cleanup :)

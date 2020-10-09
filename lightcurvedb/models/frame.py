@@ -5,32 +5,41 @@ import numpy as np
 from astropy.io import fits
 from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
-from sqlalchemy import (Boolean, Column, ForeignKey, Integer, Sequence,
-                        SmallInteger, String)
+from sqlalchemy import (
+    Boolean,
+    Column,
+    ForeignKey,
+    Integer,
+    Sequence,
+    SmallInteger,
+    String,
+)
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 FRAME_DTYPE = [
-    ('cadence', np.int64),
-    ('start_tjd', np.float64),
-    ('mid_tjd', np.float64),
-    ('end_tjd', np.float64),
-    ('gps_time', np.float64),
-    ('exp_time', np.float64),
-    ('quality_bit', np.int32),
+    ("cadence", np.int64),
+    ("start_tjd", np.float64),
+    ("mid_tjd", np.float64),
+    ("end_tjd", np.float64),
+    ("gps_time", np.float64),
+    ("exp_time", np.float64),
+    ("quality_bit", np.int32),
 ]
 
 
 class FrameType(QLPDataSubType):
     """Describes the numerous frame types"""
-    __tablename__ = 'frametypes'
 
-    frames = relationship('Frame', back_populates='frame_type')
+    __tablename__ = "frametypes"
+
+    frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
         return 'FrameType(name="{0}", description="{1}")'.format(
-            self.name, self.description)
+            self.name, self.description
+        )
 
 
 class Frame(QLPDataProduct):
@@ -38,46 +47,40 @@ class Frame(QLPDataProduct):
     Provides ORM implementation of various Frame models
     """
 
-    __tablename__ = 'frames'
+    __tablename__ = "frames"
 
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            'frame_type_id',
-            'orbit_id',
-            'cadence',
-            'camera',
-            'ccd',
-            name='unique_frame'
+            "frame_type_id",
+            "orbit_id",
+            "cadence",
+            "camera",
+            "ccd",
+            name="unique_frame",
         ),
         CheckConstraint(
-            'camera BETWEEN 1 and 4',
-            name='physical_camera_constraint'
+            "camera BETWEEN 1 and 4", name="physical_camera_constraint"
         ),
         CheckConstraint(
-            '(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)',
-            name='physical_ccd_constraint'
+            "(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)",
+            name="physical_ccd_constraint",
         ),
     )
 
     def __repr__(self):
         return (
-            '<Frame {0} '
-            'cam={1} '
-            'ccd={2} '
-            'cadence={3}>'.format(
-                self.frame_type.name,
-                self.camera,
-                self.ccd,
-                self.cadence
+            "<Frame {0} "
+            "cam={1} "
+            "ccd={2} "
+            "cadence={3}>".format(
+                self.frame_type.name, self.camera, self.ccd, self.cadence
             )
         )
 
     # Model attributes
     id = Column(
-        Integer,
-        Sequence('frames_id_seq', cache=2400),
-        primary_key=True
+        Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
     )
     cadence_type = Column(SmallInteger, index=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
@@ -97,20 +100,20 @@ class Frame(QLPDataProduct):
     # Foreign Keys
     orbit_id = Column(
         Integer,
-        ForeignKey('orbits.id', ondelete='RESTRICT'),
+        ForeignKey("orbits.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True
+        index=True,
     )
     frame_type_id = Column(
-        ForeignKey('frametypes.name', ondelete='RESTRICT'),
+        ForeignKey("frametypes.name", ondelete="RESTRICT"),
         nullable=False,
-        index=True
+        index=True,
     )
 
     # Relationships
-    orbit = relationship('Orbit', back_populates='frames')
-    frame_type = relationship('FrameType', back_populates='frames')
-    lightcurves = association_proxy('lightcurveframemapping', 'lightcurve')
+    orbit = relationship("Orbit", back_populates="frames")
+    frame_type = relationship("FrameType", back_populates="frames")
+    lightcurves = association_proxy("lightcurveframemapping", "lightcurve")
 
     @classmethod
     def get_legacy_attrs(cls, dtype_override=None):
@@ -143,21 +146,21 @@ class Frame(QLPDataProduct):
         try:
             return cls(
                 cadence_type=cadence_type,
-                camera=header.get('CAM', header.get('CAMNUM', None)),
-                ccd=header.get('CCD', header.get('CCDNUM', None)),
-                cadence=header['CADENCE'],
-                gps_time=header['TIME'],
-                start_tjd=header['STARTTJD'],
-                mid_tjd=header['MIDTJD'],
-                end_tjd=header['ENDTJD'],
-                exp_time=header['EXPTIME'],
-                quality_bit=header['QUAL_BIT'],
+                camera=header.get("CAM", header.get("CAMNUM", None)),
+                ccd=header.get("CCD", header.get("CCDNUM", None)),
+                cadence=header["CADENCE"],
+                gps_time=header["TIME"],
+                start_tjd=header["STARTTJD"],
+                mid_tjd=header["MIDTJD"],
+                end_tjd=header["ENDTJD"],
+                exp_time=header["EXPTIME"],
+                quality_bit=header["QUAL_BIT"],
                 file_path=abspath,
                 frame_type=frame_type,
-                orbit=orbit
+                orbit=orbit,
             )
         except KeyError as e:
             print(e)
-            print('===LOADED HEADER===')
+            print("===LOADED HEADER===")
             print(repr(header))
             raise

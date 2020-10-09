@@ -12,7 +12,9 @@ def cast_to(type_):
         def wrapper(*args, **kwargs):
             result = func(*args, **kwargs)
             return type_(result)
+
         return wrapper
+
     return external_wrap
 
 
@@ -20,7 +22,7 @@ def suppress_warnings(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         with catch_warnings():
-            simplefilter('ignore')
+            simplefilter("ignore")
             return func(*args, **kwargs)
 
     return wrapper

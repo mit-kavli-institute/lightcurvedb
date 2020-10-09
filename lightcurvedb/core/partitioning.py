@@ -10,10 +10,12 @@ from pandas import to_numeric, read_sql as pd_read_sql
 from lightcurvedb.core.admin import get_psql_catalog_tables
 
 
-partition_range_extr = re.compile((
-    r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
-    r"TO \('(?P<end_range>\d+)'\)$"
-))
+partition_range_extr = re.compile(
+    (
+        r"^FOR VALUES FROM \('(?P<begin_range>\d+)'\) "
+        r"TO \('(?P<end_range>\d+)'\)$"
+    )
+)
 
 
 def Partitionable(partition_type, *columns):
@@ -34,9 +36,7 @@ def Partitionable(partition_type, *columns):
     if len(columns) == 0:
         raise ValueError(
             "Cannot make a partition on {0} since the columns that "
-            "are passed are empty".format(
-                partition_type
-            )
+            "are passed are empty".format(partition_type)
         )
 
     class __PartitionMeta__(object):
@@ -45,7 +45,7 @@ def Partitionable(partition_type, *columns):
             postgresql_partition_by="{0}({1})".format(
                 partition_type, ",".join(columns)
             ),
-            extend_existing=True
+            extend_existing=True,
         )
 
         def emit_new_partition(self, constraint_str):
@@ -66,20 +66,18 @@ def Partitionable(partition_type, *columns):
         @hybrid_property
         def partition_oids(self):
             pg_class, pg_inherits = get_psql_catalog_tables(
-                'pg_class', 'pg_inherits'
+                "pg_class", "pg_inherits"
             )
 
         @partition_oids.expression
         def partition_oids(cls):
-            pg_inherits = get_psql_catalog_tables(
-                'pg_inherits'
-            )
+            pg_inherits = get_psql_catalog_tables("pg_inherits")
 
-            return select(
-                [pg_inherits.c.inhrelid]
-            ).where(
-                pg_inherits.c.inhparent == cls.oid
-            ).label('partition_oids')
+            return (
+                select([pg_inherits.c.inhrelid])
+                .where(pg_inherits.c.inhparent == cls.oid)
+                .label("partition_oids")
+            )
 
         @hybrid_property
         def partition_info(self):
@@ -87,47 +85,38 @@ def Partitionable(partition_type, *columns):
 
         @partition_info.expression
         def partition_info(cls):
-            pg_class = get_psql_catalog_tables('pg_class')
-            return select([
-                pg_class.c.relname,
-                func.pg_get_expr(
-                    pg_class.c.relpartbound,
-                    pg_class.c.oid
-                ).label('expression')
-            ]).where(
-                pg_class.c.oid.in_(cls.partition_oids)
-            )
+            pg_class = get_psql_catalog_tables("pg_class")
+            return select(
+                [
+                    pg_class.c.relname,
+                    func.pg_get_expr(
+                        pg_class.c.relpartbound, pg_class.c.oid
+                    ).label("expression"),
+                ]
+            ).where(pg_class.c.oid.in_(cls.partition_oids))
 
         @classmethod
         def partition_df(cls, db):
             pg_class, pg_inherits = get_psql_catalog_tables(
-                'pg_class',
-                'pg_inherits'
+                "pg_class", "pg_inherits"
             )
 
-            child = aliased(pg_class, alias='child')
-            parent = aliased(pg_class, alias='parent')
+            child = aliased(pg_class, alias="child")
+            parent = aliased(pg_class, alias="parent")
 
-            info_q = db.query(
-                child.c.relname,
-                func.pg_get_expr(
-                    child.c.relpartbound,
-                    child.c.oid
-                ).label('expression')
-            ).join(
-                pg_inherits,
-                child.c.oid == pg_inherits.c.inhrelid
-            ).join(
-                parent,
-                parent.c.oid == pg_inherits.c.inhparent
-            ).filter(
-                parent.c.relname == cls.__tablename__
+            info_q = (
+                db.query(
+                    child.c.relname,
+                    func.pg_get_expr(child.c.relpartbound, child.c.oid).label(
+                        "expression"
+                    ),
+                )
+                .join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid)
+                .join(parent, parent.c.oid == pg_inherits.c.inhparent)
+                .filter(parent.c.relname == cls.__tablename__)
             )
 
-            df = pd_read_sql(
-                info_q.statement,
-                db.session.bind
-            )
+            df = pd_read_sql(info_q.statement, db.session.bind)
 
             result = df["expression"].str.extract(partition_range_extr)
             result[["begin_range", "end_range"]] = result[
@@ -198,19 +187,14 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
     sqlalchemy.DDL
     """
 
-    namespaced_t = '{0}.{1}'.format(schema, table) if schema else table
+    namespaced_t = "{0}.{1}".format(schema, table) if schema else table
 
     fmt_args = dict(
-        partition=namespaced_t,
-        table=table,
-        begin=begin_range,
-        end=end_range
-        )
+        partition=namespaced_t, table=table, begin=begin_range, end=end_range
+    )
 
     return DDL(
         "CREATE TABLE {partition}_{begin}_{end} "
         "PARTITION OF {table} FOR VALUES FROM ({begin}) "
-        "TO ({end})".format(
-            **fmt_args
-        )
+        "TO ({end})".format(**fmt_args)
     )

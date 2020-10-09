@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 
 import click
+
 # from lightcurvedb import db_from_config
 # from lightcurvedb.models import Lightcurve
 # from lightcurvedb.managers import LightcurveManager

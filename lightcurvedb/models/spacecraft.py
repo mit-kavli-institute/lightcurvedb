@@ -5,7 +5,7 @@ from lightcurvedb.core.fields import high_precision_column
 
 
 class SpacecraftEphemris(QLPReference):
-    __tablename__ = 'spacecraftephemeris'
+    __tablename__ = "spacecraftephemeris"
 
     barycentric_dynamical_time = Column(Float, primary_key=True)
     calendar_date = Column(DateTime, index=True)
@@ -19,10 +19,8 @@ class SpacecraftEphemris(QLPReference):
 
     def __repr__(self):
         return (
-            '<SpacecraftEph {barycentric_dynamical_time} '
-            '({x}, {y}, {z}) />'.format(
-                **self.to_dict
-            )
+            "<SpacecraftEph {barycentric_dynamical_time} "
+            "({x}, {y}, {z}) />".format(**self.to_dict)
         )
 
     @property
@@ -31,7 +29,7 @@ class SpacecraftEphemris(QLPReference):
             barycentric_dynamical_type=self.barycentric_dynamical_time,
             x=self.x,
             y=self.y,
-            z=self.x
+            z=self.x,
         )
 
     @hybrid_property
