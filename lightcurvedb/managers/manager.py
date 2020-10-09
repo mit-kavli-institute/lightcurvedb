@@ -1,5 +1,4 @@
 from collections import defaultdict
-from itertools import chain
 from lightcurvedb.exceptions import LightcurveDBException
 
 
@@ -25,7 +24,7 @@ class Manager(object):
     __uniq_tuple__ = None
 
     def __init__(self, initial_models):
-        self._interior_data = dict()
+        self._interior_data = {}
         self._mappers = {
             k: defaultdict(set) for k in self.__uniq_tuple__
         }
@@ -50,7 +49,7 @@ class Manager(object):
         return key in self._interior_data
 
     def __repr__(self):
-        return '<{} Manager: {} items>'.format(
+        return '<{0} Manager: {1} items>'.format(
             self.__managed_class__,
             len(self._interior_data)
         )
@@ -63,13 +62,12 @@ class Manager(object):
         """
         keys = set()
 
-        for attribute, pair_mappings in self._mappers.items():
+        for _, pair_mappings in self._mappers.items():
             try:
                 tuple_identifiers = pair_mappings[scalar_key]
                 keys.update(tuple_identifiers)
             except KeyError:
                 continue
-
 
         if len(keys) == 0:
             raise KeyError(
@@ -88,7 +86,6 @@ class Manager(object):
             self._interior_data[key] for key in keys
         )
 
-
     def __get_key__(self, model_inst):
         key = tuple(
             getattr(model_inst, col) for col in self.__uniq_tuple__
@@ -103,7 +100,7 @@ class Manager(object):
             return key
         except KeyError:
             raise AmbiguousIdentifierDeduction(
-                '{} does not contain the needed {} parameters'.format(
+                '{0} does not contain the needed {1} parameters'.format(
                     kwargs.keys(),
                     self.__uniq_tuple__
                 )
@@ -124,7 +121,7 @@ class Manager(object):
         for col in self.__uniq_tuple__:
             if col not in kwargs:
                 raise AmbiguousIdentifierDeduction(
-                    'Unable to find attribute {} in {}'.format(col, kwargs)
+                    'Unable to find attribute {0} in {1}'.format(col, kwargs)
                 )
             key.append(kwargs[col])
         return tuple(key)
@@ -172,6 +169,7 @@ class Manager(object):
 def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
     cols = [uniq_col]
     cols.extend(additional_uniq_cols)
+
     class Managed(Manager):
         __managed_class__ = sqlalchemy_model
         __uniq_tuple__ = tuple(cols)

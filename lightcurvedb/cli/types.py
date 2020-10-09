@@ -14,7 +14,9 @@ class CommaList(click.ParamType):
     def convert(self, value, param, ctx):
         try:
             parameters = value.split(',')
-            return tuple(self.split_type(parameter) for parameter in parameters)
+            return tuple(
+                self.split_type(parameter) for parameter in parameters
+            )
         except ValueError:
             self.fail('', param, ctx)
         except TypeError:

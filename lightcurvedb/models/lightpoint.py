@@ -1,12 +1,14 @@
+import pandas as pd
+
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.partitioning import (Partitionable,
                                             emit_ranged_partition_ddl)
 from lightcurvedb.util.iter import keyword_zip
-import pandas as pd
-from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event, func)
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
+from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer,
+                        event, func)
+from sqlalchemy.dialects.postgresql import (DOUBLE_PRECISION,
+                                            aggregate_order_by)
 from sqlalchemy.ext.hybrid import hybrid_property
-
 
 LIGHTPOINT_PARTITION_RANGE = 10**6
 UPDATEABLE_PARAMS = [
@@ -262,7 +264,7 @@ def lightpoints_from_kw(cadences, bjd, **other_data):
     for col in data_keys:
         if not len(other_data[col]) == len(cadences):
             raise ValueError(
-                '{0} length {1} does not match cadence length {}'.format(
+                '{0} length {1} does not match cadence length {2}'.format(
                     col, len(other_data[col]), len(cadences)
                 )
             )

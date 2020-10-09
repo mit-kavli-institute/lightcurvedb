@@ -14,14 +14,20 @@ COLS = {
     'RR': 'range_rate'
 }
 
+
 @lcdbcli.group()
 @click.pass_context
 def spacecraft(ctx):
     pass
 
+
 @spacecraft.command()
 @click.pass_context
-@click.argument('ephemris_csv', nargs=-1, type=click.Path(dir_okay=False, exists=True))
+@click.argument(
+    'ephemris_csv',
+    nargs=-1,
+    type=click.Path(dir_okay=False, exists=True)
+)
 def ingest(ctx, ephemris_csv):
     ephemris_dfs = [
         pd.read_csv(
@@ -38,7 +44,7 @@ def ingest(ctx, ephemris_csv):
                 'range_to',
                 'range_rate'
             ],
-            usecols=[0,1,2,3,4,5,6,7],
+            usecols=[0, 1, 2, 3, 4, 5, 6, 7],
             index_col=0)
         for f in ephemris_csv
     ]
@@ -48,7 +54,6 @@ def ingest(ctx, ephemris_csv):
     ephemris_df['calendar_date'] = ephemris_df['calendar_date'].apply(
         lambda r: r.replace('A.D. ', '')
     )
-
 
     ephemris_df = ephemris_df[~ephemris_df.index.duplicated(keep='last')]
     ephemris_df.sort_index(inplace=True)
@@ -61,7 +66,7 @@ def ingest(ctx, ephemris_csv):
             )
             db.session.merge(eph)
             click.echo(
-                'Added {}'.format(eph)
+                'Added {0}'.format(eph)
             )
         if not ctx.obj['dryrun']:
             db.commit()

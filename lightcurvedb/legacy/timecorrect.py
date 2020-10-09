@@ -1,9 +1,8 @@
 import pandas as pd
 import numpy as np
-from sqlalchemy import and_
 from scipy.interpolate import interp1d
 from astropy import time, constants as const
-from lightcurvedb.models import Frame, FrameType, Orbit, SpacecraftEphemris
+from lightcurvedb.models import Frame, SpacecraftEphemris
 
 LIGHTSPEED_AU_DAY = const.c.to('m/day') / const.au
 BJD_EPOC = time.Time(2457000, format='jd', scale='tdb')
@@ -29,13 +28,15 @@ def timecorrect(ephemris_data, mid_tjd, ra, dec, bjd_offset=2457000):
 
     orbit_x = tess_x_interpolator(tjd_time.jd)
     orbit_y = tess_y_interpolator(tjd_time.jd)
-    orbit_z = tess_y_interpolator(tjd_time.jd)
-    orbit_vector = np.c_[orbit_x, orbit_y, orbit_x]
+    orbit_z = tess_z_interpolator(tjd_time.jd)
+    orbit_vector = np.c_[orbit_x, orbit_y, orbit_z]
 
     # Radian conversion
     ra = ra / 180.0 * np.pi
     dec = dec / 180.0 * np.pi
-    star_vector = np.array([np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)])
+    star_vector = np.array(
+        [np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)]
+    )
 
     # Calculate time arrival to Earth
     light_time = time.TimeDelta(
@@ -87,9 +88,10 @@ class TimeCorrector:
             self.ephemris.z_coordinate
         )
 
-
     def mid_tjd(self, lightpoint_df):
-        index = [tuple(r) for r in lightpoint_df[['cadences', 'camera']].values]
+        index = [
+            tuple(r) for r in lightpoint_df[['cadences', 'camera']].values
+        ]
         return self.mid_tjd_map.loc[
             index
         ]['mid_tjd'].values
@@ -107,7 +109,9 @@ class TimeCorrector:
         row = self.tic_parameters.loc[tic]
         ra = np.radians(row['ra'])
         dec = np.radians(row['dec'])
-        star_vector = np.array([np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)])
+        star_vector = np.array(
+            [np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)]
+        )
 
         # Calculate light time arrival to Earth
         light_time = time.TimeDelta(
@@ -119,7 +123,17 @@ class TimeCorrector:
             bjd = tjd_time + light_time - BJD_EPOC
         except ValueError:
             print('Something went wrong')
-            print('Star Vector: {}\nOrbit Vector: {}\ntjd: {}\nlight_time: {}'.format(star_vector, orbit_vector, tjd_time, light_time))
+            print(
+                'Star Vector: {0}\n'
+                'Orbit Vector: {1}\n'
+                'tjd: {2}\n'
+                'light_time: {3}'.format(
+                    star_vector,
+                    orbit_vector,
+                    tjd_time,
+                    light_time
+                )
+            )
             raise
         return bjd.jd
 
@@ -175,7 +189,9 @@ class StaticTimeCorrector(TimeCorrector):
         ra = np.radians(ra)
         dec = np.radians(dec)
 
-        star_vector = np.array([np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)])
+        star_vector = np.array(
+            [np.cos(dec)*np.cos(ra), np.cos(dec)*np.sin(ra), np.sin(dec)]
+        )
 
         # Calculate light time arrival to Earth
         light_time = time.TimeDelta(
@@ -187,7 +203,17 @@ class StaticTimeCorrector(TimeCorrector):
             bjd = tjd_time + light_time - BJD_EPOC
         except ValueError:
             print('Something went wrong')
-            print('Star Vector: {}\nOrbit Vector: {}\ntjd: {}\nlight_time: {}'.format(star_vector, orbit_vector, tjd_time, light_time))
+            print(
+                'Star Vector: {0}\n'
+                'Orbit Vector: {1}\n'
+                'tjd: {2}\n'
+                'light_time: {3}'.format(
+                    star_vector,
+                    orbit_vector,
+                    tjd_time,
+                    light_time
+                )
+            )
             raise
         return bjd.jd
 
@@ -197,4 +223,3 @@ class StaticTimeCorrector(TimeCorrector):
         return self.mid_tjd_map.loc[
             index
         ]['mid_tjd'].values
-

@@ -1,24 +1,13 @@
 from __future__ import division, print_function
 
-import click
-import multiprocessing as mp
 from sys import exit
+
+import click
+
 import lightcurvedb.models as defined_models
-from sqlalchemy import text
-from lightcurvedb import db_from_config
-from lightcurvedb.core.partitioning import emit_ranged_partition_ddl, get_partition_tables
-from lightcurvedb.core.admin import psql_tables
 from lightcurvedb.cli.base import lcdbcli
-
-
-def mp_execute(db_config, q, **parameters):
-    with db_from_config(db_config) as db:
-        try:
-            db.session.execute(q, **parameters)
-            db.commit()
-            return True
-        except:
-            return False
+from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from sqlalchemy import text
 
 
 @lcdbcli.group()
@@ -33,6 +22,7 @@ def partitioning(ctx):
             )
         )
 
+
 @partitioning.command()
 @click.pass_context
 @click.argument('model', type=str)
@@ -45,13 +35,13 @@ def list_partitions(ctx, model):
         try:
             target_model = getattr(defined_models, model)
         except AttributeError:
-            click.echo('No known model {}'.format(model))
+            click.echo('No known model {0}'.format(model))
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
         click.echo(partitions)
         click.echo(
-            'A total of {} partitions!'.format(
+            'A total of {0} partitions!'.format(
                 click.style(
                     str(len(partitions)),
                     bold=True
@@ -65,8 +55,12 @@ def list_partitions(ctx, model):
 @click.argument('model', type=str)
 @click.argument('number_of_new_partitions', type=click.IntRange(min=1))
 @click.argument('blocksize', type=click.IntRange(min=1))
-@click.option('--schema', type=str, default='partitions', help='Schema space to place the partition under (organization)')
-@click.option('--schema', type=str, default='partitions')
+@click.option(
+    '--schema',
+    type=str,
+    default='partitions',
+    help='Schema space to place the partition under (organization)'
+)
 def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
     Create ranged partitions on the given MODEL with ranges equivalent to the
@@ -77,7 +71,7 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
         try:
             target_model = getattr(defined_models, model)
         except AttributeError:
-            click.echo('No known model {}'.format(model))
+            click.echo('No known model {0}'.format(model))
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
@@ -88,7 +82,8 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
 
         if current_max is None:
             click.echo(
-                'Model {} has no partitions! Please define a partition rule in the PSQL shell'.format(model)
+                'Model {0} has no partitions! Please define a partition '
+                'rule in the PSQL shell'.format(model)
             )
             exit(1)
 
@@ -104,7 +99,8 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
             new_partition_models.append(ddl)
 
             click.echo(
-                '\tWill emit new PARTITION FROM VALUES ({}) TO ({})'.format(
+                '\tWill emit new PARTITION FROM VALUES '
+                '({0}) TO ({1})'.format(
                     current_max,
                     current_max + blocksize
                 )
@@ -116,7 +112,8 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
         except ValueError:
             original_begin = 0
         click.echo(
-            'Will create {} partitions spanning values from {} to {}'.format(
+            'Will create {0} partitions spanning values from '
+            '{1} to {2}'.format(
                 len(new_partition_models),
                 original_begin,
                 current_max
@@ -142,7 +139,8 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
                 )
             )
             click.echo(
-                'Specified blocksize {} resides outside avg blocksize {} +- {}'.format(
+                'Specified blocksize {0} '
+                'resides outside avg blocksize {1} +- {2}'.format(
                     blocksize, mean, stddev
                 )
             )
@@ -152,12 +150,14 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
             for partition in new_partition_models:
                 db.session.execute(partition)
                 click.echo(
-                    '\tMade {}'.format(partition)
+                    '\tMade {0}'.format(partition)
                 )
 
             db.commit()
             click.echo(
-                'Committed {} new partitions!'.format(len(new_partition_models))
+                'Committed {0} new partitions!'.format(
+                    len(new_partition_models)
+                )
             )
 
 
@@ -171,7 +171,7 @@ def delete_partitions(ctx, model, pattern):
         try:
             target_model = getattr(defined_models, model)
         except AttributeError:
-            click.echo('No known model {}'.format(model))
+            click.echo('No known model {0}'.format(model))
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
@@ -182,7 +182,9 @@ def delete_partitions(ctx, model, pattern):
 
         if current_max is None:
             click.echo(
-                'Model {} has no partitions! Please define a partition rule in the PSQL shell'.format(model)
+                'Model {0} has no partitions! '
+                'Please define a partition rule '
+                'in the PSQL shell'.format(model)
             )
             exit(1)
         names = partitions['partition_name']
@@ -193,21 +195,21 @@ def delete_partitions(ctx, model, pattern):
             names
         )
         click.echo(
-            'Will remove {} partitions!'.format(
+            'Will remove {0} partitions!'.format(
                 len(names)
             )
         )
         if not ctx.obj['dryrun']:
             click.confirm('Does this look okay?', abort=True)
             for name in names:
-                q = text('DROP TABLE {}'.format(name))
+                q = text('DROP TABLE {0}'.format(name))
                 db.session.execute(q)
                 db.commit()
-                click.echo('\tDeleted {}'.format(name))
+                click.echo('\tDeleted {0}'.format(name))
 
 
 def schemaed_table(table, schema):
-    return '{}.{}'.format(schema, table) if schema else table
+    return '{0}.{1}'.format(schema, table) if schema else table
 
 
 @partitioning.command()
@@ -219,7 +221,7 @@ def set_unlogged(ctx, model, pattern, schema):
     try:
         target_model = getattr(defined_models, model)
     except AttributeError:
-        click.echo('No known model {}'.format(model))
+        click.echo('No known model {0}'.format(model))
         exit(1)
     with ctx.obj['dbconf'] as db:
         partitions = db.get_partitions_df(target_model)
@@ -227,15 +229,15 @@ def set_unlogged(ctx, model, pattern, schema):
 
         for table in tablenames:
             table = schemaed_table(table, schema)
-            q = text('ALTER TABLE {} SET UNLOGGED'.format(table))
-            click.echo('Altering {}'.format(
+            q = text('ALTER TABLE {0} SET UNLOGGED'.format(table))
+            click.echo('Altering {0}'.format(
                 click.style(table, bold=True)
             ))
             db.session.execute(
                 q
             )
             db.commit()
-        click.echo('Altered {} tables! Done'.format(len(tablenames)))
+        click.echo('Altered {0} tables! Done'.format(len(tablenames)))
 
 
 @partitioning.command()
@@ -247,7 +249,7 @@ def set_logged(ctx, model, pattern, schema):
     try:
         target_model = getattr(defined_models, model)
     except AttributeError:
-        click.echo('No known model {}'.format(model))
+        click.echo('No known model {0}'.format(model))
         exit(1)
 
     with ctx.obj['dbconf'] as db:
@@ -256,33 +258,12 @@ def set_logged(ctx, model, pattern, schema):
 
         for table in tablenames:
             table = schemaed_table(table, schema)
-            q = text('ALTER TABLE {} SET LOGGED'.format(table))
-            click.echo('Altering {}'.format(
+            q = text('ALTER TABLE {0} SET LOGGED'.format(table))
+            click.echo('Altering {0}'.format(
                 click.style(table, bold=True)
             ))
             db.session.execute(
                 q
             )
             db.commit()
-        click.echo('Altered {} tables! Done'.format(len(tablenames)))
-
-
-@partitioning.command()
-@click.pass_context
-@click.argument('partition-tablename', type=str)
-@click.argument('n-subpartitions', type=click.IntRange(min=2))
-def subpartition(ctx, partition_tablename, n_subpartitions):
-    try:
-        target_model = getattr(defined_models, model)
-    except AttributeError:
-        click.echo('No known model {}'.format(model))
-        exit(1)
-
-    with ctx.obj['dbconf'] as db:
-        psql_admin = psql_tables(db)
-        partitions = get_partition_tables(
-            psql_admin,
-            target_model,
-            db
-        )
-        click.echo(partitions)
+        click.echo('Altered {0} tables! Done'.format(len(tablenames)))

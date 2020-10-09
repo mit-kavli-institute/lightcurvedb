@@ -9,12 +9,10 @@ import numpy as np
 
 from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
                                           QLPModel)
-from lightcurvedb.core.partitioning import (Partitionable,
-                                            emit_ranged_partition_ddl)
 from lightcurvedb.core.collection import CadenceTracked
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
-                        Sequence, SmallInteger, cast, event, inspect, join)
+from sqlalchemy import (BigInteger, Column, ForeignKey,
+                        Sequence, SmallInteger)
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -43,7 +41,7 @@ class LightcurveType(QLPDataSubType):
         return self.name
 
     def __repr__(self):
-        return '<Lightcurve Type {} >'.format(self.name)
+        return '<Lightcurve Type {0} >'.format(self.name)
 
 
 class LightcurveFrameMap(QLPModel):
@@ -221,14 +219,14 @@ class Lightcurve(QLPDataProduct):
         return len(self.lightpoints)
 
     def __repr__(self):
-        return '<Lightcurve {} {} {}>'.format(
+        return '<Lightcurve {0} {1} {2}>'.format(
             self.lightcurve_type.name,
             self.tic_id,
             self.aperture.name
         )
 
     def __str__(self):
-        return '<Lightcurve {} {} {}>'.format(
+        return '<Lightcurve {0} {1} {2}>'.format(
             self.lightcurve_type.name,
             self.tic_id,
             self.aperture.name
@@ -245,10 +243,18 @@ class Lightcurve(QLPDataProduct):
             # Attempt to fallback
             if key in ('flux', 'mag', 'magnitude', 'value'):
                 return self.values
-            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+            elif key in (
+                    'error',
+                    'err',
+                    'fluxerr',
+                    'flux_err',
+                    'magerr',
+                    'mag_err',
+                    'magnitude_err',
+                    'magnitudeerror'):
                 return self.errors
             elif key in ('x', 'y'):
-                return getattr(self, '{}_centroids'.format(key))
+                return getattr(self, '{0}_centroids'.format(key))
             else:
                 raise
 
@@ -262,10 +268,18 @@ class Lightcurve(QLPDataProduct):
         except AttributeError:
             if key in ('flux', 'mag', 'magnitude', 'value'):
                 self.values = value
-            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+            elif key in (
+                    'error',
+                    'err',
+                    'fluxerr',
+                    'flux_err',
+                    'magerr',
+                    'mag_err',
+                    'magnitude_err',
+                    'magnitudeerror'):
                 self.errors = value
             elif key in ('x', 'y'):
-                return setattr(self, '{}_centroids'.format(key))
+                return setattr(self, '{0}_centroids'.format(key))
             else:
                 raise
 

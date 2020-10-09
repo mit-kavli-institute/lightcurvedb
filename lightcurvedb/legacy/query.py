@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 from lightcurvedb import db_from_config
-from lightcurvedb.models.frame import Frame, FrameType, FRAME_DTYPE
+from lightcurvedb.models.frame import Frame, FRAME_DTYPE
 from lightcurvedb.models.orbit import Orbit, ORBIT_DTYPE
 from sqlalchemy.sql.expression import func
 
@@ -43,7 +43,13 @@ class QlpQuery(object):
             order_by(Orbit.orbit_number)
         return np.array(orbits.all(), dtype=ORBIT_DTYPE)
 
-    def query_orbit_cadence_limit(self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID):
+    def query_orbit_cadence_limit(
+            self,
+            orbit_id,
+            cadence_type,
+            camera,
+            frame_type=LEGACY_FRAME_TYPE_ID
+            ):
         cadence_limit = self.db.query(
             func.min(Frame.cadence), func.max(Frame.cadence)
         ).join(Orbit, Frame.orbit_id == Orbit.id).filter(
@@ -77,7 +83,7 @@ class QlpQuery(object):
             Frame.camera == camera,
             Orbit.orbit_number == orbit_id
         ).order_by(
-            Frame.cadence.asc()      
+            Frame.cadence.asc()
         ).all()
 
         return np.array(
@@ -93,7 +99,7 @@ class QlpQuery(object):
             Frame.camera == camera,
             Frame.cadence.in_(cadences)
         ).order_by(
-            Frame.cadence.asc()       
+            Frame.cadence.asc()
         ).all()
 
         return np.array(
@@ -102,5 +108,5 @@ class QlpQuery(object):
 
     def query_all_orbit_ids(self):
         return self.db.query(Orbit.orbit_number).order_by(
-            Orbit.orbit_number.asc()       
+            Orbit.orbit_number.asc()
         ).all()

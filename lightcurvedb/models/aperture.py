@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, Sequence, BigInteger, ForeignKey
+from sqlalchemy import Column, String, Numeric, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import insert
@@ -52,10 +52,10 @@ class Aperture(QLPReference):
         return self.name
 
     def __repr__(self):
-        return '<Aperture {} {} >'.format(self.name, self.format())
+        return '<Aperture {0} {1} >'.format(self.name, self.format())
 
     def format(self):
-        return '{}:{}:{}'.format(
+        return '{0}:{1}:{2}'.format(
             self.star_radius, self.inner_radius, self.outer_radius
         )
 
@@ -89,7 +89,8 @@ class Aperture(QLPReference):
         vals = tuple(string.split(':'))
         if len(vals) != 3:
             raise ValueError(
-                'Given aperture string "{}" is not formatted correctly'.format(
+                'Given aperture string '
+                '"{0}" is not formatted correctly'.format(
                     string
                 )
             )
@@ -104,7 +105,7 @@ class BestApertureMap(QLPReference):
     """
         A mapping of lightcurves to their 'best' aperture. This model
         is defined so TICs will contain 1 best aperture. This is enforced
-        on a PSQL constraint so behavior alterations will require a 
+        on a PSQL constraint so behavior alterations will require a
         database migration.
 
         Attributes

@@ -17,10 +17,6 @@ from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
-from lightcurvedb.core.partitioning import (
-        get_partition_q,
-        extract_partition_df
-)
 
 
 # Bring legacy capability
@@ -836,64 +832,6 @@ class DB(object):
         ).one_or_none()
         if check:
             check.delete()
-
-    def set_quality_flags(
-            self,
-            orbit_number,
-            camera,
-            ccd,
-            cadences,
-            quality_flags
-            ):
-        """
-        Assign quality flags en masse by orbit and camera and ccds. Updates
-        are performed using the passed cadences and quality flag
-        arrays.
-
-        Arguments
-        ---------
-        orbit_number : int
-            The orbit context for quality flag assignment.
-        camera : int
-            The camera context
-        ccd : int
-            The ccd context
-        cadences : iterable of integers
-            The cadences to key by to assign quality flags.
-        quality_flags : iterable of integers
-            The quality flags to assign in relation to the passed
-            ``cadences``.
-
-        Notes
-        -----
-        This method utilizes Temporary Tables which SQLAlchemy requires
-        a clean session. Any present and uncommitted changes will be
-        rolledback and a commit is emitted in order to construct the
-        temporary tables.
-
-        This automatically permanently changes the lightcurve models as it
-        contains ``commit`` calls.
-
-        """
-        # Make a query of the relevant lightcurves
-        q = self.query(
-            models.Lightcurve.id,
-        ).filter(
-            models.Lightcurve.tic_id.in_(
-                self.tics_by_orbit(
-                    orbit_number,
-                    cameras=[camera],
-                    ccds=[ccd],
-                    resolve=False
-                ).subquery('tics')
-            )
-        )
-        set_quality_flags(
-            self.session,
-            q,
-            cadences,
-            quality_flags
-        )
 
     def commit(self):
         """

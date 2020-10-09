@@ -1,13 +1,15 @@
-from sqlalchemy import Column, ForeignKey, Integer, SmallInteger, BigInteger, String, Boolean, Sequence
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy.schema import UniqueConstraint, CheckConstraint
-from lightcurvedb.core.base_model import QLPModel, QLPDataProduct, QLPDataSubType
-from lightcurvedb.core.fields import high_precision_column
-import numpy as np
-from astropy.io import fits
 import os
 
+import numpy as np
+
+from astropy.io import fits
+from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
+from lightcurvedb.core.fields import high_precision_column
+from sqlalchemy import (Boolean, Column, ForeignKey, Integer, Sequence,
+                        SmallInteger, String)
+from sqlalchemy.ext.associationproxy import association_proxy
+from sqlalchemy.orm import relationship
+from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 FRAME_DTYPE = [
     ('cadence', np.int64),
@@ -27,7 +29,7 @@ class FrameType(QLPDataSubType):
     frames = relationship('Frame', back_populates='frame_type')
 
     def __repr__(self):
-        return 'FrameType(name="{}", description="{}")'.format(
+        return 'FrameType(name="{0}", description="{1}")'.format(
             self.name, self.description)
 
 
@@ -40,22 +42,43 @@ class Frame(QLPDataProduct):
 
     # Constraints
     __table_args__ = (
-            UniqueConstraint(
-                'frame_type_id',
-                'orbit_id',
-                'cadence',
-                'camera',
-                'ccd',
-                name='unique_frame'),
-            CheckConstraint('camera BETWEEN 1 and 4', name='physical_camera_constraint'),
-            CheckConstraint('(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)', name='physical_ccd_constraint'),
-            )
+        UniqueConstraint(
+            'frame_type_id',
+            'orbit_id',
+            'cadence',
+            'camera',
+            'ccd',
+            name='unique_frame'
+        ),
+        CheckConstraint(
+            'camera BETWEEN 1 and 4',
+            name='physical_camera_constraint'
+        ),
+        CheckConstraint(
+            '(ccd IS NULL) OR (ccd BETWEEN 1 AND 4)',
+            name='physical_ccd_constraint'
+        ),
+    )
 
     def __repr__(self):
-        return '<Frame {} cam={} ccd={} cadence={}>'.format(self.frame_type.name, self.camera, self.ccd, self.cadence)
+        return (
+            '<Frame {0} '
+            'cam={1} '
+            'ccd={2} '
+            'cadence={3}>'.format(
+                self.frame_type.name,
+                self.camera,
+                self.ccd,
+                self.cadence
+            )
+        )
 
     # Model attributes
-    id = Column(Integer, Sequence('frames_id_seq', cache=2400), primary_key=True)
+    id = Column(
+        Integer,
+        Sequence('frames_id_seq', cache=2400),
+        primary_key=True
+    )
     cadence_type = Column(SmallInteger, index=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=True)
@@ -72,8 +95,17 @@ class Frame(QLPDataProduct):
     file_path = Column(String, nullable=False, unique=True)
 
     # Foreign Keys
-    orbit_id = Column(Integer, ForeignKey('orbits.id', ondelete='RESTRICT'), nullable=False, index=True)
-    frame_type_id = Column(ForeignKey('frametypes.name', ondelete='RESTRICT'), nullable=False, index=True)
+    orbit_id = Column(
+        Integer,
+        ForeignKey('orbits.id', ondelete='RESTRICT'),
+        nullable=False,
+        index=True
+    )
+    frame_type_id = Column(
+        ForeignKey('frametypes.name', ondelete='RESTRICT'),
+        nullable=False,
+        index=True
+    )
 
     # Relationships
     orbit = relationship('Orbit', back_populates='frames')
@@ -103,7 +135,6 @@ class Frame(QLPDataProduct):
         self.file_path = other.file_path
         self.orbit = other.orbit
         self.frame_type = other.frame_type
-
 
     @classmethod
     def from_fits(cls, path, cadence_type=30, frame_type=None, orbit=None):
