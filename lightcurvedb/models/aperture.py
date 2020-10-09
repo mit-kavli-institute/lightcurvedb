@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Numeric, Sequence, BigInteger, ForeignKey
+from sqlalchemy import Column, String, Numeric, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import insert
@@ -30,12 +30,12 @@ class Aperture(QLPReference):
         Accessing this attribute will result in a SQL query emission.
     """
 
-    __tablename__ = 'apertures'
+    __tablename__ = "apertures"
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint('star_radius', 'inner_radius', 'outer_radius'),
-        CheckConstraint('char_length(name) >= 1', name='minimum_name_length')
+        UniqueConstraint("star_radius", "inner_radius", "outer_radius"),
+        CheckConstraint("char_length(name) >= 1", name="minimum_name_length"),
     )
 
     # Model Attributes
@@ -45,17 +45,17 @@ class Aperture(QLPReference):
     outer_radius = Column(Numeric, nullable=False)
 
     # Relationships
-    lightcurves = relationship('Lightcurve', back_populates='aperture')
-    best_apertures = relationship('BestApertureMap', back_populates='aperture')
+    lightcurves = relationship("Lightcurve", back_populates="aperture")
+    best_apertures = relationship("BestApertureMap", back_populates="aperture")
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
-        return '<Aperture {} {} >'.format(self.name, self.format())
+        return "<Aperture {0} {1} >".format(self.name, self.format())
 
     def format(self):
-        return '{}:{}:{}'.format(
+        return "{0}:{1}:{2}".format(
             self.star_radius, self.inner_radius, self.outer_radius
         )
 
@@ -86,12 +86,11 @@ class Aperture(QLPReference):
             [star radius]:[inner radius]:[outer radius]
 
         """
-        vals = tuple(string.split(':'))
+        vals = tuple(string.split(":"))
         if len(vals) != 3:
             raise ValueError(
-                'Given aperture string "{}" is not formatted correctly'.format(
-                    string
-                )
+                "Given aperture string "
+                '"{0}" is not formatted correctly'.format(string)
             )
         star_r = float(vals[0])
         inner_r = float(vals[1])
@@ -102,62 +101,51 @@ class Aperture(QLPReference):
 
 class BestApertureMap(QLPReference):
     """
-        A mapping of lightcurves to their 'best' aperture. This model
-        is defined so TICs will contain 1 best aperture. This is enforced
-        on a PSQL constraint so behavior alterations will require a 
-        database migration.
+    A mapping of lightcurves to their 'best' aperture. This model
+    is defined so TICs will contain 1 best aperture. This is enforced
+    on a PSQL constraint so behavior alterations will require a
+    database migration.
 
-        Attributes
-        ----------
-        aperture_id : str
-            Foreign key to the "best aperture". Do not edit unless you're
-            confident in the change will be a valid Foreign Key.
-        tic_id : int
-            The TIC identifier. This serves as the primary key of the model
-            so it must be unique.
+    Attributes
+    ----------
+    aperture_id : str
+        Foreign key to the "best aperture". Do not edit unless you're
+        confident in the change will be a valid Foreign Key.
+    tic_id : int
+        The TIC identifier. This serves as the primary key of the model
+        so it must be unique.
 
-        aperture : Aperture
-            Returns the Aperture model related to this BestApertureMap
-            instance. Accessing this attribute will result in a SQL query
-            emission.
+    aperture : Aperture
+        Returns the Aperture model related to this BestApertureMap
+        instance. Accessing this attribute will result in a SQL query
+        emission.
     """
-    __tablename__ = 'best_apertures'
-    __table_args__ = (
-        UniqueConstraint('tic_id', name='best_ap_unique_tic'),
-    )
+
+    __tablename__ = "best_apertures"
+    __table_args__ = (UniqueConstraint("tic_id", name="best_ap_unique_tic"),)
 
     aperture_id = Column(
-        ForeignKey(Aperture.name, onupdate='CASCADE', ondelete='RESTRICT'),
-        primary_key=True
+        ForeignKey(Aperture.name, onupdate="CASCADE", ondelete="RESTRICT"),
+        primary_key=True,
     )
     tic_id = Column(BigInteger, primary_key=True)
 
-    aperture = relationship(
-        'Aperture',
-        back_populates='best_apertures'
-    )
+    aperture = relationship("Aperture", back_populates="best_apertures")
 
     @classmethod
     def set_best_aperture(cls, tic_id, aperture):
         q = insert(cls.__table__)
         if isinstance(aperture, Aperture):
             q = q.values(
-                tic_id=tic_id,
-                aperture_id=aperture.name
+                tic_id=tic_id, aperture_id=aperture.name
             ).on_conflict_do_update(
-                constraint='best_ap_unique_tic',
-                set_={
-                    'aperture_id': aperture.name
-                }
+                constraint="best_ap_unique_tic",
+                set_={"aperture_id": aperture.name},
             )
         else:
             q = q.values(
-                tic_id=tic_id,
-                aperture_id=aperture
+                tic_id=tic_id, aperture_id=aperture
             ).on_conflict_do_update(
-                constraint='best_ap_unique_tic',
-                set_={
-                    'aperture_id': aperture
-                }
+                constraint="best_ap_unique_tic", set_={"aperture_id": aperture}
             )
         return q

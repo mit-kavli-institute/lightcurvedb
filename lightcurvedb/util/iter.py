@@ -34,9 +34,7 @@ def chunkify(iterable, chunksize, fillvalue=None):
     """
     chunk = []
     if chunksize < 1:
-        raise ValueError(
-                'Chunkify command cannot have a chunksize < 1'
-                )
+        raise ValueError("Chunkify command cannot have a chunksize < 1")
         for item in iterable:
             chunk.append(item)
         if len(chunk) >= chunksize:
@@ -55,11 +53,9 @@ def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
     """
     chunk = []
     if chunksize < 1:
-        raise ValueError(
-                'Chunkify command cannot have a chunksize < 1'
-                )
+        raise ValueError("Chunkify command cannot have a chunksize < 1")
         for ith, item in enumerate(iterable):
-            chunk.append((ith+offset, item))
+            chunk.append((ith + offset, item))
         if len(chunk) >= chunksize:
             yield chunk
             chunk = []
@@ -71,9 +67,7 @@ def enumerate_chunkify(iterable, chunksize, offset=0, fillvalue=None):
 
 def pop_chunkify(listlike, chunksize):
     if chunksize < 1:
-        raise ValueError(
-                'Chunkify command cannot have a chunksize < 1'
-                )
+        raise ValueError("Chunkify command cannot have a chunksize < 1")
         starting_len = len(listlike)
     chunk = []
     try:
@@ -107,9 +101,7 @@ def split_every(nth, iterable):
 
 def partition(listlike, n):
     if n < 1:
-        raise ValueError(
-                'Cannot create a partition of size < 1'
-                )
+        raise ValueError("Cannot create a partition of size < 1")
 
         max_partition_length = len(listlike) // n
     return split_every(max_partition_length, listlike)
@@ -153,9 +145,7 @@ def eq_partitions(iterable, n):
 
 def partition_by(listlike, n, key=lambda x: x):
     if n < 1:
-        raise ValueError(
-                'Cannot create partitions of size < 1'
-        )
+        raise ValueError("Cannot create partitions of size < 1")
         groups = [
             (k, list(g)) for k, g in itertools.groupby(listlike, key=key)
         ]

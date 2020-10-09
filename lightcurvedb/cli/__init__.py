@@ -7,5 +7,18 @@ from .lightcurves import ingest_h5
 from .spacecraft import spacecraft
 from .metrics import metrics
 from .ingestion_cache import cache
-from .quality_flags import ingest_files
 from .partitioning import partitioning
+
+
+__all__ = [
+    "lcdbcli",
+    "aperture",
+    "create_lightcurvetype",
+    "ingest_frames",
+    "orbit",
+    "ingest_h5",
+    "spacecraft",
+    "metrics",
+    "cache",
+    "partitioning",
+]

@@ -1,5 +1,4 @@
 from collections import defaultdict
-from itertools import chain
 from lightcurvedb.exceptions import LightcurveDBException
 
 
@@ -8,6 +7,7 @@ class AmbiguousIdentifierDeduction(LightcurveDBException):
     set of identifiers were passed to successfully determine a scalar
     ID or lack thereof.
     """
+
     pass
 
 
@@ -15,20 +15,20 @@ class DuplicateEntryException(LightcurveDBException):
     """Raised when attempting to add a lightcurve which already
     exists in a LightcurveManager context.
     """
+
     pass
 
 
 class Manager(object):
     """Base Manager object. Defines abstract methods to retrive, store,
     and update lightcurves."""
+
     __managed_class__ = None
     __uniq_tuple__ = None
 
     def __init__(self, initial_models):
-        self._interior_data = dict()
-        self._mappers = {
-            k: defaultdict(set) for k in self.__uniq_tuple__
-        }
+        self._interior_data = {}
+        self._mappers = {k: defaultdict(set) for k in self.__uniq_tuple__}
 
         for model in initial_models:
             self.add_model(model)
@@ -50,9 +50,8 @@ class Manager(object):
         return key in self._interior_data
 
     def __repr__(self):
-        return '<{} Manager: {} items>'.format(
-            self.__managed_class__,
-            len(self._interior_data)
+        return "<{0} Manager: {1} items>".format(
+            self.__managed_class__, len(self._interior_data)
         )
 
     def __getitem__(self, scalar_key):
@@ -63,49 +62,36 @@ class Manager(object):
         """
         keys = set()
 
-        for attribute, pair_mappings in self._mappers.items():
+        for _, pair_mappings in self._mappers.items():
             try:
                 tuple_identifiers = pair_mappings[scalar_key]
                 keys.update(tuple_identifiers)
             except KeyError:
                 continue
 
-
         if len(keys) == 0:
             raise KeyError(
-                'Key {0} not found in any of the '
-                'tracked keys in {1}.'.format(
-                    scalar_key, self
-                )
+                "Key {0} not found in any of the "
+                "tracked keys in {1}.".format(scalar_key, self)
             )
         if len(keys) == 1:
-            return self._interior_data[
-                next(iter(keys))
-            ]
+            return self._interior_data[next(iter(keys))]
 
         # Return a new Manager with the filtered items
-        return self.__class__(
-            self._interior_data[key] for key in keys
-        )
-
+        return self.__class__(self._interior_data[key] for key in keys)
 
     def __get_key__(self, model_inst):
-        key = tuple(
-            getattr(model_inst, col) for col in self.__uniq_tuple__
-        )
+        key = tuple(getattr(model_inst, col) for col in self.__uniq_tuple__)
         return key
 
     def __get_key_by_kw__(self, **kwargs):
         try:
-            key = tuple(
-                kwargs[col] for col in self.__uniq_tuple__
-            )
+            key = tuple(kwargs[col] for col in self.__uniq_tuple__)
             return key
         except KeyError:
             raise AmbiguousIdentifierDeduction(
-                '{} does not contain the needed {} parameters'.format(
-                    kwargs.keys(),
-                    self.__uniq_tuple__
+                "{0} does not contain the needed {1} parameters".format(
+                    kwargs.keys(), self.__uniq_tuple__
                 )
             )
 
@@ -124,7 +110,7 @@ class Manager(object):
         for col in self.__uniq_tuple__:
             if col not in kwargs:
                 raise AmbiguousIdentifierDeduction(
-                    'Unable to find attribute {} in {}'.format(col, kwargs)
+                    "Unable to find attribute {0} in {1}".format(col, kwargs)
                 )
             key.append(kwargs[col])
         return tuple(key)
@@ -172,6 +158,7 @@ class Manager(object):
 def manager_factory(sqlalchemy_model, uniq_col, *additional_uniq_cols):
     cols = [uniq_col]
     cols.extend(additional_uniq_cols)
+
     class Managed(Manager):
         __managed_class__ = sqlalchemy_model
         __uniq_tuple__ = tuple(cols)

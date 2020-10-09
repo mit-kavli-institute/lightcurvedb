@@ -13,6 +13,7 @@ class QLPModel(object):
     """
     Common SQLAlchemy base model for all QLP Models
     """
+
     __abstract__ = True
 
     @classmethod
@@ -25,18 +26,20 @@ class QLPModel(object):
 
     @hybrid_property
     def oid(self):
-        pg_class = get_psql_catalog_tables('pg_class')
-        return select(
-            [pg_class.c.oid]
-        ).where(pg_class.c.relname == self.__tablename__)
+        pg_class = get_psql_catalog_tables("pg_class")
+        return select([pg_class.c.oid]).where(
+            pg_class.c.relname == self.__tablename__
+        )
 
     @oid.expression
     def oid(cls):
-        pg_class = get_psql_catalog_tables('pg_class')
+        pg_class = get_psql_catalog_tables("pg_class")
         print(cls.__tablename__)
-        return select(
-            [pg_class.c.oid]
-        ).where(pg_class.c.relname == cls.__tablename__).label('oid')
+        return (
+            select([pg_class.c.oid])
+            .where(pg_class.c.relname == cls.__tablename__)
+            .label("oid")
+        )
 
 
 class QLPDataProduct(QLPModel):
@@ -44,6 +47,7 @@ class QLPDataProduct(QLPModel):
     Mixin for describing QLP Dataproducts such as frames, lightcurves,
     and BLS results
     """
+
     __abstract__ = True
 
     created_on = Column(DateTime, server_default=func.now())
@@ -53,6 +57,7 @@ class QLPDataSubType(QLPModel):
     """
     Mixin for describing QLP data subtypes such as lightcurve types.
     """
+
     __abstract__ = True
 
     name = Column(String(64), primary_key=True, nullable=False)
@@ -66,9 +71,10 @@ class QLPDataSubType(QLPModel):
 
 class QLPReference(QLPModel):
     """
-        Mixin for describing models which are used by QLP but generally aren't
-        'produced'. For example: orbits and space craft telemetery
+    Mixin for describing models which are used by QLP but generally aren't
+    'produced'. For example: orbits and space craft telemetery
     """
+
     __abstract__ = True
 
     created_on = Column(DateTime, server_default=func.now())

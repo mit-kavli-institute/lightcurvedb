@@ -7,14 +7,14 @@ and directly related models
 
 import numpy as np
 
-from lightcurvedb.core.base_model import (QLPDataProduct, QLPDataSubType,
-                                          QLPModel)
-from lightcurvedb.core.partitioning import (Partitionable,
-                                            emit_ranged_partition_ddl)
+from lightcurvedb.core.base_model import (
+    QLPDataProduct,
+    QLPDataSubType,
+    QLPModel,
+)
 from lightcurvedb.core.collection import CadenceTracked
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import (DDL, BigInteger, Column, ForeignKey, Index, Integer,
-                        Sequence, SmallInteger, cast, event, inspect, join)
+from sqlalchemy import BigInteger, Column, ForeignKey, Sequence, SmallInteger
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -24,6 +24,7 @@ from sqlalchemy.schema import UniqueConstraint
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
         return AsIs(type_instance)
+
     register_adapter(type_class, adaptor)
 
 
@@ -35,36 +36,36 @@ adapt_as_is_type(np.float64)
 
 class LightcurveType(QLPDataSubType):
     """Describes the numerous lightcurve types"""
-    __tablename__ = 'lightcurvetypes'
 
-    lightcurves = relationship('Lightcurve', back_populates='lightcurve_type')
+    __tablename__ = "lightcurvetypes"
+
+    lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):
         return self.name
 
     def __repr__(self):
-        return '<Lightcurve Type {} >'.format(self.name)
+        return "<Lightcurve Type {0} >".format(self.name)
 
 
 class LightcurveFrameMap(QLPModel):
-    __tablename__ = 'lightcurveframemapping'
+    __tablename__ = "lightcurveframemapping"
     lightcurve_type_id = Column(
-        ForeignKey('lightcurves.id', ondelete='CASCADE'),
+        ForeignKey("lightcurves.id", ondelete="CASCADE"),
         primary_key=True,
     )
     frame_id = Column(
-        ForeignKey('frames.id'),
+        ForeignKey("frames.id"),
         primary_key=True,
     )
 
     lightcurve = relationship(
-        'Lightcurve',
+        "Lightcurve",
         backref=backref(
-            'lightcurveframemapping',
-            cascade='all, delete-orphan'
-        )
+            "lightcurveframemapping", cascade="all, delete-orphan"
+        ),
     )
-    frame = relationship('Frame')
+    frame = relationship("Frame")
 
 
 class Lightcurve(QLPDataProduct):
@@ -161,21 +162,22 @@ class Lightcurve(QLPDataProduct):
         in cadences[n].
 
     """
-    __tablename__ = 'lightcurves'
+
+    __tablename__ = "lightcurves"
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            'lightcurve_type_id',
-            'aperture_id',
-            'tic_id',
-            name='unique_lightcurve_constraint'
+            "lightcurve_type_id",
+            "aperture_id",
+            "tic_id",
+            name="unique_lightcurve_constraint",
         ),
     )
 
     id = Column(
         BigInteger,
-        Sequence('lightcurves_id_seq', cache=10**6),
-        primary_key=True
+        Sequence("lightcurves_id_seq", cache=10 ** 6),
+        primary_key=True,
     )
     tic_id = Column(BigInteger, index=True)
     cadence_type = Column(SmallInteger, index=True)
@@ -183,33 +185,24 @@ class Lightcurve(QLPDataProduct):
     # Foreign Keys
     lightcurve_type_id = Column(
         ForeignKey(
-            'lightcurvetypes.name',
-            onupdate='CASCADE',
-            ondelete='RESTRICT'
+            "lightcurvetypes.name", onupdate="CASCADE", ondelete="RESTRICT"
         ),
-        index=True
+        index=True,
     )
     aperture_id = Column(
-        ForeignKey(
-            'apertures.name',
-            onupdate='CASCADE',
-            ondelete='RESTRICT'
-        ),
-        index=True
+        ForeignKey("apertures.name", onupdate="CASCADE", ondelete="RESTRICT"),
+        index=True,
     )
 
     # Relationships
     lightcurve_type = relationship(
-        'LightcurveType',
-        back_populates='lightcurves'
+        "LightcurveType", back_populates="lightcurves"
     )
     lightpoints = relationship(
-        'Lightpoint',
-        backref='lightcurve',
-        collection_class=CadenceTracked
+        "Lightpoint", backref="lightcurve", collection_class=CadenceTracked
     )
-    aperture = relationship('Aperture', back_populates='lightcurves')
-    frames = association_proxy(LightcurveFrameMap.__tablename__, 'frame')
+    aperture = relationship("Aperture", back_populates="lightcurves")
+    frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
     def __len__(self):
         """
@@ -221,17 +214,13 @@ class Lightcurve(QLPDataProduct):
         return len(self.lightpoints)
 
     def __repr__(self):
-        return '<Lightcurve {} {} {}>'.format(
-            self.lightcurve_type.name,
-            self.tic_id,
-            self.aperture.name
+        return "<Lightcurve {0} {1} {2}>".format(
+            self.lightcurve_type.name, self.tic_id, self.aperture.name
         )
 
     def __str__(self):
-        return '<Lightcurve {} {} {}>'.format(
-            self.lightcurve_type.name,
-            self.tic_id,
-            self.aperture.name
+        return "<Lightcurve {0} {1} {2}>".format(
+            self.lightcurve_type.name, self.tic_id, self.aperture.name
         )
 
     def __getitem__(self, key):
@@ -243,12 +232,21 @@ class Lightcurve(QLPDataProduct):
             return getattr(self, key)
         except AttributeError:
             # Attempt to fallback
-            if key in ('flux', 'mag', 'magnitude', 'value'):
+            if key in ("flux", "mag", "magnitude", "value"):
                 return self.values
-            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+            elif key in (
+                "error",
+                "err",
+                "fluxerr",
+                "flux_err",
+                "magerr",
+                "mag_err",
+                "magnitude_err",
+                "magnitudeerror",
+            ):
                 return self.errors
-            elif key in ('x', 'y'):
-                return getattr(self, '{}_centroids'.format(key))
+            elif key in ("x", "y"):
+                return getattr(self, "{0}_centroids".format(key))
             else:
                 raise
 
@@ -260,12 +258,21 @@ class Lightcurve(QLPDataProduct):
         try:
             setattr(self, key, value)
         except AttributeError:
-            if key in ('flux', 'mag', 'magnitude', 'value'):
+            if key in ("flux", "mag", "magnitude", "value"):
                 self.values = value
-            elif key in ('error', 'err', 'fluxerr', 'flux_err', 'magerr', 'mag_err', 'magnitude_err', 'magnitudeerror'):
+            elif key in (
+                "error",
+                "err",
+                "fluxerr",
+                "flux_err",
+                "magerr",
+                "mag_err",
+                "magnitude_err",
+                "magnitudeerror",
+            ):
                 self.errors = value
-            elif key in ('x', 'y'):
-                return setattr(self, '{}_centroids'.format(key))
+            elif key in ("x", "y"):
+                return setattr(self, "{0}_centroids".format(key))
             else:
                 raise
 
@@ -284,7 +291,7 @@ class Lightcurve(QLPDataProduct):
             errors=self.errors,
             x_centroids=self.x_centroids,
             y_centroids=self.y_centroids,
-            quality_flags=self.quality_flags
+            quality_flags=self.quality_flags,
         )
 
     @hybrid_property
