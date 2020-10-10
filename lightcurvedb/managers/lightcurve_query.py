@@ -43,11 +43,7 @@ class LightcurveManager(BaseLightcurveManager):
         lm = cls([])
 
         if isinstance(q, Query):
-            for lc in q.all():
-                lm.add_defined_lightcurve(lc)
+            return cls(q.all())
         else:
             # Assume q is an iterable...
-            for lc in q:
-                lm.add_defined_lightcurve(lc)
-
-        return lm
+            return cls(q)
