@@ -38,6 +38,8 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
     __tablename__ = "lightpoints"
     __abstract__ = False
 
+    struct_pattern = "LIdddddc"
+
     lightcurve_id = Column(
         ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,

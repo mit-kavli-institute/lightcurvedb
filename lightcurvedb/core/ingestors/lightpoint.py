@@ -4,23 +4,26 @@ try:
 except ImportError:
     import Queue as queue
 
-import numpy as np
 import os
+import struct
+from collections import defaultdict, namedtuple
+from multiprocessing import Process
+
+import numpy as np
 import pandas as pd
-from collections import namedtuple, defaultdict
-from time import time
-from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
+
+from lightcurvedb import db_from_config
+from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
-    load_lightpoints
+    load_lightpoints,
 )
-from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.models import Lightcurve, Lightpoint, Observation, Orbit
 from lightcurvedb.util.logger import lcdb_logger as logger
-from lightcurvedb import db_from_config
-from sqlalchemy import bindparam, Sequence, Table
-from multiprocessing import Process
-from pgcopy import CopyManager
+
+# from pgcopy import CopyManager
+from sqlalchemy import Sequence, Table, bindparam
 
 try:
     from math import isclose
@@ -317,7 +320,14 @@ class MassIngestor(LightpointProcessor):
             self.db.close()
 
 
-def partition_copier(time_corrector, quality_flags, partition_job):
+def partition_copier(
+    time_corrector,
+    quality_flags,
+    partition_job,
+    destination="/scratch2",
+    lightpoint_pattern="lightpoints_{begin_range}.blob",
+    obs_pattern="observations_{begin_range}.blob",
+):
     """
     Merges and corrects a lightcurve and its source files.
     Returns a multi-index pandas dataframe representing the data
@@ -330,42 +340,80 @@ def partition_copier(time_corrector, quality_flags, partition_job):
     for tic_id, ap_id, lct_id, id_ in merge_jobs:
         observations = observation_map.loc[tic_id]
         tmag, ra, dec = tic_parameters.loc[tic_id]
+        logger.info(
+            "processing {0} [{1} {2}:{3}]".format(
+                tic_id,
+                tmag,
+                ra,
+                dec,
+            )
+        )
 
         for orbit, camera, ccd, path in observations.to_records():
             lightpoints = load_lightpoints(path, id_, ap_id, lct_id)
 
             # Update quality flags
-            idx = lightpoints[['cadence', 'camera', 'ccd']]
-            lightpoints['quality_flag'] = quality_flags.loc[idx].to_numpy()
+            idx = lightpoints[["cadence", "camera", "ccd"]]
+            lightpoints["quality_flag"] = quality_flags.loc[idx].to_numpy()
 
             # Align data
-            mask = lightpoints['quality_flag'] == 0
+            mask = lightpoints["quality_flag"] == 0
             good_values = lightpoints.loc[mask]["data"].to_numpy()
             offset = np.nanmedian(good_values) - tmag
-            lightpoints['data'] = lightpoints['data'] - offset
+            lightpoints["data"] = lightpoints["data"] - offset
 
             # Time correct
-            bjd = time_corrector.correct_bjd(
-                ra, dec, lightpoints
-            )
+            bjd = time_corrector.correct_bjd(ra, dec, lightpoints)
             lightpoints["barycentric_julian_date"] = bjd
 
             # All lightcurve information has been filtered for
             # full sector analysis.
             lps.append(lightpoints)
             observations.append(
-                dict(
-                    tic_id=tic_id,
-                    orbit_number=orbit,
-                    camera=camera,
-                    ccd=ccd
-                )
+                dict(tic_id=tic_id, orbit_number=orbit, camera=camera, ccd=ccd)
             )
+    logger.debug("performing cadence de-duplication and pre-ordering")
 
     # Concat full lightcurve and remove duplicate cadences
-    full_lp = pd.concat(lps).set_index('lightcurve_id', 'cadence').sort_index()
-    full_lp = full_lp[~full_lp.index.duplicated(keep='last')]
-    return full_lp, observations
+    full_lp = pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
+    full_lp = full_lp[~full_lp.index.duplicated(keep="last")]
+
+    lp_filename = lightpoint_pattern.format(
+        begin_range=(merge_jobs[0][3] // 1000) * 1000
+    )
+    obs_filename = obs_pattern.format(
+        begin_range=(merge_jobs[0][3] // 1000) * 1000
+    )
+
+    # Write lightpoints
+    lp_path = os.path.join(destination, lp_filename)
+    obs_path = os.path.join(destination, obs_filename)
+
+    logger.debug(
+        "finished processing {0} jobs, dumping to {1} and {2}".format(
+            len(merge_jobs), lp_path, obs_path
+        )
+    )
+
+    lp_packer = struct.Struct(Lightpoint.struct_pattern)
+    obs_packer = struct.Struct("QccH")
+
+    with open(lp_path, "wb") as lp_out:
+        for record in full_lp.to_records():
+            packed = lp_packer.pack(*record)
+            lp_out.write(packed)
+
+    with open(obs_path, "wb") as obs_out:
+        for record in observations:
+            packed = obs_packer(
+                record["tic_id"],
+                record["camera"],
+                record["ccd"],
+                record["orbit_number"],
+            )
+            obs_out.write(packed)
+
+    return lp_out, obs_out
 
 
 def partition_consumer(config, lightpoint_filepath, observation_filepath):

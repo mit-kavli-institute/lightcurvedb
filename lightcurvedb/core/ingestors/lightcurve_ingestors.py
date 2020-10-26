@@ -26,6 +26,7 @@ path_components = re.compile(
     )
 )
 
+
 def get_components(path):
     result = path_components.search(path)
     if not result:
@@ -34,10 +35,10 @@ def get_components(path):
         )
     components = result.groupdict()
     return dict(
-        tic_id=int(components['tic']),
-        orbit_number=int(components['orbit']),
+        tic_id=int(components["tic"]),
+        orbit_number=int(components["orbit"]),
         camera=int(components["camera"]),
-        ccd=int(components["ccd"])
+        ccd=int(components["ccd"]),
     )
 
 
@@ -120,19 +121,16 @@ def kwargs_to_df(*kwargs, **constants):
 
 def load_lightpoints(path, lightcurve_id, aperture, type_):
 
-    contants = get_components(path)
+    constants = get_components(path)
     with H5File(path, "r") as h5in:
         lc = h5in["LightCurve"]
-        tic = int(os.path.basename(filepath).split(".")[0])
         cadences = lc["Cadence"][()].astype(int)
         bjd = lc["BJD"][()]
 
         lc = lc["AperturePhotometry"][aperture]
         x_centroids = lc["X"][()]
         y_centroids = lc["Y"][()]
-        quality_flags = quality_flag_extr(
-            lc_by_ap["QualityFlag"][()]
-        ).astype(int)
+        quality_flags = quality_flag_extr(lc["QualityFlag"][()]).astype(int)
 
         values = lc[type_][()]
         has_error_field = H5_LC_TYPES[type_]
