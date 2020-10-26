@@ -207,3 +207,12 @@ class StaticTimeCorrector(TimeCorrector):
         df = lightpoint_df.reset_index()
         index = [tuple(r) for r in df[["cadences", "camera"]].values]
         return self.mid_tjd_map.loc[index]["mid_tjd"].values
+
+
+class PartitionTimeCorrector(StaticTimeCorrector):
+
+    def mid_tjd(self, lightpoint_df):
+        df = lightpoint_df.reset_index()
+        index = [tuple(r) for r in df[["cadence", "camera"]].values]
+        return self.mid_tjd_map.loc[index]["mid_tjd"].values
+

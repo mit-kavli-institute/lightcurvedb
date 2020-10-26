@@ -6,12 +6,14 @@ except ImportError:
 
 import numpy as np
 import os
+import pandas as pd
 from collections import namedtuple, defaultdict
 from time import time
 from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
+    load_lightpoints
 )
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.util.logger import lcdb_logger as logger
@@ -52,6 +54,14 @@ DIFF_COLS = ["values", "barycentric_julian_date", "quality_flags"]
 
 MergeJob = namedtuple(
     "MergeJob", ("tic_id", "ra", "dec", "tmag", "file_observations")
+)
+
+SingleMergeJob = namedtuple(
+    "SingleMerge", ("tic_id", "aperture", "lightcurve_type", "id")
+)
+
+PartitionJob = namedtuple(
+    "PartitionJob", ("merge_jobs", "observation_map", "tic_parameters")
 )
 
 
@@ -307,113 +317,56 @@ class MassIngestor(LightpointProcessor):
             self.db.close()
 
 
-class CopyProcess(LightpointProcessor):
-    prefix = "Copier"
+def partition_copier(time_corrector, quality_flags, partition_job):
+    """
+    Merges and corrects a lightcurve and its source files.
+    Returns a multi-index pandas dataframe representing the data
+    for all lightcurves and the new observations to update.
+    """
+    merge_jobs, observation_map, tic_parameters = partition_job
+    lps = []
+    observations = []
 
-    def __init__(self, db_config, lp_queue, copy_args, **process_kwargs):
-        super(CopyProcess, self).__init__(**process_kwargs)
-        self.lp_queue = lp_queue
-        self.threshold_time = copy_args["threshold_time"]
-        self.expected_tics = copy_args["expected_tics"]
-        self.db = None
-        self.config = db_config
+    for tic_id, ap_id, lct_id, id_ in merge_jobs:
+        observations = observation_map.loc[tic_id]
+        tmag, ra, dec = tic_parameters.loc[tic_id]
 
-        self.lightcurve_cache = []
-        self.internal_cache = []
-        self.observation_cache = []
-        self.last_copy_time = time()
-        self.mgr = None
-        self.dirty = False
-        self.seen_tics = set()
-        self.track_count = 0
-        self.pg_map = None
+        for orbit, camera, ccd, path in observations.to_records():
+            lightpoints = load_lightpoints(path, id_, ap_id, lct_id)
 
-        self.engine_kwargs = dict(
-            executemany_mode="values",
-            executemany_values_page_size=10000,
-            executemany_batch_page_size=500,
-        )
+            # Update quality flags
+            idx = lightpoints[['cadence', 'camera', 'ccd']]
+            lightpoints['quality_flag'] = quality_flags.loc[idx].to_numpy()
 
-    def process(self, job):
-        lightcurves = job["lightcurves"]
-        records = job["lightpoints"]
-        observations = job["observations"]
-        self.lightcurve_cache.extend(lightcurves)
-        self.internal_cache.append(records)
-        self.observation_cache.extend(observations)
+            # Align data
+            mask = lightpoints['quality_flag'] == 0
+            good_values = lightpoints.loc[mask]["data"].to_numpy()
+            offset = np.nanmedian(good_values) - tmag
+            lightpoints['data'] = lightpoints['data'] - offset
 
-        if any(len(x) > 0 for x in [lightcurves, records, observations]):
-            self.dirty = True
+            # Time correct
+            bjd = time_corrector.correct_bjd(
+                ra, dec, lightpoints
+            )
+            lightpoints["barycentric_julian_date"] = bjd
 
-    def iter_lps(self):
-        for df in self.internal_cache:
-            for row in df.to_records():
-                yield row
-                self.track_count += 1
-
-    def flush(self):
-        if self.dirty:
-            lcs = []
-            for id_, tic_id, ap_id, lc_type_id in self.lightcurve_cache:
-                lc = Lightcurve(
-                    id=id_,
+            # All lightcurve information has been filtered for
+            # full sector analysis.
+            lps.append(lightpoints)
+            observations.append(
+                dict(
                     tic_id=tic_id,
-                    aperture_id=ap_id,
-                    lightcurve_type_id=lc_type_id,
-                )
-                lcs.append(lc)
-                self.seen_tics.add(lc.tic_id)
-
-            self.db.session.add_all(lcs)
-            self.db.commit()
-            mgr = CopyManager(
-                self.db.session.connection().connection,
-                "lightpoints",
-                [
-                    "lightcurve_id",
-                    "cadence",
-                    "barycentric_julian_date",
-                    "data",
-                    "error",
-                    "x_centroid",
-                    "y_centroid",
-                    "quality_flag",
-                ],
-            )
-            mgr.threading_copy(self.iter_lps())
-            obs = [Observation(**kw) for kw in self.observation_cache]
-            self.db.session.add_all(obs)
-            self.db.commit()
-            self.last_copy_time = time()
-            self.dirty = False
-
-            self.log(
-                "Committed {0} lightpoints. Seen ~ {1} / {2} tics".format(
-                    self.track_count,
-                    len(self.seen_tics),
-                    len(self.expected_tics),
+                    orbit_number=orbit,
+                    camera=camera,
+                    ccd=ccd
                 )
             )
-            self.track_count = 0
-            self.lightpoint_cache = []
-            self.lightcurve_cache = []
-            self.observation_cache = []
 
-    def run(self):
-        self.db = db_from_config(self.config, **self.engine_kwargs).open()
-        self.set_name()
+    # Concat full lightcurve and remove duplicate cadences
+    full_lp = pd.concat(lps).set_index('lightcurve_id', 'cadence').sort_index()
+    full_lp = full_lp[~full_lp.index.duplicated(keep='last')]
+    return full_lp, observations
 
-        try:
-            while True:
-                job = self.lp_queue.get()
-                self.process(job)
-                self.flush()
-        except queue.Empty:
-            # Looks like we're done.
-            self.log("Finishing up")
-            self.flush()
-            self.db.close()
-        except KeyboardInterrupt:
-            self.log("Received interrupt")
-            self.flush()
-            self.db.close()
+
+def partition_consumer(config, lightpoint_filepath, observation_filepath):
+    pass

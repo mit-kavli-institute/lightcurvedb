@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 
 from multiprocessing import Manager
+from itertools import product
 
 import click
 import pandas as pd
@@ -15,7 +16,7 @@ from lightcurvedb.core.ingestors.temp_table import (
     QualityFlags,
     TIC8Parameters,
 )
-from lightcurvedb.legacy.timecorrect import StaticTimeCorrector
+from lightcurvedb.legacy.timecorrect import StaticTimeCorrector, PartitionTimeCorrector
 from lightcurvedb.models import Lightcurve, Observation, Orbit
 
 INGESTION_MODES = ["smart", "ignore", "full"]
@@ -32,6 +33,10 @@ def yield_optimized_tics(ordered_tics, all_tics):
             continue
     for tic in all_tics:
         yield tic
+
+
+def partition_id(job):
+    return (job.id // 1000) * 1000
 
 
 def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
@@ -245,3 +250,117 @@ def tic_list(ctx, tic_file, n_processes, scratch):
     file_observations = pd.read_sql(file_obs_q.statement, cache.session.bind)
 
     ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch)
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument('orbits', nargs=-1, type=int)
+@click.option("--cameras", type=CommaList(int), default="1,2,3,4")
+@click.option("--ccds", type=CommaList(int), default="1,2,3,4")
+@click.option("--n-processes", default=48, type=click.IntRange(min=1))
+@click.option("--types", type=str, multiple=True, default=["KSPMagnitude", "RawMagnitude"])
+@click.option("--apertures", type=str, multiple=True, default=["Aperture_00{0}".format(xth) for xth in range(5))
+def partition_ingest(ctx, orbits, cameras, ccds, n_processes, types, apertures):
+    cache = IngestionCache()
+    file_observation_q = cache.session.query(
+        FileObservation
+    ).filter(
+        FileObservation.orbit_number.in_(orbits),
+        FileObservation.camera.in_(cameras),
+        FileObservation.ccd.in_(ccds),
+    )
+
+    cache_df = pd.read_sql(
+        file_observation_q.statement,
+        cache.session.bind,
+        index_col=['tic_id']
+    )
+    tic_parameters_q = cache.session.query(
+        TIC8Parameters.tic_id,
+        TIC8Parameters.tmag,
+        TIC8Parameters.right_ascension,
+        TIC8Parameters.declination
+    )
+    tic_parameters = pd.read_sql(
+        tic_parameters_q.statement,
+        cache.session.bind,
+        index_col=['tic_id']
+    )
+    quality_flags = cache.quality_flag_df
+
+    with ctx['dbconf'] as db:
+        # Remove jobs already ingested
+        existing_obs = set(
+            db.query(
+                Observation.tic_id,
+                Orbit.orbit_number
+            ).join(
+                Observation.orbit
+            ).filter(
+                Orbit.orbit_number.in_(orbits),
+                Observation.camera.in_(cameras),
+                Observation.ccd.in_(ccds)
+            )
+        )
+        cache_df['already_ingested'] = cache_df.apply(
+            lambda row: (row['tic_id'], row['orbit_number']) in existing_obs,
+            axis=1
+        )
+        time_corrector = PartitionTimeCorrector(db.session)
+        new_obs = cache_df[~cache_df['already_ingested']]
+        lc_id_q = db.lightcurve_id_map(resolve=False)
+        lc_id_q = lc_id_q.filter(
+            Lightcurve.tic_id.in_(
+                db.query(Observation.tic_id).join(
+                    Observation.orbit
+                ).filter(
+                    Orbit.orbit_number.in_(orbits),
+                    Observation.camera.in_(cameras),
+                    Observation.ccd.in_(ccds)
+                ).subquery()
+            )
+        )
+
+        id_map = pd.read_sql(
+            lc_id_q.statement,
+            db.session.bind,
+            index_col=['tic_id', 'aperture_id', 'lightcurve_type_id']
+        )
+
+        # Pre-assign ids, and group by destination partition
+        existing_lcs = []
+        new_lc_params = []
+        jobs = []
+        id_seq = Sequence('lightcurve_id_seq')
+
+        for tic_id, *_ in new_obs.to_records():
+            for type_, aperture in product(types, apertures):
+                try:
+                    id_ = id_map.loc[tic_id, aperture, type_]
+                    job = SingleMergeJob(
+                        tic_id=tic_id,
+                        aperture=aperture,
+                        lightcurve_type=type_,
+                        id=id_,
+                    )
+                except KeyError:
+                    # New lightcurve!
+                    params = dict(
+                        tic_id=tic_id,
+                        aperture_id=aperture_id
+                        lightcurve_type_id=type_,
+                        id=db.session.execute(id_seq)
+                    )
+                    new_lcs_params.append(params)
+                    job = SingleMergeJob(
+                        tic_id=params['tic_id'],
+                        aperture=params['aperture_id'],
+                        lightcurve_type=params['lightcurve_type_id'],
+                        id=params['id'],
+                    )
+                jobs.append(job)
+
+        jobs = sorted(jobs, key=lambda job: job[3])
+        for partition, partition_job in groupby(jobs, partition_id):
+            tics = set(job.tic_id for job in partition_jobs)
+            relevant_obs_map = None
