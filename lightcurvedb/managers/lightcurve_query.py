@@ -40,8 +40,6 @@ class LightcurveManager(BaseLightcurveManager):
     @classmethod
     def from_q(cls, q):
 
-        lm = cls([])
-
         if isinstance(q, Query):
             return cls(q.all())
         else:
