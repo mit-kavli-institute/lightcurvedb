@@ -1,4 +1,5 @@
 from .aperture import Aperture, BestApertureMap
+from .camera_quaternion import CameraQuaternion
 from .frame import FrameType, Frame
 from .orbit import Orbit
 from .lightcurve import Lightcurve, LightcurveType

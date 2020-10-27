@@ -330,3 +330,32 @@ def lightcurve_list(
             max_size=max_size,
         )
     )
+
+
+quat_params = {
+    'min_value': -1.0,
+    'max_value': 1.0,
+    'allow_nan': False,
+    'allow_infinity': False
+}
+
+
+@define_strategy
+def quaternion(missing=False):
+    if missing:
+        ret = tuples(
+            floats(**quat_params),
+            floats(**quat_params),
+            floats(**quat_params)
+        )
+        assume(sum(ret) < 1.0)
+        return ret
+
+    ret = tuples(
+        floats(**quat_params),
+        floats(**quat_params),
+        floats(**quat_params),
+        floats(**quat_params)
+    )
+    assume(sum(ret) <= 1.0)
+    return ret
