@@ -137,10 +137,41 @@ def test_subslice_assignment(lightcurve, lightpoints, data):
     }
 
     for col, type_ in float_columns.items():
-        test = list(map(float, range(len(sliced))))
+        test = list(map(type_, range(len(sliced))))
         sliced[col] = test
 
         for lp, val in zip(sliced, test):
+            note(lp)
+            note(val)
+            assert lp[col] == val
+
+
+@given(
+    lightcurve(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    ),
+    st.data()
+)
+def test_full_assignment(lightcurve, lightpoints, data):
+    lightcurve.lightpoints = lightpoints
+
+    float_columns = {
+        'bjd': float,
+        'values': float,
+        'errors': float,
+        'x_centroids': float,
+        'y_centroids': float,
+        'quality_flags': int
+    }
+
+    for col, type_ in float_columns.items():
+        test = list(map(type_, range(len(lightcurve))))
+        lightcurve[col] = test
+
+        for lp, val in zip(lightcurve, test):
             note(lp)
             note(val)
             assert lp[col] == val

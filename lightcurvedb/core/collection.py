@@ -61,6 +61,7 @@ class CadenceKeyed(object):
             # Key is scalar
             return self._internal_data[key]
 
+    @collection.internally_instrumented
     def __setitem__(self, key, value):
         if not len(self) == len(value):
             raise ValueError(
