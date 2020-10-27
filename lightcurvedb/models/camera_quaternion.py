@@ -11,7 +11,7 @@ PYQUAT_KEYWORDS = {
 }
 
 
-class CameraQuaternion(QLPReference, Quaternion):
+class CameraQuaternion(QLPReference):
 
     __tablename__ = 'camera_quaternions'
 
@@ -24,12 +24,26 @@ class CameraQuaternion(QLPReference, Quaternion):
     _y = high_precision_column(name='y', nullable=False)
     _z = high_precision_column(name='z', nullable=False)
 
+
     def __init__(self, *args, **kwargs):
         py_quat_params = {
             k: v for k, v in kwargs.items() if k in PYQUAT_KEYWORDS
         }
-        super(Quaternion, self).__init__(**py_quat_params)
+        self.quaternion = Quaternion(
+            **py_quat_params
+        )
         self._w = self.w
         self._x = self.x
         self._y = self.y
         self._z = self.z
+
+
+    def __getattr__(self, key):
+        return getattr(self.quaternion, key)
+
+    # Standard w, x, y, x
+
+
+    @hybrid_property
+    def q0(self):
+        return self.w

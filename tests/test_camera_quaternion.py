@@ -1,4 +1,4 @@
-from hypothesis import strategies as st, given, note
+from hypothesis import strategies as st, given, note, assume
 from lightcurvedb.models import CameraQuaternion
 from itertools import combinations
 from .factories import quaternion
@@ -6,6 +6,7 @@ from .factories import quaternion
 
 @given(quaternion(missing=False))
 def test_full_quaternion(q):
+    assume(sum(q) <= 1.0)
     q0, q1, q2, q3 = q
 
     camera_quat = CameraQuaternion(
@@ -26,6 +27,7 @@ def test_full_quaternion(q):
 
 @given(quaternion(missing=True))
 def test_missing_quaternion(q):
+    assume(sum(q) <= 1.0)
     standard_keys = ['w', 'x', 'y', 'z']
     q_keys = ['q0', 'q1', 'q2', 'q3']
 

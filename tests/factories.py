@@ -348,7 +348,6 @@ def quaternion(missing=False):
             floats(**quat_params),
             floats(**quat_params)
         )
-        assume(sum(ret) < 1.0)
         return ret
 
     ret = tuples(
@@ -357,5 +356,4 @@ def quaternion(missing=False):
         floats(**quat_params),
         floats(**quat_params)
     )
-    assume(sum(ret) <= 1.0)
     return ret
