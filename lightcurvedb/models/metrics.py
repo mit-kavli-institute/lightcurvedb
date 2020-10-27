@@ -89,13 +89,13 @@ class QLPProcess(QLPMetric):
         """
         Convert to python dictionary
         """
-        return dict(
-            id=id,
-            job_type=self.job_type,
-            version=str(self.version),
-            version_info=self.additional_version_info,
-            description=self.job_description,
-        )
+        return {
+            "id": id,
+            "job_type": self.job_type,
+            "version": str(self.version),
+            "version_info": self.additional_version_info,
+            "description": self.job_description,
+        }
 
     @hybrid_property
     def version(self):
@@ -270,15 +270,15 @@ class QLPAlteration(QLPMetric):
         """
         Convert the instance to a python dictionary
         """
-        return dict(
-            target_model=self.target_model,
-            alteration_type=self.alteration_type,
-            n_altered_items=self.n_altered_items,
-            est_time_size=self.est_item_size,
-            elapsed=self.time_end - self.time_start,
-            time_start=self.time_start,
-            time_end=self.time_end,
-        )
+        return {
+            "target_model": self.target_model,
+            "alteration_type": self.alteration_type,
+            "n_altered_items": self.n_altered_items,
+            "est_time_size": self.est_item_size,
+            "elapsed": self.time_end - self.time_start,
+            "time_start": self.time_start,
+            "time_end": self.time_end,
+        }
 
     @hybrid_property
     def query(self):

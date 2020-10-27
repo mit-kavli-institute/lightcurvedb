@@ -281,18 +281,18 @@ class Lightcurve(QLPDataProduct):
 
     @property
     def to_dict(self):
-        return dict(
-            tic_id=self.tic_id,
-            aperture=self.aperture_id,
-            type=self.lightcurve_type_id,
-            cadences=self.cadences,
-            bjd=self.bjd,
-            mag=self.values,
-            errors=self.errors,
-            x_centroids=self.x_centroids,
-            y_centroids=self.y_centroids,
-            quality_flags=self.quality_flags,
-        )
+        return {
+            "tic_id": self.tic_id,
+            "aperture": self.aperture_id,
+            "type": self.lightcurve_type_id,
+            "cadences": self.cadences,
+            "bjd": self.bjd,
+            "mag": self.values,
+            "errors": self.errors,
+            "x_centroids": self.x_centroids,
+            "y_centroids": self.y_centroids,
+            "quality_flags": self.quality_flags,
+        }
 
     @hybrid_property
     def type(self):

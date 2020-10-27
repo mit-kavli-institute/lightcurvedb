@@ -16,12 +16,12 @@ from sqlalchemy.exc import DisconnectionError
 
 
 DB_TYPE = "postgresql+psycopg2"
-DEFAULT_ENGINE_KWARGS = dict(
-    pool_size=16,
-    max_overflow=-1,
-    executemany_mode="values",
-    executemany_values_page_size=10000,
-)
+DEFAULT_ENGINE_KWARGS = {
+    "pool_size": 16,
+    "max_overflow": -1,
+    "executemany_mode": "values",
+    "executemany_values_page_size": 10000,
+}
 
 
 def __config_to_url__(path):

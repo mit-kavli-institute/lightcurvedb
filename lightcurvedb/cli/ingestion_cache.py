@@ -219,7 +219,7 @@ def quality_flags(ctx, orbits, cameras, ccds):
         click.echo(
             "Updating {0} and inserting {1} quality_flags".format(
                 click.style(str(updated), bold=True, fg="yellow"),
-                click.style(str(inserted), bold=True, fg="green")
+                click.style(str(inserted), bold=True, fg="green"),
             )
         )
         cache.commit()

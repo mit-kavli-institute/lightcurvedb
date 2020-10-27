@@ -40,7 +40,7 @@ LIGHTPOINT_ALIASES = {
     "mag_error": "error",
     "x_centroids": "x_centroid",
     "y_centroids": "y_centroid",
-    "quality_flags": "quality_flag"
+    "quality_flags": "quality_flag",
 }
 
 
@@ -114,20 +114,7 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
         """
 
         aliased = LIGHTPOINT_ALIASES.get(key, key)
-        #if aliased == "cadence":
-        #    return self.cadence
-        #elif aliased == "barycentric_julian_date":
-        #    return self.barycentric_julian_date
-        #elif aliased == "data":
-        #    return self.data
-        #elif aliased == "error":
-        #    return self.error
-        #elif aliased == "x_centroid":
-        #    return self.x_centroid
-        #elif aliased == "y_centroid":
-        #    return self.y_centroid
-        #elif aliased == "quality_flag":
-        #    return self.quality_flag
+
         try:
             return getattr(self, aliased)
         except AttributeError:
@@ -255,16 +242,16 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
     # Conversion
     @property
     def to_dict(self):
-        return dict(
-            lightcurve_id=self.lightcurve_id,
-            cadence=self.cadence,
-            barycentric_julian_date=self.bjd,
-            data=self.data,
-            error=self.error,
-            x_centroid=self.x,
-            y_centroid=self.y,
-            quality_flag=self.quality_flag,
-        )
+        return {
+            "lightcurve_id": self.lightcurve_id,
+            "cadence": self.cadence,
+            "barycentric_julian_date": self.bjd,
+            "data": self.data,
+            "error": self.error,
+            "x_centroid": self.x,
+            "y_centroid": self.y,
+            "quality_flag": self.quality_flag,
+        }
 
     def update_with(self, data):
         """

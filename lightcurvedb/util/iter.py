@@ -35,7 +35,7 @@ def chunkify(iterable, chunksize, fillvalue=None):
     chunk = []
     if chunksize < 1:
         raise ValueError("Chunkify command cannot have a chunksize < 1")
-    
+
     for item in iterable:
         chunk.append(item)
         if len(chunk) >= chunksize:
