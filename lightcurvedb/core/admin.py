@@ -16,9 +16,7 @@ def reflect_psql_admin(engine):
 
     PSQL_META = MetaData()
 
-    PSQL_META.reflect(
-        engine, schema='pg_catalog'
-    )
+    PSQL_META.reflect(engine, schema="pg_catalog")
 
     return PSQL_META
 
@@ -35,15 +33,15 @@ def psql_catalog_tables():
         return PSQL_META.tables
     except AttributeError:
         raise RuntimeError(
-            'Looks like PSQL_META has not been initialized. '
-            'Please call `psql_tables(db_instance)`.'
+            "Looks like PSQL_META has not been initialized. "
+            "Please call `psql_tables(db_instance)`."
         )
 
 
 def get_psql_catalog_tables(*tables):
     catalogs = psql_catalog_tables()
     results = tuple(
-        catalogs['pg_catalog.{0}'.format(table)] for table in tables
+        catalogs["pg_catalog.{0}".format(table)] for table in tables
     )
     if len(results) == 1:
         return results[0]

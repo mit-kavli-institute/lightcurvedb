@@ -1,14 +1,18 @@
-from hypothesis import strategies as st, given, note, example, assume
+import traceback
+from math import ceil
+
+from click.testing import CliRunner
+from hypothesis import assume, example, given, note
+from hypothesis import strategies as st
+
+from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.core.admin import psql_tables
+from lightcurvedb.core.partitioning import n_new_partitions
 from lightcurvedb.models import Lightpoint
 from lightcurvedb.models.lightpoint import LIGHTPOINT_PARTITION_RANGE
-from lightcurvedb.core.admin import psql_tables
-from lightcurvedb.core.partitioning import n_new_partitions, get_partition_q, get_partition_tables, get_partition_columns
-from math import ceil
-import traceback
-from click.testing import CliRunner
-from lightcurvedb.cli.base import lcdbcli
-from .fixtures import db_conn, clear_all
+
 from .constants import CONFIG_PATH
+from .fixtures import clear_all, db_conn
 
 
 @given(

@@ -25,7 +25,7 @@ class TransactionTime(object):
     def __init__(self, n_rows, time_start, time_end):
         if not isinstance(n_rows, int):
             raise ValueError(
-                'Received {0} instead of an integer'.format(n_rows)
+                "Received {0} instead of an integer".format(n_rows)
             )
         self.n_rows = n_rows
         self.time_start = time_start
@@ -80,10 +80,7 @@ class TransactionHistory(object):
 
         x, y = self.get_throughput_by_n_rows()
 
-        slope, _ = np.polyfit(
-            x, y,
-            1  # Strictly linear
-        )
+        slope, _ = np.polyfit(x, y, 1)  # Strictly linear
         return slope
 
     def get_new_buf_size(self, current_buf_size):
@@ -116,9 +113,9 @@ class DBLoader(Process):
         super(DBLoader, self).__init__(**process_kwargs)
         self.db = db_from_config(
             db_config,
-            executemany_mode='values',
+            executemany_mode="values",
             executemany_values_page_size=10000,
-            executemany_batch_page_size=500
+            executemany_batch_page_size=500,
         )
         self.queue = lightcurve_queue
         self.insert_history = TransactionHistory(100)
@@ -137,86 +134,78 @@ class DBLoader(Process):
 
         self.set_name()
 
-    def log(self, msg, level='debug'):
-        getattr(logger, level)('{0}: {1}'.format(self.name, msg))
+    def log(self, msg, level="debug"):
+        getattr(logger, level)("{0}: {1}".format(self.name, msg))
 
     def set_name(self):
-        self.name = 'Ingestion Worker {0}'.format(os.getpid())
+        self.name = "Ingestion Worker {0}".format(os.getpid())
 
     def flush_insert(self):
-        q = Lightcurve.__table__.insert().values({
-            Lightcurve.tic_id: bindparam('tic_id'),
-            Lightcurve.aperture_id: bindparam('aperture_id'),
-            Lightcurve.lightcurve_type_id: bindparam('lightcurve_type_id'),
-            Lightcurve.cadences: bindparam('cadences'),
-            Lightcurve.bjd: bindparam('bjd'),
-            Lightcurve.values: bindparam('values'),
-            Lightcurve.errors: bindparam('errors'),
-            Lightcurve.x_centroids: bindparam('x_centroids'),
-            Lightcurve.y_centroids: bindparam('y_centroids'),
-            Lightcurve.quality_flags: bindparam('quality_flags')
-        })
+        q = Lightcurve.__table__.insert().values(
+            {
+                Lightcurve.tic_id: bindparam("tic_id"),
+                Lightcurve.aperture_id: bindparam("aperture_id"),
+                Lightcurve.lightcurve_type_id: bindparam("lightcurve_type_id"),
+                Lightcurve.cadences: bindparam("cadences"),
+                Lightcurve.bjd: bindparam("bjd"),
+                Lightcurve.values: bindparam("values"),
+                Lightcurve.errors: bindparam("errors"),
+                Lightcurve.x_centroids: bindparam("x_centroids"),
+                Lightcurve.y_centroids: bindparam("y_centroids"),
+                Lightcurve.quality_flags: bindparam("quality_flags"),
+            }
+        )
         t0 = datetime.utcnow()
-        self.db.session.execute(
-            q,
-            self.insert_buffer
-        )
+        self.db.session.execute(q, self.insert_buffer)
         t1 = datetime.utcnow()
-        self.insert_history.new_timing(
-            len(self.insert_buffer),
-            t0,
-            t1
-        )
+        self.insert_history.new_timing(len(self.insert_buffer), t0, t1)
         new_insert_buffer = self.insert_history.get_new_buf_size(
             len(self.insert_buffer)
         )
 
         self.log(
-            'inserted {0} rows. Setting new buffer from {1} to {2}'.format(
+            "inserted {0} rows. Setting new buffer from {1} to {2}".format(
                 len(self.insert_buffer),
                 self.cur_n_insert_rows,
-                new_insert_buffer
+                new_insert_buffer,
             ),
-            level='info'
+            level="info",
         )
 
         self.insert_buffer = []
         self.cur_n_insert_rows = new_insert_buffer
 
     def flush_update(self):
-        q = Lightcurve.__table__.update().\
-            where(Lightcurve.id == bindparam('_id')).\
-            values({
-                Lightcurve.cadences: bindparam('cadences'),
-                Lightcurve.bjd: bindparam('bjd'),
-                Lightcurve.values: bindparam('values'),
-                Lightcurve.errors: bindparam('errors'),
-                Lightcurve.x_centroids: bindparam('x_centroids'),
-                Lightcurve.y_centroids: bindparam('y_centroids'),
-                Lightcurve.quality_flags: bindparam('quality_flags')
-            })
+        q = (
+            Lightcurve.__table__.update()
+            .where(Lightcurve.id == bindparam("_id"))
+            .values(
+                {
+                    Lightcurve.cadences: bindparam("cadences"),
+                    Lightcurve.bjd: bindparam("bjd"),
+                    Lightcurve.values: bindparam("values"),
+                    Lightcurve.errors: bindparam("errors"),
+                    Lightcurve.x_centroids: bindparam("x_centroids"),
+                    Lightcurve.y_centroids: bindparam("y_centroids"),
+                    Lightcurve.quality_flags: bindparam("quality_flags"),
+                }
+            )
+        )
         t0 = datetime.utcnow()
-        self.db.session.execute(
-            q,
-            self.update_buffer
-        )
+        self.db.session.execute(q, self.update_buffer)
         t1 = datetime.utcnow()
-        self.update_history.new_timing(
-            len(self.update_buffer),
-            t0,
-            t1
-        )
+        self.update_history.new_timing(len(self.update_buffer), t0, t1)
         new_update_buffer = self.update_history.get_new_buf_size(
             len(self.update_buffer)
         )
 
         self.log(
-            'updated {0} rows. Setting new buffer from {1} to {2}'.format(
+            "updated {0} rows. Setting new buffer from {1} to {2}".format(
                 len(self.update_buffer),
                 self.cur_n_update_rows,
-                new_update_buffer
+                new_update_buffer,
             ),
-            level='info'
+            level="info",
         )
 
         self.update_buffer = []
@@ -225,8 +214,8 @@ class DBLoader(Process):
     def flush_observations(self):
         """Prevent duplication of observations and create upsert statement"""
         df = pd.DataFrame(self.observation_buffer)
-        df = df.set_index(['tic_id', 'orbit_id'])
-        df = df[~df.index.duplicated(keep='last')]
+        df = df.set_index(["tic_id", "orbit_id"])
+        df = df[~df.index.duplicated(keep="last")]
         df = df.reset_index()
 
         # Since it is likely other parallel ingestors will alter the same
@@ -234,13 +223,12 @@ class DBLoader(Process):
         while True:
             try:
                 self.db.session.execute(
-                    Observation.upsert_dicts(),
-                    df.to_dict('records')
+                    Observation.upsert_dicts(), df.to_dict("records")
                 )
                 self.observation_buffer = []
                 break
             except (DeadlockDetected, OperationalError):
-                self.log('retrying observation upsert')
+                self.log("retrying observation upsert")
                 self.db.rollback()
                 wait = random()
                 sleep(wait)
@@ -252,9 +240,7 @@ class DBLoader(Process):
         first_ingestion = True
         self.db.open()
         orbits = self.db.orbits.all()
-        orbit_id_map = {
-            o.orbit_number: o.id for o in orbits
-        }
+        orbit_id_map = {o.orbit_number: o.id for o in orbits}
         while True:
             # Pull from queue until timeout
             altered_db = False
@@ -263,26 +249,24 @@ class DBLoader(Process):
                     lightcurve_kw = self.queue.get(timeout=5)
                 else:
                     lightcurve_kw = self.queue.get(block=True)
-                observations = lightcurve_kw.pop('observations')
+                observations = lightcurve_kw.pop("observations")
                 for obs in observations:
-                    obs['orbit_id'] = orbit_id_map[int(obs['orbit'])]
-                    del obs['orbit']
+                    obs["orbit_id"] = orbit_id_map[int(obs["orbit"])]
+                    del obs["orbit"]
                 self.observation_buffer += observations
 
                 new_lightcurve = (
-                    '_id' not in lightcurve_kw or
-                    lightcurve_kw['_id'] is None or
-                    lightcurve_kw['_id'] < 0
+                    "_id" not in lightcurve_kw
+                    or lightcurve_kw["_id"] is None
+                    or lightcurve_kw["_id"] < 0
                 )
 
                 if not new_lightcurve:
                     self.update_buffer.append(lightcurve_kw)
                 else:
-                    lightcurve_kw['id'] = lightcurve_kw['_id']
-                    del lightcurve_kw['_id']
-                    self.insert_buffer.append(
-                        lightcurve_kw
-                    )
+                    lightcurve_kw["id"] = lightcurve_kw["_id"]
+                    del lightcurve_kw["_id"]
+                    self.insert_buffer.append(lightcurve_kw)
 
                 self.queue.task_done()
 
@@ -299,7 +283,7 @@ class DBLoader(Process):
                     self.flush_observations()
                     self.db.commit()
             except queue.Empty:
-                self.log('debug', 'timed out. Assuming no more data')
+                self.log("debug", "timed out. Assuming no more data")
                 break
 
         # Clean up any straggling data

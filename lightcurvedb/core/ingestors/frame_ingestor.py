@@ -8,21 +8,21 @@ class FrameIngestor(MultiIngestor):
     EmissionModel = Frame
 
     POC_fits_mapper = {
-        'TIME': 'gps_time',
-        'STARTTJD': 'start_tjd',
-        'MIDTJD': 'mid_tjd',
-        'ENDTJD': 'end_tjd',
-        'EXPTIME': 'exp_time',
-        'QUAL_BIT': 'quality_bit',
-        'CAM': 'camera',
-        'CADENCE': 'cadence',
+        "TIME": "gps_time",
+        "STARTTJD": "start_tjd",
+        "MIDTJD": "mid_tjd",
+        "ENDTJD": "end_tjd",
+        "EXPTIME": "exp_time",
+        "QUAL_BIT": "quality_bit",
+        "CAM": "camera",
+        "CADENCE": "cadence",
     }
 
     def parse(self, descriptor):
         frame_kwargs = {}
-        frame_kwargs['ccd'] = self.context.get('ccd', None)
-        frame_kwargs['cadence_type'] = self.context['cadence_type']
-        frame_kwargs['file_path'] = descriptor
+        frame_kwargs["ccd"] = self.context.get("ccd", None)
+        frame_kwargs["cadence_type"] = self.context["cadence_type"]
+        frame_kwargs["file_path"] = descriptor
 
         with fits.open(descriptor) as filein:
             header = filein[0].header

@@ -18,27 +18,27 @@ def _extr_fits_header(f):
 
 
 ORBIT_DTYPE = [
-    ('orbit_number', np.int32),
-    ('crm_n', np.int16),
-    ('right_ascension', np.float64),
-    ('declination', np.float64),
-    ('roll', np.float64),
-    ('quaternion_x', np.float64),
-    ('quaternion_y', np.float64),
-    ('quaternion_z', np.float64),
-    ('quaternion_q', np.float64)
+    ("orbit_number", np.int32),
+    ("crm_n", np.int16),
+    ("right_ascension", np.float64),
+    ("declination", np.float64),
+    ("roll", np.float64),
+    ("quaternion_x", np.float64),
+    ("quaternion_y", np.float64),
+    ("quaternion_z", np.float64),
+    ("quaternion_q", np.float64),
 ]
 
 
 class Orbit(QLPReference):
     """
-        Provides ORM implementation of an orbit completed by TESS
+    Provides ORM implementation of an orbit completed by TESS
     """
 
-    __tablename__ = 'orbits'
+    __tablename__ = "orbits"
 
     # Model Attributes
-    id = Column(Integer, Sequence('orbit_id_seq'), primary_key=True)
+    id = Column(Integer, Sequence("orbit_id_seq"), primary_key=True)
     orbit_number = Column(Integer, unique=True, nullable=False)
     sector = Column(Integer, nullable=False)
 
@@ -56,23 +56,23 @@ class Orbit(QLPReference):
     basename = Column(String(256), nullable=False)
 
     # Relationships
-    frames = relationship('Frame', back_populates='orbit')
-    observations = relationship('Observation', back_populates='orbit')
+    frames = relationship("Frame", back_populates="orbit")
+    observations = relationship("Observation", back_populates="orbit")
 
     # Click Parameters
     click_parameters = click.Choice(
-        ['orbit_number', 'sector', 'ra', 'dec', 'roll', 'basename'],
-        case_sensitive=False
+        ["orbit_number", "sector", "ra", "dec", "roll", "basename"],
+        case_sensitive=False,
     )
 
     def __repr__(self):
-        return 'Orbit-{0} Sector-{1} ({2:.3f}, {3:.3f}, {4:.3f}) {5}'.format(
+        return "Orbit-{0} Sector-{1} ({2:.3f}, {3:.3f}, {4:.3f}) {5}".format(
             self.orbit_number,
             self.sector,
             self.right_ascension,
             self.declination,
             self.roll,
-            self.basename
+            self.basename,
         )
 
     @classmethod
@@ -107,16 +107,16 @@ class Orbit(QLPReference):
 
         # Check that all headers are congruent for the orbit
         require_congruency_map = {
-            'ORBIT_ID': 'orbit_number',
-            'SC_RA': 'right_ascension',
-            'SC_DEC': 'declination',
-            'SC_ROLL': 'roll',
-            'SC_QUATX': 'quaternion_x',
-            'SC_QUATY': 'quaternion_y',
-            'SC_QUATZ': 'quaternion_z',
-            'SC_QUATQ': 'quaternion_q',
-            'CRM': 'crm',
-            'CRM_N': 'crm_n'
+            "ORBIT_ID": "orbit_number",
+            "SC_RA": "right_ascension",
+            "SC_DEC": "declination",
+            "SC_ROLL": "roll",
+            "SC_QUATX": "quaternion_x",
+            "SC_QUATY": "quaternion_y",
+            "SC_QUATZ": "quaternion_z",
+            "SC_QUATQ": "quaternion_q",
+            "CRM": "crm",
+            "CRM_N": "crm_n",
         }
 
         for column in require_congruency_map.keys():
@@ -126,18 +126,13 @@ class Orbit(QLPReference):
             )
 
         basename = re.search(
-            r'(?P<basename>tess[0-9]+)',
-            files[0]
-        ).groupdict()['basename']
+            r"(?P<basename>tess[0-9]+)", files[0]
+        ).groupdict()["basename"]
 
-        attrs = {
-            v: headers[0][k] for k, v in require_congruency_map.items()
-        }
-        attrs['basename'] = basename
+        attrs = {v: headers[0][k] for k, v in require_congruency_map.items()}
+        attrs["basename"] = basename
 
-        return cls(
-            **attrs
-        )
+        return cls(**attrs)
 
     @hybrid_property
     def max_cadence(self):
@@ -167,11 +162,11 @@ class Orbit(QLPReference):
 
     @max_cadence.expression
     def max_cadence(cls):
-        return func.max(Frame.cadence).label('max_cadence')
+        return func.max(Frame.cadence).label("max_cadence")
 
     @min_cadence.expression
     def min_cadence(cls):
-        return func.min(Frame.cadence).label('min_cadence')
+        return func.min(Frame.cadence).label("min_cadence")
 
     @ra.expression
     def ra(cls):
@@ -187,7 +182,7 @@ class Orbit(QLPReference):
         """
         return os.path.join(
             base_path,
-            'orbit-{0}'.format(self.orbit_number),
+            "orbit-{0}".format(self.orbit_number),
             *suffixes if suffixes else []
         )
 
@@ -198,11 +193,11 @@ class Orbit(QLPReference):
 
         return os.path.join(
             base_path,
-            'orbit-{0}'.format(self.orbit_number),
+            "orbit-{0}".format(self.orbit_number),
             *suffixes if suffixes else []
         )
 
-    def get_qlp_run_directory(self, base_path='/pdo/qlp-data'):
+    def get_qlp_run_directory(self, base_path="/pdo/qlp-data"):
         base_dir = self.get_qlp_directory(base_path)
-        run_dir = os.path.join(base_dir, 'ffi', 'run')
+        run_dir = os.path.join(base_dir, "ffi", "run")
         return run_dir

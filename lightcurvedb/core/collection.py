@@ -8,22 +8,21 @@ from collections import namedtuple
 
 
 RawLightpoint = namedtuple(
-    'RawLightpoint',
+    "RawLightpoint",
     [
-        'cadence',
-        'barycentric_julian_date',
-        'data',
-        'error',
-        'x_centroid',
-        'y_centroid',
-        'quality_flag'
-    ]
+        "cadence",
+        "barycentric_julian_date",
+        "data",
+        "error",
+        "x_centroid",
+        "y_centroid",
+        "quality_flag",
+    ],
 )
 
 
 class CadenceTracked(object):
-    """
-    """
+    """"""
 
     __emulates__ = list
 
@@ -82,12 +81,8 @@ class CadenceTracked(object):
             self._internal_data[value.cadence] = value
 
     def bulk_replace(
-            self,
-            values,
-            existing_adaptor,
-            new_adaptor,
-            initiator=None
-            ):
+        self, values, existing_adaptor, new_adaptor, initiator=None
+    ):
         """
         Bulk replaces the collection. For the database this means
         deleting all current related models and performing an insert.

@@ -7,13 +7,9 @@ class Plotter(object):
 
     def histogram_plot(self, columns, **plot_kwargs):
         for column in columns:
-            self.current_figure.hist(
-                column,
-                **plot_kwargs
-            )
+            self.current_figure.hist(column, **plot_kwargs)
 
 
 class ASCIIPlotable(object):
-
     def plot(self):
         pass

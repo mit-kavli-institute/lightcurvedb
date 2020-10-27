@@ -8,7 +8,6 @@ if sys.version_info.major < 3:
 
     @add_metaclass(ABCMeta)
     class Ingestor(object):
-
         def __init__(self, context_kwargs=None):
             self.context = context_kwargs if context_kwargs else {}
 
@@ -22,7 +21,7 @@ if sys.version_info.major < 3:
         def postingesthook(self):
             pass
 
-        def ingest(self, file, mode='rt'):
+        def ingest(self, file, mode="rt"):
             self.preingesthook()
             with open(file, mode) as file_in:
                 for parsed_info in self.parse(file_in):
@@ -32,6 +31,7 @@ if sys.version_info.major < 3:
         def translate(self, **emission_kwargs):
             instance = self.EmissionModel(**emission_kwargs)
             return instance
+
 
 else:
     from abc import abstractmethod, ABC
@@ -53,7 +53,7 @@ else:
         def postingesthook(self):
             pass
 
-        def ingest(self, file, mode='rt'):
+        def ingest(self, file, mode="rt"):
             self.preingesthook()
             with open(file, mode) as file_in:
                 for parsed_info in self.parse(file_in):
@@ -66,7 +66,7 @@ else:
 
 
 class MultiIngestor(Ingestor):
-    def ingest(self, files, mode='rt'):
+    def ingest(self, files, mode="rt"):
         self.preingesthook()
         for f in files:
             for parsed_info in self.parse(f):
@@ -75,7 +75,6 @@ class MultiIngestor(Ingestor):
 
 
 class PyObjIngestor(Ingestor):
-
     @abstractmethod
     def parse(self, obj):
         pass

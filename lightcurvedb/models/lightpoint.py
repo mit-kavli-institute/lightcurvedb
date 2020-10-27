@@ -1,45 +1,52 @@
-from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb.core.partitioning import (Partitionable,
-                                            emit_ranged_partition_ddl)
-from lightcurvedb.util.iter import keyword_zip
 import pandas as pd
-from sqlalchemy import (BigInteger, Column, ForeignKey, Index, Integer, Sequence, event, func)
+
+from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.core.partitioning import (
+    Partitionable,
+    emit_ranged_partition_ddl,
+)
+from lightcurvedb.util.iter import keyword_zip
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    event,
+    func,
+)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 
-
-LIGHTPOINT_PARTITION_RANGE = 10**6
+LIGHTPOINT_PARTITION_RANGE = 10 ** 6
 UPDATEABLE_PARAMS = [
-    'barycentric_julian_date',
-    'data',
-    'error',
-    'x_centroid',
-    'y_centroid',
-    'quality_flags'
+    "barycentric_julian_date",
+    "data",
+    "error",
+    "x_centroid",
+    "y_centroid",
+    "quality_flags",
 ]
 
 
-class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
+class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
     """
     This SQLAlchemy model is used to represent individual datapoints of
     a ``Lightcurve``.
     """
-    __tablename__ = 'lightpoints'
+
+    __tablename__ = "lightpoints"
     __abstract__ = False
 
     lightcurve_id = Column(
-        ForeignKey(
-            'lightcurves.id',
-            onupdate='CASCADE',
-            ondelete='CASCADE'
-        ),
+        ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,
         index=Index(
-            'ix_lightpoints_lightcurve_id',
-            'lightpoint_id',
-            postgresql_using='brin'
+            "ix_lightpoints_lightcurve_id",
+            "lightpoint_id",
+            postgresql_using="brin",
         ),
-        nullable=False
+        nullable=False,
     )
 
     cadence = Column(
@@ -47,44 +54,28 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
         nullable=False,
         primary_key=True,
         index=Index(
-            'lightpoints_cadence_idx',
-            'cadence',
-            postgresql_using='brin',
-            postgresql_concurrently=True
-        )
+            "lightpoints_cadence_idx",
+            "cadence",
+            postgresql_using="brin",
+            postgresql_concurrently=True,
+        ),
     )
 
-    barycentric_julian_date = Column(
-        DOUBLE_PRECISION,
-        nullable=False
-    )
+    barycentric_julian_date = Column(DOUBLE_PRECISION, nullable=False)
 
-    data = Column(
-        DOUBLE_PRECISION
-    )
+    data = Column(DOUBLE_PRECISION)
 
-    error = Column(
-        DOUBLE_PRECISION
-    )
+    error = Column(DOUBLE_PRECISION)
 
-    x_centroid = Column(
-        DOUBLE_PRECISION
-    )
+    x_centroid = Column(DOUBLE_PRECISION)
 
-    y_centroid = Column(
-        DOUBLE_PRECISION
-    )
+    y_centroid = Column(DOUBLE_PRECISION)
 
-    quality_flag = Column(
-        Integer,
-        nullable=False
-    )
+    quality_flag = Column(Integer, nullable=False)
 
     def __repr__(self):
-        return '<Lightpoint {0}-{1} {2}>'.format(
-            self.lightcurve_id,
-            self.cadence,
-            self.data
+        return "<Lightpoint {0}-{1} {2}>".format(
+            self.lightcurve_id, self.cadence, self.data
         )
 
     @hybrid_property
@@ -126,12 +117,7 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
     @classmethod
     def ordered_column(cls, column):
         col = getattr(cls, column)
-        return func.array_agg(
-            aggregate_order_by(
-                col,
-                cls.cadence.asc()
-            )
-        )
+        return func.array_agg(aggregate_order_by(col, cls.cadence.asc()))
 
     @classmethod
     def get_as_df(cls, lightcurve_ids, db):
@@ -157,30 +143,26 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
         """
         q = db.query(
             cls.lightcurve_id,
-            cls.cadence.label('cadences'),
-            cls.bjd.label('barycentric_julian_date'),
-            cls.data.label('values'),
-            cls.error.label('errors'),
-            cls.x.label('x_centroids'),
-            cls.y.label('y_centroids'),
-            cls.quality_flag.label('quality_flags')
+            cls.cadence.label("cadences"),
+            cls.bjd.label("barycentric_julian_date"),
+            cls.data.label("values"),
+            cls.error.label("errors"),
+            cls.x.label("x_centroids"),
+            cls.y.label("y_centroids"),
+            cls.quality_flag.label("quality_flags"),
         )
 
         if isinstance(lightcurve_ids, int):
             # Just compare against scalar
-            q = q.filter(
-                cls.lightcurve_id == lightcurve_ids
-            )
+            q = q.filter(cls.lightcurve_id == lightcurve_ids)
         else:
             # Assume iterable
-            q = q.filter(
-                cls.lightcurve_id.in_(lightcurve_ids)
-            )
+            q = q.filter(cls.lightcurve_id.in_(lightcurve_ids))
 
         return pd.read_sql(
             q.statement,
             db.session.bind,
-            index_col=['lightcurve_id', 'cadences']
+            index_col=["lightcurve_id", "cadences"],
         )
 
     # Conversion
@@ -194,7 +176,7 @@ class Lightpoint(QLPModel, Partitionable('range', 'lightcurve_id')):
             error=self.error,
             x_centroid=self.x,
             y_centroid=self.y,
-            quality_flag=self.quality_flag
+            quality_flag=self.quality_flag,
         )
 
     def update_with(self, data):
@@ -254,7 +236,7 @@ def lightpoints_from_kw(cadences, bjd, **other_data):
     """
     if not len(bjd) == len(cadences):
         raise ValueError(
-            'bjd length {0} does not match cadence length {1}'.format(
+            "bjd length {0} does not match cadence length {1}".format(
                 len(bjd), len(cadences)
             )
         )
@@ -262,25 +244,21 @@ def lightpoints_from_kw(cadences, bjd, **other_data):
     for col in data_keys:
         if not len(other_data[col]) == len(cadences):
             raise ValueError(
-                '{0} length {1} does not match cadence length {}'.format(
+                "{0} length {1} does not match cadence length {2}".format(
                     col, len(other_data[col]), len(cadences)
                 )
             )
     # Everything is aligned
     # iterate through columnwise
     for kw in keyword_zip(cadence=cadences, bjd=bjd, **other_data):
-        yield Lightpoint(
-            **kw
-        )
+        yield Lightpoint(**kw)
 
 
 # Setup initial lightpoint Partition
 event.listen(
     Lightpoint.__table__,
-    'after_create',
+    "after_create",
     emit_ranged_partition_ddl(
-        Lightpoint.__tablename__,
-        0,
-        LIGHTPOINT_PARTITION_RANGE
-    )
+        Lightpoint.__tablename__, 0, LIGHTPOINT_PARTITION_RANGE
+    ),
 )
