@@ -1,8 +1,10 @@
 from hypothesis import strategies as st, given, note, settings
+from hypothesis.extra.numpy import arrays
 from lightcurvedb.models import Lightcurve, Lightpoint
-from .factories import lightcurve, lightcurve_type, aperture
+from .factories import lightcurve, lightcurve_type, aperture, lightpoint
 from .constants import PSQL_INT_MAX
 from .fixtures import db_conn, clear_all
+from itertools import combinations
 import numpy as np
 
 
@@ -61,3 +63,84 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
         assert np.isnan(lc.bjd[0])
     else:
         assert lc.bjd[0] == lp.bjd
+
+
+@given(lightcurve(), st.data())
+def test_lightpoint_mass_assignment(lightcurve, data):
+    lightcurve.id = 1
+    lightpoints = data.draw(
+        st.lists(
+            lightpoint(id_=st.just(1)),
+            unique_by=lambda lp: lp.cadence
+        )
+    )
+
+    lightcurve.lightpoints = lightpoints
+    assert len(lightcurve) == len(lightpoints)
+
+
+@given(
+    lightcurve(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    ),
+    st.data()
+)
+def test_iterable_keying(lightcurve, lightpoints, data):
+    lightcurve.lightpoints = lightpoints
+    cadences = lightcurve.cadences
+
+    idx = data.draw(
+        st.lists(
+            st.sampled_from(cadences),
+            max_size=len(cadences)
+        )
+    )
+
+    sliced = lightcurve.lightpoints[idx]
+    assert len(sliced) <= len(idx)
+    for lp in sliced:
+        assert lp.cadence in idx
+
+
+@given(
+    lightcurve(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    ),
+    st.data()
+)
+def test_subslice_assignment(lightcurve, lightpoints, data):
+    lightcurve.lightpoints = lightpoints
+    cadences = lightcurve.cadences
+
+    idx = data.draw(
+        st.lists(
+            st.sampled_from(cadences),
+            max_size=len(cadences)
+        )
+    )
+
+    sliced = lightcurve.lightpoints[idx]
+
+    float_columns = {
+        'bjd': float,
+        'values': float,
+        'errors': float,
+        'x_centroids': float,
+        'y_centroids': float,
+        'quality_flags': int
+    }
+
+    for col, type_ in float_columns.items():
+        test = list(map(float, range(len(sliced))))
+        sliced[col] = test
+
+        for lp, val in zip(sliced, test):
+            note(lp)
+            note(val)
+            assert lp[col] == val

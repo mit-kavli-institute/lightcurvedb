@@ -238,17 +238,19 @@ def lightcurve_kwargs(draw, **overrides):
     return kwargs
 
 
-lightpoint = lambda: builds(
-    models.Lightpoint,
-    lightcurve_id=integers(min_value=1, max_value=99999),
-    cadence=integers(min_value=0, max_value=PSQL_INT_MAX),
-    bjd=floats(),
-    data=floats(),
-    error=floats(),
-    x=floats(),
-    y=floats(),
-    quality_flag=integers(min_value=0, max_value=PSQL_INT_MAX),
-)
+@define_strategy
+def lightpoint(id_=None):
+    return builds(
+        models.Lightpoint,
+        lightcurve_id=id_ if id_ else integers(min_value=1, max_value=99999),
+        cadence=integers(min_value=0, max_value=PSQL_INT_MAX),
+        bjd=floats(),
+        data=floats(),
+        error=floats(),
+        x=floats(),
+        y=floats(),
+        quality_flag=integers(min_value=0, max_value=PSQL_INT_MAX),
+    )
 
 
 @define_strategy
@@ -298,7 +300,7 @@ def lightcurve_list(
     lightcurve_types=None,
 ):
     """
-        Strategy for buildling lists of lightcurves.
+        Strategy for building lists of lightcurves.
         If passed apertures and/or lightcurve_types, examples will be drawn
         from the passed parameters. If set to None, the lightcurve_list will
         hold a common aperture/type.

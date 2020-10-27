@@ -28,6 +28,21 @@ UPDATEABLE_PARAMS = [
     "quality_flags",
 ]
 
+LIGHTPOINT_ALIASES = {
+    "cadences": "cadence",
+    "bjd": "barycentric_julian_date",
+    "values": "data",
+    "value": "data",
+    "mag": "data",
+    "flux": "data",
+    "errors": "error",
+    "flux_err": "error",
+    "mag_error": "error",
+    "x_centroids": "x_centroid",
+    "y_centroids": "y_centroid",
+    "quality_flags": "quality_flag"
+}
+
 
 class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
     """
@@ -77,6 +92,78 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
         return "<Lightpoint {0}-{1} {2}>".format(
             self.lightcurve_id, self.cadence, self.data
         )
+
+    def __getitem__(self, key):
+        """
+        Normalize ``key`` through ``LIGHTPOINT_ALIASES`` and
+        attempt to grab the relevant attribute.
+
+        Parameters
+        ----------
+        key: object
+            A keying object, usually a string, that was not found on the base
+            lightpoint model. Attempt to normalize any aliases and try again.
+        Returns
+        -------
+        object
+            The desired attribute of Lightpoint.
+        Raises
+        ------
+        KeyError:
+            If ``key`` is not found within the lightpoint.
+        """
+
+        aliased = LIGHTPOINT_ALIASES.get(key, key)
+        #if aliased == "cadence":
+        #    return self.cadence
+        #elif aliased == "barycentric_julian_date":
+        #    return self.barycentric_julian_date
+        #elif aliased == "data":
+        #    return self.data
+        #elif aliased == "error":
+        #    return self.error
+        #elif aliased == "x_centroid":
+        #    return self.x_centroid
+        #elif aliased == "y_centroid":
+        #    return self.y_centroid
+        #elif aliased == "quality_flag":
+        #    return self.quality_flag
+        try:
+            return getattr(self, aliased)
+        except AttributeError:
+            raise KeyError(
+                "key {0} aliased to {1} was not found on Lightpoint".format(
+                    key, aliased
+                )
+            )
+
+    def __setitem__(self, key, value):
+        """
+        Normalize ``key`` through ``LIGHTPOINT_ALIASES`` and
+        attempt to assign the relevant attribute.
+
+
+        Parameters
+        ----------
+        key: object
+            A keying object, usually a string, that was not found on the base
+            lightpoint model. Attempt to normalize any aliases and try again.
+
+        Raises
+        ------
+        KeyError:
+            If ``key`` is not found within the lightpoint.
+        """
+
+        aliased = LIGHTPOINT_ALIASES.get(key, key)
+        try:
+            setattr(self, aliased, value)
+        except AttributeError:
+            raise KeyError(
+                "key {0} aliased to {1} was not found on Lightpoint".format(
+                    key, aliased
+                )
+            )
 
     @hybrid_property
     def bjd(self):
