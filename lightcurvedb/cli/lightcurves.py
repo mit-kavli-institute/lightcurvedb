@@ -310,7 +310,7 @@ def partition_ingest(
     click.echo("Loading quality flags from cache...")
     quality_flags = cache.quality_flag_df
 
-    with ctx["dbconf"] as db:
+    with ctx.obj["dbconf"] as db:
         # Remove jobs already ingested
         click.echo("Connected to lightcurve database")
         click.echo("Determining existing observations...")
@@ -324,7 +324,7 @@ def partition_ingest(
             )
         )
         cache_df["already_ingested"] = cache_df.apply(
-            lambda row: (row["tic_id"], row["orbit_number"]) in existing_obs,
+            lambda row: (int(row.name), row["orbit_number"]) in existing_obs,
             axis=1,
         )
         click.echo("Removing ingestions that already exist...")
@@ -335,18 +335,6 @@ def partition_ingest(
 
         click.echo("Making lightcurve paramters -> id map")
         lc_id_q = db.lightcurve_id_map(resolve=False)
-        lc_id_q = lc_id_q.filter(
-            Lightcurve.tic_id.in_(
-                db.query(Observation.tic_id)
-                .join(Observation.orbit)
-                .filter(
-                    Orbit.orbit_number.in_(orbits),
-                    Observation.camera.in_(cameras),
-                    Observation.ccd.in_(ccds),
-                )
-                .subquery()
-            )
-        )
 
         id_map = {
             (tic_id, ap, lct): id_
@@ -357,9 +345,9 @@ def partition_ingest(
         # Pre-assign ids, and group by destination partition
         new_lc_params = []
         jobs = []
-        id_seq = Sequence("lightcurve_id_seq")
+        id_seq = Sequence("lightcurves_id_seq")
 
-        for tic_id, *_ in new_obs.to_records():
+        for tic_id in set(new_obs.index):
             for type_, aperture in product(types, apertures):
                 key = (tic_id, aperture, type_)
                 try:
