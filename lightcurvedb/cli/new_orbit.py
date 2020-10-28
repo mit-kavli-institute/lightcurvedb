@@ -3,7 +3,7 @@ import os
 import re
 import sys
 from functools import partial
-from lightcurvedb.models import FrameType, Frame, Orbit
+from lightcurvedb.models import FrameType, Frame, Orbit, CameraQuaternion
 from multiprocessing import Pool
 from .base import lcdbcli
 
@@ -22,6 +22,7 @@ else:
 
 
 FITS_CHECK = re.compile(r"tess\d+-\d+-[1-4]-crm-ffi\.fits$")
+QUAT_CHECK = re.compile(r"cam(?P<camera>[1-4])_quat.txt$")
 
 
 TYPE_MAP = {
@@ -36,10 +37,67 @@ CAM_EXTR = re.compile(r"cam(?P<camera>[1-4])")
 CCD_EXTR = re.compile(r"ccd(?P<ccd>[1-4])")
 
 
+def ingest_hk(ctx, session, path):
+    files = filter(lambda path: QUAT_CHECK.search(path), os.listdir(path))
+    expected_cameras = {1, 2, 3, 4}
+    skipped = 0
+    existing_quaternions = {
+        (date, camera): id_
+        for id_, date, camera in session.query(
+            CameraQuaternion.id, CameraQuaternion.date, CameraQuaternion.camera
+        )
+    }
+    quaternions = []
+
+    for hk in files:
+        camera = int(QUAT_CHECK.search(path).groupdict()["camera"])
+        if camera in expected_cameras:
+            expected_cameras.remove(camera)
+
+        for line in open(hk, "rt").readlines():
+            row = line.strip().split()
+            gps_time = float(row[0])
+            q1 = float(row[1])
+            q2 = float(row[2])
+            q3 = float(row[3])
+            q4 = float(row[4])
+            camera_quat = CameraQuaternion(
+                gps_time=gps_time,
+                camera=camera,
+                q0=q1,
+                q1=q2,
+                q2=q3,
+                q3=q4,
+            )
+            date = camera_quat.date
+
+            if (date, camera) in existing_quaternions:
+                skipped += 1
+                continue
+
+            quaternions.append(camera_quat)
+    click.echo(
+        "Skipping {0} quaternion rows as they appear to "
+        "already exist".format(
+            click.style(str(skipped), bold=True, fg="yellow")
+        )
+    )
+    if len(expected_cameras) > 0:
+        click.echo(
+            "Path {0} seems to not define cameras: {1}.".format(
+                click.style(path, bold=True),
+                click.style(
+                    ", ".join(map(str, sorted(expected_cameras))),
+                    bold=True,
+                    fg="red",
+                ),
+            )
+        )
+    return quaternions
+
+
 def ingest_directory(ctx, session, path, cadence_type):
     orbit_context = ORBIT_EXTR.search(path)
-
-    files = []
 
     parent_dir = get_parent_dir(path)
     mapped = TYPE_MAP[parent_dir]
@@ -139,13 +197,30 @@ def ingest_directory(ctx, session, path, cadence_type):
 @click.argument("ingest_directories", nargs=-1)
 @click.option("--new-orbit/--no-new-orbit", default=False)
 @click.option("--cadence-type", default=30, type=int)
-def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type):
+@click.option("--ffi-subdir", type=str, default="ffi_fits")
+@click.option("--quaternion-subdir", type=str, default="hk")
+def ingest_frames(
+    ctx,
+    ingest_directories,
+    new_orbit,
+    cadence_type,
+    ffi_subdir,
+    quaternion_subdir,
+):
     with ctx.obj["dbconf"] as db:
         added_frames = []
+        added_quaternions = []
         for directory in ingest_directories:
-            frames = ingest_directory(ctx, db, directory, cadence_type)
+            ffi_path = os.path.join(directory, ffi_subdir)
+            hk_path = os.path.join(directory, quaternion_subdir)
+
+            frames = ingest_directory(ctx, db, ffi_path, cadence_type)
+            quaternions = ingest_hk(ctx, db, hk_path)
+
             db.session.add_all(frames)
+            db.session.add_all(quaternions)
             added_frames += frames
+            added_quaternions += quaternions
 
         if ctx.obj["dryrun"]:
             db.session.rollback()
@@ -158,11 +233,27 @@ def ingest_frames(ctx, ingest_directories, new_orbit, cadence_type):
                     bold=True,
                 )
             )
+            click.echo(
+                click.style(
+                    "Dryrun! Rolling back {0} quaternions!".format(
+                        len(quaternions)
+                    ),
+                    fg="yellow",
+                    bold=True,
+                )
+            )
         else:
             db.session.commit()
             click.echo(
                 click.style(
                     "Committed {0} frames!".format(len(added_frames)),
+                    fg="green",
+                    bold=True,
+                )
+            )
+            click.echo(
+                click.style(
+                    "Committed {0} quaternions!".format(len(quaternions)),
                     fg="green",
                     bold=True,
                 )

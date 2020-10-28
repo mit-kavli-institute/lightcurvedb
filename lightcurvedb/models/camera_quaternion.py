@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer
+from sqlalchemy import Column, DateTime, Integer, UniqueConstraint
 from sqlalchemy.ext.hybrid import hybrid_property
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
@@ -35,6 +35,9 @@ class CameraQuaternion(QLPReference):
     _x = high_precision_column(name="x", nullable=False)
     _y = high_precision_column(name="y", nullable=False)
     _z = high_precision_column(name="z", nullable=False)
+
+    # Define logical constraints
+    __table_args__ = (UniqueConstraint("camera", "date"),)
 
     def __init__(self, *args, **kwargs):
         py_quat_params = {
