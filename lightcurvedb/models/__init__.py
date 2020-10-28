@@ -12,6 +12,7 @@ from .metrics import QLPProcess, QLPAlteration
 __all__ = [
     "Aperture",
     "BestApertureMap",
+    "CameraQuaternion",
     "FrameType",
     "Frame",
     "Orbit",

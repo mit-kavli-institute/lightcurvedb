@@ -1,5 +1,6 @@
 from hypothesis import strategies as st, given, note, assume
 from lightcurvedb.models import CameraQuaternion
+from lightcurvedb.util.decorators import suppress_warnings
 from itertools import combinations
 from datetime import datetime
 from .factories import quaternion
@@ -29,11 +30,13 @@ def test_full_quaternion(q):
     assert camera_quat is not None
 
 
-@given(st.floats(min_value=GPS_EPOCH, allow_nan=False, allow_infinity=False))
+@given(st.floats(min_value=0.0, max_value=GPS_EPOCH, allow_nan=False, allow_infinity=False))
 def test_gps_time_assignment(gps_time):
     camera_quat = CameraQuaternion(gps_time=gps_time)
     assert camera_quat.date is not None
 
+
+@suppress_warnings
 @given(st.datetimes(max_value=datetime.now()))
 def test_datetime_assignment(date):
     camera_quat = CameraQuaternion(date=date)
@@ -41,6 +44,7 @@ def test_datetime_assignment(date):
     assert camera_quat.gps_time is not None
 
 
+@suppress_warnings
 @given(st.datetimes(max_value=datetime.now()))
 def test_datetime_equivalency(date):
     camera_quat = CameraQuaternion(date=date)

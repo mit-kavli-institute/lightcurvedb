@@ -8,9 +8,18 @@ from datetime import datetime
 
 
 PYQUAT_KEYWORDS = {
-    "q0", "q1", "q2", "q3",
-    "w", "x", "y", "z",
-    "a", "b", "c", "d"
+    "q0",
+    "q1",
+    "q2",
+    "q3",
+    "w",
+    "x",
+    "y",
+    "z",
+    "a",
+    "b",
+    "c",
+    "d",
 }
 
 
@@ -27,23 +36,20 @@ class CameraQuaternion(QLPReference):
     _y = high_precision_column(name="y", nullable=False)
     _z = high_precision_column(name="z", nullable=False)
 
-
     def __init__(self, *args, **kwargs):
         py_quat_params = {
             k: v for k, v in kwargs.items() if k in PYQUAT_KEYWORDS
         }
-        self.quaternion = Quaternion(
-            **py_quat_params
-        )
+        self.quaternion = Quaternion(**py_quat_params)
         self._w = self.quaternion.w
         self._x = self.quaternion.x
         self._y = self.quaternion.y
         self._z = self.quaternion.z
-        if 'date' in kwargs:
-            self.date = kwargs['date']
-        elif 'gps_time' in kwargs:
-            self.gps_time = kwargs['gps_time']
-        self.camera = kwargs.get('camera', None)
+        if "date" in kwargs:
+            self.date = kwargs["date"]
+        elif "gps_time" in kwargs:
+            self.gps_time = kwargs["gps_time"]
+        self.camera = kwargs.get("camera", None)
 
     # Getters
     # Standard w, x, y, x
@@ -82,10 +88,7 @@ class CameraQuaternion(QLPReference):
 
     @hybrid_property
     def gps_time(self):
-        return Time(
-            Time(self.date, scale='utc'),
-            format='gps'
-        )
+        return Time(Time(self.date, scale="utc"), format="gps")
 
     @gps_time.setter
     def gps_time(self, value):
@@ -100,16 +103,16 @@ class CameraQuaternion(QLPReference):
             then the value is assumed to be in GPS time.
         """
 
-        if isinstance(value, datetime):
+        if isinstance(value, (datetime, Time)):
             # UTC time
-            time_in = Time(value, scale='utc')
+            time_in = Time(value, scale="utc")
         elif isinstance(value, (int, float)):
-            time_in = Time(value, format='gps')
+            time_in = Time(value, format="gps")
         else:
             raise ValueError(
-                "unable to interpret {0} as astropy.Time".format(
-                    value
+                "unable to interpret {0}({1}) as astropy.Time".format(
+                    value, type(value)
                 )
             )
 
-        self.date = Time(time_in, scale='utc').datetime
+        self.date = Time(time_in, scale="utc").datetime
