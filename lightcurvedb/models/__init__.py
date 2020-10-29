@@ -5,12 +5,14 @@ from .lightcurve import Lightcurve, LightcurveType
 from .lightpoint import Lightpoint
 from .observations import Observation
 from .spacecraft import SpacecraftEphemris
+from .bls import BLS
 from .metrics import QLPProcess, QLPAlteration
 
 
 __all__ = [
     "Aperture",
     "BestApertureMap",
+    "BLS",
     "FrameType",
     "Frame",
     "Orbit",

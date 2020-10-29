@@ -332,3 +332,35 @@ def lightcurve_list(
             max_size=max_size,
         )
     )
+
+
+@define_strategy
+def bls(make_lc=True):
+    if make_lc:
+        lc = lightcurve()
+    else:
+        lc = none()
+    return builds(
+        models.BLS(
+            lightcurve=lc,
+            astronet_score=floats(),
+            astronet_version=text(max_size=256),
+            runtime_parameters=just({}),
+            period=floats(),
+            transit_duration=floats(),
+            planet_radius=floats(),
+            planet_radius_error=floats(),
+            points_pre_transit=integers(),
+            points_in_transit=integers(),
+            points_post_transit=integers(),
+            transits=integers(),
+            transit_shape=floats(),
+            duration_rel_period=floats(),
+            rednoise=floats(),
+            whitenoise=floats(),
+            signal_to_noise=floats(),
+            sde=floats(),
+            sr=floats(),
+            period_inv_transit=floats()
+        )
+    )
