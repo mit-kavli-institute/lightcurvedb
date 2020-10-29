@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from itertools import combinations
 
 import numpy as np
@@ -18,21 +19,21 @@ GPS_EPOCH = (datetime.now() - datetime(1980, 1, 6)).total_seconds()
 @given(quaternion(missing=False))
 def test_full_quaternion(q):
     assume(sum(q) <= 1.0)
-    q0, q1, q2, q3 = q
+    q1, q2, q3, q4 = q
 
     camera_quat = CameraQuaternion(
-        q0=q0,
         q1=q1,
         q2=q2,
-        q3=q3
+        q3=q3,
+        q4=q4
     )
     assert camera_quat is not None
 
     camera_quat = CameraQuaternion(
-        w=q0,
-        x=q1,
-        y=q2,
-        z=q3
+        w=q1,
+        x=q2,
+        y=q3,
+        z=q4
     )
     assert camera_quat is not None
 
@@ -70,13 +71,13 @@ def test_datetime_equivalency(date):
     )
 )
 def test_psql_gps(db_conn, q, camera, date):
-    q0, q1, q2, q3 = q
+    q1, q2, q3, q4 = q
 
     camera_quat = CameraQuaternion(
-        q0=q0,
         q1=q1,
         q2=q2,
         q3=q3,
+        q4=q4,
         camera=camera,
         date=date
     )

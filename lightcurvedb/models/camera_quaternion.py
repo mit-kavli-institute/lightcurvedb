@@ -18,10 +18,10 @@ from sqlalchemy import (
 from sqlalchemy.ext.hybrid import hybrid_property
 
 PYQUAT_KEYWORDS = {
-    "q0",
     "q1",
     "q2",
     "q3",
+    "q4",
     "w",
     "x",
     "y",
