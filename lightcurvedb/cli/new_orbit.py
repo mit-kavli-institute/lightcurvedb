@@ -2,8 +2,9 @@ import click
 import os
 import re
 from functools import partial
-from lightcurvedb.models import FrameType, Frame, Orbit
+from lightcurvedb.models import FrameType, Orbit
 from lightcurvedb.util.contexts import get_parent_dir
+from lightcurvedb.core.ingestors.frame_ingestor import from_fits
 from multiprocessing import Pool
 from .base import lcdbcli
 
@@ -105,8 +106,8 @@ def ingest_directory(ctx, session, path, cadence_type):
         if not ctx.obj["dryrun"]:
             session.commit()
 
-    func = partial(Frame.from_fits, cadence_type=cadence_type)
-    
+    func = partial(from_fits, cadence_type=cadence_type)
+
     p = Pool()
     click.echo("Generating frames")
     frames = p.map(func, accepted)

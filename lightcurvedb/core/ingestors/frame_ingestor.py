@@ -1,4 +1,5 @@
 from astropy.io import fits
+import os
 from .base import MultiIngestor
 from lightcurvedb.models.frame import Frame
 
@@ -31,3 +32,50 @@ class FrameIngestor(MultiIngestor):
                 frame_kwargs[mapped_key] = header[key]
 
         yield frame_kwargs
+
+
+def from_fits(path, cadence_type=30, frame_type=None, orbit=None):
+    """
+    Generates a Frame instance from a FITS file.
+    Parameters
+    ----------
+    path : str or pathlike
+        The path to the FITS file.
+    cadence_type : int, optional
+        The cadence type of the FITS file.
+    frame_type : FrameType, optional
+        The FrameType relation for this Frame instance, by default this
+        is not set (None).
+    orbit : Orbit
+        The orbit this Frame was observed in. By default this is not set
+        (None).
+
+    Returns
+    -------
+    Frame
+        The constructed frame.
+    """
+    abspath = os.path.abspath(path)
+    header = fits.open(abspath)[0].header
+
+    try:
+        return Frame(
+            cadence_type=cadence_type,
+            camera=header.get("CAM", header.get("CAMNUM", None)),
+            ccd=header.get("CCD", header.get("CCDNUM", None)),
+            cadence=header["CADENCE"],
+            gps_time=header["TIME"],
+            start_tjd=header["STARTTJD"],
+            mid_tjd=header["MIDTJD"],
+            end_tjd=header["ENDTJD"],
+            exp_time=header["EXPTIME"],
+            quality_bit=header["QUAL_BIT"],
+            file_path=abspath,
+            frame_type=frame_type,
+            orbit=orbit,
+        )
+    except KeyError as e:
+        print(e)
+        print("==={0} HEADER===".format(abspath))
+        print(repr(header))
+        raise
