@@ -12,3 +12,5 @@ QLP_ORBITS = QLP_PATH
 POC_PATH = os.path.join(DEFAULT_ROOT, "poc-data")
 POC_ORBITS = os.path.join(POC_PATH, "orbits")
 CACHE_DIR = os.path.join(DEFAULT_SCRATCH, "lcdb_ingestion")
+
+QLP_SECTORS = os.path.join(QLP_PATH, "sectors-{sector}")

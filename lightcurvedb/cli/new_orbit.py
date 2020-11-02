@@ -1,25 +1,13 @@
 import click
 import os
 import re
-import sys
 from functools import partial
 from lightcurvedb.models import FrameType, Frame, Orbit, CameraQuaternion
 from lightcurvedb.models.camera_quaternion import get_utc_time
+from lightcurvedb.models import FrameType, Frame, Orbit
+from lightcurvedb.util.contexts import get_parent_dir
 from multiprocessing import Pool
 from .base import lcdbcli
-
-
-if sys.version_info[0] >= 3:
-    from pathlib import Path
-
-    def get_parent_dir(path):
-        return Path(path).parts[-1]
-
-
-else:
-
-    def get_parent_dir(path):
-        return os.path.basename(os.path.abspath(os.path.join(path, os.pardir)))
 
 
 FITS_CHECK = re.compile(r"tess\d+-\d+-[1-4]-crm-ffi\.fits$")
