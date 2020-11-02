@@ -106,12 +106,13 @@ def ingest_directory(ctx, session, path, cadence_type):
             session.commit()
 
     func = partial(Frame.from_fits, cadence_type=cadence_type)
-    with Pool() as p:
-        click.echo("Generating frames")
-        frames = p.map(func, accepted)
-        for frame in frames:
-            frame.orbit = orbit
-            frame.frame_type = frame_type
+    
+    p = Pool()
+    click.echo("Generating frames")
+    frames = p.map(func, accepted)
+    for frame in frames:
+        frame.orbit = orbit
+        frame.frame_type = frame_type
 
     click.echo(
         "Generated {0} frames from {1} files".format(
