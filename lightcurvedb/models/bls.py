@@ -25,6 +25,7 @@ class BLS(QLPDataProduct):
 
     # Begin Astrophysical parameters
     period = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
+    transit_depth = Column(DOUBLE_PRECISION, nullable=False)
     transit_duration = Column(DOUBLE_PRECISION, nullable=False)  # Days
     planet_radius = Column(DOUBLE_PRECISION, nullable=False)  # Earth Radii
     planet_radius_error = Column(DOUBLE_PRECISION, nullable=False)  # Earth Radii

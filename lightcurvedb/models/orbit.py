@@ -9,7 +9,7 @@ import click
 import os
 from astropy.io import fits
 from multiprocessing import Pool
-from lightcurvedb.core.constants import QLP_ORBITS, POC_ORBITS
+from lightcurvedb.core.constants import QLP_ORBITS, POC_ORBITS, QLP_SECTORS
 from lightcurvedb.models.frame import Frame
 
 
@@ -185,6 +185,10 @@ class Orbit(QLPReference):
             "orbit-{0}".format(self.orbit_number),
             *suffixes if suffixes else []
         )
+
+    def get_sector_directory(self, *suffixes, base_path=QLP_SECTORS):
+        base_sector_dir = base_path.format(sector=self.sector)
+        return os.path.join(base_sector_dir, *suffixes)
 
     def get_poc_directory(self, base_path=POC_ORBITS, suffixes=None):
         """
