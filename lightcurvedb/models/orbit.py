@@ -186,8 +186,8 @@ class Orbit(QLPReference):
             *suffixes if suffixes else []
         )
 
-    def get_sector_directory(self, *suffixes, base_path=QLP_SECTORS):
-        base_sector_dir = base_path.format(sector=self.sector)
+    def get_sector_directory(self, *suffixes):
+        base_sector_dir = QLP_SECTORS.format(sector=self.sector)
         return os.path.join(base_sector_dir, *suffixes)
 
     def get_poc_directory(self, base_path=POC_ORBITS, suffixes=None):

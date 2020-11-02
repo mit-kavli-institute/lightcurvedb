@@ -202,9 +202,10 @@ class Lightcurve(QLPDataProduct):
         "Lightpoint", backref="lightcurve", collection_class=CadenceTracked
     )
     aperture = relationship("Aperture", back_populates="lightcurves")
-    bls_results = relationship("BLS", back_populates="lightcurve", order_by="BLS.created_on")
+    bls_results = relationship(
+        "BLS", back_populates="lightcurve", order_by="BLS.created_on"
+    )
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
-    bls_results = relationship("BLS", back_populates="lightcurve", order_by="BLS.created_on")
 
     def __len__(self):
         """

@@ -1,35 +1,46 @@
-from sqlalchemy import Column, BigInteger, Integer, Float, String, ForeignKey
-from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.dialects.postgresql import JSONB, DOUBLE_PRECISION
-from sqlalchemy.schema import Index
-from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPDataProduct
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
+from sqlalchemy.schema import Index
 
 
 class BLS(QLPDataProduct):
 
     __tablename__ = "bls"
 
-    id = Column(
-        BigInteger,
-        primary_key=True
-    )
+    id = Column(BigInteger, primary_key=True)
     lightcurve_id = Column(
-        ForeignKey(
-            "lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"
-        ),
-        index=True
+        ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
+        index=True,
     )
     astronet_score = Column(Float, nullable=True, index=True)
     astronet_version = Column(String(256), nullable=True)
-    runtime_parameters = Column(JSONB, nullable=False)
+    runtime_parameters = Column(
+        JSONB,
+        nullable=False,
+        index=Index(name="runtime_parameters_gin", postgresql_using="gin"),
+    )
 
     # Begin Astrophysical parameters
     period = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
     transit_depth = Column(DOUBLE_PRECISION, nullable=False)
     transit_duration = Column(DOUBLE_PRECISION, nullable=False)  # Days
-    planet_radius = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Earth Radii
-    planet_radius_error = Column(DOUBLE_PRECISION, nullable=False)  # Earth Radii
+    planet_radius = Column(
+        DOUBLE_PRECISION, nullable=False, index=True
+    )  # Earth Radii
+    planet_radius_error = Column(
+        DOUBLE_PRECISION, nullable=False
+    )  # Earth Radii
 
     # Begin BLS info
     points_pre_transit = Column(Integer, nullable=False)
@@ -37,6 +48,7 @@ class BLS(QLPDataProduct):
     points_post_transit = Column(Integer, nullable=False)
     transits = Column(Integer, nullable=False, index=True)
     transit_shape = Column(DOUBLE_PRECISION, nullable=False)
+    transit_center = Column(DOUBLE_PRECISION, nullable=False)
     duration_rel_period = Column(DOUBLE_PRECISION, nullable=False)
     rednoise = Column(DOUBLE_PRECISION, nullable=False)
     whitenoise = Column(DOUBLE_PRECISION, nullable=False)
@@ -47,10 +59,7 @@ class BLS(QLPDataProduct):
     period_inv_transit = Column(DOUBLE_PRECISION, nullable=False)
 
     # Begin relationship logic
-    lightcurve = relationship(
-        "Lightcurve",
-        back_populates="bls_results"
-    )
+    lightcurve = relationship("Lightcurve", back_populates="bls_results")
 
     @hybrid_property
     def qingress(self):
@@ -58,7 +67,7 @@ class BLS(QLPDataProduct):
 
     @qingress.expression
     def qingress(cls):
-        return cls.transit_shape.label('qingress')
+        return cls.transit_shape.label("qingress")
 
     @hybrid_property
     def qtran(self):
@@ -66,23 +75,23 @@ class BLS(QLPDataProduct):
 
     @qtran.expression
     def qtran(cls):
-        return cls.duration_rel_period.label('qtran')
+        return cls.duration_rel_period.label("qtran")
 
     @hybrid_property
     def snr(self):
-        return self.signal_to_noise.label('snr')
+        return self.signal_to_noise
 
     @snr.expression
     def snr(cls):
-        return cls.signal_to_noise
+        return cls.signal_to_noise.label("snr")
 
     @hybrid_property
     def spnr(self):
-        return self.signal_to_pinknoise.label('spnr')
+        return self.signal_to_pinknoise
 
     @spnr.expression
     def spnr(cls):
-        return cls.signal_to_pinknoise
+        return cls.signal_to_pinknoise.label("spnr")
 
     @hybrid_property
     def tc(self):
@@ -90,4 +99,14 @@ class BLS(QLPDataProduct):
 
     @tc.expression
     def tc(cls):
-        return cls.transit_center.label('tc')
+        return cls.transit_center.label("tc")
+
+    @hybrid_property
+    def is_legacy(self):
+        return self.runtime_parameters.get("legacy", False)
+
+    @is_legacy.expression
+    def is_legacy(cls):
+        return (
+            cls.runtime_parameters["legacy"].cast(Boolean).label("is_legacy")
+        )
