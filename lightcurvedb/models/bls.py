@@ -1,6 +1,7 @@
 from sqlalchemy import Column, BigInteger, Integer, Float, String, ForeignKey
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import JSONB, DOUBLE_PRECISION
+from sqlalchemy.schema import Index
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPDataProduct
 
@@ -27,7 +28,7 @@ class BLS(QLPDataProduct):
     period = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
     transit_depth = Column(DOUBLE_PRECISION, nullable=False)
     transit_duration = Column(DOUBLE_PRECISION, nullable=False)  # Days
-    planet_radius = Column(DOUBLE_PRECISION, nullable=False)  # Earth Radii
+    planet_radius = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Earth Radii
     planet_radius_error = Column(DOUBLE_PRECISION, nullable=False)  # Earth Radii
 
     # Begin BLS info
@@ -39,7 +40,7 @@ class BLS(QLPDataProduct):
     duration_rel_period = Column(DOUBLE_PRECISION, nullable=False)
     rednoise = Column(DOUBLE_PRECISION, nullable=False)
     whitenoise = Column(DOUBLE_PRECISION, nullable=False)
-    signal_to_noise = Column(DOUBLE_PRECISION, nullable=False)
+    signal_to_noise = Column(DOUBLE_PRECISION, nullable=False, index=True)
     signal_to_pinknoise = Column(DOUBLE_PRECISION, nullable=False)
     sde = Column(DOUBLE_PRECISION, nullable=False)
     sr = Column(DOUBLE_PRECISION, nullable=False)
@@ -57,7 +58,7 @@ class BLS(QLPDataProduct):
 
     @qingress.expression
     def qingress(cls):
-        return cls.transit_shape
+        return cls.transit_shape.label('qingress')
 
     @hybrid_property
     def qtran(self):
@@ -65,11 +66,11 @@ class BLS(QLPDataProduct):
 
     @qtran.expression
     def qtran(cls):
-        return cls.duration_rel_period
+        return cls.duration_rel_period.label('qtran')
 
     @hybrid_property
     def snr(self):
-        return self.signal_to_noise
+        return self.signal_to_noise.label('snr')
 
     @snr.expression
     def snr(cls):
@@ -77,7 +78,7 @@ class BLS(QLPDataProduct):
 
     @hybrid_property
     def spnr(self):
-        return self.signal_to_pinknoise
+        return self.signal_to_pinknoise.label('spnr')
 
     @spnr.expression
     def spnr(cls):
@@ -89,4 +90,4 @@ class BLS(QLPDataProduct):
 
     @tc.expression
     def tc(cls):
-        return cls.transit_center
+        return cls.transit_center.label('tc')
