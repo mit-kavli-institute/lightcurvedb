@@ -1,4 +1,5 @@
 import re
+import os
 
 
 CONTEXTS = []
@@ -28,3 +29,15 @@ def extract_pdo_path_context(path):
 REGISTER(r"orbit-(?P<orbit_number>[0-9]+)")
 REGISTER(r"cam(?P<camera>[1-4])")
 REGISTER(r"ccd(?P<ccd>[1-4])")
+
+
+try:
+    from pathlib import Path
+
+    def get_parent_dir(path):
+        return Path(path).parts[-1]
+
+except ImportError:
+
+    def get_parent_dir(path):
+        return os.path.basename(os.path.dirname(path))
