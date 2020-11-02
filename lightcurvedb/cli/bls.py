@@ -85,6 +85,13 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
             for camera, ccd in product(cameras, ccds):
 
                 # Load BLS parameters (assuming no change to config)
+                parser = ConfigParser()
+                config.read(
+                    orbit.get_sector_directory(
+                        "ffi", "run",
+                        "example-lc-pdo{0}.cfg".format(camera)
+                    )
+                )
 
                 bls_dir = orbit.get_sector_directory(
                     "ffi",

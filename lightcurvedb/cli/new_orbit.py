@@ -13,10 +13,7 @@ if sys.version_info[0] >= 3:
 
     def get_parent_dir(path):
         return Path(path).parts[-1]
-
-
 else:
-
     def get_parent_dir(path):
         return os.path.basename(os.path.abspath(os.path.join(path, os.pardir)))
 
