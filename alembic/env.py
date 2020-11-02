@@ -17,7 +17,7 @@ fileConfig(config.config_file_name)
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from lightcurvedb import QLPModel
+from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models as m
 target_metadata = QLPModel.metadata
 
