@@ -18,7 +18,7 @@ current_branch=$(git branch | sed -n '/\* /s///p')
 lightcurvedb_path="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"  # Will fail on symlinked directories!
 script_path="${lightcurvedb_path}/install.sh"
 echo "Installing lightcurvedb: ${current_branch} via pdodev using pip${PIP_VERSION}"
-ssh -t pdodev PATH=${PATH} PYTHONPATH=${PYTHONPATH} << EOF
+ssh pdodev PATH=${PATH} PYTHONPATH=${PYTHONPATH} /bin/bash << EOF
     . /etc/bashrc
     . /sw/bin/setup-pdo.sh
     export LD_LIBRARY_PATH=/sw/openssl-versions/openssl-1.1.1d/lib:/sw/python-versions/python-3.7.5/lib/:$LD_LIBRARY_PATH
