@@ -1,4 +1,4 @@
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 
 from lightcurvedb.core.engines import __DEFAULT_PATH__, __SESSION_FACTORY__
 from lightcurvedb.core.connection import DB, db_from_config
