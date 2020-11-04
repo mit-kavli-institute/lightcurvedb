@@ -903,6 +903,7 @@ class DB(object):
             .group_by(models.Lightpoint.lightcurve_id)
         )
 
+
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
     """
     Create a DB instance from a configuration file.

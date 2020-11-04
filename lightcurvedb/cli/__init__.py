@@ -13,8 +13,9 @@ from .partitioning import partitioning
 
 __all__ = [
     "lcdbcli",
-    "aperture",
-    "create_lightcurvetype",
+    "add_aperture",
+    "add_lightcurvetype",
+    "bls",
     "ingest_frames",
     "orbit",
     "ingest_h5",

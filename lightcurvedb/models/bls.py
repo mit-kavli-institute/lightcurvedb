@@ -8,7 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    UniqueConstraint
+    UniqueConstraint,
 )
 from click import Choice
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, insert
@@ -65,9 +65,7 @@ class BLS(QLPDataProduct):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "lightcurve_id",
-            "created_on",
-            name="unique_bls_runtime"
+            "lightcurve_id", "created_on", name="unique_bls_runtime"
         ),
     )
 
@@ -77,12 +75,26 @@ class BLS(QLPDataProduct):
     # Click queryable parameters
     click_parameters = Choice(
         [
-            "period", "transit_depth", "transit_duration", 
-            "planet_radius", "points_pre_transit", "points_in_transit",
-            "points_post_transit", "transits", "transit_shape",
-            "transit_center", "duration_rel_period", "rednoise",
-            "whitenoise", "signal_to_noise", "signal_to_pinknoise",
-            "sde", "sr", "period_inv_transit", "tic_id", "sector"
+            "period",
+            "transit_depth",
+            "transit_duration",
+            "planet_radius",
+            "points_pre_transit",
+            "points_in_transit",
+            "points_post_transit",
+            "transits",
+            "transit_shape",
+            "transit_center",
+            "duration_rel_period",
+            "rednoise",
+            "whitenoise",
+            "signal_to_noise",
+            "signal_to_pinknoise",
+            "sde",
+            "sr",
+            "period_inv_transit",
+            "tic_id",
+            "sector",
         ],
         case_sensitive=False,
     )
@@ -148,14 +160,28 @@ class BLS(QLPDataProduct):
     @classmethod
     def upsert_q(cls):
         update_params = [
-            'astronet_score', 'astronet_version', 'runtime_parameters',
-            'period', 'transit_depth', 'planet_radius',
-            'planet_radius_error', 'points_pre_transit',
-            'points_in_transit', 'points_post_transit',
-            'transits', 'transit_shape', 'transit_center',
-            'duration_rel_period', 'rednoise', 'whitenoise',
-            'signal_to_noise', 'signal_to_pinknoise', 'sde',
-            'sr', 'period_inv_transit', 'sector'
+            "astronet_score",
+            "astronet_version",
+            "runtime_parameters",
+            "period",
+            "transit_depth",
+            "planet_radius",
+            "planet_radius_error",
+            "points_pre_transit",
+            "points_in_transit",
+            "points_post_transit",
+            "transits",
+            "transit_shape",
+            "transit_center",
+            "duration_rel_period",
+            "rednoise",
+            "whitenoise",
+            "signal_to_noise",
+            "signal_to_pinknoise",
+            "sde",
+            "sr",
+            "period_inv_transit",
+            "sector",
         ]
 
         q = insert(cls.__table__)
@@ -164,6 +190,6 @@ class BLS(QLPDataProduct):
             set_={
                 param: getattr(q.excluded, param, None)
                 for param in update_params
-            }
+            },
         )
         return q

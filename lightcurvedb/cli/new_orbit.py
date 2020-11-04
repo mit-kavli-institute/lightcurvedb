@@ -4,7 +4,6 @@ import re
 from functools import partial
 from lightcurvedb.models import FrameType, Frame, Orbit, CameraQuaternion
 from lightcurvedb.models.camera_quaternion import get_utc_time
-from lightcurvedb.models import FrameType, Frame, Orbit
 from lightcurvedb.util.contexts import get_parent_dir
 from multiprocessing import Pool
 from .base import lcdbcli
@@ -35,14 +34,7 @@ def process_hk_str(line):
     q4 = float(row[4])
 
     date = get_utc_time(gps_time).datetime
-    return {
-        'date': date,
-        '_w': q1,
-        '_x': q2,
-        '_y': q3,
-        '_z': q4
-    }
-
+    return {"date": date, "_w": q1, "_x": q2, "_y": q3, "_z": q4}
 
 
 def ingest_hk(ctx, session, path):
@@ -56,30 +48,20 @@ def ingest_hk(ctx, session, path):
         )
     }
     quaternions = []
-    click.echo(
-        "Processing quaternion files!"
-    )
+    click.echo("Processing quaternion files!")
     for hk in files:
         camera = int(QUAT_CHECK.search(hk).groupdict()["camera"])
-        click.echo(
-            "\tParsing {0}".format(
-                click.style(hk, bold=True)
-            )
-        )
+        click.echo("\tParsing {0}".format(click.style(hk, bold=True)))
         if camera in expected_cameras:
             expected_cameras.remove(camera)
         lines = open(os.path.join(path, hk), "rt").readlines()
         with Pool() as pool:
-            n_jobs = len(lines)
             results = pool.imap(process_hk_str, lines, chunksize=10000)
 
             for kwarg in results:
-                camera_quat = dict(
-                    camera=camera,
-                    **kwarg
-                )
+                camera_quat = dict(camera=camera, **kwarg)
 
-                if (camera_quat['date'], camera) in existing_quaternions:
+                if (camera_quat["date"], camera) in existing_quaternions:
                     skipped += 1
                     continue
 
@@ -127,11 +109,12 @@ def ingest_directory(ctx, session, path, cadence_type):
             session.commit()
 
     files = os.listdir(path)
-    existing_files = set(
-        path for path, in session.query(
-            Frame.file_path
-        ).join(Frame.orbit).filter(Orbit.orbit_number == orbit_number)
-    )
+    existing_files = {
+        path
+        for path, in session.query(Frame.file_path)
+        .join(Frame.orbit)
+        .filter(Orbit.orbit_number == orbit_number)
+    }
     accepted = []
     rejected = []
     for filename in files:
@@ -157,7 +140,6 @@ def ingest_directory(ctx, session, path, cadence_type):
         raise RuntimeError("Could not find an orbit in the path")
     if not accepted:
         return []
-
 
     # Attempt to find the orbit
     orbit = session.orbits.filter_by(orbit_number=orbit_number).one_or_none()
@@ -235,22 +217,15 @@ def ingest_frames(
                 click.echo(
                     click.style(
                         "Bad FFI Path/structure {0}".format(
-                            click.style(
-                                ffi_path,
-                                bold=True,
-                                blink=True
-                            )
+                            click.style(ffi_path, bold=True, blink=True)
                         ),
-                        fg="red"
+                        fg="red",
                     )
                 )
             quaternions = ingest_hk(ctx, db, hk_path)
 
             db.session.add_all(frames)
-            db.session.bulk_insert_mappings(
-                CameraQuaternion,
-                quaternions
-            )
+            db.session.bulk_insert_mappings(CameraQuaternion, quaternions)
             added_frames += frames
             added_quaternions += quaternions
 

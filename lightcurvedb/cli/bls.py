@@ -1,21 +1,25 @@
-import click
 import os
-import pandas as pd
-import numpy as np
-from tabulate import tabulate
-from math import sqrt
-from multiprocessing import Pool
-from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timedelta
-from lightcurvedb.models import BLS, Orbit, Lightcurve
+from itertools import product
+from multiprocessing import Pool
+
+import click
+import pandas as pd
+from astropy import units as u
+
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
+from lightcurvedb.core.ingestors.bls import (
+    estimate_planet_radius,
+    estimate_transit_duration,
+    get_bls_run_parameters,
+    normalize,
+)
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
-from lightcurvedb.core.ingestors.bls import get_bls_run_parameters, normalize, estimate_planet_radius, estimate_transit_duration
-from astropy import units as u
-from itertools import product, chain
+from lightcurvedb.models import BLS, Lightcurve, Orbit
+from sqlalchemy.orm import sessionmaker
+from tabulate import tabulate
 from tqdm import tqdm
-
 
 TIC8Session = sessionmaker(autoflush=True)
 TIC8Session.configure(bind=TIC8_ENGINE)
@@ -44,12 +48,10 @@ def process_summary(args):
         offset = int(result.pop("bls_no"))
         result["created_on"] = date + timedelta(seconds=offset)
         planet_radius = estimate_planet_radius(
-            stellar_radius,
-            float(result['transit_depth'])
+            stellar_radius, float(result["transit_depth"])
         ).value
         result["transit_duration"] = estimate_transit_duration(
-            result["period"],
-            result["duration_rel_period"]
+            result["period"], result["duration_rel_period"]
         )
         result["planet_radius"] = planet_radius
         result["planet_radius_error"] = float("nan")
@@ -89,16 +91,11 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 )
                 click.echo(
                     "Processing {0}".format(
-                        click.style(
-                            bls_dir,
-                            bold=True,
-                            fg="white"
-                        )
+                        click.style(bls_dir, bold=True, fg="white")
                     )
                 )
                 # Load BLS parameters (assuming no change to config)
                 parameters = get_bls_run_parameters(orbit, camera)
-                
 
                 files = map(
                     lambda p: os.path.join(bls_dir, p), os.listdir(bls_dir)
@@ -122,13 +119,11 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                     q.statement, tic8.bind, index_col="tic_id"
                 )
 
-                click.echo(
-                    "\tGetting TIC -> ID Map via best aperture table"
-                )
+                click.echo("\tGetting TIC -> ID Map via best aperture table")
                 q = db.lightcurves_from_best_aperture(resolve=False)
                 q = q.filter(
                     Lightcurve.tic_id.in_(tics),
-                    Lightcurve.lightcurve_type_id == "KSPMagnitude"
+                    Lightcurve.lightcurve_type_id == "KSPMagnitude",
                 )
                 id_map = pd.read_sql(
                     q.statement, db.session.bind, index_col="tic_id"
@@ -146,8 +141,7 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 click.echo("Multiprocessing BLS results")
                 with Pool(n_processes) as pool:
                     results = tqdm(
-                        pool.imap(process_summary, jobs),
-                        total=len(files)
+                        pool.imap(process_summary, jobs), total=len(files)
                     )
                     results = list(results)
                     good_results = filter(lambda args: args[0], results)
@@ -193,9 +187,7 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                             len(to_insert)
                         )
                     )
-                    db.session.execute(
-                        q, to_insert
-                    )
+                    db.session.execute(q, to_insert)
                     db.commit()
 
 
@@ -206,9 +198,9 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
 def query(ctx, tics, parameter):
     with ctx.obj["dbconf"] as db:
         cols = [getattr(BLS, param) for param in parameter]
-        q = db.query(*cols).join(BLS.lightcurve).filter(
-            Lightcurve.tic_id.in_(tics)
+        q = (
+            db.query(*cols)
+            .join(BLS.lightcurve)
+            .filter(Lightcurve.tic_id.in_(tics))
         )
-        click.echo(
-            tabulate(q.all(), headers=list(parameter))
-        )
+        click.echo(tabulate(q.all(), headers=list(parameter)))

@@ -4,32 +4,31 @@ from astropy import units as u
 from configparser import ConfigParser
 from lightcurvedb.util.decorators import suppress_warnings
 
+
 LEGACY_MAPPER = {
-    "bls_npointsaftertransit_1_0":  (
-        "points_post_transit", lambda x: int(float(x))
+    "bls_npointsaftertransit_1_0": (
+        "points_post_transit",
+        lambda x: int(float(x)),
     ),
-    "bls_npointsintransit_1_0":     (
-        "points_in_transit", lambda x: int(float(x))
-    ),
+    "bls_npointsintransit_1_0": ("points_in_transit", lambda x: int(float(x))),
     "bls_npointsbeforetransit_1_0": (
-        "points_pre_transit", lambda x: int(float(x))
+        "points_pre_transit",
+        lambda x: int(float(x)),
     ),
-    "bls_ntransits_1_0":            (
-        "transits", lambda x: int(float(x))
-    ), 
-    "bls_qingress_1_0":             ("transit_shape", float),
-    "bls_qtran_1_0":                ("duration_rel_period", float),
-    "bls_rednoise_1_0":             ("rednoise", float), 
-    "bls_sde_1_0":                  ("sde", float),
-    "bls_sn_1_0":                   ("signal_to_noise", float),
-    "bls_sr_1_0":                   ("sr", float),
-    "bls_signaltopinknoise_1_0":    ("signal_to_pinknoise", float),
-    "bls_tc_1_0":                   ("transit_center", float),
-    "bls_whitenoise_1_0":           ("whitenoise", float),
-    "bls_period_invtransit_1_0":    ("period_inv_transit", float),
-    "bls_depth_1_0":                ("transit_depth", float),
-    "bls_period_1_0":               ("period", float),
-    "bls_no":                       ("bls_no", int)
+    "bls_ntransits_1_0": ("transits", lambda x: int(float(x))),
+    "bls_qingress_1_0": ("transit_shape", float),
+    "bls_qtran_1_0": ("duration_rel_period", float),
+    "bls_rednoise_1_0": ("rednoise", float),
+    "bls_sde_1_0": ("sde", float),
+    "bls_sn_1_0": ("signal_to_noise", float),
+    "bls_sr_1_0": ("sr", float),
+    "bls_signaltopinknoise_1_0": ("signal_to_pinknoise", float),
+    "bls_tc_1_0": ("transit_center", float),
+    "bls_whitenoise_1_0": ("whitenoise", float),
+    "bls_period_invtransit_1_0": ("period_inv_transit", float),
+    "bls_depth_1_0": ("transit_depth", float),
+    "bls_period_1_0": ("period", float),
+    "bls_no": ("bls_no", int),
 }
 
 
@@ -53,6 +52,7 @@ def estimate_planet_radius(stellar_radius, transit_depth):
     """
     radius = np.sqrt(transit_depth) * stellar_radius
     return radius.to(u.earthRad)
+
 
 @suppress_warnings
 def estimate_transit_duration(period, duration_rel_period):
