@@ -1,4 +1,5 @@
 from lightcurvedb.core.base_model import QLPDataProduct
+from lightcurvedb.models.lightcurve import Lightcurve
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -7,8 +8,10 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint
 )
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
+from click import Choice
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
@@ -19,6 +22,7 @@ class BLS(QLPDataProduct):
     __tablename__ = "bls"
 
     id = Column(BigInteger, primary_key=True)
+    sector = Column(Integer, index=True, nullable=False)
     lightcurve_id = Column(
         ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         index=True,
@@ -58,8 +62,30 @@ class BLS(QLPDataProduct):
     sr = Column(DOUBLE_PRECISION, nullable=False)
     period_inv_transit = Column(DOUBLE_PRECISION, nullable=False)
 
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint(
+            "lightcurve_id",
+            "created_on",
+            name="unique_bls_runtime"
+        ),
+    )
+
     # Begin relationship logic
     lightcurve = relationship("Lightcurve", back_populates="bls_results")
+
+    # Click queryable parameters
+    click_parameters = Choice(
+        [
+            "period", "transit_depth", "transit_duration", 
+            "planet_radius", "points_pre_transit", "points_in_transit",
+            "points_post_transit", "transits", "transit_shape",
+            "transit_center", "duration_rel_period", "rednoise",
+            "whitenoise", "signal_to_noise", "signal_to_pinknoise",
+            "sde", "sr", "period_inv_transit", "tic_id", "sector"
+        ],
+        case_sensitive=False,
+    )
 
     @hybrid_property
     def qingress(self):
@@ -110,3 +136,34 @@ class BLS(QLPDataProduct):
         return (
             cls.runtime_parameters["legacy"].cast(Boolean).label("is_legacy")
         )
+
+    @hybrid_property
+    def tic_id(self):
+        return self.lightcurve.tic_id
+
+    @tic_id.expression
+    def tic_id(cls):
+        return Lightcurve.tic_id
+
+    @classmethod
+    def upsert_q(cls):
+        update_params = [
+            'astronet_score', 'astronet_version', 'runtime_parameters',
+            'period', 'transit_depth', 'planet_radius',
+            'planet_radius_error', 'points_pre_transit',
+            'points_in_transit', 'points_post_transit',
+            'transits', 'transit_shape', 'transit_center',
+            'duration_rel_period', 'rednoise', 'whitenoise',
+            'signal_to_noise', 'signal_to_pinknoise', 'sde',
+            'sr', 'period_inv_transit', 'sector'
+        ]
+
+        q = insert(cls.__table__)
+        q = q.on_conflict_do_update(
+            constraint="unique_bls_runtime",
+            set_={
+                param: getattr(q.excluded, param, None)
+                for param in update_params
+            }
+        )
+        return q

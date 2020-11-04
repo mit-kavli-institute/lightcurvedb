@@ -888,7 +888,6 @@ class DB(object):
         return [r for r, in q.all()]
 
     def get_baked_lcs(self, ids):
-
         return (
             self.query(
                 models.Lightpoint.lightcurve_id,
@@ -903,7 +902,6 @@ class DB(object):
             .filter(models.Lightpoint.lightcurve_id.in_(ids))
             .group_by(models.Lightpoint.lightcurve_id)
         )
-
 
 def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
     """

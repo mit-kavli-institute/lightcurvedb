@@ -1,6 +1,8 @@
 import click
 import os
 import pandas as pd
+import numpy as np
+from tabulate import tabulate
 from math import sqrt
 from multiprocessing import Pool
 from sqlalchemy.orm import sessionmaker
@@ -9,35 +11,19 @@ from lightcurvedb.models import BLS, Orbit, Lightcurve
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
 from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
-from lightcurvedb.core.ingestors.bls import get_bls_run_parameters
+from lightcurvedb.core.ingestors.bls import get_bls_run_parameters, normalize, estimate_planet_radius, estimate_transit_duration
 from astropy import units as u
 from itertools import product, chain
+from tqdm import tqdm
 
-
-LEGACY_MAPPER = {
-    "bls_npointsaftertransit_1_0": "points_post_transit",
-    "bls_npointsintransit_1_0": "points_in_transit",
-    "bls_npointsbeforetransit_1_0": "points_pre_transit",
-    "bls_ntransits_1_0": "transits",
-    "bls_qingress_1_0": "transit_shape",
-    "bls_qtran_1_0": "duration_rel_period",
-    "bls_rednoise_1_0": "rednoise",
-    "bls_sde_1_0": "sde",
-    "bls_sn_1_0": "signal_to_noise",
-    "bls_sr_1_0": "sr",
-    "bls_signaltopinknoise_1_0": "signal_to_pinknoise",
-    "bls_tc_1_0": "transit_center",
-    "bls_whitenoise_1_0": "whitenoise",
-    "bls_period_invtransit_1_0": "period_inv_transit",
-    "bls_depth_0_1": "transit_depth",
-    "bls_period_0_1": "period",
-}
 
 TIC8Session = sessionmaker(autoflush=True)
 TIC8Session.configure(bind=TIC8_ENGINE)
 
 
-def process_summary(path, stellar_radius):
+def process_summary(args):
+    path = args[0]
+    stellar_radius = args[1]
     # Get inode date change
     date = datetime.fromtimestamp(os.path.getctime(path))
     lines = list(map(lambda l: l.strip(), open(path, "rt").readlines()))
@@ -51,18 +37,26 @@ def process_summary(path, stellar_radius):
     headers = lines[0][2:]
     headers = tuple(map(lambda l: l.lower(), headers.split()))
     lines = lines[1:]
-    results = [dict(zip(headers, line.split())) for line in lines]
+    results = list(normalize(headers, lines))
 
-    for offset, result in enumerate(results):
+    for result in results:
         # Assume that each additional BLS calculate
+        offset = int(result.pop("bls_no"))
         result["created_on"] = date + timedelta(seconds=offset)
-        planet_radius = sqrt(float(result["transit_depth"])) * stellar_radius
-        planet_radius = planet_radius.to(u.earthRad)
-        result["planet_radius"] = planet_radius.value
+        planet_radius = estimate_planet_radius(
+            stellar_radius,
+            float(result['transit_depth'])
+        ).value
+        result["transit_duration"] = estimate_transit_duration(
+            result["period"],
+            result["duration_rel_period"]
+        )
+        result["planet_radius"] = planet_radius
+        result["planet_radius_error"] = float("nan")
+        result["tic_id"] = int(tic_id)
 
-        # TODO estimate error
-        result["planet_radius"] = float("nan")
-        results["tic_id"] = int(tic_id)
+        if "period_inv_transit" not in result:
+            result["period_inv_transit"] = float("nan")
 
     return True, results
 
@@ -71,26 +65,41 @@ def get_tic(bls_summary):
     return int(os.path.basename(bls_summary).split(".")[0])
 
 
-@lcdbcli.command()
+@lcdbcli.group()
+@click.pass_context
+def bls(ctx):
+    pass
+
+
+@bls.command()
 @click.pass_context
 @click.argument("sectors", type=int, nargs=-1)
-@click.argument("cameras", type=CommaList(int), default="1,2,3,4")
-@click.argument("ccds", type=CommaList(int), default="1,2,3,4")
-@click.argument("--n-processes", type=click.IntRange(0), default=32)
+@click.option("--cameras", type=CommaList(int), default="1,2,3,4")
+@click.option("--ccds", type=CommaList(int), default="1,2,3,4")
+@click.option("--n-processes", type=click.IntRange(0), default=32)
 def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
     for sector in sectors:
         tic8 = TIC8Session()
-        with ctx["dbconf"] as db:
+        with ctx.obj["dbconf"] as db:
             orbit = db.orbits.filter(Orbit.sector == sector).first()
 
             for camera, ccd in product(cameras, ccds):
-                # Load BLS parameters (assuming no change to config)
-                parameters = get_bls_run_parameters(orbit, camera)
-
                 bls_dir = orbit.get_sector_directory(
                     "ffi", "cam{0}".format(camera), "ccd{0}".format(ccd), "BLS"
                 )
-                click.echo("Processing {0}".format(bls_dir))
+                click.echo(
+                    "Processing {0}".format(
+                        click.style(
+                            bls_dir,
+                            bold=True,
+                            fg="white"
+                        )
+                    )
+                )
+                # Load BLS parameters (assuming no change to config)
+                parameters = get_bls_run_parameters(orbit, camera)
+                
+
                 files = map(
                     lambda p: os.path.join(bls_dir, p), os.listdir(bls_dir)
                 )
@@ -98,7 +107,12 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 files = list(filter(lambda f: f.endswith(".blsanal"), files))
 
                 tics = list(map(get_tic, files))
-                click.echo("Obtaining stellar radii")
+                click.echo(
+                    "Processing {0} tics, grabbing info...".format(
+                        click.style(str(len(tics)), fg="white", bold=True)
+                    )
+                )
+                click.echo("\tObtaining stellar radii")
                 q = tic8.query(
                     TIC_Entries.c.id.label("tic_id"),
                     TIC_Entries.c.rad,
@@ -108,26 +122,35 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                     q.statement, tic8.bind, index_col="tic_id"
                 )
 
-                click.echo("Getting TIC -> ID Map via best aperture table")
+                click.echo(
+                    "\tGetting TIC -> ID Map via best aperture table"
+                )
                 q = db.lightcurves_from_best_aperture(resolve=False)
-                q = q.filter(Lightcurve.tic_id.in_(tics))
+                q = q.filter(
+                    Lightcurve.tic_id.in_(tics),
+                    Lightcurve.lightcurve_type_id == "KSPMagnitude"
+                )
                 id_map = pd.read_sql(
                     q.statement, db.session.bind, index_col="tic_id"
                 )
 
                 click.echo("Creating jobs")
                 jobs = map(
-                    lambda tic_id, path: (
-                        path,
-                        tic_params.loc[tic_id]["rad"] * u.solRad,
+                    lambda row: (
+                        row[1],
+                        tic_params.loc[row[0]]["rad"] * u.solRad,
                     ),
                     zip(tics, files),
                 )
 
-                click.echo("Sending jobs to worker pool")
+                click.echo("Multiprocessing BLS results")
                 with Pool(n_processes) as pool:
-                    results = pool.imap(process_summary, jobs)
-                    good_results = filter(lambda status, _: status, results)
+                    results = tqdm(
+                        pool.imap(process_summary, jobs),
+                        total=len(files)
+                    )
+                    results = list(results)
+                    good_results = filter(lambda args: args[0], results)
                     good_results = list(good_results)
                 click.echo(
                     "Parsed {0} BLS summary files. {1} were accepted, "
@@ -139,20 +162,53 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 )
 
                 click.echo("Assigning legacy runtime parameters")
-                for result in good_results:
-                    tic_id = result.pop("tic_id")
-                    result["lightcurve_id"] = id_map.loc[tic_id]
-                    result["runtime_parameters"] = parameters
+                to_insert = []
+                for _, bls_bundle in tqdm(good_results):
+                    for result in bls_bundle:
+                        tic_id = result.pop("tic_id")
+                        result["sector"] = sector
+                        try:
+                            result["lightcurve_id"] = int(
+                                id_map.loc[tic_id]["id"]
+                            )
+                        except TypeError:
+                            click.echo("Something went wrong")
+                            click.echo(id_map.loc[tic_id]["id"])
+                            raise
+
+                        result["runtime_parameters"] = parameters
+                        to_insert.append(result)
+
+                q = BLS.upsert_q()
 
                 if ctx.obj["dryrun"]:
                     click.echo(
                         "Would attempt to ingest {0} BLS results".format(
-                            len(good_results)
+                            len(to_insert)
                         )
                     )
                 else:
-                    click.echo("Inserting into database")
-                    db.session.bulk_insert_mappings(
-                        BLS, chain.from_iterable(good_results)
+                    click.echo(
+                        "Inserting {0} BLS results into database".format(
+                            len(to_insert)
+                        )
+                    )
+                    db.session.execute(
+                        q, to_insert
                     )
                     db.commit()
+
+
+@bls.command()
+@click.pass_context
+@click.argument("tics", type=int, nargs=-1)
+@click.option("--parameter", "-p", multiple=True, type=BLS.click_parameters)
+def query(ctx, tics, parameter):
+    with ctx.obj["dbconf"] as db:
+        cols = [getattr(BLS, param) for param in parameter]
+        q = db.query(*cols).join(BLS.lightcurve).filter(
+            Lightcurve.tic_id.in_(tics)
+        )
+        click.echo(
+            tabulate(q.all(), headers=list(parameter))
+        )

@@ -12,3 +12,4 @@ tabulate
 scipy
 pgcopy
 pyquaternion
+tqdm
