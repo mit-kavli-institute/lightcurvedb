@@ -58,11 +58,7 @@ class TimeCorrector:
         self.tic_parameters = tic_parameters
 
         q = (
-            session.query(
-                Frame.cadence,
-                Frame.camera,
-                Frame.mid_tjd,
-            )
+            session.query(Frame.cadence, Frame.camera, Frame.mid_tjd,)
             .order_by(Frame.cadence, Frame.camera)
             .filter(Frame.frame_type_id == "Raw FFI")
         )
@@ -139,11 +135,7 @@ class StaticTimeCorrector(TimeCorrector):
         )
         self.ephemris = pd.read_sql(q.statement, session.bind)
         q = (
-            session.query(
-                Frame.cadence,
-                Frame.camera,
-                Frame.mid_tjd,
-            )
+            session.query(Frame.cadence, Frame.camera, Frame.mid_tjd,)
             .order_by(Frame.cadence, Frame.camera)
             .filter(Frame.frame_type_id == "Raw FFI")
         )

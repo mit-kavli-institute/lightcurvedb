@@ -75,6 +75,8 @@ class BLS(QLPDataProduct):
     # Click queryable parameters
     click_parameters = Choice(
         [
+            "created_on",
+            "lightcurve",
             "period",
             "transit_depth",
             "transit_duration",
