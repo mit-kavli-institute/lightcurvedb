@@ -157,6 +157,7 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
 
                 click.echo("Assigning legacy runtime parameters")
                 to_insert = []
+                missing = []
                 for _, bls_bundle in tqdm(good_results):
                     for result in bls_bundle:
                         tic_id = result.pop("tic_id")
@@ -169,9 +170,23 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                             click.echo("Something went wrong")
                             click.echo(id_map.loc[tic_id]["id"])
                             raise
+                        except KeyError:
+                            missing.append(tic_id)
+                            continue
 
                         result["runtime_parameters"] = parameters
                         to_insert.append(result)
+                if missing:
+                    click.echo(
+                        missing
+                    )
+                    click.echo(
+                        "Missing {0} tics. Have these lightcurves been "
+                        "ingested? Or have the best apertures been set?"
+                        " Ingestor was unable to resolve a single id.".format(
+                            len(missing)
+                        )
+                    )
 
                 q = BLS.upsert_q()
 
