@@ -111,8 +111,7 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 )
                 click.echo("\tObtaining stellar radii")
                 q = tic8.query(
-                    TIC_Entries.c.id.label("tic_id"),
-                    TIC_Entries.c.rad,
+                    TIC_Entries.c.id.label("tic_id"), TIC_Entries.c.rad,
                 ).filter(TIC_Entries.c.id.in_(set(tics)))
 
                 tic_params = pd.read_sql(
@@ -177,9 +176,7 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                         result["runtime_parameters"] = parameters
                         to_insert.append(result)
                 if missing:
-                    click.echo(
-                        missing
-                    )
+                    click.echo(missing)
                     click.echo(
                         "Missing {0} tics. Have these lightcurves been "
                         "ingested? Or have the best apertures been set?"
