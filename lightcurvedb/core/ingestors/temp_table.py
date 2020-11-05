@@ -49,13 +49,13 @@ class TempObservation(TemporaryQLPModel):
 
     @property
     def to_dict(self):
-        return dict(
-            tic_id=self.tic_id,
-            orbit_number=self.orbit_number,
-            camera=self.camera,
-            ccd=self.ccd,
-            file_path=self.to_h5_path(),
-        )
+        return {
+            "tic_id": self.tic_id,
+            "orbit_number": self.orbit_number,
+            "camera": self.camera,
+            "ccd": self.ccd,
+            "file_path": self.to_h5_path(),
+        }
 
 
 class IngestionJob(TemporaryQLPModel):

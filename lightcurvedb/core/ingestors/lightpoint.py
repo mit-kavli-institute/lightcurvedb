@@ -14,16 +14,19 @@ import pandas as pd
 
 from lightcurvedb import db_from_config
 from lightcurvedb.core.base_model import QLPModel
+from collections import namedtuple, defaultdict
+from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
     load_lightpoints,
 )
-from lightcurvedb.models import Lightcurve, Lightpoint, Observation, Orbit
 from lightcurvedb.util.logger import lcdb_logger as logger
 
-# from pgcopy import CopyManager
-from sqlalchemy import Sequence, Table, bindparam
+from lightcurvedb import db_from_config
+from sqlalchemy import bindparam, Sequence, Table
+from multiprocessing import Process
+
 
 try:
     from math import isclose
@@ -44,14 +47,14 @@ LP_COLS = [
     "quality_flag",
 ]
 
-LP_COL_RENAME = dict(
-    cadences="cadence",
-    values="data",
-    errors="error",
-    x_centroids="x_centroid",
-    y_centroids="y_centroid",
-    quality_flags="quality_flag",
-)
+LP_COL_RENAME = {
+    "cadences": "cadence",
+    "values": "data",
+    "errors": "error",
+    "x_centroids": "x_centroid",
+    "y_centroids": "y_centroid",
+    "quality_flags": "quality_flag",
+}
 
 DIFF_COLS = ["values", "barycentric_julian_date", "quality_flags"]
 
@@ -105,11 +108,11 @@ class MassIngestor(LightpointProcessor):
         **process_kwargs
     ):
         super(MassIngestor, self).__init__(**process_kwargs)
-        self.engine_kwargs = dict(
-            executemany_mode="values",
-            executemany_values_page_size=10000,
-            executemany_batch_page_size=500,
-        )
+        self.engine_kwargs = {
+            "executemany_mode": "values",
+            "executemany_values_page_size": 10000,
+            "executemany_batch_page_size": 500,
+        }
         self.sequence = Sequence("lightcurves_id_seq")
         self.config = lcdb_config
         self.tic_queue = tic_queue
@@ -155,16 +158,23 @@ class MassIngestor(LightpointProcessor):
         total_len = 0
         for obs in job.file_observations:
             tic, orbit, camera, ccd, file_path = obs
+
+            if not os.path.exists(file_path):
+                self.log(
+                    "Could not find file {0}!".format(file_path), level="error"
+                )
+                continue
+
             if orbit in observed_orbits or orbit in processed_orbits:
                 self.log("Found duplicate orbit {0}".format(orbit))
                 continue
             self.observations.append(
-                dict(
-                    tic_id=tic,
-                    orbit_id=self.orbit_map[orbit],
-                    camera=camera,
-                    ccd=ccd,
-                )
+                {
+                    "tic_id": tic,
+                    "orbit_id": self.orbit_map[orbit],
+                    "camera": camera,
+                    "ccd": ccd,
+                }
             )
             processed_orbits.add(orbit)
             for kw in h5_to_kwargs(file_path):
@@ -302,7 +312,7 @@ class MassIngestor(LightpointProcessor):
                     job = self.tic_queue.get()
                     first_ingestion = False
                 else:
-                    job = self.tic_queue.get(timeout=30)
+                    job = self.tic_queue.get(timeout=3000)
                 self.merge(job)
                 self.tic_queue.task_done()
                 self.flush()

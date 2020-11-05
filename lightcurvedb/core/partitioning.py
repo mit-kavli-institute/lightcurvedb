@@ -41,12 +41,12 @@ def Partitionable(partition_type, *columns):
 
     class __PartitionMeta__(object):
         __abstract__ = True
-        __table_args__ = dict(
-            postgresql_partition_by="{0}({1})".format(
+        __table_args__ = {
+            "postgresql_partition_by": "{0}({1})".format(
                 partition_type, ",".join(columns)
             ),
-            extend_existing=True,
-        )
+            "extend_existing": True,
+        }
 
         def emit_new_partition(self, constraint_str):
             """
@@ -189,9 +189,12 @@ def emit_ranged_partition_ddl(table, begin_range, end_range, schema=None):
 
     namespaced_t = "{0}.{1}".format(schema, table) if schema else table
 
-    fmt_args = dict(
-        partition=namespaced_t, table=table, begin=begin_range, end=end_range
-    )
+    fmt_args = {
+        "partition": namespaced_t,
+        "table": table,
+        "begin": begin_range,
+        "end": end_range,
+    }
 
     return DDL(
         "CREATE TABLE {partition}_{begin}_{end} "

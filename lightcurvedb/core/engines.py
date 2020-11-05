@@ -8,6 +8,9 @@ except ImportError:
     # Python 2?
     from ConfigParser import ConfigParser
 
+
+from lightcurvedb.util.constants import __DEFAULT_PATH__
+
 from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
@@ -16,12 +19,12 @@ from sqlalchemy.exc import DisconnectionError
 
 
 DB_TYPE = "postgresql+psycopg2"
-DEFAULT_ENGINE_KWARGS = dict(
-    pool_size=16,
-    max_overflow=-1,
-    executemany_mode="values",
-    executemany_values_page_size=10000,
-)
+DEFAULT_ENGINE_KWARGS = {
+    "pool_size": 16,
+    "max_overflow": -1,
+    "executemany_mode": "values",
+    "executemany_values_page_size": 10000,
+}
 
 
 def __config_to_url__(path):
@@ -35,10 +38,6 @@ def __config_to_url__(path):
         "port": parser.get("Credentials", "database_port"),
     }
     return URL(DB_TYPE, **kwargs)
-
-
-# Attempt to create DB from default configuration file
-__DEFAULT_PATH__ = os.path.join("~", ".config", "lightcurvedb", "db.conf")
 
 
 def __register_process_guards__(engine):

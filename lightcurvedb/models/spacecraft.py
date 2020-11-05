@@ -25,12 +25,12 @@ class SpacecraftEphemris(QLPReference):
 
     @property
     def to_dict(self):
-        return dict(
-            barycentric_dynamical_type=self.barycentric_dynamical_time,
-            x=self.x,
-            y=self.y,
-            z=self.x,
-        )
+        return {
+            "barycentric_dynamical_type": self.barycentric_dynamical_time,
+            "x": self.x,
+            "y": self.y,
+            "z": self.x,
+        }
 
     @hybrid_property
     def x(self):

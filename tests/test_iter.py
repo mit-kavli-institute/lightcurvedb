@@ -1,6 +1,27 @@
 from hypothesis import strategies as st, given
-from lightcurvedb.util.iter import eq_partitions
+from lightcurvedb.util.iter import eq_partitions, chunkify
 from itertools import chain
+
+
+@given(st.iterables(st.integers()), st.integers(min_value=1))
+def test_chunkify(iterable, chunksize):
+
+    elements = set(iterable)
+    seen = set()
+
+    chunks = list(chunkify(iterable, chunksize))
+
+    if not chunks:
+        assert not list(iterable)
+    else:
+        assert all(len(chunk) == chunksize for chunk in chunks[:-1])
+        assert len(chunks[-1]) <= chunksize
+
+        for chunk in chunks:
+            for item in chunk:
+                seen.add(item)
+
+        assert elements == seen
 
 
 @given(st.iterables(st.integers()), st.integers(min_value=1, max_value=100))

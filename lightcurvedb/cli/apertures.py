@@ -7,7 +7,7 @@ from . import lcdbcli
 @click.pass_context
 @click.argument("name", type=str)
 @click.argument("aperture-string", type=str)
-def aperture(ctx, name, aperture_string):
+def add_aperture(ctx, name, aperture_string):
     with ctx.obj["dbconf"] as db:
         check = (
             db.session.query(Aperture)

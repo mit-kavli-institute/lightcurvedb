@@ -51,13 +51,9 @@ class LightcurveType(QLPDataSubType):
 class LightcurveFrameMap(QLPModel):
     __tablename__ = "lightcurveframemapping"
     lightcurve_type_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"),
-        primary_key=True,
+        ForeignKey("lightcurves.id", ondelete="CASCADE"), primary_key=True,
     )
-    frame_id = Column(
-        ForeignKey("frames.id"),
-        primary_key=True,
-    )
+    frame_id = Column(ForeignKey("frames.id"), primary_key=True,)
 
     lightcurve = relationship(
         "Lightcurve",
@@ -202,6 +198,9 @@ class Lightcurve(QLPDataProduct):
         "Lightpoint", backref="lightcurve", collection_class=CadenceTracked
     )
     aperture = relationship("Aperture", back_populates="lightcurves")
+    bls_results = relationship(
+        "BLS", back_populates="lightcurve", order_by="BLS.created_on"
+    )
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
     def __len__(self):
@@ -212,6 +211,12 @@ class Lightcurve(QLPDataProduct):
             The length of the lightcurve.
         """
         return len(self.lightpoints)
+
+    def __iter__(self):
+        """
+        Iterate and yield lightpoints in cadence order
+        """
+        return iter(self.lightpoints)
 
     def __repr__(self):
         return "<Lightcurve {0} {1} {2}>".format(
@@ -281,18 +286,18 @@ class Lightcurve(QLPDataProduct):
 
     @property
     def to_dict(self):
-        return dict(
-            tic_id=self.tic_id,
-            aperture=self.aperture_id,
-            type=self.lightcurve_type_id,
-            cadences=self.cadences,
-            bjd=self.bjd,
-            mag=self.values,
-            errors=self.errors,
-            x_centroids=self.x_centroids,
-            y_centroids=self.y_centroids,
-            quality_flags=self.quality_flags,
-        )
+        return {
+            "tic_id": self.tic_id,
+            "aperture": self.aperture_id,
+            "type": self.lightcurve_type_id,
+            "cadences": self.cadences,
+            "bjd": self.bjd,
+            "mag": self.values,
+            "errors": self.errors,
+            "x_centroids": self.x_centroids,
+            "y_centroids": self.y_centroids,
+            "quality_flags": self.quality_flags,
+        }
 
     @hybrid_property
     def type(self):
@@ -336,7 +341,7 @@ class Lightcurve(QLPDataProduct):
     # Lightcurve instance setters
     @bjd.setter
     def bjd(self, values):
-        self.lightpoints.bjd = values
+        self.lightpoints["bjd"] = values
 
     @barycentric_julian_date.setter
     def barycentric_julian_date(self, values):
@@ -344,20 +349,20 @@ class Lightcurve(QLPDataProduct):
 
     @values.setter
     def values(self, _values):
-        self.lightpoints.data = _values
+        self.lightpoints["data"] = _values
 
     @errors.setter
     def errors(self, values):
-        self.lightpoints.error = values
+        self.lightpoints["error"] = values
 
     @x_centroids.setter
     def x_centroids(self, values):
-        self.lightpoints.x_centroid = values
+        self.lightpoints["x_centroid"] = values
 
     @y_centroids.setter
     def y_centroids(self, values):
-        self.lightpoints.y_centroid = values
+        self.lightpoints["y_centroid"] = values
 
     @quality_flags.setter
     def quality_flags(self, values):
-        self.lightpoints.quality_flag = values
+        self.lightpoints["quality_flag"] = values

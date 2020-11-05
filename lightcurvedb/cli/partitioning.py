@@ -7,6 +7,7 @@ import click
 import lightcurvedb.models as defined_models
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from lightcurvedb.core.admin import psql_tables
 from sqlalchemy import text
 
 
@@ -31,6 +32,7 @@ def list_partitions(ctx, model):
     List the partitions of MODEL
     """
     with ctx.obj["dbconf"] as db:
+        psql_tables(db)
         # Get current partition of the table.
         try:
             target_model = getattr(defined_models, model)
@@ -39,7 +41,7 @@ def list_partitions(ctx, model):
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
-        click.echo(partitions)
+        click.echo(partitions.sort_values("end_range"))
         click.echo(
             "A total of {0} partitions!".format(
                 click.style(str(len(partitions)), bold=True)
@@ -65,6 +67,7 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
     with ctx.obj["dbconf"] as db:
         # Get current partition of the table.
+        psql_tables(db)
         try:
             target_model = getattr(defined_models, model)
         except AttributeError:

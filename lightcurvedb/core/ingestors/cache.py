@@ -240,12 +240,16 @@ class IngestionCache(object):
         )
 
         try:
-            to_update = quality_flag_df.loc[existing_flags.index]
+            to_update = quality_flag_df[
+                quality_flag_df.index.isin(existing_flags.index)
+            ]
         except KeyError:
             to_update = []
 
         try:
-            to_insert = quality_flag_df
+            to_insert = quality_flag_df[
+                ~quality_flag_df.index.isin(existing_flags.index)
+            ]
         except KeyError:
             to_insert = []
 
@@ -277,6 +281,7 @@ class IngestionCache(object):
             self.session.execute(
                 insert_q, to_insert.reset_index().to_dict("records")
             )
+        return len(to_update), len(to_insert)
 
     def commit(self):
         self.session.commit()

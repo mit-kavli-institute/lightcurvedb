@@ -238,17 +238,19 @@ def lightcurve_kwargs(draw, **overrides):
     return kwargs
 
 
-lightpoint = lambda: builds(
-    models.Lightpoint,
-    lightcurve_id=integers(min_value=1, max_value=99999),
-    cadence=integers(min_value=0, max_value=PSQL_INT_MAX),
-    bjd=floats(),
-    data=floats(),
-    error=floats(),
-    x=floats(),
-    y=floats(),
-    quality_flag=integers(min_value=0, max_value=PSQL_INT_MAX),
-)
+@define_strategy
+def lightpoint(id_=None):
+    return builds(
+        models.Lightpoint,
+        lightcurve_id=id_ if id_ else integers(min_value=1, max_value=99999),
+        cadence=integers(min_value=0, max_value=PSQL_INT_MAX),
+        bjd=floats(),
+        data=floats(),
+        error=floats(),
+        x=floats(),
+        y=floats(),
+        quality_flag=integers(min_value=0, max_value=PSQL_INT_MAX),
+    )
 
 
 @define_strategy
@@ -298,7 +300,7 @@ def lightcurve_list(
     lightcurve_types=None,
 ):
     """
-        Strategy for buildling lists of lightcurves.
+        Strategy for building lists of lightcurves.
         If passed apertures and/or lightcurve_types, examples will be drawn
         from the passed parameters. If set to None, the lightcurve_list will
         hold a common aperture/type.
@@ -328,5 +330,64 @@ def lightcurve_list(
             ),
             min_size=min_size,
             max_size=max_size,
+        )
+    )
+
+
+quat_params = {
+    'min_value': -1.0,
+    'max_value': 1.0,
+    'allow_nan': False,
+    'allow_infinity': False
+}
+
+
+@define_strategy
+def quaternion(missing=False):
+    if missing:
+        ret = tuples(
+            floats(**quat_params),
+            floats(**quat_params),
+            floats(**quat_params)
+        )
+        return ret
+
+    ret = tuples(
+        floats(**quat_params),
+        floats(**quat_params),
+        floats(**quat_params),
+        floats(**quat_params)
+    )
+    return ret
+
+
+@define_strategy
+def bls(make_lc=True):
+    if make_lc:
+        lc = lightcurve()
+    else:
+        lc = none()
+    return builds(
+        models.BLS(
+            lightcurve=lc,
+            astronet_score=floats(),
+            astronet_version=text(max_size=256),
+            runtime_parameters=just({}),
+            period=floats(),
+            transit_duration=floats(),
+            planet_radius=floats(),
+            planet_radius_error=floats(),
+            points_pre_transit=integers(),
+            points_in_transit=integers(),
+            points_post_transit=integers(),
+            transits=integers(),
+            transit_shape=floats(),
+            duration_rel_period=floats(),
+            rednoise=floats(),
+            whitenoise=floats(),
+            signal_to_noise=floats(),
+            sde=floats(),
+            sr=floats(),
+            period_inv_transit=floats()
         )
     )

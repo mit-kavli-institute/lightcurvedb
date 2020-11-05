@@ -4,7 +4,7 @@ many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
 from numpy import array as np_array
 from sqlalchemy.orm.collections import collection
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 
 RawLightpoint = namedtuple(
@@ -21,19 +21,25 @@ RawLightpoint = namedtuple(
 )
 
 
-class CadenceTracked(object):
-    """"""
+class CadenceKeyed(object):
 
     __emulates__ = list
 
-    def __init__(self):
-        self._to_add = set()
-        self._to_update = set()
-        self._to_remove = set()
-        self._internal_data = {}
+    def __init__(self, *initial_data):
+        self._internal_data = OrderedDict()
+
+        for data in sorted(initial_data, key=lambda d: d.cadence):
+            self._internal_data[data.cadence] = data
 
     def __len__(self):
         return len(self._internal_data)
+
+    def __contains__(self, key):
+        return key in self._internal_data
+
+    def __iter__(self):
+        for cadence in self.cadences:
+            yield self[cadence]
 
     def __getattr__(self, attribute):
         """
@@ -41,20 +47,48 @@ class CadenceTracked(object):
         the user wants to grab the related attribute from the tracked
         items instead. Automatically order by cadence information.
         """
-        values = [
-            getattr(self[cadence], attribute) for cadence in self.cadences
-        ]
+        values = [self[cadence][attribute] for cadence in self.cadences]
         return np_array(values)
 
-    def __contains__(self, key):
-        return key in self._internal_data
-
     def __getitem__(self, key):
-        return self._internal_data[key]
+        try:
+            # Check to see if key is iterable
+            relevant = iter(key)
+            return CadenceKeyed(
+                *[self._internal_data[k] for k in relevant if k in self]
+            )
+        except TypeError:
+            # Key is scalar
+            return self._internal_data[key]
 
-    def __iter__(self):
-        for cadence in self.cadences:
-            yield self[cadence]
+    @collection.internally_instrumented
+    def __setitem__(self, key, value):
+        if not len(self) == len(value):
+            raise ValueError(
+                "attempted to assign data with length of {0} vs "
+                "on collection with length of {1}.".format(
+                    len(value), len(self)
+                )
+            )
+        for lp, v in zip(self, value):
+            lp[key] = v
+
+    @property
+    def cadences(self):
+        """
+        Always return cadences in ascending order
+        """
+        return np_array(sorted(self._internal_data.keys()))
+
+
+class CadenceTracked(CadenceKeyed):
+    """"""
+
+    def __init__(self):
+        super(CadenceTracked, self).__init__()
+        self._to_add = set()
+        self._to_update = set()
+        self._to_remove = set()
 
     @collection.appender
     @collection.replaces(1)
@@ -88,10 +122,3 @@ class CadenceTracked(object):
         deleting all current related models and performing an insert.
         """
         raise NotImplementedError
-
-    @property
-    def cadences(self):
-        """
-        Always return cadences in ascending order
-        """
-        return np_array(sorted(self._internal_data.keys()))
