@@ -24,6 +24,7 @@ DEFAULT_ENGINE_KWARGS = {
     "max_overflow": -1,
     "executemany_mode": "values",
     "executemany_values_page_size": 10000,
+    "connect_args": {"client_encoding": "utf8"}
 }
 
 

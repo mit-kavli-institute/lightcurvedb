@@ -17,9 +17,21 @@ from hypothesis.strategies import (
     sampled_from,
     builds,
 )
+import sys
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
+
+ABC = 'abcdefghijklmnopqrstuvwxyz'
+
+if sys.version_info.major >= 3:
+    alphabet = characters(whitelist_categories=[
+        'L', 'M', 'N', 'P', 'S', 'Z'
+    ])
+else:
+    alphabet = sampled_from(
+        ABC + ABC.upper()
+    )
 
 
 define_strategy = lambda f: f
@@ -30,7 +42,7 @@ define_strategy = lambda f: f
 def postgres_text(draw, **text_args):
     t = draw(
         text(
-            alphabet=characters(blacklist_categories=("C")),
+            alphabet=alphabet,
             min_size=text_args.get("min_size", 1),
             max_size=text_args.pop("max_size", 64),
         )
@@ -213,11 +225,13 @@ def orbit_frames(draw):
                 cadence_type=just(30),
                 camera=just(1),
             ),
-            min_size=2,
+            min_size=1,
+            max_size=10,
             unique_by=lambda f: f.cadence,
         )
     )
-    return result
+    target_orbit.frames = result
+    return target_orbit
 
 
 @define_strategy
