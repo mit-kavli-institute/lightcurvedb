@@ -12,9 +12,10 @@ from lightcurvedb.core.base_model import (
     QLPDataSubType,
     QLPModel,
 )
+from lightcurvedb.models import Orbit, Frame, Lightpoint
 from lightcurvedb.core.collection import CadenceTracked
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import BigInteger, Column, ForeignKey, Sequence, SmallInteger
+from sqlalchemy import BigInteger, Column, ForeignKey, Sequence, SmallInteger, select, func
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -201,6 +202,11 @@ class Lightcurve(QLPDataProduct):
     lightpoints = relationship(
         "Lightpoint", backref="lightcurve", collection_class=CadenceTracked
     )
+
+    lightpoint_q = relationship(
+        "Lightpoint", collection_class=CadenceTracked, lazy="dynamic"
+    )
+
     aperture = relationship("Aperture", back_populates="lightcurves")
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
@@ -306,7 +312,6 @@ class Lightcurve(QLPDataProduct):
         return self.lightcurve_type
 
     # Define lightpoint hybrid properties
-
     @hybrid_property
     def cadences(self):
         return self.lightpoints.cadences
@@ -367,3 +372,46 @@ class Lightcurve(QLPDataProduct):
     @quality_flags.setter
     def quality_flags(self, values):
         self.lightpoints["quality_flag"] = values
+
+    def lightpoints_by_cadence_q(self, cadence_q):
+        q = cadence_q.subquery()
+
+        return self.lightpoint_q.filter(
+            Lightpoint.cadence.between(
+                q.c.min_cadence, q.c.max_cadence
+            )
+        )
+
+    def lightpoints_by_orbit(self, orbits, *frame_filters):
+        if not frame_filters:
+            frame_filters = (Frame.frame_type_id == "Raw FFI",)
+        q = select(
+            [
+                func.min(Frame.cadence).label("min_cadence"),
+                func.max(Frame.cadence).label("max_cadence"),
+            ]
+        ).join(
+            Frame.orbit
+        ).where(
+            Orbit.orbit_number.in_(orbits),
+            *frame_filters
+        ).select_from(Frame)
+
+        return self.lightpoints_by_cadence_q(q)
+
+    def lightpoints_by_sector(self, sectors, *frame_filters):
+        if not frame_filters:
+            frame_filters = (Frame.frame_type_id == "Raw FFI",)
+        q = select(
+            [
+                func.min(Frame.cadence).label("min_cadence"),
+                func.max(Frame.cadence).label("max_cadence"),
+            ]
+        ).join(
+            Frame.orbit
+        ).where(
+            Orbit.sector.in_(sectors),
+            *frame_filters
+        ).select_from(Frame)
+
+        return self.lightpoints_by_cadence_q(q)
