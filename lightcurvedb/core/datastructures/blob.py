@@ -4,6 +4,7 @@ from collections import OrderedDict
 from sqlalchemy.sql import sqltypes as sql_t
 from sqlalchemy.dialects.postgresql import base as psql_t
 from io import BytesIO
+from lightcurvedb.util.logger import lcdb_logger as logger
 
 
 def get_struct_equivalency(column):
@@ -63,6 +64,11 @@ class Blob(object):
 
     def write(self, buf, n_rows=1):
         with open(self.blob_path, "ab") as out:
+            logger.debug(
+                "writing {0} bytes to {1} with {2} rows".format(
+                    len(buf), self.blob_path, n_rows
+                )
+            )
             out.write(buf)
         self.rows += n_rows
 
@@ -83,7 +89,8 @@ class RowWiseBlob(Blob):
             bundle = self.packer.pack(*values)
             buf.write(bundle)
             length += 1
-        self.write(buf, n_rows=length)
+        buf.seek(0)
+        self.write(buf.getbuffer(), n_rows=length)
 
 
 class Blobable(object):
@@ -97,25 +104,24 @@ class Blobable(object):
 
     @classmethod
     def struct(cls):
-        return struct.Struct(cls.struct_format)
+        return struct.Struct(cls.struct_fmt())
 
     @classmethod
     def struct_size(cls):
         return cls.struct().size
 
+    @classmethod
     def pack_tuples(cls, data_rows):
         packer = cls.struct()
 
         for row in data_rows:
             yield packer.pack(*row)
 
-    def pack_dictionaries(self, data_rows):
+    @classmethod
+    def pack_dictionaries(cls, data_rows):
         #  Transform into tuples
         columns = tuple(cls.__table__.columns)
-        tuples = []
+        normalized = []
 
         for row in data_rows:
-            tuples.append(
-                tuple(row[column.name] for column in columns)
-            )
-        return cls.pack_tuples(tuples)
+            yield tuple(row[column.name] for column in columns)

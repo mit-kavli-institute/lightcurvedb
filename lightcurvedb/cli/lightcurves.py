@@ -320,6 +320,15 @@ def partition_ingest(
 
     click.echo("Loading quality flags from cache...")
     quality_flags = cache.quality_flag_df
+    quality_flags.reset_index(inplace=True)
+    quality_flags.rename(
+        mapper={
+            'cadences': 'cadence',
+            'quality_flags': 'new_qflags'
+            },
+        inplace=True,
+        axis=1
+    )
 
     full_length = len(cache_df)
     click.echo(
@@ -450,7 +459,6 @@ def partition_ingest(
     # LCDB session is no longer needed, release it
     jobs = pd.DataFrame(jobs, columns=SingleMergeJob._fields)
     jobs.set_index('id', inplace=True)
-    click.echo(jobs)
 
     grouped = jobs.groupby(by=partition_id)
 
@@ -484,15 +492,15 @@ def partition_ingest(
 @lightcurve.group()
 @click.pass_context
 @click.argument('blob_path', type=click.Path(dir_okay=False, exists=True))
-def blob(ctx, path):
-    ctx.obj["blob_path"] = path
+def blob(ctx, blob_path):
+    ctx.obj["blob_path"] = blob_path
 
 
 @blob.command()
 @click.pass_context
 def print_observations(ctx):
-    with ctx["dbconf"] as db:
-        reader = LightcurvePartitionReader(ctx["blob_path"])
+    with ctx.obj["dbconf"] as db:
+        reader = LightpointPartitionReader(ctx.obj["blob_path"])
         click.echo(
             reader.print_observations(db)
         )
@@ -501,8 +509,8 @@ def print_observations(ctx):
 @blob.command()
 @click.pass_context
 def print_lightpoints(ctx):
-    with ctx["dbconf"] as db:
-        reader = LightcurvePartitionReader(ctx["blob_path"])
+    with ctx.obj["dbconf"] as db:
+        reader = LightpointPartitionReader(ctx.obj["blob_path"])
         click.echo(
             reader.print_lightpoints(db)
         )

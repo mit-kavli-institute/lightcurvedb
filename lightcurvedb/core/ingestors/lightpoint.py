@@ -392,25 +392,12 @@ def partition_copier(
                 continue
 
             # Update quality flags
-            idx = lightpoints[["cadence", "camera", "ccd"]].to_records(
-                index=False
+            joined = lightpoints.merge(
+                quality_flags,
+                on=['cadence', 'camera', 'ccd']
             )
 
-            try:
-                qflags = quality_flags.loc[idx, "quality_flags"]
-                lightpoints["quality_flag"] = qflags.to_numpy()
-            except ValueError:
-                logger.error(
-                    "Got quality flag slice with a size of {0} but "
-                    "attempted to assign to lightpoints with a size "
-                    "of {1}".format(
-                        len(qflags),
-                        len(lightpoints)
-                    )
-                )
-                logger.error(idx)
-                logger.error(quality_flags)
-                raise
+            lightpoints["quality_flag"] = joined["new_qflags"]
 
             # Align data
             mask = lightpoints["quality_flag"] == 0
@@ -434,11 +421,9 @@ def partition_copier(
         # Full orbital lightcurve
         # Concat full lightcurve and remove duplicate cadences
         full_lp = pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
-        full_lp = full_lp[~full_lp.index.duplicated(keep="last")]
-
         full_obs = pd.DataFrame(observations)
-        full_obs['orbit_id'] = full_obs.apply(lambda row: orbit_id_map[row["orbit_number"]], axis=1)
-        full_obs.drop('orbit_number', inplace=True)
+        full_obs['orbit_id'] = full_obs.apply(lambda row: orbit_map[row["orbit_number"]], axis=1)
+        full_obs.drop('orbit_number', inplace=True, axis=1)
 
         writer.add_observations(full_obs.reset_index().to_dict('records'))
         writer.add_lightpoints(full_lp)

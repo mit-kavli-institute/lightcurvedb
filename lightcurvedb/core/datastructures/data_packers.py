@@ -135,10 +135,9 @@ class LightpointPartitionWriter(LightpointPartitionBlob):
         self.observation_blob.load_rows(pack_iter)
 
     def add_lightpoints(self, lightpoint_df):
-        pack_iter = Lightpoint.pack_tuples(
-            lightpoint_df.to_records()
-        )
-        self.lightpoint_blob.load_rows(pack_iter)
+        cols = [c.name for c in Lightpoint.__table__.columns]
+        rows = lightpoint_df.reset_index()[cols].to_records(index=False)
+        self.lightpoint_blob.load_rows(rows)
 
     def write(self):
         # Write preamble
@@ -165,6 +164,7 @@ class LightpointPartitionWriter(LightpointPartitionBlob):
 
 
 class LightpointPartitionReader(LightpointPartitionBlob):
+    PREAMBLE_FMT = "IIII"
     def __init__(self, path):
         self.blob_path = path
 
@@ -186,19 +186,23 @@ class LightpointPartitionReader(LightpointPartitionBlob):
         )
 
     def __get_preamble__(self, fd):
-        preamble = struct.unpack('IIII', fd)
+        size_t = struct.calcsize(self.PREAMBLE_FMT)
+        preamble = struct.unpack(self.PREAMBLE_FMT, fd.read(size_t))
         return preamble
 
     def __obs_iter__(self, fd, n_obs):
         loader = Observation.struct()
+        size_t = loader.size
 
-        for _ in range(n_ops):
-            yield loader.unpack(fd)
+        for _ in range(n_obs):
+            yield loader.unpack(fd.read(size_t))
 
     def __lp_iter__(self, fd, n_lps):
         loader = Lightpoint.struct()
+        size_t = loader.size
+
         for _ in range(n_lps):
-            yield loader.unpack(fd)
+            yield loader.unpack(fd.read(size_t))
 
     def print_lightpoints(self, db, **fmt_args):
         with open(self.blob_path, "rb") as fin:
@@ -206,17 +210,20 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             lp_iter = self.__lp_iter__(fin, preamble[3])
             columns = [c.name for c in Lightpoint.__table__.columns]
 
-            return tabulate(lp_iter, header=columns, **fmt_args)
+            return tabulate(lp_iter, headers=columns, **fmt_args)
 
     def print_observations(self, db, **fmt_args):
         with open(self.blob_path, "rb") as fin:
             preamble = self.__get_preamble__(fin)
             # skip lightpoints
-            offset = preamble[3] * Lightpoint.struct_size
-            fin.seek(offset)
+            offset = preamble[3] * Lightpoint.struct_size()
+            fin.seek(offset, 1)
             columns = [c.name for c in Observation.__table__.columns]
-            obs_iter = self.__obs_iter__(find, preamble[2])
-            return tabulate(obs_iter, header=columns, **fmt_args)
+            obs_iter = self.__obs_iter__(fin, preamble[2])
+            return tabulate(obs_iter, headers=columns, **fmt_args)
+
+    def merge(self, db):
+        raise NotImplementedError
 
     def upload(self, db):
         with open(self.blob_path, "rb") as fin:

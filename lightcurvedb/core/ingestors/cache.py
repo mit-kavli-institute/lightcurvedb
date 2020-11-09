@@ -112,6 +112,10 @@ class IngestionCache(object):
             index_col=["cadences", "camera", "ccd"],
         )
 
+    @property
+    def query(self):
+        return self.session.query
+
     def load_observations(self, observation_df):
         """
         Load the observations into the cache database. If an entry exists,
