@@ -3,6 +3,7 @@ from __future__ import division, print_function
 from itertools import groupby, product
 from multiprocessing import Manager, Pool
 from sqlalchemy import Sequence
+from pgcopy import CopyManager
 
 import click
 import pandas as pd
@@ -26,7 +27,11 @@ from lightcurvedb.legacy.timecorrect import (
     PartitionTimeCorrector,
     StaticTimeCorrector,
 )
+from lightcurvedb.core.datastructures.data_packers import (
+    LightpointPartitionReader
+)
 from lightcurvedb.models import Lightcurve, Observation, Orbit
+from tqdm import tqdm
 
 INGESTION_MODES = ["smart", "ignore", "full"]
 
@@ -44,8 +49,8 @@ def yield_optimized_tics(ordered_tics, all_tics):
         yield tic
 
 
-def partition_id(job):
-    return (job.id // 1000) * 1000
+def partition_id(id_):
+    return (id_ // 1000) * 1000
 
 
 def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
@@ -267,6 +272,7 @@ def tic_list(ctx, tic_file, n_processes, scratch):
 @click.option("--cameras", type=CommaList(int), default="1,2,3,4")
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--n-processes", default=48, type=click.IntRange(min=1))
+@click.option("--update/--no-update", default=False)
 @click.option(
     "--types",
     type=str,
@@ -280,13 +286,18 @@ def tic_list(ctx, tic_file, n_processes, scratch):
     default=["Aperture_00{0}".format(xth) for xth in range(5)],
 )
 def partition_ingest(
-    ctx, orbits, cameras, ccds, n_processes, types, apertures
+    ctx, orbits, cameras, ccds, n_processes, types, apertures, update
 ):
     cache = IngestionCache()
-    file_observation_q = cache.session.query(FileObservation).filter(
+    tic_q = cache.session.query(FileObservation.tic_id).filter(
         FileObservation.orbit_number.in_(orbits),
         FileObservation.camera.in_(cameras),
         FileObservation.ccd.in_(ccds),
+
+    ).distinct()
+
+    file_observation_q = cache.session.query(FileObservation).filter(
+        FileObservation.tic_id.in_(tic_q.subquery())
     )
 
     click.echo("Loading in h5 location maps from cache...")
@@ -310,31 +321,64 @@ def partition_ingest(
     click.echo("Loading quality flags from cache...")
     quality_flags = cache.quality_flag_df
 
+    full_length = len(cache_df)
+    click.echo(
+        "determined {0} files to be processed".format(
+            full_length
+        )
+    )
+    cache.session.close()
+
     with ctx.obj["dbconf"] as db:
         # Remove jobs already ingested
         click.echo("Connected to lightcurve database")
-        click.echo("Determining existing observations...")
-        existing_obs = set(
-            db.query(Observation.tic_id, Orbit.orbit_number)
-            .join(Observation.orbit)
-            .filter(
-                Orbit.orbit_number.in_(orbits),
-                Observation.camera.in_(cameras),
-                Observation.ccd.in_(ccds),
+        orbit_map = {
+            number: id_
+            for number, id_ in db.query(Orbit.orbit_number, Orbit.id)
+        }
+        if not update:
+            click.echo("\tDetermining existing observations...")
+            existing_obs = set(
+                db.query(Observation.tic_id, Orbit.orbit_number)
+                .join(Observation.orbit)
+                .filter(
+                    Observation.camera.in_(cameras),
+                    Observation.ccd.in_(ccds)
+                ).yield_per(1000)
             )
-        )
-        cache_df["already_ingested"] = cache_df.apply(
-            lambda row: (int(row.name), row["orbit_number"]) in existing_obs,
-            axis=1,
-        )
-        click.echo("Removing ingestions that already exist...")
-        new_obs = cache_df[~cache_df["already_ingested"]]
+            click.echo(
+                "\tFlagging duplicates..."
+            )
+            cache_df["already_ingested"] = cache_df.apply(
+                lambda row: (int(row.name), row["orbit_number"]) in existing_obs,
+                axis=1,
+            )
 
-        click.echo("Preparing time corrector")
+
+            click.echo("\tRemoving ingestions that already exist...")
+            new_obs = cache_df[~cache_df["already_ingested"]]
+            new_length = len(new_obs)
+
+            if (full_length - new_length) > 0:
+                n_removed = full_length - new_length
+                click.echo(
+                    "\tRemoved {0} ingestion jobs to a total of {1}".format(
+                        n_removed,
+                        new_length
+                    )
+                )
+        else:
+            new_obs = cache_df
+
+        tics = set(new_obs.reset_index()['tic_id'].values)
+
+        click.echo("\tPreparing time corrector")
         time_corrector = PartitionTimeCorrector(db.session)
 
-        click.echo("Making lightcurve paramters -> id map")
-        lc_id_q = db.lightcurve_id_map(resolve=False)
+        click.echo("\tMaking lightcurve paramters -> id map")
+        lc_id_q = db.lightcurve_id_map(resolve=False).filter(
+            Lightcurve.tic_id.in_(tics)
+        )
 
         id_map = {
             (tic_id, ap, lct): id_
@@ -347,58 +391,118 @@ def partition_ingest(
         jobs = []
         id_seq = Sequence("lightcurves_id_seq")
 
-        for tic_id in set(new_obs.index):
-            for type_, aperture in product(types, apertures):
-                key = (tic_id, aperture, type_)
-                try:
-                    id_ = id_map[key]
-                    job = SingleMergeJob(
-                        tic_id=tic_id,
-                        aperture=aperture,
-                        lightcurve_type=type_,
-                        id=id_,
-                    )
-                except KeyError:
-                    # New lightcurve!
-                    params = dict(
-                        tic_id=tic_id,
-                        aperture_id=aperture,
-                        lightcurve_type_id=type_,
-                        id=db.session.execute(id_seq),
-                    )
+        expected_len = len(tics) * len(types) * len(apertures)
+        prod_iter = product(tics, types, apertures)
 
-                    id_map[key] = params["id"]
-                    new_lc_params.append(params)
-                    job = SingleMergeJob(
-                        tic_id=params["tic_id"],
-                        aperture=params["aperture_id"],
-                        lightcurve_type=params["lightcurve_type_id"],
-                        id=params["id"],
-                    )
-                jobs.append(job)
-        click.echo("Inserting new lightcurves...")
-        db.session.bulk_insert_mappings(Lightcurve, new_lc_params)
-
-        jobs = sorted(jobs, key=lambda job: job[3])
-        partition_wise_jobs = []
-        for _, partition_job in groupby(jobs, partition_id):
-            tics = {job.tic_id for job in partition_job}
-            relevant_obs_map = new_obs.loc[tics]
-            relevant_tic_params = tic_parameters.loc[tics]
-            partition_wise_jobs.append(
-                (partition_job, relevant_obs_map, relevant_tic_params)
-            )
-
-        with Pool(n_processes) as pool:
-            results = pool.imap(
-                partition_copier,
-                product(
-                    [time_corrector], [quality_flags], partition_wise_jobs
-                ),
-            )
-            for lp_out, obs_out in results:
-                click.echo(
-                    "Submissing {0} and {1} for ingestion".format(
-                        lp_out, obs_out
-                    )
+        for tic_id, type_, aperture in tqdm(prod_iter, total=expected_len):
+            key = (tic_id, aperture, type_)
+            try:
+                id_ = id_map[key]
+                job = SingleMergeJob(
+                    tic_id=tic_id,
+                    aperture=aperture,
+                    lightcurve_type=type_,
+                    id=id_,
                 )
+            except KeyError:
+                # New lightcurve!
+                params = dict(
+                    tic_id=tic_id,
+                    aperture_id=aperture,
+                    lightcurve_type_id=type_,
+                    id=db.session.execute(id_seq),
+                )
+
+                id_map[key] = params["id"]
+                new_lc_params.append(params)
+                job = SingleMergeJob(
+                    tic_id=int(params["tic_id"]),
+                    aperture=str(params["aperture_id"]),
+                    lightcurve_type=str(params["lightcurve_type_id"]),
+                    id=int(params["id"]),
+                )
+            jobs.append(job)
+
+        if len(new_lc_params) > 0:
+            click.echo("COPYing {0} new lightcurves...".format(
+                len(new_lc_params)   
+            ))
+            conn = db.session.connection().connection
+
+            mgr = CopyManager(
+                conn,
+                Lightcurve.__tablename__,
+                ['id', 'tic_id', 'aperture_id', 'lightcurve_type_id']
+            )
+
+            mgr.threading_copy(
+                (
+                    r["id"],
+                    r["tic_id"],
+                    r["aperture_id"],
+                    r["lightcurve_type_id"]
+                )
+                for r in tqdm(new_lc_params)
+            )
+            conn.commit()
+            conn.close()
+
+    # LCDB session is no longer needed, release it
+    jobs = pd.DataFrame(jobs, columns=SingleMergeJob._fields)
+    jobs.set_index('id', inplace=True)
+    click.echo(jobs)
+
+    grouped = jobs.groupby(by=partition_id)
+
+    partition_wise_jobs = []
+    click.echo("Grouping lightcurve jobs by partition ID")
+    for id_, group in tqdm(grouped):
+        partition_wise_jobs.append(
+            (
+                id_,
+                id_ + 1000,
+                group,
+                new_obs, 
+                tic_parameters
+            )
+        )
+
+    with Pool(n_processes) as pool:
+        results = pool.imap(
+            partition_copier,
+            product(
+                [time_corrector], [quality_flags], [orbit_map], partition_wise_jobs
+            ),
+        )
+        for path in results:
+            click.echo(
+                "Submissing {0}".format(
+                    path
+                )
+            )
+
+@lightcurve.group()
+@click.pass_context
+@click.argument('blob_path', type=click.Path(dir_okay=False, exists=True))
+def blob(ctx, path):
+    ctx.obj["blob_path"] = path
+
+
+@blob.command()
+@click.pass_context
+def print_observations(ctx):
+    with ctx["dbconf"] as db:
+        reader = LightcurvePartitionReader(ctx["blob_path"])
+        click.echo(
+            reader.print_observations(db)
+        )
+
+
+@blob.command()
+@click.pass_context
+def print_lightpoints(ctx):
+    with ctx["dbconf"] as db:
+        reader = LightcurvePartitionReader(ctx["blob_path"])
+        click.echo(
+            reader.print_lightpoints(db)
+        )

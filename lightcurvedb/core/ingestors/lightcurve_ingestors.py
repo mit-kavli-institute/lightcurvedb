@@ -138,7 +138,7 @@ def load_lightpoints(path, lightcurve_id, aperture, type_):
         if has_error_field:
             errors = lc["{0}Error".format(type_)][()]
         else:
-            errors = np.fulllike(cadences, np.nan, dtype=np.double)
+            errors = np.full_like(cadences, np.nan, dtype=np.double)
 
         lightpoints = pd.DataFrame(
             data=dict(

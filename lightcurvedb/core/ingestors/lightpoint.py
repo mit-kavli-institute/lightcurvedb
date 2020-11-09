@@ -21,6 +21,9 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     kwargs_to_df,
     load_lightpoints,
 )
+from lightcurvedb.core.datastructures.data_packers import (
+    LightpointPartitionWriter
+)
 from lightcurvedb.util.logger import lcdb_logger as logger
 
 from lightcurvedb import db_from_config
@@ -63,7 +66,7 @@ MergeJob = namedtuple(
 )
 
 SingleMergeJob = namedtuple(
-    "SingleMerge", ("tic_id", "aperture", "lightcurve_type", "id")
+    "SingleMergeJob", ("tic_id", "aperture", "lightcurve_type", "id")
 )
 
 PartitionJob = namedtuple(
@@ -331,40 +334,83 @@ class MassIngestor(LightpointProcessor):
 
 
 def partition_copier(
-    time_corrector,
-    quality_flags,
-    partition_job,
+    args,
     destination="/scratch2",
-    lightpoint_pattern="lightpoints_{begin_range}.blob",
-    obs_pattern="observations_{begin_range}.blob",
 ):
     """
     Merges and corrects a lightcurve and its source files.
     Returns a multi-index pandas dataframe representing the data
     for all lightcurves and the new observations to update.
     """
-    merge_jobs, observation_map, tic_parameters = partition_job
-    lps = []
-    observations = []
+    time_corrector = args[0]
+    quality_flags = args[1]
+    orbit_map = args[2]
+    partition_job = args[3]
 
-    for tic_id, ap_id, lct_id, id_ in merge_jobs:
-        observations = observation_map.loc[tic_id]
+    start, end, merge_jobs, observation_map, tic_parameters = partition_job
+    writer = LightpointPartitionWriter(
+        start,
+        end,
+        destination
+    )
+    merge_jobs.reset_index(inplace=True)
+    logger.debug(
+        "merger given {0} jobs".format(len(merge_jobs))
+    )
+
+    for job_kwarg in merge_jobs.to_dict('records'):
+        tic_id = job_kwarg['tic_id']
+        ap_id = job_kwarg['aperture']
+        lct_id = job_kwarg['lightcurve_type']
+        id_ = job_kwarg['id']
+        try:
+            relevant_obs = observation_map.loc[[tic_id]]
+        except KeyError:
+            continue
+
+        relevant_obs = relevant_obs[
+            ['orbit_number', 'camera', 'ccd', 'file_path']
+        ]
         tmag, ra, dec = tic_parameters.loc[tic_id]
         logger.info(
-            "processing {0} [{1} {2}:{3}]".format(
+            "processing {0} [{1} {2}:{3}] with {4} files".format(
                 tic_id,
                 tmag,
                 ra,
                 dec,
+                len(relevant_obs),
             )
         )
 
-        for orbit, camera, ccd, path in observations.to_records():
-            lightpoints = load_lightpoints(path, id_, ap_id, lct_id)
+        lps = []
+        observations = []
+
+        for _, orbit, camera, ccd, path in relevant_obs.to_records():
+            try:
+                lightpoints = load_lightpoints(path, id_, ap_id, lct_id)
+            except OSError:
+                continue
 
             # Update quality flags
-            idx = lightpoints[["cadence", "camera", "ccd"]]
-            lightpoints["quality_flag"] = quality_flags.loc[idx].to_numpy()
+            idx = lightpoints[["cadence", "camera", "ccd"]].to_records(
+                index=False
+            )
+
+            try:
+                qflags = quality_flags.loc[idx, "quality_flags"]
+                lightpoints["quality_flag"] = qflags.to_numpy()
+            except ValueError:
+                logger.error(
+                    "Got quality flag slice with a size of {0} but "
+                    "attempted to assign to lightpoints with a size "
+                    "of {1}".format(
+                        len(qflags),
+                        len(lightpoints)
+                    )
+                )
+                logger.error(idx)
+                logger.error(quality_flags)
+                raise
 
             # Align data
             mask = lightpoints["quality_flag"] == 0
@@ -382,48 +428,23 @@ def partition_copier(
             observations.append(
                 dict(tic_id=tic_id, orbit_number=orbit, camera=camera, ccd=ccd)
             )
-    logger.debug("performing cadence de-duplication and pre-ordering")
+        if len(lps) == 0:
+            continue
 
-    # Concat full lightcurve and remove duplicate cadences
-    full_lp = pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
-    full_lp = full_lp[~full_lp.index.duplicated(keep="last")]
+        # Full orbital lightcurve
+        # Concat full lightcurve and remove duplicate cadences
+        full_lp = pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
+        full_lp = full_lp[~full_lp.index.duplicated(keep="last")]
 
-    lp_filename = lightpoint_pattern.format(
-        begin_range=(merge_jobs[0][3] // 1000) * 1000
-    )
-    obs_filename = obs_pattern.format(
-        begin_range=(merge_jobs[0][3] // 1000) * 1000
-    )
+        full_obs = pd.DataFrame(observations)
+        full_obs['orbit_id'] = full_obs.apply(lambda row: orbit_id_map[row["orbit_number"]], axis=1)
+        full_obs.drop('orbit_number', inplace=True)
 
-    # Write lightpoints
-    lp_path = os.path.join(destination, lp_filename)
-    obs_path = os.path.join(destination, obs_filename)
+        writer.add_observations(full_obs.reset_index().to_dict('records'))
+        writer.add_lightpoints(full_lp)
 
-    logger.debug(
-        "finished processing {0} jobs, dumping to {1} and {2}".format(
-            len(merge_jobs), lp_path, obs_path
-        )
-    )
-
-    lp_packer = struct.Struct(Lightpoint.struct_pattern)
-    obs_packer = struct.Struct("QccH")
-
-    with open(lp_path, "wb") as lp_out:
-        for record in full_lp.to_records():
-            packed = lp_packer.pack(*record)
-            lp_out.write(packed)
-
-    with open(obs_path, "wb") as obs_out:
-        for record in observations:
-            packed = obs_packer(
-                record["tic_id"],
-                record["camera"],
-                record["ccd"],
-                record["orbit_number"],
-            )
-            obs_out.write(packed)
-
-    return lp_out, obs_out
+    writer.write()
+    return writer.blob_path
 
 
 def partition_consumer(config, lightpoint_filepath, observation_filepath):
