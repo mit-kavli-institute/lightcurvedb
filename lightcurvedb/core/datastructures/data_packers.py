@@ -2,7 +2,7 @@ from abc import abstractmethod
 from pandas import read_csv
 from datetime import datetime
 from lightcurvedb.core.datastructures.blob import Blob, RowWiseBlob
-from lightcurvedb.models import Observation, Lightpoint
+from lightcurvedb.models import Observation, Lightpoint, Orbit
 import os
 import struct
 from io import BufferedIOBase
@@ -122,12 +122,12 @@ class LightpointPartitionWriter(LightpointPartitionBlob):
         self.observation_blob = RowWiseBlob(
             Observation.struct_fmt(),
             scratch_path,
-            name="obs_{0}_{1}".format(partition_start, partition_end)
+            name="obs_{0}_{1}".format(partition_start, partition_end),
         )
         self.lightpoint_blob = RowWiseBlob(
             Lightpoint.struct_fmt(),
             scratch_path,
-            name="lp_{0}_{1}".format(partition_start, partition_end)
+            name="lp_{0}_{1}".format(partition_start, partition_end),
         )
 
     def add_observations(self, observations):
@@ -141,13 +141,13 @@ class LightpointPartitionWriter(LightpointPartitionBlob):
 
     def write(self):
         # Write preamble
-        fmt = 'IIII'
+        fmt = "IIII"
         preamble_bytes = struct.pack(
             fmt,
             self.partition_start,
             self.partition_end,
             len(self.observation_blob),
-            len(self.lightpoint_blob)
+            len(self.lightpoint_blob),
         )
         with open(self.blob_path, "wb") as out:
             out.write(preamble_bytes)
@@ -165,8 +165,10 @@ class LightpointPartitionWriter(LightpointPartitionBlob):
 
 class LightpointPartitionReader(LightpointPartitionBlob):
     PREAMBLE_FMT = "IIII"
+
     def __init__(self, path):
         self.blob_path = path
+        self.preamble_cache = None
 
     def __repr__(self):
         with open(self.blob_path, "rb") as fin:
@@ -176,19 +178,33 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             n_obs = preamble[2]
             n_lightpoints = preamble[3]
         return (
-            "LP_Partition {0}-{1}: "
-            "{2} Observations {3} Lightpoints"
-        ).format(
-            partition_start,
-            partition_end,
-            n_obs,
-            n_lightpoints
-        )
+            "LP_Partition {0}-{1}: " "{2} Observations {3} Lightpoints"
+        ).format(partition_start, partition_end, n_obs, n_lightpoints)
 
     def __get_preamble__(self, fd):
         size_t = struct.calcsize(self.PREAMBLE_FMT)
         preamble = struct.unpack(self.PREAMBLE_FMT, fd.read(size_t))
         return preamble
+
+    @property
+    def preamble(self):
+        if not preamble_cache:
+            with open(self.blob_path, "rb") as fin:
+                preamble_tuple = self.__get_preamble__(fin)
+            preamble = {
+                "partition_start": preamble[0],
+                "partition_end": preamble[1],
+                "number_of_observations": preamble[2],
+                "number_of_lightpoints": preamble[3],
+            }
+            self.preamble_cache = preamble
+        return self.preamble_cache
+
+    @property
+    def partition_name(self):
+        return "lightpoints_{partition_start}_{partition_end}".format(
+            **self.preamble
+        )
 
     def __obs_iter__(self, fd, n_obs):
         loader = Observation.struct()
@@ -203,6 +219,30 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
         for _ in range(n_lps):
             yield loader.unpack(fd.read(size_t))
+
+    def __is_defined__(self, lightcurve_id, cadence):
+        pass
+
+    def yield_lightpoints(self, *fields):
+
+        cols = [c.name for c in Lightpoint.__table__.columns]
+
+        if not fields:
+            fields = cols
+
+        idx = [i for i, col in enumerate(cols) if col in fields]
+
+        with open(self.blob_path, "rb") as fin:
+            preamble = self.__get_preamble__(fin)
+            lp_iter = self.__lp_iter__(fin, preamble[3])
+            for lp in lp_iter:
+                yield tuple(lp[col] for col in idx)
+
+    def yield_observations(self):
+        with open(self.blob_path, "rb") as fin:
+            preamble = self.preamble
+            obs_iter = self.__obs_iter__(fin, preamble["number_observations"])
+            return obs_iter
 
     def print_lightpoints(self, db, **fmt_args):
         with open(self.blob_path, "rb") as fin:
@@ -222,8 +262,65 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             obs_iter = self.__obs_iter__(fin, preamble[2])
             return tabulate(obs_iter, headers=columns, **fmt_args)
 
+    def print_summary(self, db, **fmt_args):
+        with open(self.blob_path, "rb") as fin:
+            preamble = self.__get_preamble__(fin)
+            partition_start = preamble[0]
+            partition_end = preamble[1]
+            n_obs = preamble[2]
+            n_lightpoints = preamble[3]
+
+            # skip lightpoints
+            lp_iter = self.__lp_iter__(fin, n_lightpoints)
+            idx = [
+                i
+                for i, col in enumerate(Lightpoint.__table__.columns)
+                if col.name == "lightcurve_id"
+            ][0]
+            lightcurve_ids = {row[idx] for row in lp_iter}
+
+            idx = [
+                i
+                for i, col in enumerate(Observation.__table__.columns)
+                if col.name == "orbit_id"
+            ][0]
+            obs_iter = self.__obs_iter__(fin, n_obs)
+            orbit_ids = {row[idx] for row in obs_iter}
+
+        with db as open_db:
+            orbit_numbers = (
+                db.query(Orbit.orbit_number)
+                .filter(Orbit.id.in_(orbit_ids))
+                .order_by(Orbit.orbit_number)
+            )
+
+        summary = [
+            {
+                "Number of Observation rows": n_obs,
+                "Number of Lightpoints": n_lightpoints,
+                "Number of unique ids": len(lightcurve_ids),
+                "ID Coverage": "{0}%".format(
+                    (len(lightcurve_ids) / (partition_end - partition_start))
+                    * 100.0
+                ),
+                "Orbits": ", ".join(
+                    [str(number) for number, in orbit_numbers]
+                ),
+            }
+        ]
+        return tabulate(summary, headers="keys")
+
     def merge(self, db):
-        raise NotImplementedError
+
+        with open(self.blob_path, "rb") as fin:
+            preamble = self.__get_preamble__(fin)
+
+        partition_name = "partitions.lightpoints_{0}_{1}".format(
+            preamble[0], preamble[1]
+        )
+
+        q = select([Lightpoint]).select_from(text(partition_name))
+        pass
 
     def upload(self, db):
         with open(self.blob_path, "rb") as fin:
@@ -234,37 +331,29 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             n_lightpoints = preamble[3]
 
             partition = "partitions.{0}_{1}_{2}".format(
-                Lightpoint.__tablename__,
-                partition_start,
-                partition_end
+                Lightpoint.__tablename__, partition_start, partition_end
             )
 
             # Copy lightpoints
             columns = [c.name for c in Lightpoint.__table__.columns]
             mgr = CopyManager(
-                db.session.connection().connection,
-                partition,
-                columns
+                db.session.connection().connection, partition, columns
             )
-            mg.threaded_copy(
-                self.__lp_iter__(fin, n_lightpoints)
-            )
+            mg.threaded_copy(self.__lp_iter__(fin, n_lightpoints))
 
             # Observations can be inserted normally
             columns = [c.name for c in Observation.__table__.columns]
 
             obs_df.DataFrame(
-                self.__obs_iter__(fin, n_obs),
-                columns=columns
-            ).set_index(['tic_id', 'orbit_id']).sort_index()
+                self.__obs_iter__(fin, n_obs), columns=columns
+            ).set_index(["tic_id", "orbit_id"]).sort_index()
 
             # Remove duplication
-            obs_df = obs_df[~obs_df.index.duplicated(keep='last')]
+            obs_df = obs_df[~obs_df.index.duplicated(keep="last")]
             q = Observation.upsert_q()
 
             db.session.execute(
-                Observation.upsert_q(),
-                obs_df.reset_index().to_dict('records')
+                Observation.upsert_q(), obs_df.reset_index().to_dict("records")
             )
 
             db.commit()

@@ -16,13 +16,16 @@ from lightcurvedb import db_from_config
 from lightcurvedb.core.base_model import QLPModel
 from collections import namedtuple, defaultdict
 from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
+from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
     load_lightpoints,
 )
+from lightcurvedb.core.tic8 import one_off
+from lightcurvedb.legacy.timecorrect import PartitionTimeCorrector
 from lightcurvedb.core.datastructures.data_packers import (
-    LightpointPartitionWriter
+    LightpointPartitionWriter,
 )
 from lightcurvedb.util.logger import lcdb_logger as logger
 
@@ -72,6 +75,62 @@ SingleMergeJob = namedtuple(
 PartitionJob = namedtuple(
     "PartitionJob", ("merge_jobs", "observation_map", "tic_parameters")
 )
+
+
+class LightpointNormalizer(object):
+    def __init__(self, cache, db):
+        self.time_corrector = PartitionTimeCorrector(db)
+        self.quality_flags = cache.quality_flag_df.reset_index()
+        self.quality_flags.rename(
+            mapper={"cadences": "cadence", "quality_flags": "new_qflag"},
+            inplace=True,
+            axis=1,
+        )
+
+        self.stellar_params = cache.tic_parameter_df
+
+    def get_stellar_params(self, tic_id):
+        try:
+            return self.stellar_params.loc[tic_id]
+        except KeyError:
+            return one_off(tic_id, "tmag", "ra", "dec")
+
+    def correct(self, tic_id, lightpoint_df):
+        # Grab relevant data
+        tmag, ra, dec = self.get_stellar_params(tic_id)
+
+        # Assign new quality_flags
+        joined = lightpoint_df.merge(
+            self.quality_flags, on=["cadence", "camera", "ccd"]
+        )
+
+        lightpoint_df["quality_flag"] = joined["new_qflag"]
+
+        # Perform orbital aligment
+        mask = lightpoint_df["quality_flag"] == 0
+        good_values = lightpoint_df[mask]["data"].to_numpy()
+        offset = np.nanmedian(good_values) - tmag
+        lightpoint_df["data"] = lightpoint_df["data"] - offset
+
+        # Time correct
+        bjd = self.time_corrector.correct_bjd(ra, dec, lightpoint_df)
+        try:
+            lightpoint_df["barycentric_julian_date"] = bjd
+        except ValueError:
+            raise RuntimeError(
+                "Error processing\n{0}, got bjd array len {1}".format(
+                    lightpoint_df, len(bjd)
+                )
+            )
+
+        logger.debug(
+            "corrected {0} points with tmag "
+            "{1} and coordinates {2}:{3}".format(
+                len(lightpoint_df), tmag, ra, dec
+            )
+        )
+
+        return lightpoint_df
 
 
 def cadence_map_to_iter(id_cadence_map):
@@ -334,8 +393,7 @@ class MassIngestor(LightpointProcessor):
 
 
 def partition_copier(
-    args,
-    destination="/scratch2",
+    args, destination="/scratch2",
 ):
     """
     Merges and corrects a lightcurve and its source files.
@@ -348,37 +406,27 @@ def partition_copier(
     partition_job = args[3]
 
     start, end, merge_jobs, observation_map, tic_parameters = partition_job
-    writer = LightpointPartitionWriter(
-        start,
-        end,
-        destination
-    )
+    writer = LightpointPartitionWriter(start, end, destination)
     merge_jobs.reset_index(inplace=True)
-    logger.debug(
-        "merger given {0} jobs".format(len(merge_jobs))
-    )
+    logger.debug("merger given {0} jobs".format(len(merge_jobs)))
 
-    for job_kwarg in merge_jobs.to_dict('records'):
-        tic_id = job_kwarg['tic_id']
-        ap_id = job_kwarg['aperture']
-        lct_id = job_kwarg['lightcurve_type']
-        id_ = job_kwarg['id']
+    for job_kwarg in merge_jobs.to_dict("records"):
+        tic_id = job_kwarg["tic_id"]
+        ap_id = job_kwarg["aperture"]
+        lct_id = job_kwarg["lightcurve_type"]
+        id_ = job_kwarg["id"]
         try:
             relevant_obs = observation_map.loc[[tic_id]]
         except KeyError:
             continue
 
         relevant_obs = relevant_obs[
-            ['orbit_number', 'camera', 'ccd', 'file_path']
+            ["orbit_number", "camera", "ccd", "file_path"]
         ]
         tmag, ra, dec = tic_parameters.loc[tic_id]
         logger.info(
             "processing {0} [{1} {2}:{3}] with {4} files".format(
-                tic_id,
-                tmag,
-                ra,
-                dec,
-                len(relevant_obs),
+                tic_id, tmag, ra, dec, len(relevant_obs),
             )
         )
 
@@ -393,8 +441,7 @@ def partition_copier(
 
             # Update quality flags
             joined = lightpoints.merge(
-                quality_flags,
-                on=['cadence', 'camera', 'ccd']
+                quality_flags, on=["cadence", "camera", "ccd"]
             )
 
             lightpoints["quality_flag"] = joined["new_qflags"]
@@ -420,17 +467,113 @@ def partition_copier(
 
         # Full orbital lightcurve
         # Concat full lightcurve and remove duplicate cadences
-        full_lp = pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
+        full_lp = (
+            pd.concat(lps).set_index("lightcurve_id", "cadence").sort_index()
+        )
         full_obs = pd.DataFrame(observations)
-        full_obs['orbit_id'] = full_obs.apply(lambda row: orbit_map[row["orbit_number"]], axis=1)
-        full_obs.drop('orbit_number', inplace=True, axis=1)
+        full_obs["orbit_id"] = full_obs.apply(
+            lambda row: orbit_map[row["orbit_number"]], axis=1
+        )
+        full_obs.drop("orbit_number", inplace=True, axis=1)
 
-        writer.add_observations(full_obs.reset_index().to_dict('records'))
+        writer.add_observations(full_obs.reset_index().to_dict("records"))
         writer.add_lightpoints(full_lp)
 
     writer.write()
     return writer.blob_path
 
 
-def partition_consumer(config, lightpoint_filepath, observation_filepath):
-    pass
+def partition_consumer(config, partition_path, id_cadence_blacklist=None):
+
+    blacklist = id_cadence_blacklist if id_cadence_blacklist else {}
+    reader = LightpointPartitionReader(partition_path)
+
+    lightpoints = reader.yield_lightpoints()
+    sorted_lps = sorted(lightpoints, key=lambda lp: (lp[0], lp[1]))
+
+    obs_params = map(
+        lambda row: {
+            "tic_id": row[0],
+            "camera": row[1],
+            "ccd": row[2],
+            "orbit_id": row[3],
+        },
+        reader.yield_observations(),
+    )
+
+    with db_from_config(config) as db:
+        logger.debug("PartitionConsumer connected to psql...")
+        mgr = CopyManager(
+            db.session.connection().connection,
+            "partitions.{0}".format(reader.partition_name),
+            Lightpoint.columns,
+        )
+
+        logger.debug("Copying lightpoints")
+        mgr.threading_copy(sorted_lps)
+
+        logger.debug("Upserting new observation rows")
+        q = Observation.upsert_q()
+
+        db.session.execute(q, list(obs_params))
+        db.commit()
+
+
+def get_partition_h5_def(config, partition_start, partition_end):
+    cache = IngestionCache()
+
+
+def merge_partition(config, partition_name, partition_path):
+
+    cols = Lightpoint.get_columns()
+
+    logger.debug("Opening {0} for merging".format(partition_path))
+    reader = LightpointPartitonReader(partition_path)
+    lightpoints = reader.yield_lightpoints()
+
+    sorted_lps = sorted(lightpoints, key=lambda lp: (lp[0], lp[1]))
+
+    disk_lp = pd.DataFrame(sorted_lps, columns=cols).set_index(
+        ["lightcurve_id", "cadence"]
+    )
+
+    logger.debug("Read {0} points".format(len(disk_lp)))
+    obs_params = map(
+        lambda row: {
+            "tic_id": row[0],
+            "camera": row[1],
+            "ccd": row[2],
+            "orbit_id": row[3],
+        },
+        reader.yield_observations(),
+    )
+
+    select_clause = ", ".join(cols)
+
+    q = text("SELECT {0} FROM {1}".format(select_clause, partition_name))
+
+    with db_from_config(config) as db:
+        logger.debug("Querying remote partition")
+        results = db.session.execute(q)
+        remote_df = pd.DataFrame(results, columns=cols).set_index(
+            ["lightcurve_id", "cadence"]
+        )
+        logger.debug("Obtained {0} points".format(len(remote_df)))
+
+    # Copy only new lightpoints
+    existing_idx = remote_df.index
+
+    new_lps = disk_lp.loc[~disk_lp.index.isin(existing_idx)]
+
+    with db_from_config(config) as db:
+        logger.debug("Pushing new data")
+        mgr = CopyManager(
+            db.session.connection().connection, partition_name, cols
+        )
+        mgr.threading_copy(new_lps.to_records())
+        q = Observation.upsert_q()
+
+        db.session.execute(q, list(obs_params))
+        db.commit()
+
+    logger.debug("Done")

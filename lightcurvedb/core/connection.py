@@ -764,7 +764,10 @@ class DB(object):
             return q.all()
         return q
 
-    def lightcurve_id_map(self, *filters, resolve=True):
+    def lightcurve_id_map(self, filters=None, resolve=True):
+        if not filters:
+            filters = []
+
         q = self.query(
             models.Lightcurve.id,
             models.Lightcurve.tic_id,

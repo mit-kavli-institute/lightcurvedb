@@ -41,6 +41,10 @@ class QLPModel(object):
             .label("oid")
         )
 
+    @classmethod
+    def get_columns(cls):
+        return tuple(col.name for col in cls.__table__.columns)
+
 
 class QLPDataProduct(QLPModel):
     """

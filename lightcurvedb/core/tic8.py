@@ -4,6 +4,7 @@ import warnings
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.exc import DisconnectionError, SAWarning
 from sqlalchemy.event import listens_for
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, Table
 
 CONFIG_PATH = os.path.expanduser(
@@ -65,3 +66,17 @@ except IOError:
     TIC8_Base = None
     TIC8_ENGINE = None
     TIC_Entries = None
+
+
+def one_off(tic_id, *parameters):
+    global TIC8_ENGINE
+    TIC8Session = sessionmaker(autoflush=True)
+    TIC8Session.configure(bind=TIC8_ENGINE)
+
+    tic8 = TIC8Session()
+
+    return (
+        tic8.query(*[getattr(TIC_Entries.c, column) for column in parameters])
+        .filter(TIC_Entries.c.id == tic_id)
+        .one()
+    )

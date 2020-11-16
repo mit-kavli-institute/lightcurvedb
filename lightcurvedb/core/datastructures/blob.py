@@ -38,22 +38,16 @@ def get_struct_equivalency(column):
         return "d"
     raise ValueError(
         "Could not find proper struct type for column {0} with "
-        "type {1}.".format(
-            column.name, column.type_
-        )
+        "type {1}.".format(column.name, column.type_)
     )
 
 
 class Blob(object):
-
     def __init__(self, scratch_path, name=None):
         self.rows = 0
         self.name = name if name else "process-{0}".format(os.getpid())
         self.blob_path = os.path.join(
-            scratch_path,
-            "{0}.blob".format(
-                self.name
-            )
+            scratch_path, "{0}.blob".format(self.name)
         )
 
     def __len__(self):
@@ -97,9 +91,7 @@ class Blobable(object):
     @classmethod
     def struct_fmt(cls):
         columns = tuple(cls.__table__.columns)
-        struct_format = ''.join(
-            map(get_struct_equivalency, columns)
-        )
+        struct_format = "".join(map(get_struct_equivalency, columns))
         return struct_format
 
     @classmethod

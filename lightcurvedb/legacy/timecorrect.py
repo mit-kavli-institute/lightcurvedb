@@ -143,6 +143,10 @@ class StaticTimeCorrector(TimeCorrector):
             q.statement, session.bind, index_col=["cadence", "camera"]
         ).sort_index()
 
+        self.mid_tjd_map = self.mid_tjd_map[
+            ~self.mid_tjd_map.index.duplicated(keep="last")
+        ]
+
         self.tess_x_interpolator = interp1d(
             self.ephemris.barycentric_dynamical_time,
             self.ephemris.x_coordinate,
@@ -203,6 +207,5 @@ class StaticTimeCorrector(TimeCorrector):
 
 class PartitionTimeCorrector(StaticTimeCorrector):
     def mid_tjd(self, lightpoint_df):
-        df = lightpoint_df.reset_index()
-        index = [tuple(r) for r in df[["cadence", "camera"]].values]
+        index = [tuple(r) for r in lightpoint_df[["cadence", "camera"]].values]
         return self.mid_tjd_map.loc[index]["mid_tjd"].values

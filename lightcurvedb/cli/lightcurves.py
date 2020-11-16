@@ -2,21 +2,27 @@ from __future__ import division, print_function
 
 from itertools import groupby, product
 from multiprocessing import Manager, Pool
-from sqlalchemy import Sequence
+from sqlalchemy import Sequence, text
 from pgcopy import CopyManager
+from collections import defaultdict
 
 import click
 import pandas as pd
+import sys
+import warnings
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
 from lightcurvedb.core.constants import CACHE_DIR
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.lightcurve_ingestors import load_lightpoints
 from lightcurvedb.core.ingestors.lightpoint import (
     MassIngestor,
     MergeJob,
     SingleMergeJob,
     partition_copier,
+    LightpointNormalizer,
+    merge_partition,
 )
 from lightcurvedb.core.ingestors.temp_table import (
     FileObservation,
@@ -28,10 +34,12 @@ from lightcurvedb.legacy.timecorrect import (
     StaticTimeCorrector,
 )
 from lightcurvedb.core.datastructures.data_packers import (
-    LightpointPartitionReader
+    LightpointPartitionReader,
 )
-from lightcurvedb.models import Lightcurve, Observation, Orbit
+from lightcurvedb.models import Lightcurve, Observation, Orbit, Lightpoint
+from lightcurvedb import models as defined_models
 from tqdm import tqdm
+from tabulate import tabulate
 
 INGESTION_MODES = ["smart", "ignore", "full"]
 
@@ -47,6 +55,25 @@ def yield_optimized_tics(ordered_tics, all_tics):
             continue
     for tic in all_tics:
         yield tic
+
+
+def conglomerate(corrector, id_, tic_id, ap, lc_t, files):
+    lps = []
+    for h5 in files:
+        try:
+            lp = load_lightpoints(h5, id_, ap, lc_t)
+        except OSError:
+            continue
+        lp = corrector.correct(tic_id, lp)
+
+        lps.append(lp)
+    if not lps:
+        return None
+    lc = pd.concat(lps)[[c.name for c in Lightpoint.__table__.columns]]
+    lc.set_index(["lightcurve_id", "cadence"], inplace=True)
+    lc.sort_index(inplace=True)
+    lc = lc[~lc.index.duplicated(keep="last")]
+    return lc
 
 
 def partition_id(id_):
@@ -289,12 +316,15 @@ def partition_ingest(
     ctx, orbits, cameras, ccds, n_processes, types, apertures, update
 ):
     cache = IngestionCache()
-    tic_q = cache.session.query(FileObservation.tic_id).filter(
-        FileObservation.orbit_number.in_(orbits),
-        FileObservation.camera.in_(cameras),
-        FileObservation.ccd.in_(ccds),
-
-    ).distinct()
+    tic_q = (
+        cache.session.query(FileObservation.tic_id)
+        .filter(
+            FileObservation.orbit_number.in_(orbits),
+            FileObservation.camera.in_(cameras),
+            FileObservation.ccd.in_(ccds),
+        )
+        .distinct()
+    )
 
     file_observation_q = cache.session.query(FileObservation).filter(
         FileObservation.tic_id.in_(tic_q.subquery())
@@ -322,20 +352,13 @@ def partition_ingest(
     quality_flags = cache.quality_flag_df
     quality_flags.reset_index(inplace=True)
     quality_flags.rename(
-        mapper={
-            'cadences': 'cadence',
-            'quality_flags': 'new_qflags'
-            },
+        mapper={"cadences": "cadence", "quality_flags": "new_qflags"},
         inplace=True,
-        axis=1
+        axis=1,
     )
 
     full_length = len(cache_df)
-    click.echo(
-        "determined {0} files to be processed".format(
-            full_length
-        )
-    )
+    click.echo("determined {0} files to be processed".format(full_length))
     cache.session.close()
 
     with ctx.obj["dbconf"] as db:
@@ -351,18 +374,16 @@ def partition_ingest(
                 db.query(Observation.tic_id, Orbit.orbit_number)
                 .join(Observation.orbit)
                 .filter(
-                    Observation.camera.in_(cameras),
-                    Observation.ccd.in_(ccds)
-                ).yield_per(1000)
+                    Observation.camera.in_(cameras), Observation.ccd.in_(ccds)
+                )
+                .yield_per(1000)
             )
-            click.echo(
-                "\tFlagging duplicates..."
-            )
+            click.echo("\tFlagging duplicates...")
             cache_df["already_ingested"] = cache_df.apply(
-                lambda row: (int(row.name), row["orbit_number"]) in existing_obs,
+                lambda row: (int(row.name), row["orbit_number"])
+                in existing_obs,
                 axis=1,
             )
-
 
             click.echo("\tRemoving ingestions that already exist...")
             new_obs = cache_df[~cache_df["already_ingested"]]
@@ -372,14 +393,13 @@ def partition_ingest(
                 n_removed = full_length - new_length
                 click.echo(
                     "\tRemoved {0} ingestion jobs to a total of {1}".format(
-                        n_removed,
-                        new_length
+                        n_removed, new_length
                     )
                 )
         else:
             new_obs = cache_df
 
-        tics = set(new_obs.reset_index()['tic_id'].values)
+        tics = set(new_obs.reset_index()["tic_id"].values)
 
         click.echo("\tPreparing time corrector")
         time_corrector = PartitionTimeCorrector(db.session)
@@ -433,15 +453,15 @@ def partition_ingest(
             jobs.append(job)
 
         if len(new_lc_params) > 0:
-            click.echo("COPYing {0} new lightcurves...".format(
-                len(new_lc_params)   
-            ))
+            click.echo(
+                "COPYing {0} new lightcurves...".format(len(new_lc_params))
+            )
             conn = db.session.connection().connection
 
             mgr = CopyManager(
                 conn,
                 Lightcurve.__tablename__,
-                ['id', 'tic_id', 'aperture_id', 'lightcurve_type_id']
+                ["id", "tic_id", "aperture_id", "lightcurve_type_id"],
             )
 
             mgr.threading_copy(
@@ -449,7 +469,7 @@ def partition_ingest(
                     r["id"],
                     r["tic_id"],
                     r["aperture_id"],
-                    r["lightcurve_type_id"]
+                    r["lightcurve_type_id"],
                 )
                 for r in tqdm(new_lc_params)
             )
@@ -458,7 +478,7 @@ def partition_ingest(
 
     # LCDB session is no longer needed, release it
     jobs = pd.DataFrame(jobs, columns=SingleMergeJob._fields)
-    jobs.set_index('id', inplace=True)
+    jobs.set_index("id", inplace=True)
 
     grouped = jobs.groupby(by=partition_id)
 
@@ -466,32 +486,26 @@ def partition_ingest(
     click.echo("Grouping lightcurve jobs by partition ID")
     for id_, group in tqdm(grouped):
         partition_wise_jobs.append(
-            (
-                id_,
-                id_ + 1000,
-                group,
-                new_obs, 
-                tic_parameters
-            )
+            (id_, id_ + 1000, group, new_obs, tic_parameters)
         )
 
     with Pool(n_processes) as pool:
         results = pool.imap(
             partition_copier,
             product(
-                [time_corrector], [quality_flags], [orbit_map], partition_wise_jobs
+                [time_corrector],
+                [quality_flags],
+                [orbit_map],
+                partition_wise_jobs,
             ),
         )
         for path in results:
-            click.echo(
-                "Submissing {0}".format(
-                    path
-                )
-            )
+            click.echo("Submitting {0}".format(path))
+
 
 @lightcurve.group()
 @click.pass_context
-@click.argument('blob_path', type=click.Path(dir_okay=False, exists=True))
+@click.argument("blob_path", type=click.Path(dir_okay=False, exists=True))
 def blob(ctx, blob_path):
     ctx.obj["blob_path"] = blob_path
 
@@ -501,16 +515,137 @@ def blob(ctx, blob_path):
 def print_observations(ctx):
     with ctx.obj["dbconf"] as db:
         reader = LightpointPartitionReader(ctx.obj["blob_path"])
+        click.echo(reader.print_observations(db))
+
+
+@blob.command()
+@click.pass_context
+@click.option(
+    "--parameters", "-p", multiple=True, default=["lightcurve_id", "cadence"]
+)
+def print_lightpoints(ctx, parameters):
+    with ctx.obj["dbconf"] as db:
+        reader = LightpointPartitionReader(ctx.obj["blob_path"])
         click.echo(
-            reader.print_observations(db)
+            tabulate(
+                list(reader.yield_lightpoints(*parameters)),
+                headers=parameters,
+                floatfmt=".4f",
+            )
         )
 
 
 @blob.command()
 @click.pass_context
-def print_lightpoints(ctx):
+def print_summary(ctx):
+    reader = LightpointPartitionReader(ctx.obj["blob_path"])
+    table = reader.print_summary(ctx.obj["dbconf"])
+    click.echo(table)
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("partitions", type=int, nargs=-1)
+@click.option("--not-orbits", "-n", type=int, multiple=True)
+@click.option("--precheck/--no-precheck", default=True)
+def partition_recovery(ctx, partitions, not_orbits, precheck):
+    cache = IngestionCache()
+    partition_lcs = {}
     with ctx.obj["dbconf"] as db:
-        reader = LightpointPartitionReader(ctx.obj["blob_path"])
-        click.echo(
-            reader.print_lightpoints(db)
+        corrector = LightpointNormalizer(cache, db)
+        orbit_map = {o.orbit_number: o.id for o in db.orbits}
+
+        for partition_start in partitions:
+            lcs = db.lightcurves.filter(
+                partition_start <= Lightcurve.id,
+                Lightcurve.id < (partition_start + 1000),
+            )
+            partition_lcs[partition_start] = lcs
+
+    for partition_start, lcs in partition_lcs.items():
+        jobs = []
+        observations = []
+
+        partition_target = "partitions.lightpoints_{0}_{1}".format(
+            partition_start, partition_start + 1000
         )
+
+        check_q = text(
+            "SELECT lightcurve_id FROM {0} LIMIT 1".format(partition_target)
+        )
+
+        if precheck:
+            with ctx.obj["dbconf"] as db:
+                check = db.session.execute(check_q).fetchone()
+                if check is not None:
+                    warnings.warn(
+                        "Partition {0} is not empty, skipping".format(
+                            partition_target
+                        ),
+                        RuntimeWarning,
+                    )
+                    continue
+
+        for lc in lcs:
+            tic_observations = cache.session.query(FileObservation).filter(
+                FileObservation.tic_id == lc.tic_id
+            )
+
+            if not_orbits:
+                tic_observations = tic_observations.filter(
+                    ~FileObservation.orbit_number.in_(not_orbits)
+                )
+
+            files = [f.file_path for f in tic_observations.all()]
+
+            jobs.append(
+                (
+                    corrector,
+                    lc.id,
+                    lc.tic_id,
+                    lc.aperture_id,
+                    lc.lightcurve_type_id,
+                    files,
+                )
+            )
+
+            for obs in tic_observations:
+                observations.append(
+                    {
+                        "tic_id": obs.tic_id,
+                        "camera": obs.camera,
+                        "ccd": obs.ccd,
+                        "orbit_id": orbit_map[obs.orbit_number],
+                    }
+                )
+
+        with Pool(8) as pool:
+            try:
+                partition = pd.concat(
+                    pool.starmap(conglomerate, jobs, chunksize=30)
+                )
+            except ValueError:
+                click.echo("No files to merge!")
+                continue
+            partition.sort_index(inplace=True)
+
+        with ctx.obj["dbconf"] as db:
+            conn = db.session.connection().connection
+
+            mgr = CopyManager(
+                conn,
+                partition_target,
+                [c.name for c in Lightpoint.__table__.columns],
+            )
+
+            click.echo("COPYing lightpoints")
+
+            mgr.threading_copy(partition.to_records())
+
+            click.echo("Upserting observations...")
+            obs_upsert_q = Observation.upsert_q()
+            db.session.execute(obs_upsert_q, observations)
+
+            conn.commit()
+            db.commit()
+
+    click.echo("Done")

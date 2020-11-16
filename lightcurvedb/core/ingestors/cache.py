@@ -113,6 +113,20 @@ class IngestionCache(object):
         )
 
     @property
+    def tic_parameter_df(self):
+        q = self.session.query(
+            TIC8Parameters.tic_id,
+            TIC8Parameters.tmag,
+            TIC8Parameters.right_ascension,
+            TIC8Parameters.declination,
+        )
+
+        tic_parameters = pd.read_sql(
+            q.statement, self.session.bind, index_col=["tic_id"]
+        )
+        return tic_parameters
+
+    @property
     def query(self):
         return self.session.query
 
