@@ -1,8 +1,10 @@
 from abc import abstractmethod
 from pandas import read_csv
+import pandas as pd
 from datetime import datetime
 from lightcurvedb.core.datastructures.blob import Blob, RowWiseBlob
 from lightcurvedb.models import Observation, Lightpoint, Orbit
+from pgcopy import CopyManager
 import os
 import struct
 from io import BufferedIOBase
@@ -188,14 +190,14 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
     @property
     def preamble(self):
-        if not preamble_cache:
+        if not self.preamble_cache:
             with open(self.blob_path, "rb") as fin:
                 preamble_tuple = self.__get_preamble__(fin)
             preamble = {
-                "partition_start": preamble[0],
-                "partition_end": preamble[1],
-                "number_of_observations": preamble[2],
-                "number_of_lightpoints": preamble[3],
+                "partition_start": preamble_tuple[0],
+                "partition_end": preamble_tuple[1],
+                "number_of_observations": preamble_tuple[2],
+                "number_of_lightpoints": preamble_tuple[3],
             }
             self.preamble_cache = preamble
         return self.preamble_cache
@@ -339,12 +341,12 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             mgr = CopyManager(
                 db.session.connection().connection, partition, columns
             )
-            mg.threaded_copy(self.__lp_iter__(fin, n_lightpoints))
+            mgr.threading_copy(self.__lp_iter__(fin, n_lightpoints))
 
             # Observations can be inserted normally
             columns = [c.name for c in Observation.__table__.columns]
 
-            obs_df.DataFrame(
+            obs_df = pd.DataFrame(
                 self.__obs_iter__(fin, n_obs), columns=columns
             ).set_index(["tic_id", "orbit_id"]).sort_index()
 

@@ -26,6 +26,7 @@ from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.legacy.timecorrect import PartitionTimeCorrector
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionWriter,
+    LightpointPartitionReader
 )
 from lightcurvedb.util.logger import lcdb_logger as logger
 
@@ -69,11 +70,11 @@ MergeJob = namedtuple(
 )
 
 SingleMergeJob = namedtuple(
-    "SingleMergeJob", ("tic_id", "aperture", "lightcurve_type", "id")
+    "SingleMergeJob", ("tic_id", "aperture", "lightcurve_type", "id", "files")
 )
 
 PartitionJob = namedtuple(
-    "PartitionJob", ("merge_jobs", "observation_map", "tic_parameters")
+    "PartitionJob", ("partition_start", "partition_end", "merge_jobs")
 )
 
 
@@ -91,9 +92,10 @@ class LightpointNormalizer(object):
 
     def get_stellar_params(self, tic_id):
         try:
-            return self.stellar_params.loc[tic_id]
+            params = self.stellar_params.loc[tic_id]
         except KeyError:
-            return one_off(tic_id, "tmag", "ra", "dec")
+            params = one_off(tic_id, "tmag", "ra", "dec")
+        return params
 
     def correct(self, tic_id, lightpoint_df):
         # Grab relevant data
@@ -117,18 +119,12 @@ class LightpointNormalizer(object):
         try:
             lightpoint_df["barycentric_julian_date"] = bjd
         except ValueError:
+            logger.debug("Error correcting for BJD")
             raise RuntimeError(
                 "Error processing\n{0}, got bjd array len {1}".format(
                     lightpoint_df, len(bjd)
                 )
             )
-
-        logger.debug(
-            "corrected {0} points with tmag "
-            "{1} and coordinates {2}:{3}".format(
-                len(lightpoint_df), tmag, ra, dec
-            )
-        )
 
         return lightpoint_df
 
@@ -390,6 +386,155 @@ class MassIngestor(LightpointProcessor):
         finally:
             # Cleanup!
             self.db.close()
+
+
+class PartitionMerger(LightpointProcessor):
+    prefix = "PartitionMerger"
+
+    lp_cols = Lightpoint.get_columns()
+
+    def __init__(
+        self,
+        corrector,
+        partition_queue,
+        ingestion_queue,
+        orbit_map,
+        **kwargs
+    ):
+        self.scratch_dir = kwargs.pop('scratch_dir', '/scratch2')
+
+        super(PartitionMerger, self).__init__(**kwargs)
+        self.corrector = corrector
+        self.partition_queue = partition_queue
+        self.ingestion_queue = ingestion_queue
+        self.orbit_map = orbit_map
+
+    def merge(self, job):
+        lps = []
+        writer = LightpointPartitionWriter(
+            job.partition_start,
+            job.partition_end,
+            self.scratch_dir
+        )
+        self.log(
+            "Processing partition {0} with {1} lightcurves".format(
+                job.partition_start,
+                len(job.merge_jobs)
+            )
+        )
+        for merge_job in job.merge_jobs:
+            self.log(
+                "Processing {0} {1} {2} with {3} files".format(
+                    merge_job.tic_id,
+                    merge_job.aperture,
+                    merge_job.lightcurve_type,
+                    len(merge_job.files)
+                )
+            )
+            for h5 in merge_job.files:
+                try:
+                    lp = load_lightpoints(
+                        h5,
+                        merge_job.id,
+                        merge_job.aperture,
+                        merge_job.lightcurve_type
+                    )
+                    lp = self.corrector.correct(
+                        merge_job.tic_id,
+                        lp
+                    )
+                    lps.append(lp)
+                except OSError:
+                    self.log(
+                        "could not find {0}".format(h5)
+                    )
+        if not lps:
+            self.log("Found no valid jobs to make partition...")
+            return None
+
+        raw_partition = pd.concat(lps)
+
+        observations = raw_partition[
+            ["tic_id", "orbit_number", "camera", "ccd"]
+        ].set_index(["tic_id", "orbit_number"])
+        observations.sort_index(inplace=True)
+        observations = observations[
+            ~observations.index.duplicated(keep="last")
+        ]
+        observations = observations.sort_index().reset_index()
+
+        observations["orbit_id"] = observations.apply(
+            lambda row: self.orbit_map[row["orbit_number"]],
+            axis=1
+        )
+
+        writer.add_observations(observations.to_dict("records"))
+        lc = raw_partition[list(self.lp_cols)]
+        lc.set_index(["lightcurve_id", "cadence"], inplace=True)
+        lc = lc.sort_index()
+        lc = lc[~lc.index.duplicated(keep="last")]
+
+        writer.add_lightpoints(lc)
+        writer.write()
+        self.log("wrote to {0}".format(writer.blob_path))
+        return writer.blob_path
+
+    def run(self):
+        self.set_name()
+        while True:
+            try:
+                job = self.partition_queue.get(block=True)
+                if job is None:
+                    # Poison pill
+                    break
+                partition_blob_path = self.merge(job)
+
+                if partition_blob_path is None:
+                    self.partition_queue.task_done()
+                    continue
+
+                self.ingestion_queue.put(partition_blob_path)
+                self.partition_queue.task_done()
+            except Exception as e:
+                self.log(e, level="error")
+                break
+
+        self.log("Done!")
+
+
+class PartitionConsumer(LightpointProcessor):
+    prefix = "PartitionConsumer"
+
+    def __init__(self, config, blob_queue, **kwargs):
+        super(PartitionConsumer, self).__init__(**kwargs)
+        self.config = config
+        self.blob_queue = blob_queue
+
+    def copy(self, path):
+        self.log("Processing {0}".format(path))
+        reader = LightpointPartitionReader(path)
+
+        with db_from_config(self.config) as db:
+            preamble = reader.preamble
+            self.log(
+                "Copying {0} lightpoints".format(
+                    preamble["number_of_lightpoints"]
+                )
+            )
+            reader.upload(db)
+
+        self.log("Removing path")
+        os.remove(path)
+
+    def run(self):
+        self.set_name()
+        while True:
+            path = self.blob_queue.get(block=True)
+            if path is None:
+                break
+            self.copy(path)
+            self.blob_queue.task_done()
+            self.log("Done with {0}".format(path))
 
 
 def partition_copier(

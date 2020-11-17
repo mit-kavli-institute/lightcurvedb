@@ -1,6 +1,6 @@
 from __future__ import division, print_function
 
-from itertools import groupby, product
+from itertools import groupby, product, chain
 from multiprocessing import Manager, Pool
 from sqlalchemy import Sequence, text
 from pgcopy import CopyManager
@@ -22,6 +22,9 @@ from lightcurvedb.core.ingestors.lightpoint import (
     SingleMergeJob,
     partition_copier,
     LightpointNormalizer,
+    PartitionMerger,
+    PartitionConsumer,
+    PartitionJob,
     merge_partition,
 )
 from lightcurvedb.core.ingestors.temp_table import (
@@ -545,35 +548,69 @@ def print_summary(ctx):
 @lightcurve.command()
 @click.pass_context
 @click.argument("partitions", type=int, nargs=-1)
+@click.option("--n-mergers", type=int, default=64)
 @click.option("--not-orbits", "-n", type=int, multiple=True)
+@click.option("--only-orbits", type=int, multiple=True)
 @click.option("--precheck/--no-precheck", default=True)
-def partition_recovery(ctx, partitions, not_orbits, precheck):
+def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, precheck):
     cache = IngestionCache()
+
     partition_lcs = {}
     with ctx.obj["dbconf"] as db:
+        click.echo("Loading in needed cache and lcdb contexts...")
         corrector = LightpointNormalizer(cache, db)
         orbit_map = {o.orbit_number: o.id for o in db.orbits}
 
-        for partition_start in partitions:
+        click.echo("Grabbing relevant lcs")
+        for partition_start in tqdm(partitions):
             lcs = db.lightcurves.filter(
                 partition_start <= Lightcurve.id,
                 Lightcurve.id < (partition_start + 1000),
             )
-            partition_lcs[partition_start] = lcs
+            partition_lcs[partition_start] = list(lcs)
+
+    manager = Manager()
+    merge_queue = manager.Queue()
+    ingestion_queue = manager.Queue()
+
+    merge_workers = []
+    copy_workers = []
+
+    for _ in range(n_mergers):
+        worker = PartitionMerger(
+            corrector,
+            merge_queue,
+            ingestion_queue,
+            orbit_map,
+        )
+        merge_workers.append(
+            worker
+        )
+
+    for _ in range(5):
+        worker = PartitionConsumer(
+            ctx.obj["dbconf"]._config,
+            ingestion_queue
+        )
+        copy_workers.append(worker)
+
+    click.echo("Starting workers...")
+
+    for worker in chain(merge_workers, copy_workers):
+        worker.start()
 
     for partition_start, lcs in partition_lcs.items():
-        jobs = []
-        observations = []
+        merge_jobs = []
 
         partition_target = "partitions.lightpoints_{0}_{1}".format(
             partition_start, partition_start + 1000
         )
 
-        check_q = text(
-            "SELECT lightcurve_id FROM {0} LIMIT 1".format(partition_target)
-        )
-
         if precheck:
+            check_q = text(
+                "SELECT lightcurve_id, MIN(cadence), MAX(cadence) FROM {0} LIMIT 1".format(partition_target)
+            )
+
             with ctx.obj["dbconf"] as db:
                 check = db.session.execute(check_q).fetchone()
                 if check is not None:
@@ -586,66 +623,51 @@ def partition_recovery(ctx, partitions, not_orbits, precheck):
                     continue
 
         for lc in lcs:
-            tic_observations = cache.session.query(FileObservation).filter(
-                FileObservation.tic_id == lc.tic_id
-            )
+            files = cache.session.query(
+                FileObservation.file_path
+            ).filter(FileObservation.tic_id == lc.tic_id)
 
-            if not_orbits:
-                tic_observations = tic_observations.filter(
+            if only_orbits:
+                files = files.filter(
+                    FileObservation.orbit_number.in_(only_orbits)
+                )
+            elif not_orbits:
+                files = files.filter(
                     ~FileObservation.orbit_number.in_(not_orbits)
                 )
 
-            files = [f.file_path for f in tic_observations.all()]
-
-            jobs.append(
-                (
-                    corrector,
-                    lc.id,
-                    lc.tic_id,
-                    lc.aperture_id,
-                    lc.lightcurve_type_id,
-                    files,
-                )
+            merge_job = SingleMergeJob(
+                tic_id=lc.tic_id,
+                id=lc.id,
+                aperture=lc.aperture_id,
+                lightcurve_type=lc.lightcurve_type_id,
+                files=[path for path, in files.all()]
             )
+            merge_jobs.append(merge_job)
 
-            for obs in tic_observations:
-                observations.append(
-                    {
-                        "tic_id": obs.tic_id,
-                        "camera": obs.camera,
-                        "ccd": obs.ccd,
-                        "orbit_id": orbit_map[obs.orbit_number],
-                    }
-                )
+        partition_job = PartitionJob(
+            partition_start=partition_start,
+            partition_end=partition_start + 1000,
+            merge_jobs=merge_jobs
+        )
+        click.echo("Emplacing partition {0}".format(partition_start))
+        merge_queue.put(partition_job)
 
-        with Pool(8) as pool:
-            try:
-                partition = pd.concat(
-                    pool.starmap(conglomerate, jobs, chunksize=30)
-                )
-            except ValueError:
-                click.echo("No files to merge!")
-                continue
-            partition.sort_index(inplace=True)
+    # Send done signals
+    for _ in range(n_mergers):
+        merge_queue.put(None)
 
-        with ctx.obj["dbconf"] as db:
-            conn = db.session.connection().connection
+    for worker in merge_workers:
+        worker.join()
 
-            mgr = CopyManager(
-                conn,
-                partition_target,
-                [c.name for c in Lightpoint.__table__.columns],
-            )
+    merge_queue.join()
 
-            click.echo("COPYing lightpoints")
+    for _ in copy_workers:
+        ingestion_queue.put(None)
 
-            mgr.threading_copy(partition.to_records())
+    for worker in copy_workers:
+        worker.join()
 
-            click.echo("Upserting observations...")
-            obs_upsert_q = Observation.upsert_q()
-            db.session.execute(obs_upsert_q, observations)
-
-            conn.commit()
-            db.commit()
+    ingestion_queue.join()
 
     click.echo("Done")

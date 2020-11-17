@@ -127,6 +127,21 @@ class IngestionCache(object):
         return tic_parameters
 
     @property
+    def file_observation_df(self):
+        q = self.session.query(
+            FileObservation.tic_id,
+            FileObservation.file_path,
+            FileObservation.camera,
+            FileObservation.ccd,
+            FileObservation.file_path
+        )
+
+        return pd.read_sql(
+            q.statement,
+            self.session.bind
+        )
+
+    @property
     def query(self):
         return self.session.query
 
