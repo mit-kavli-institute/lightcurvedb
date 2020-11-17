@@ -1,6 +1,6 @@
 import re
-from sqlalchemy import Column, Integer, String, Boolean, Sequence, func
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy import Column, Integer, String, Boolean, Sequence, func, select, and_
+from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
@@ -175,6 +175,27 @@ class Orbit(QLPReference):
     @dec.expression
     def dec(cls):
         return cls.declination
+
+    @hybrid_method
+    def cadences(self, *frame_types):
+        if not frame_types:
+            frame_types = ("Raw FFI",)
+
+        return {f.cadences for f in self.frames if f.frame_type_id in frame_types}
+
+    @cadences.expression
+    def cadences(cls, *frame_types):
+        if not frame_types:
+            frame_types = ("Raw FFI",)
+
+        return select([
+            Frame.cadence
+        ]).where(
+            and_(
+                Frame.orbit_id == cls.id,
+                Frame.frame_type_id.in_(frame_types)
+            )
+        )
 
     def get_qlp_directory(self, base_path=QLP_ORBITS, suffixes=None):
         """

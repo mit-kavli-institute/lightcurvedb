@@ -1,7 +1,7 @@
 from hypothesis import strategies as st, given, note, settings
 from hypothesis.extra.numpy import arrays
 from lightcurvedb.models import Lightcurve, Lightpoint
-from .factories import lightcurve, lightcurve_type, aperture, lightpoint
+from .factories import lightcurve, lightcurve_type, aperture, lightpoint, frame_type, frame, orbit
 from .constants import PSQL_INT_MAX
 from .fixtures import db_conn, clear_all
 from itertools import combinations
@@ -175,3 +175,55 @@ def test_full_assignment(lightcurve, lightpoints, data):
             note(lp)
             note(val)
             assert lp[col] == val
+
+
+@settings(deadline=None)
+@given(
+    lightcurve(),
+    orbit(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    ),
+    frame_type(),
+    st.data(),
+)
+def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type, data):
+
+    # Generate frames that fit the lightpoints
+    cadences = [lp.cadence for lp in lightpoints]
+
+    frames = []
+
+    for cadence in cadences:
+        f = data.draw(frame(cadence=st.just(cadence)))
+        f.frame_type = frame_type
+        f.orbit = orbit
+        frames.append(f)
+
+    lightcurve.id = 1
+
+    with db_conn as db:
+        try:
+            db.add(frame_type)
+            db.add(orbit)
+            db.commit()
+
+            db.session.add_all(frames)
+            db.add(lightcurve)
+            db.commit()
+
+            for lp in lightpoints:
+                lp.lightcurve_id = lightcurve.id
+
+            db.session.add_all(lightpoints)
+            db.commit()
+
+            test = lightcurve.lightpoints_by_orbit(
+                [frames[0].orbit.orbit_number]
+            )
+
+        finally:
+            db.rollback()
+            clear_all(db)
