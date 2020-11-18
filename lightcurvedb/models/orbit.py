@@ -10,8 +10,16 @@ from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.models import CameraQuaternion, Frame
-from sqlalchemy import (Boolean, Column, Integer, Sequence, String, func,
-                        inspect, select)
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    Sequence,
+    String,
+    func,
+    inspect,
+    select,
+)
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
@@ -181,17 +189,25 @@ class Orbit(QLPReference):
 
     @min_gps_time.expression
     def min_gps_time(cls):
-        q = select([Frame.gps_time]).where(
-            Frame.orbit_id == cls.id
-        ).order_by(Frame.cadence.asc()).limit(1).label("min_gps_time")
+        q = (
+            select([Frame.gps_time])
+            .where(Frame.orbit_id == cls.id)
+            .order_by(Frame.cadence.asc())
+            .limit(1)
+            .label("min_gps_time")
+        )
 
         return q
 
     @max_gps_time.expression
     def max_gps_time(cls):
-        q = select([Frame.gps_time]).where(
-            Frame.orbit_id == cls.id
-        ).order_by(Frame.cadence.desc()).limit(1).label("max_gps_time")
+        q = (
+            select([Frame.gps_time])
+            .where(Frame.orbit_id == cls.id)
+            .order_by(Frame.cadence.desc())
+            .limit(1)
+            .label("max_gps_time")
+        )
 
         return q
 
@@ -250,9 +266,7 @@ class Orbit(QLPReference):
         min_gps_time = self.min_gps_time
 
         q = session.query(CameraQuaternion).filter(
-            CameraQuaternion.gps_time.between(
-                min_gps_time, max_gps_time
-            )
+            CameraQuaternion.gps_time.between(min_gps_time, max_gps_time)
         )
 
         if len(cameras) == 1:
