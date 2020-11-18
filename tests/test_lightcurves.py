@@ -1,7 +1,15 @@
 from hypothesis import strategies as st, given, note, settings
 from hypothesis.extra.numpy import arrays
 from lightcurvedb.models import Lightcurve, Lightpoint
-from .factories import lightcurve, lightcurve_type, aperture, lightpoint, frame_type, frame, orbit
+from .factories import (
+    lightcurve,
+    lightcurve_type,
+    aperture,
+    lightpoint,
+    frame_type,
+    frame,
+    orbit,
+)
 from .constants import PSQL_INT_MAX
 from .fixtures import db_conn, clear_all
 from itertools import combinations
@@ -9,15 +17,15 @@ import numpy as np
 
 
 NP_ATTRS = {
-    'cadences',
-    'bjd',
-    'barycentric_julian_date',
-    'values',
-    'mag',
-    'errors',
-    'x_centroids',
-    'y_centroids',
-    'quality_flags'
+    "cadences",
+    "bjd",
+    "barycentric_julian_date",
+    "values",
+    "mag",
+    "errors",
+    "x_centroids",
+    "y_centroids",
+    "quality_flags",
 }
 
 
@@ -69,10 +77,7 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
 def test_lightpoint_mass_assignment(lightcurve, data):
     lightcurve.id = 1
     lightpoints = data.draw(
-        st.lists(
-            lightpoint(id_=st.just(1)),
-            unique_by=lambda lp: lp.cadence
-        )
+        st.lists(lightpoint(id_=st.just(1)), unique_by=lambda lp: lp.cadence)
     )
 
     lightcurve.lightpoints = lightpoints
@@ -81,22 +86,15 @@ def test_lightpoint_mass_assignment(lightcurve, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_iterable_keying(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
     cadences = lightcurve.cadences
 
     idx = data.draw(
-        st.lists(
-            st.sampled_from(cadences),
-            max_size=len(cadences)
-        )
+        st.lists(st.sampled_from(cadences), max_size=len(cadences))
     )
 
     sliced = lightcurve.lightpoints[idx]
@@ -107,33 +105,26 @@ def test_iterable_keying(lightcurve, lightpoints, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_subslice_assignment(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
     cadences = lightcurve.cadences
 
     idx = data.draw(
-        st.lists(
-            st.sampled_from(cadences),
-            max_size=len(cadences)
-        )
+        st.lists(st.sampled_from(cadences), max_size=len(cadences))
     )
 
     sliced = lightcurve.lightpoints[idx]
 
     float_columns = {
-        'bjd': float,
-        'values': float,
-        'errors': float,
-        'x_centroids': float,
-        'y_centroids': float,
-        'quality_flags': int
+        "bjd": float,
+        "values": float,
+        "errors": float,
+        "x_centroids": float,
+        "y_centroids": float,
+        "quality_flags": int,
     }
 
     for col, type_ in float_columns.items():
@@ -148,23 +139,19 @@ def test_subslice_assignment(lightcurve, lightpoints, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_full_assignment(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
 
     float_columns = {
-        'bjd': float,
-        'values': float,
-        'errors': float,
-        'x_centroids': float,
-        'y_centroids': float,
-        'quality_flags': int
+        "bjd": float,
+        "values": float,
+        "errors": float,
+        "x_centroids": float,
+        "y_centroids": float,
+        "quality_flags": int,
     }
 
     for col, type_ in float_columns.items():
@@ -180,11 +167,7 @@ def test_full_assignment(lightcurve, lightpoints, data):
 @settings(deadline=None)
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    )
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
 )
 def test_lightpoint_q(db_conn, lightcurve, lightpoints):
 
@@ -206,9 +189,9 @@ def test_lightpoint_q(db_conn, lightcurve, lightpoints):
             db.commit()
 
             test = lightcurve.lightpoints_by_cadence_q(
-                db.query(Lightpoint.cadence).filter(
-                    Lightpoint.lightcurve_id == lightcurve.id
-                ).subquery()
+                db.query(Lightpoint.cadence)
+                .filter(Lightpoint.lightcurve_id == lightcurve.id)
+                .subquery()
             )
 
             assert all(lp.cadence in cadences for lp in test)
@@ -223,15 +206,13 @@ def test_lightpoint_q(db_conn, lightcurve, lightpoints):
 @given(
     lightcurve(),
     orbit(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
     frame_type(),
     st.data(),
 )
-def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type, data):
+def test_point_dynamic_link(
+    db_conn, lightcurve, orbit, lightpoints, frame_type, data
+):
 
     # Generate frames that fit the lightpoints
     cadences = [lp.cadence for lp in lightpoints]
@@ -264,8 +245,7 @@ def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type,
             db.commit()
 
             test = lightcurve.lightpoints_by_orbit(
-                [frames[0].orbit.orbit_number],
-                frame_type.id
+                [frames[0].orbit.orbit_number], frame_type.id
             )
 
             assert all(lp.cadence in cadences for lp in test)
@@ -280,11 +260,7 @@ def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type,
 @settings(deadline=None)
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    )
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
 )
 def test_lightpoint_q_cadence_tracking(db_conn, lightcurve, lightpoints):
 
@@ -306,9 +282,9 @@ def test_lightpoint_q_cadence_tracking(db_conn, lightcurve, lightpoints):
             db.commit()
 
             test = lightcurve.lightpoints_by_cadence_q(
-                db.query(Lightpoint.cadence).filter(
-                    Lightpoint.lightcurve_id == lightcurve.id
-                ).subquery()
+                db.query(Lightpoint.cadence)
+                .filter(Lightpoint.lightcurve_id == lightcurve.id)
+                .subquery()
             )
 
             note(test["mag"])
@@ -319,4 +295,3 @@ def test_lightpoint_q_cadence_tracking(db_conn, lightcurve, lightpoints):
         finally:
             db.rollback()
             clear_all(db)
-

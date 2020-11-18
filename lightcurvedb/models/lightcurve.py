@@ -12,10 +12,19 @@ from lightcurvedb.core.base_model import (
     QLPDataSubType,
     QLPModel,
 )
-from lightcurvedb.models import Orbit, Frame, Lightpoint
 from lightcurvedb.core.collection import CadenceTracked
+from lightcurvedb.models import Frame, Lightpoint, Orbit
 from psycopg2.extensions import AsIs, register_adapter
-from sqlalchemy import BigInteger, Column, ForeignKey, Sequence, SmallInteger, select, func, join, and_
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    ForeignKey,
+    Sequence,
+    SmallInteger,
+    and_,
+    join,
+    select,
+)
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -375,31 +384,25 @@ class Lightcurve(QLPDataProduct):
 
     def lightpoints_by_cadence_q(self, cadence_q):
         return CadenceTracked(
-            *self.lightpoint_q.filter(
-                Lightpoint.cadence.in_(
-                    cadence_q
-                )
-            )
+            *self.lightpoint_q.filter(Lightpoint.cadence.in_(cadence_q))
         )
 
     def lightpoints_by_orbit(self, orbits, *frame_filters):
         if not frame_filters:
             frame_filters = ("Raw FFI",)
 
-        j = join(
-            Orbit,
-            Frame,
-            Orbit.id == Frame.orbit_id
-        )
+        j = join(Orbit, Frame, Orbit.id == Frame.orbit_id)
 
-        q = select([
-            Frame.cadence
-        ]).where(
-            and_(
-                Frame.frame_type_id.in_(frame_filters),
-                Orbit.orbit_number.in_(orbits)
+        q = (
+            select([Frame.cadence])
+            .where(
+                and_(
+                    Frame.frame_type_id.in_(frame_filters),
+                    Orbit.orbit_number.in_(orbits),
+                )
             )
-        ).select_from(j)
+            .select_from(j)
+        )
 
         return self.lightpoints_by_cadence_q(q)
 
@@ -407,19 +410,17 @@ class Lightcurve(QLPDataProduct):
         if not frame_filters:
             frame_filters = ("Raw FFI",)
 
-        j = join(
-            Orbit,
-            Frame,
-            Orbit.id == Frame.orbit_id
-        )
+        j = join(Orbit, Frame, Orbit.id == Frame.orbit_id)
 
-        q = select([
-            Frame.cadence
-        ]).where(
-            and_(
-                Frame.frame_type_id.in_(frame_filters),
-                Orbit.orbit_number.in_(orbits)
+        q = (
+            select([Frame.cadence])
+            .where(
+                and_(
+                    Frame.frame_type_id.in_(frame_filters),
+                    Orbit.sector.in_(sectors),
+                )
             )
-        ).select_from(j)
+            .select_from(j)
+        )
 
         return self.lightpoints_by_cadence_q(q)

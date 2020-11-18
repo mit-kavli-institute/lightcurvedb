@@ -8,5 +8,5 @@ def test_can_get_psql_admin(db_conn):
         psql = psql_tables(db)
         assert psql
 
-        pg_class = get_psql_catalog_tables('pg_class')
-        assert pg_class.name == 'pg_class'
+        pg_class = get_psql_catalog_tables("pg_class")
+        assert pg_class.name == "pg_class"

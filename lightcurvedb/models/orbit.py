@@ -1,16 +1,27 @@
-import re
-from sqlalchemy import Column, Integer, String, Boolean, Sequence, func, select, and_
-from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.orm import relationship
-from lightcurvedb.core.base_model import QLPReference
-from lightcurvedb.core.fields import high_precision_column
-import numpy as np
-import click
 import os
-from astropy.io import fits
+import re
 from multiprocessing import Pool
-from lightcurvedb.core.constants import QLP_ORBITS, POC_ORBITS
+
+import click
+import numpy as np
+
+from astropy.io import fits
+from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS
+from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.models.frame import Frame
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    Sequence,
+    String,
+    and_,
+    func,
+    select,
+)
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
 
 
 def _extr_fits_header(f):
@@ -181,19 +192,18 @@ class Orbit(QLPReference):
         if not frame_types:
             frame_types = ("Raw FFI",)
 
-        return {f.cadences for f in self.frames if f.frame_type_id in frame_types}
+        return {
+            f.cadences for f in self.frames if f.frame_type_id in frame_types
+        }
 
     @cadences.expression
     def cadences(cls, *frame_types):
         if not frame_types:
             frame_types = ("Raw FFI",)
 
-        return select([
-            Frame.cadence
-        ]).where(
+        return select([Frame.cadence]).where(
             and_(
-                Frame.orbit_id == cls.id,
-                Frame.frame_type_id.in_(frame_types)
+                Frame.orbit_id == cls.id, Frame.frame_type_id.in_(frame_types)
             )
         )
 

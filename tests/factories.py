@@ -26,26 +26,28 @@ from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
 define_strategy = lambda f: f
 
 if sys.version_info.major > 2:
+
     @define_strategy
     @composite
     def postgres_text(draw, **text_args):
         t = draw(
             text(
-                alphabet=characters(
-                    whitelist_categories=['L', 'M', 'N']
-                ),
+                alphabet=characters(whitelist_categories=["L", "M", "N"]),
                 min_size=text_args.get("min_size", 1),
                 max_size=text_args.pop("max_size", 64),
             )
         )
         return t
+
+
 else:
+
     @define_strategy
     @composite
     def postgres_text(draw, **text_args):
         t = draw(
             text(
-                alphabet=sampled_from('abcdefghijklmopqrstuvwxyz'),
+                alphabet=sampled_from("abcdefghijklmopqrstuvwxyz"),
                 min_size=text_args.get("min_size", 1),
                 max_size=text_args.pop("max_size", 64),
             )
@@ -315,10 +317,10 @@ def lightcurve_list(
     lightcurve_types=None,
 ):
     """
-        Strategy for building lists of lightcurves.
-        If passed apertures and/or lightcurve_types, examples will be drawn
-        from the passed parameters. If set to None, the lightcurve_list will
-        hold a common aperture/type.
+    Strategy for building lists of lightcurves.
+    If passed apertures and/or lightcurve_types, examples will be drawn
+    from the passed parameters. If set to None, the lightcurve_list will
+    hold a common aperture/type.
     """
 
     if apertures:
