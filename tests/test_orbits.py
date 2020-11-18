@@ -10,8 +10,8 @@ def test_min_max_cadence_retrieval(db_conn, orbit_frames):
     with db_conn as db:
         try:
             # Add prerequisites
-            orbit = orbit_frame
-            frames = orbit_frame.frames
+            orbit = orbit_frames
+            frames = orbit_frames.frames
             db.add(orbit)
             db.add(frames[0])
             db.commit()
