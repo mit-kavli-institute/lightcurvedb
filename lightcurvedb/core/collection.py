@@ -84,8 +84,8 @@ class CadenceKeyed(object):
 class CadenceTracked(CadenceKeyed):
     """"""
 
-    def __init__(self):
-        super(CadenceTracked, self).__init__()
+    def __init__(self, *initial_data):
+        super(CadenceTracked, self).__init__(*initial_data)
         self._to_add = set()
         self._to_update = set()
         self._to_remove = set()

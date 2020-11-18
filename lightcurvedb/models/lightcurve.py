@@ -374,15 +374,17 @@ class Lightcurve(QLPDataProduct):
         self.lightpoints["quality_flag"] = values
 
     def lightpoints_by_cadence_q(self, cadence_q):
-        return self.lightpoint_q.filter(
-            Lightpoint.cadence.in_(
-                cadence_q
+        return CadenceTracked(
+            *self.lightpoint_q.filter(
+                Lightpoint.cadence.in_(
+                    cadence_q
+                )
             )
         )
 
     def lightpoints_by_orbit(self, orbits, *frame_filters):
         if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
+            frame_filters = ("Raw FFI",)
 
         j = join(
             Orbit,
@@ -403,17 +405,21 @@ class Lightcurve(QLPDataProduct):
 
     def lightpoints_by_sector(self, sectors, *frame_filters):
         if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
-        q = select(
-            [
-                func.min(Frame.cadence).label("min_cadence"),
-                func.max(Frame.cadence).label("max_cadence"),
-            ]
-        ).join(
-            Frame.orbit
-        ).where(
-            Orbit.sector.in_(sectors),
-            *frame_filters
-        ).select_from(Frame).subquery()
+            frame_filters = ("Raw FFI",)
+
+        j = join(
+            Orbit,
+            Frame,
+            Orbit.id == Frame.orbit_id
+        )
+
+        q = select([
+            Frame.cadence
+        ]).where(
+            and_(
+                Frame.frame_type_id.in_(frame_filters),
+                Orbit.orbit_number.in_(orbits)
+            )
+        ).select_from(j)
 
         return self.lightpoints_by_cadence_q(q)

@@ -180,6 +180,48 @@ def test_full_assignment(lightcurve, lightpoints, data):
 @settings(deadline=None)
 @given(
     lightcurve(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    )
+)
+def test_lightpoint_q(db_conn, lightcurve, lightpoints):
+
+    # Generate frames that fit the lightpoints
+    cadences = [lp.cadence for lp in lightpoints]
+    note(cadences)
+
+    lightcurve.id = 1
+
+    with db_conn as db:
+        try:
+            db.add(lightcurve)
+            db.commit()
+
+            for lp in lightpoints:
+                lp.lightcurve_id = lightcurve.id
+
+            db.session.add_all(lightpoints)
+            db.commit()
+
+            test = lightcurve.lightpoints_by_cadence_q(
+                db.query(Lightpoint.cadence).filter(
+                    Lightpoint.lightcurve_id == lightcurve.id
+                ).subquery()
+            )
+
+            assert all(lp.cadence in cadences for lp in test)
+            assert len(test) == len(cadences)
+
+        finally:
+            db.rollback()
+            clear_all(db)
+
+
+@settings(deadline=None)
+@given(
+    lightcurve(),
     orbit(),
     st.lists(
         lightpoint(),
@@ -193,6 +235,7 @@ def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type,
 
     # Generate frames that fit the lightpoints
     cadences = [lp.cadence for lp in lightpoints]
+    note(cadences)
 
     frames = []
 
@@ -221,9 +264,59 @@ def test_point_dynamic_link(db_conn, lightcurve, orbit, lightpoints, frame_type,
             db.commit()
 
             test = lightcurve.lightpoints_by_orbit(
-                [frames[0].orbit.orbit_number]
+                [frames[0].orbit.orbit_number],
+                frame_type.id
             )
+
+            assert all(lp.cadence in cadences for lp in test)
+
+            assert len(test) == len(cadences)
 
         finally:
             db.rollback()
             clear_all(db)
+
+
+@settings(deadline=None)
+@given(
+    lightcurve(),
+    st.lists(
+        lightpoint(),
+        min_size=1,
+        unique_by=lambda lp:lp.cadence
+    )
+)
+def test_lightpoint_q_cadence_tracking(db_conn, lightcurve, lightpoints):
+
+    # Generate frames that fit the lightpoints
+    cadences = [lp.cadence for lp in lightpoints]
+    note(cadences)
+
+    lightcurve.id = 1
+
+    with db_conn as db:
+        try:
+            db.add(lightcurve)
+            db.commit()
+
+            for lp in lightpoints:
+                lp.lightcurve_id = lightcurve.id
+
+            db.session.add_all(lightpoints)
+            db.commit()
+
+            test = lightcurve.lightpoints_by_cadence_q(
+                db.query(Lightpoint.cadence).filter(
+                    Lightpoint.lightcurve_id == lightcurve.id
+                ).subquery()
+            )
+
+            note(test["mag"])
+            assert test["mag"] is not None
+            assert test["x_centroids"] is not None
+            assert test["flux"] is not None
+
+        finally:
+            db.rollback()
+            clear_all(db)
+
