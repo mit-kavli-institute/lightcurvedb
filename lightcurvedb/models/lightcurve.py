@@ -383,43 +383,112 @@ class Lightcurve(QLPDataProduct):
         self.lightpoints["quality_flag"] = values
 
     def lightpoints_by_cadence_q(self, cadence_q):
+        """
+        Subqueries lightpoints to elements found within a cadence subquery.
+        The passed query should be of type ``sqlalchemy.Query.subquery()``
+        or of ``sqlalchemy.select`` and the query should be on a single
+        integer column.
+
+        Parameters
+        ----------
+        cadence_q : sqlalchemy.Query or sqlalchemy.select
+            The limiting subquery for individual cadence numbers.
+
+        Returns
+        -------
+        CadenceTracked
+            The CadenceTracked collection object. Depending on the
+            lightcurve instance's lightpoint data this field
+            might be empty.
+        """
         return CadenceTracked(
             *self.lightpoint_q.filter(Lightpoint.cadence.in_(cadence_q))
         )
 
     def lightpoints_by_orbit(self, orbits, *frame_filters):
+        """
+        Return lightpoints that were observed in the given orbit number(s).
+        This is done by joining Frames to Orbits and filtering for the
+        specified orbits.
+
+        By default frame_filters specify "Raw FFI" frames only. If different
+        frame types are needed they may be passed here.
+
+        Parameters
+        ----------
+        orbits : int or sequence of ints
+            The wanted orbit numbers.
+        *frame_filters : optional variable length str
+            The frame types to discriminate for. By default this field resolves
+            to ``lightpoints_by_orbit(orbits, "Raw FFI")``.
+
+        Returns
+        -------
+        CadenceTracked
+            The lightpoint collection for the wanted lightpoints
+        """
         if not frame_filters:
             frame_filters = ("Raw FFI",)
 
         j = join(Orbit, Frame, Orbit.id == Frame.orbit_id)
 
+        try:
+            if len(orbits) > 1:
+                orbit_filter = Orbit.orbit_number.in_(orbits)
+            else:
+                orbit_filter = Orbit.orbit_number == orbits[0]
+        except TypeError:
+            # Was not passed a sequence
+            orbit_filter = Orbit.orbit_number == orbits
+
         q = (
             select([Frame.cadence])
-            .where(
-                and_(
-                    Frame.frame_type_id.in_(frame_filters),
-                    Orbit.orbit_number.in_(orbits),
-                )
-            )
+            .where(and_(Frame.frame_type_id.in_(frame_filters), orbit_filter))
             .select_from(j)
         )
 
         return self.lightpoints_by_cadence_q(q)
 
     def lightpoints_by_sector(self, sectors, *frame_filters):
+        """
+        Return lightpoints that were observed in the given sector(s).
+        This is done by joining Frames to Orbits and filtering for the
+        specified orbits by sector.
+
+        By default frame_filters specify "Raw FFI" frames only. If different
+        frame types are needed they may be passed here.
+
+        Parameters
+        ----------
+        sectors : int or sequence of ints
+            The wanted sector numbers.
+        *frame_filters : optional variable length str
+            The frame types to discriminate for. By default this field resolves
+            to ``lightpoints_by_sector(sectors, "Raw FFI")``.
+
+        Returns
+        -------
+        CadenceTracked
+            The lightpoint collection for the wanted lightpoints
+        """
+
         if not frame_filters:
             frame_filters = ("Raw FFI",)
 
         j = join(Orbit, Frame, Orbit.id == Frame.orbit_id)
 
+        try:
+            if len(sectors) > 1:
+                sector_filter = Orbit.sector.in_(sectors)
+            else:
+                sector_filter = Orbit.sector == sectors[0]
+        except TypeError:
+            # Was not passed a sequence
+            sector_filter = Orbit.sector == sectors
+
         q = (
             select([Frame.cadence])
-            .where(
-                and_(
-                    Frame.frame_type_id.in_(frame_filters),
-                    Orbit.sector.in_(sectors),
-                )
-            )
+            .where(and_(Frame.frame_type_id.in_(frame_filters), sector_filter))
             .select_from(j)
         )
 

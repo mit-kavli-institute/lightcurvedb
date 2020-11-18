@@ -22,6 +22,12 @@ RawLightpoint = namedtuple(
 
 
 class CadenceKeyed(object):
+    """
+    Tracks objects that have an integer attribute named "cadence".
+    Objects are kept in sorted order. Iteration over this object
+    will return the objects in ascending cadence order. And each
+    cadence is considered unique within this object.
+    """
 
     __emulates__ = list
 
@@ -35,9 +41,24 @@ class CadenceKeyed(object):
         return len(self._internal_data)
 
     def __contains__(self, key):
+        """
+        Checks if the given key is in any of the tracked cadences.
+
+        Returns
+        -------
+        bool
+            True if the cadence is tracked within the collection.
+        """
         return key in self._internal_data
 
     def __iter__(self):
+        """
+        Yields tracked items in ascending cadence order.
+
+        Yields
+        ------
+        obj
+        """
         for cadence in self.cadences:
             yield self[cadence]
 
@@ -51,6 +72,24 @@ class CadenceKeyed(object):
         return np_array(values)
 
     def __getitem__(self, key):
+        """
+        Returns the object(s) at the given cadence(s). If ``key`` is iterable
+        then a subset of objects will be returned.
+
+        Parameters
+        ----------
+        key : int or iterable of integers
+
+        Returns
+        -------
+        obj or CadenceKeyed collection of obj
+            The wanted objects.
+
+        Note
+        ----
+        ``key`` may not be a unique or ordered iterable. If so the objects
+        will be returned in the given key order.
+        """
         try:
             # Check to see if key is iterable
             relevant = iter(key)
@@ -76,13 +115,16 @@ class CadenceKeyed(object):
     @property
     def cadences(self):
         """
-        Always return cadences in ascending order
+        Return cadences in ascending order
         """
         return np_array(sorted(self._internal_data.keys()))
 
 
 class CadenceTracked(CadenceKeyed):
-    """"""
+    """
+    Extend the ``CadenceKeyed`` class to allow for SQLAlchemy to
+    utilize it as a ORM relational collection object.
+    """
 
     def __init__(self, *initial_data):
         super(CadenceTracked, self).__init__(*initial_data)
