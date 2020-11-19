@@ -9,11 +9,11 @@ from .fixtures import db_conn, clear_all
 def test_min_max_cadence_retrieval(db_conn, orbit_frames):
     with db_conn as db:
         try:
-            # Add prerequisites
             orbit = orbit_frames
+            orbit.id = 100
             frames = orbit_frames.frames
             db.add(orbit)
-            db.add(frames[0])
+            db.add(frames[0].frame_type)
             db.commit()
 
             note("orbit id: {0}".format(orbit.id))
