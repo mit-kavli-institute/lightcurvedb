@@ -26,3 +26,5 @@ __all__ = [
     "QLPProcess",
     "QLPAlteration",
 ]
+
+DEFINED_MODELS = __all__

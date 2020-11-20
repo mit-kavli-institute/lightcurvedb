@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.sql import func
+from sqlalchemy.orm import ColumnProperty, RelationshipProperty
 
 
 @as_declarative()
@@ -40,6 +41,60 @@ class QLPModel(object):
             .where(pg_class.c.relname == cls.__tablename__)
             .label("oid")
         )
+
+    @classmethod
+    def get_property(cls, path, *paths, **kwargs):
+        """
+        Traverse the relationship property graph and return
+        the endpoint ColumnProperty as well as any needed
+        JOIN contexts.
+
+        Parameters
+        ----------
+        *paths : variable length str
+            The order of parameters to attempt to traverse down.
+        **kwargs : keyword arguments
+            TODO Add contextual support
+
+        Raises
+        ------
+        KeyError
+            Raised if any of the given paths does not result in a Column
+            or Relationship Property.
+        """
+        path = paths[0]
+        remainder = paths[1:]
+        try:
+            attr = getattr(cls, path)
+            attr = attr.property
+            if isinstance(attr, RelationshipProperty):
+                # Use remainder to parse related property
+                RelatedClass = attr.mapper.class_
+                # Assume all related classes are of QLPModel.
+                join_contexts = kwargs.get('join_contexts', set())
+                if attr not in join_contexts:
+                    join_contexts.add(attr)
+
+                kwargs['join_contexts'] = join_contexts
+
+                return RelatedClass.get_property(*remainder, **kwargs)
+            elif isinstance(attr, ColumnProperty):
+                return attr, kwargs
+            else:
+                raise AttributeError(
+                    "Path '{0}' is a property/method on {1} but is not an SQL"
+                    "tracked property.".format(
+                        path, cls
+                    )
+                )
+
+        except AttributeError:
+            raise KeyError(
+                "Could not find any SQL properties on {0} with the "
+                "path '{1}'".format(
+                    cls, path
+                )
+            )
 
 
 class QLPDataProduct(QLPModel):

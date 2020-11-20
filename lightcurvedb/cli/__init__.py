@@ -9,6 +9,7 @@ from .metrics import metrics
 from .ingestion_cache import cache
 from .bls import bls
 from .partitioning import partitioning
+from .query import query
 
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "metrics",
     "cache",
     "partitioning",
+    "query",
 ]
