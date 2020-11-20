@@ -10,17 +10,12 @@ def test_min_max_cadence_retrieval(db_conn, orbit_frames):
     with db_conn as db:
         try:
             orbit = orbit_frames
-            orbit.id = 100
             frames = orbit_frames.frames
             db.add(orbit)
             db.add(frames[0].frame_type)
             db.commit()
 
-            note("orbit id: {0}".format(orbit.id))
-            for f in frames:
-                f.orbit_id = orbit.id
-
-            db.session.add_all(orbit.frames)
+            db.session.add_all(frames)
             db.commit()
 
             ref_min_cadence = orbit.min_cadence
@@ -43,20 +38,19 @@ def test_min_max_cadence_retrieval(db_conn, orbit_frames):
 @settings(deadline=None)
 @given(orbit_frames())
 def test_min_max_gps_time_retrieval(db_conn, orbit_frames):
-    orbit = orbit_frames
     with db_conn as db:
         try:
             # Add prerequisites
+            orbit = orbit_frames
+            frames = orbit_frames.frames
             db.add(orbit)
-            db.add(orbit.frames[0].frame_type)
             db.commit()
 
-            note("orbit id: {0}".format(orbit.id))
-            orbit = db.orbits.get(orbit.id)
-            for f in orbit.frames:
-                f.orbit_id = orbit.id
+            db.add(frames[0].frame_type)
+            db.commit()
 
-            db.session.add_all(orbit.frames)
+            orbit.frames = frames
+            db.session.add_all(frames)
             db.commit()
 
             sorted_frames = list(sorted(orbit.frames, key=lambda f: f.cadence))
