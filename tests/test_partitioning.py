@@ -60,10 +60,6 @@ def test_cli_creation_of_partition(db_conn, n_partitions):
             [
                 "--dbconf",
                 CONFIG_PATH,
-                "--scratch",
-                ".",
-                "--qlp-data",
-                ".",
                 "partitioning",
                 "create-partitions",
                 "Lightpoint",

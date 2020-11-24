@@ -16,9 +16,9 @@ except ImportError:
 
 @lcdbcli.group()
 @click.pass_context
-@click.argument('Model', type=QLPModelType())
-def query(ctx, Model):
-    ctx.obj["target_model"] = Model
+@click.argument('model', type=QLPModelType())
+def query(ctx, model):
+    ctx.obj["target_model"] = model
 
 
 @query.command()
@@ -34,7 +34,9 @@ def print_table(ctx, parameters, filters, table_fmt):
 
         # col_map = {col["alias"]: col["column"] for col in cols}
 
-        relation_path_bundles = tuple(col["join_contexts"] for col in parameters if "join_contexts" in col)
+        relation_path_bundles = tuple(
+            col["join_contexts"] for col in parameters if "join_contexts" in col
+        )
         q = db.query(*cols)
 
         # Traverse JOIN requirements

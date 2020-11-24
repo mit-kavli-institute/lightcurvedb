@@ -1,19 +1,29 @@
+import traceback
+
 from click.testing import CliRunner
-from hypothesis import strategies as st, given
+from hypothesis import given, note, settings
+from hypothesis import strategies as st
+
 from lightcurvedb import Orbit
-from .fixtures import db_conn, clear_all
-from .factories import orbit
 from lightcurvedb.cli.base import lcdbcli
 
+from .constants import CONFIG_PATH
+from .factories import orbit
+from .fixtures import clear_all, db_conn
 
+
+@settings(deadline=None)
 @given(
     st.lists(
         orbit(),
-        unique_by=(lambda o: (o.orbit_number, o.basename))
+        unique_by=(lambda o: o.orbit_number, lambda o: o.basename)
     )
 )
 def test_query_on_orbits(db_conn, orbits):
     runner = CliRunner()
+
+    for ith, orbit in enumerate(orbits):
+        orbit.id = ith
 
     with db_conn as db:
         try:
@@ -22,13 +32,19 @@ def test_query_on_orbits(db_conn, orbits):
 
             result = runner.invoke(
                 lcdbcli,
-                'query',
-                'Orbit',
-                '-p orbit_number'
+                [
+                    "--dbconf",
+                    CONFIG_PATH,
+                    'query',
+                    'Orbit',
+                    'print-table',
+                    '-p'
+                    'orbit_number',
+                ],
+                catch_exceptions=False
             )
-            note("CLI OUT: {0}".format(result))
-            assert all(o.orbit_number in result for o in orbits)
-
+            note("output: {0}".format(result.output))
+            assert all(str(o.orbit_number) in result.output for o in orbits)
         finally:
             db.rollback()
             clear_all(db)

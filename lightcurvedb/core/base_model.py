@@ -43,7 +43,7 @@ class QLPModel(object):
         )
 
     @classmethod
-    def get_property(cls, path, *paths, **kwargs):
+    def get_property(cls, *paths, **kwargs):
         """
         Traverse the relationship property graph and return
         the endpoint ColumnProperty as well as any needed
@@ -65,8 +65,8 @@ class QLPModel(object):
         path = paths[0]
         remainder = paths[1:]
         try:
-            attr = getattr(cls, path)
-            attr = attr.property
+            class_attr = getattr(cls, path)
+            attr = class_attr.property
             if isinstance(attr, RelationshipProperty):
                 # Use remainder to parse related property
                 RelatedClass = attr.mapper.class_
@@ -79,7 +79,7 @@ class QLPModel(object):
 
                 return RelatedClass.get_property(*remainder, **kwargs)
             elif isinstance(attr, ColumnProperty):
-                return attr, kwargs
+                return class_attr, kwargs
             else:
                 raise AttributeError(
                     "Path '{0}' is a property/method on {1} but is not an SQL"

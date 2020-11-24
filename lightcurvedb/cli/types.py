@@ -91,8 +91,8 @@ class ClickSQLParameter(click.ParamType):
             'column': sql_col.label(alias),
             'alias': alias,
         }
-
-        result.update(contexts)
+        if contexts:
+            result.update(contexts)
         return result
 
 

@@ -1,27 +1,29 @@
 from hypothesis import strategies as st, given, settings, note
 from lightcurvedb.models import Orbit
-from .factories import orbit_frames
+from .strategies import frame_types, orbits, frames, orbit_frames
 from .fixtures import db_conn, clear_all
 
 
 @settings(deadline=None)
-@given(orbit_frames())
-def test_min_max_cadence_retrieval(db_conn, orbit_frames):
+@given(st.data())
+def test_min_max_cadence_retrieval(db_conn, data):
     with db_conn as db:
+
         try:
-            orbit = orbit_frames
-            orbit.id = 100
-            frames = orbit_frames.frames
+            frame_type = data.draw(frame_types())
+            orbit = data.draw(orbits())
+
             db.add(orbit)
-            db.add(frames[0].frame_type)
+            db.add(frame_type)
             db.commit()
 
-            note("orbit id: {0}".format(orbit.id))
-            for f in frames:
-                f.orbit_id = orbit.id
+            note("orbit-id {0}".format(orbit.id))
+            frame_list = orbit_frames(data, orbit, frame_type)
 
-            db.session.add_all(orbit.frames)
+            db.session.add_all(frame_list)
             db.commit()
+
+            orbit = db.orbits.get(orbit.id)
 
             ref_min_cadence = orbit.min_cadence
             ref_max_cadence = orbit.max_cadence
@@ -41,25 +43,26 @@ def test_min_max_cadence_retrieval(db_conn, orbit_frames):
 
 
 @settings(deadline=None)
-@given(orbit_frames())
-def test_min_max_gps_time_retrieval(db_conn, orbit_frames):
-    orbit = orbit_frames
+@given(st.data())
+def test_min_max_gps_time_retrieval(db_conn, data):
     with db_conn as db:
         try:
-            # Add prerequisites
+            frame_type = data.draw(frame_types())
+            orbit = data.draw(orbits())
+
             db.add(orbit)
-            db.add(orbit.frames[0].frame_type)
+            db.add(frame_type)
             db.commit()
 
-            note("orbit id: {0}".format(orbit.id))
+            note("orbit-id {0}".format(orbit.id))
+            note("frame_type {0}".format(frame_type.name))
+            frame_list = orbit_frames(data, orbit, frame_type)
+
+            db.session.add_all(frame_list)
+            db.commit()
             orbit = db.orbits.get(orbit.id)
-            for f in orbit.frames:
-                f.orbit_id = orbit.id
 
-            db.session.add_all(orbit.frames)
-            db.commit()
-
-            sorted_frames = list(sorted(orbit.frames, key=lambda f: f.cadence))
+            sorted_frames = list(sorted(frame_list, key=lambda f: f.cadence))
 
             ref_min_gps = sorted_frames[0].gps_time
             ref_max_gps = sorted_frames[-1].gps_time
