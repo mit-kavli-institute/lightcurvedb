@@ -11,5 +11,5 @@ def test_get_oid(db_conn):
 
 
 def test_get_orbit_properties():
-    property, contexts = Orbit.get_property('orbit_number')
-    assert not 'join_contexts' in contexts
+    property, contexts = Orbit.get_property("orbit_number")
+    assert not "join_contexts" in contexts

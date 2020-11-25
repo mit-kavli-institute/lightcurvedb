@@ -28,12 +28,8 @@ def test_min_max_cadence_retrieval(db_conn, data):
             ref_min_cadence = orbit.min_cadence
             ref_max_cadence = orbit.max_cadence
 
-            check_min_cadence = db.query(
-                Orbit.min_cadence
-            ).first()[0]
-            check_max_cadence = db.query(
-                Orbit.max_cadence
-            ).first()[0]
+            check_min_cadence = db.query(Orbit.min_cadence).first()[0]
+            check_max_cadence = db.query(Orbit.max_cadence).first()[0]
 
             assert check_min_cadence == ref_min_cadence
             assert check_max_cadence == ref_max_cadence
@@ -67,12 +63,8 @@ def test_min_max_gps_time_retrieval(db_conn, data):
             ref_min_gps = sorted_frames[0].gps_time
             ref_max_gps = sorted_frames[-1].gps_time
 
-            check_min_gps = db.query(
-                Orbit.min_gps_time
-            ).first()[0]
-            check_max_gps = db.query(
-                Orbit.max_gps_time
-            ).first()[0]
+            check_min_gps = db.query(Orbit.min_gps_time).first()[0]
+            check_max_gps = db.query(Orbit.max_gps_time).first()[0]
 
             assert check_min_gps == ref_min_gps
             assert check_max_gps == ref_max_gps

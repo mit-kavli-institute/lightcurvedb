@@ -1,4 +1,3 @@
-import os
 import click
 
 from lightcurvedb.cli.base import lcdbcli
@@ -16,16 +15,18 @@ except ImportError:
 
 @lcdbcli.group()
 @click.pass_context
-@click.argument('model', type=QLPModelType())
+@click.argument("model", type=QLPModelType())
 def query(ctx, model):
     ctx.obj["target_model"] = model
 
 
 @query.command()
 @click.pass_context
-@click.option('--parameter', '-p', 'parameters', type=ClickSQLParameter(), multiple=True)
-@click.option('--filter', '-f', 'filters', type=str, multiple=True)
-@click.option('--table-fmt', type=str, default="plain")
+@click.option(
+    "--parameter", "-p", "parameters", type=ClickSQLParameter(), multiple=True
+)
+@click.option("--filter", "-f", "filters", type=str, multiple=True)
+@click.option("--table-fmt", type=str, default="plain")
 def print_table(ctx, parameters, filters, table_fmt):
     # Construct an SQL query given the cli parameters
     with ctx.obj["dbconf"] as db:
@@ -35,7 +36,9 @@ def print_table(ctx, parameters, filters, table_fmt):
         # col_map = {col["alias"]: col["column"] for col in cols}
 
         relation_path_bundles = tuple(
-            col["join_contexts"] for col in parameters if "join_contexts" in col
+            col["join_contexts"]
+            for col in parameters
+            if "join_contexts" in col
         )
         q = db.query(*cols)
 
@@ -50,16 +53,11 @@ def print_table(ctx, parameters, filters, table_fmt):
         results = q.all()
 
     # If CSV fmt, don't pass into tabulate
-    if table_fmt == 'csv':
+    if table_fmt == "csv":
         df = pd.DataFrame(results, columns=names)
         output = StringIO()
         df.to_csv(output)
         output.seek(0)
         click.echo(output.read())
     else:
-        click.echo(
-            tabulate(
-                results,
-                tablefmt=table_fmt
-            )
-        )
+        click.echo(tabulate(results, tablefmt=table_fmt))

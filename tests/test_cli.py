@@ -15,8 +15,7 @@ from .fixtures import clear_all, db_conn
 @settings(deadline=None)
 @given(
     st.lists(
-        orbit(),
-        unique_by=(lambda o: o.orbit_number, lambda o: o.basename)
+        orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename)
     )
 )
 def test_query_on_orbits(db_conn, orbits):
@@ -35,13 +34,12 @@ def test_query_on_orbits(db_conn, orbits):
                 [
                     "--dbconf",
                     CONFIG_PATH,
-                    'query',
-                    'Orbit',
-                    'print-table',
-                    '-p'
-                    'orbit_number',
+                    "query",
+                    "Orbit",
+                    "print-table",
+                    "-p" "orbit_number",
                 ],
-                catch_exceptions=False
+                catch_exceptions=False,
             )
             note("output: {0}".format(result.output))
             assert all(str(o.orbit_number) in result.output for o in orbits)

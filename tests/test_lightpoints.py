@@ -28,12 +28,12 @@ from .constants import PSQL_INT_MAX
 #             db.add(lc)
 #             db.add(lp)
 #             db.commit()
-# 
+#
 #             result = db.query(Lightpoint).get((lp.lightcurve_id, lp.cadence))
-# 
+#
 #             assert result == lp
 #             assert result.lightcurve == lc
-# 
+#
 #         finally:
 #             db.rollback()
 #             clear_all(db)

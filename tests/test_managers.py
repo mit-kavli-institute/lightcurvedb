@@ -58,24 +58,24 @@ class LCManagerComparison(RuleBasedStateMachine):
     @rule(target=lightcurves, lc_kw=lc_kw_st())
     def add_lightcurve_by_kwargs(self, lc_kw):
         key = self.manager.__get_key_by_kw__(
-            tic_id=lc_kw['tic_id'],
-            aperture_id=lc_kw['aperture'].name,
-            lightcurve_type_id=lc_kw['lightcurve_type'].name
+            tic_id=lc_kw["tic_id"],
+            aperture_id=lc_kw["aperture"].name,
+            lightcurve_type_id=lc_kw["lightcurve_type"].name,
         )
 
         if key in self.manager:
             with raises(DuplicateEntryException):
                 self.manager.add_model_kw(
-                    tic_id=lc_kw['tic_id'],
-                    aperture_id=lc_kw['aperture'].name,
-                    lightcurve_type_id=lc_kw['lightcurve_type'].name
+                    tic_id=lc_kw["tic_id"],
+                    aperture_id=lc_kw["aperture"].name,
+                    lightcurve_type_id=lc_kw["lightcurve_type"].name,
                 )
             return self.manager._interior_data[key]
 
         return self.manager.add_model_kw(
-            tic_id=lc_kw['tic_id'],
-            aperture_id=lc_kw['aperture'].name,
-            lightcurve_type_id=lc_kw['lightcurve_type'].name
+            tic_id=lc_kw["tic_id"],
+            aperture_id=lc_kw["aperture"].name,
+            lightcurve_type_id=lc_kw["lightcurve_type"].name,
         )
 
     @rule(lc=lightcurves)
@@ -93,5 +93,6 @@ class LCManagerComparison(RuleBasedStateMachine):
                 if isinstance(check, Lightcurve):
                     assert check == lc
                     break
+
 
 TestLCManager = LCManagerComparison.TestCase

@@ -71,11 +71,11 @@ class QLPModel(object):
                 # Use remainder to parse related property
                 RelatedClass = attr.mapper.class_
                 # Assume all related classes are of QLPModel.
-                join_contexts = kwargs.get('join_contexts', set())
+                join_contexts = kwargs.get("join_contexts", set())
                 if attr not in join_contexts:
                     join_contexts.add(attr)
 
-                kwargs['join_contexts'] = join_contexts
+                kwargs["join_contexts"] = join_contexts
 
                 return RelatedClass.get_property(*remainder, **kwargs)
             elif isinstance(attr, ColumnProperty):
@@ -83,17 +83,13 @@ class QLPModel(object):
             else:
                 raise AttributeError(
                     "Path '{0}' is a property/method on {1} but is not an SQL"
-                    "tracked property.".format(
-                        path, cls
-                    )
+                    "tracked property.".format(path, cls)
                 )
 
         except AttributeError:
             raise KeyError(
                 "Could not find any SQL properties on {0} with the "
-                "path '{1}'".format(
-                    cls, path
-                )
+                "path '{1}'".format(cls, path)
             )
 
 

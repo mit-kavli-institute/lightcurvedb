@@ -2,11 +2,10 @@ import click
 import os
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb import models as Models
-from sqlalchemy.orm import ColumnProperty, RelationshipProperty
 
 
 MODEL_LOOKUP = {
-    name.lower().replace('_', ''): getattr(Models, name)
+    name.lower().replace("_", ""): getattr(Models, name)
     for name in Models.DEFINED_MODELS
 }
 
@@ -52,20 +51,12 @@ class QLPModelType(click.ParamType):
 
     def convert(self, value, param, ctx):
         sanitized = (
-            value
-            .lower()
-            .replace(' ', '')
-            .replace('-', '')
-            .replace('_', '')
+            value.lower().replace(" ", "").replace("-", "").replace("_", "")
         )
         try:
             return MODEL_LOOKUP[sanitized]
         except AttributeError:
-            self.fail(
-                "Unknown Model {0}",
-                param,
-                ctx
-            )
+            self.fail("Unknown Model {0}", param, ctx)
 
 
 class ClickSQLParameter(click.ParamType):
@@ -74,13 +65,13 @@ class ClickSQLParameter(click.ParamType):
 
     def convert(self, value, param, ctx):
         try:
-            param, alias = value.strip().split(':')
+            param, alias = value.strip().split(":")
         except ValueError:
             # No alias
             param = alias = value.strip()
 
         TargetModel = ctx.obj["target_model"]
-        param_paths = tuple(map(lambda p: p.strip(), param.split('.')))
+        param_paths = tuple(map(lambda p: p.strip(), param.split(".")))
 
         try:
             sql_col, contexts = TargetModel.get_property(*param_paths)
@@ -88,8 +79,8 @@ class ClickSQLParameter(click.ParamType):
             self.fail(e, param, ctx)
 
         result = {
-            'column': sql_col.label(alias),
-            'alias': alias,
+            "column": sql_col.label(alias),
+            "alias": alias,
         }
         if contexts:
             result.update(contexts)

@@ -21,24 +21,21 @@ def test_full_quaternion(q):
     assume(sum(q) <= 1.0)
     q1, q2, q3, q4 = q
 
-    camera_quat = CameraQuaternion(
-        q1=q1,
-        q2=q2,
-        q3=q3,
-        q4=q4
-    )
+    camera_quat = CameraQuaternion(q1=q1, q2=q2, q3=q3, q4=q4)
     assert camera_quat is not None
 
-    camera_quat = CameraQuaternion(
-        w=q1,
-        x=q2,
-        y=q3,
-        z=q4
-    )
+    camera_quat = CameraQuaternion(w=q1, x=q2, y=q3, z=q4)
     assert camera_quat is not None
 
 
-@given(st.floats(min_value=0.0, max_value=GPS_EPOCH, allow_nan=False, allow_infinity=False))
+@given(
+    st.floats(
+        min_value=0.0,
+        max_value=GPS_EPOCH,
+        allow_nan=False,
+        allow_infinity=False,
+    )
+)
 def test_gps_time_assignment(gps_time):
     camera_quat = CameraQuaternion(gps_time=gps_time)
     assert camera_quat.date is not None
@@ -65,21 +62,13 @@ def test_datetime_equivalency(date):
 @given(
     quaternion(missing=False),
     st.integers(min_value=1, max_value=4),
-    st.datetimes(
-        min_value=TESS_FIRST_LIGHT,
-        max_value=datetime.now()
-    )
+    st.datetimes(min_value=TESS_FIRST_LIGHT, max_value=datetime.now()),
 )
 def test_psql_gps(db_conn, q, camera, date):
     q1, q2, q3, q4 = q
 
     camera_quat = CameraQuaternion(
-        q1=q1,
-        q2=q2,
-        q3=q3,
-        q4=q4,
-        camera=camera,
-        date=date
+        q1=q1, q2=q2, q3=q3, q4=q4, camera=camera, date=date
     )
     gps_ref = camera_quat.gps_time
 
@@ -88,11 +77,11 @@ def test_psql_gps(db_conn, q, camera, date):
             db.add(camera_quat)
             db.commit()
 
-            gps_time = db.query(
-                CameraQuaternion.gps_time
-            ).filter(
-                CameraQuaternion.id == camera_quat.id
-            ).one()[0]
+            gps_time = (
+                db.query(CameraQuaternion.gps_time)
+                .filter(CameraQuaternion.id == camera_quat.id)
+                .one()[0]
+            )
         finally:
             db.rollback()
             clear_all(db)
