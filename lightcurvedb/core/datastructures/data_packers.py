@@ -208,6 +208,30 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             **self.preamble
         )
 
+    def get_orbit_ids(self):
+        orbit_ids = set()
+        idx = Observation.get_columns().index("orbit_id")
+        for obs in self.yield_observations():
+            orbit_ids.add(obs[idx])
+        return orbit_ids
+
+    def get_orbit_numbers(self, db):
+        orbit_ids = self.get_orbit_ids()
+        q = db.query(
+            Orbit.orbit_number
+        ).filter(
+            Orbit.id.in_(orbit_ids)
+        ).distinct()
+
+        return {number for number, in q.all()}
+
+    def get_tic_ids(self):
+        tic_ids = set()
+        idx = Observation.get_columns().index("tic_id")
+        for obs in self.yield_observations():
+            tic_ids.add(obs[idx])
+        return tic_ids
+
     def __obs_iter__(self, fd, n_obs):
         loader = Observation.struct()
         size_t = loader.size
@@ -241,10 +265,18 @@ class LightpointPartitionReader(LightpointPartitionBlob):
                 yield tuple(lp[col] for col in idx)
 
     def yield_observations(self):
+        preamble = self.preamble
+        offset = preamble["number_of_lightpoints"] * Lightpoint.struct_size()
         with open(self.blob_path, "rb") as fin:
-            preamble = self.preamble
-            obs_iter = self.__obs_iter__(fin, preamble["number_observations"])
-            return obs_iter
+            _ = self.__get_preamble__(fin)
+            fin.seek(offset, 1)
+
+            obs_iter = self.__obs_iter__(fin, preamble["number_of_observations"])
+            for obs in obs_iter:
+                # yield every item, returning the iterator will break as it will
+                # be out of scope of this file and break since the file will be
+                # closed.
+                yield obs
 
     def print_lightpoints(self, db, **fmt_args):
         with open(self.blob_path, "rb") as fin:
@@ -313,7 +345,6 @@ class LightpointPartitionReader(LightpointPartitionBlob):
         return tabulate(summary, headers="keys")
 
     def merge(self, db):
-
         with open(self.blob_path, "rb") as fin:
             preamble = self.__get_preamble__(fin)
 
@@ -324,7 +355,7 @@ class LightpointPartitionReader(LightpointPartitionBlob):
         q = select([Lightpoint]).select_from(text(partition_name))
         pass
 
-    def upload(self, db):
+    def upload(self, db, commit=True):
         with open(self.blob_path, "rb") as fin:
             preamble = self.__get_preamble__(fin)
             partition_start = preamble[0]
@@ -337,9 +368,23 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             )
 
             # Copy lightpoints
+            connection = db.session.connection().connection
+
+            work_mem_q = (
+                "SET LOCAL work_mem TO \"1GB\""
+            )
+            temp_buffers_q = (
+                "SET LOCAL temp_buffers TO \"2GB\""
+            )
+            with connection.cursor() as cursor:
+                # cursor changes are visible across all shared
+                # cursors in one connection
+                cursor.execute(work_mem_q)
+                cursor.execute(temp_buffers_q)
+
             columns = [c.name for c in Lightpoint.__table__.columns]
             mgr = CopyManager(
-                db.session.connection().connection, partition, columns
+                connection, partition, columns
             )
             mgr.threading_copy(self.__lp_iter__(fin, n_lightpoints))
 
@@ -358,7 +403,9 @@ class LightpointPartitionReader(LightpointPartitionBlob):
                 Observation.upsert_q(), obs_df.reset_index().to_dict("records")
             )
 
-            db.commit()
+            if commit:
+                db.commit()
+            connection.close()
 
     def write(self, *args, **kwargs):
         # Invalid operation

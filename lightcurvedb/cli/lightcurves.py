@@ -43,6 +43,7 @@ from lightcurvedb.models import Lightcurve, Observation, Orbit, Lightpoint
 from lightcurvedb import models as defined_models
 from tqdm import tqdm
 from tabulate import tabulate
+from lightcurvedb.util.logger import lcdb_logger as logger
 
 INGESTION_MODES = ["smart", "ignore", "full"]
 
@@ -552,7 +553,8 @@ def print_summary(ctx):
 @click.option("--not-orbits", "-n", type=int, multiple=True)
 @click.option("--only-orbits", type=int, multiple=True)
 @click.option("--precheck/--no-precheck", default=True)
-def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, precheck):
+@click.option("--truncate/--no-truncate", default=False)
+def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, precheck, truncate):
     cache = IngestionCache()
 
     partition_lcs = {}
@@ -587,10 +589,12 @@ def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, prec
             worker
         )
 
-    for _ in range(5):
+    for _ in range(8):
         worker = PartitionConsumer(
             ctx.obj["dbconf"]._config,
-            ingestion_queue
+            ingestion_queue,
+            truncate=truncate,
+            daemon=True
         )
         copy_workers.append(worker)
 
@@ -654,20 +658,128 @@ def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, prec
         merge_queue.put(partition_job)
 
     # Send done signals
-    for _ in range(n_mergers):
+    logger.debug("sending end-of-work signal to merge workers")
+    for _ in merge_workers:
         merge_queue.put(None)
 
+    logger.debug("joining merge workers to main process")
     for worker in merge_workers:
         worker.join()
 
+    logger.debug("joining queue threads")
+    merge_queue.close()
     merge_queue.join()
 
+    logger.debug("sending end-of-work signal to copy workers")
     for _ in copy_workers:
         ingestion_queue.put(None)
 
+    logger.debug("joining copy workers")
     for worker in copy_workers:
         worker.join()
 
+    ingestion_queue.close()
     ingestion_queue.join()
 
+    manager = None
+
     click.echo("Done")
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("partitions", type=int, nargs=-1)
+@click.option("--n-mergers", type=int, default=64)
+@click.option("--not-orbits", "-n", type=int, multiple=True)
+@click.option("--merge-dir", type=click.Path(file_okay=False, exists=True), default="/scratch2/")
+def get_partition_disk_def(ctx, partitions, n_mergers, not_orbits, merge_dir):
+    cache = IngestionCache()
+
+    partition_lcs = {}
+    with ctx.obj["dbconf"] as db:
+        click.echo("Loading in needed cache and lcdb contexts...")
+        corrector = LightpointNormalizer(cache, db)
+        orbit_map = {o.orbit_number: o.id for o in db.orbits}
+
+        click.echo("Grabbing relevant lcs")
+        for partition_start in tqdm(partitions):
+            lcs = db.lightcurves.filter(
+                partition_start <= Lightcurve.id,
+                Lightcurve.id < (partition_start + 1000),
+            )
+            partition_lcs[partition_start] = list(lcs)
+
+    merge_workers = []
+    manager = Manager()
+    merge_queue = manager.Queue(1000000)
+    ingestion_queue = manager.Queue(1000000)
+
+    for _ in range(n_mergers):
+        worker = PartitionMerger(
+            corrector,
+            merge_queue,
+            ingestion_queue,
+            orbit_map,
+            submit=False,
+            scratch_dir=merge_dir,
+        )
+        merge_workers.append(
+            worker
+        )
+
+    click.echo("Starting workers...")
+
+    for worker in merge_workers:
+        worker.start()
+    try:
+        for partition_start, lcs in partition_lcs.items():
+            merge_jobs = []
+
+            partition_target = "partitions.lightpoints_{0}_{1}".format(
+                partition_start, partition_start + 1000
+            )
+
+            for lc in lcs:
+                files = cache.session.query(
+                    FileObservation.file_path
+                ).filter(FileObservation.tic_id == lc.tic_id)
+
+                if not_orbits:
+                    files = files.filter(
+                        ~FileObservation.orbit_number.in_(not_orbits)
+                    )
+
+                merge_job = SingleMergeJob(
+                    tic_id=lc.tic_id,
+                    id=lc.id,
+                    aperture=lc.aperture_id,
+                    lightcurve_type=lc.lightcurve_type_id,
+                    files=[path for path, in files.all()]
+                )
+                merge_jobs.append(merge_job)
+
+            partition_job = PartitionJob(
+                partition_start=partition_start,
+                partition_end=partition_start + 1000,
+                merge_jobs=merge_jobs
+            )
+            click.echo("Emplacing partition {0}".format(partition_start))
+            merge_queue.put(partition_job)
+    except Exception as e:
+        logger.error(
+            "Main thread exception."
+        )
+        logger.error(e, exc_info=True)
+
+    # Send done signals
+    logger.debug("sending end-of-work signal to merge workers")
+    for _ in merge_workers:
+        merge_queue.put(None)
+
+    logger.debug("joining merge workers to main process")
+    for worker in merge_workers:
+        worker.join()
+
+    logger.debug("joining queue threads")
+    merge_queue.close()
+    merge_queue.join()

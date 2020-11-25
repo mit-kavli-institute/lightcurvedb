@@ -8,6 +8,7 @@ import os
 import struct
 from collections import defaultdict, namedtuple
 from multiprocessing import Process
+from time import sleep
 
 import numpy as np
 import pandas as pd
@@ -31,7 +32,7 @@ from lightcurvedb.core.datastructures.data_packers import (
 from lightcurvedb.util.logger import lcdb_logger as logger
 
 from lightcurvedb import db_from_config
-from sqlalchemy import bindparam, Sequence, Table
+from sqlalchemy import bindparam, Sequence, Table, text
 from multiprocessing import Process
 
 
@@ -146,8 +147,8 @@ def remove_redundant(id_cadence_map, current_lp):
 
 
 class LightpointProcessor(Process):
-    def log(self, msg, level="debug"):
-        getattr(logger, level)("{0}: {1}".format(self.name, msg))
+    def log(self, msg, level="debug", exc_info=False):
+        getattr(logger, level)("{0}: {1}".format(self.name, msg), exc_info=exc_info)
 
     def set_name(self):
         self.name = "{0}-{1}".format(self.prefix, os.getpid())
@@ -402,6 +403,7 @@ class PartitionMerger(LightpointProcessor):
         **kwargs
     ):
         self.scratch_dir = kwargs.pop('scratch_dir', '/scratch2')
+        self.submit = kwargs.pop("submit", True)
 
         super(PartitionMerger, self).__init__(**kwargs)
         self.corrector = corrector
@@ -493,10 +495,40 @@ class PartitionMerger(LightpointProcessor):
                     self.partition_queue.task_done()
                     continue
 
+                if not self.submit:
+                    continue
+
+                self.log("submitting partition blob {0}".format(partition_blob_path))
                 self.ingestion_queue.put(partition_blob_path)
                 self.partition_queue.task_done()
+            except ConnectionResetError as e:
+                # Queues were reset at one point
+                max_tries = 10
+                while max_tries >= 0:
+                    try:
+                        sleep(0.5)
+                        self.ingestion_queue.put(partition_blob_path)
+                        # successfully emplaced
+                        break
+                    except ConnectionResetError:
+                        max_tries -= 1
+                        self.log(
+                            "Still unable to connect to queue, "
+                            "{0} tries remaining".format(
+                                max_tries
+                            )
+                        )
+                if max_tries <= 0:
+                    # Unable to resolveproblem
+                    self.log(
+                        "could not connect to queue {0}, exiting".format(
+                            self.ingestion_queue
+                        ),
+                        level="error"
+                    )
+                    break
             except Exception as e:
-                self.log(e, level="error")
+                self.log(e, level="error", exc_info=True)
                 break
 
         self.log("Done!")
@@ -506,6 +538,7 @@ class PartitionConsumer(LightpointProcessor):
     prefix = "PartitionConsumer"
 
     def __init__(self, config, blob_queue, **kwargs):
+        self.run_truncate = kwargs.pop('truncate', False)
         super(PartitionConsumer, self).__init__(**kwargs)
         self.config = config
         self.blob_queue = blob_queue
@@ -515,7 +548,28 @@ class PartitionConsumer(LightpointProcessor):
         reader = LightpointPartitionReader(path)
 
         with db_from_config(self.config) as db:
+
             preamble = reader.preamble
+            if self.run_truncate:
+                partition_name = reader.partition_name
+                TRUNCATE = text(
+                    "TRUNCATE partitions.{0}".format(
+                        partition_name
+                    )
+                )
+                tic_ids = reader.get_tic_ids()
+                orbit_numbers = reader.get_orbit_numbers(db)
+
+                self.log(
+                    "Deleting and running truncate"
+                )
+
+                db.query(Observation).filter(
+                    Orbit.id == Observation.orbit_id,
+                    Observation.tic_id.in_(tic_ids)
+                ).delete(synchronize_session=False)
+                db.session.execute(TRUNCATE)
+
             self.log(
                 "Copying {0} lightpoints".format(
                     preamble["number_of_lightpoints"]
@@ -523,18 +577,52 @@ class PartitionConsumer(LightpointProcessor):
             )
             reader.upload(db)
 
-        self.log("Removing path")
         os.remove(path)
 
     def run(self):
         self.set_name()
+        self.log("main thread started.")
         while True:
-            path = self.blob_queue.get(block=True)
+            try:
+                path = self.blob_queue.get()
+            except ConnectionResetError:
+                max_tries = 10
+                while max_tries >= 0:
+                    try:
+                        sleep(0.5)
+                        path = self.blob_queue.get(block=True)
+                        # successfully grabbed queue
+                        break
+                    except ConnectionResetError:
+                        max_tries -= 1
+                        self.log(
+                            "Still unable to connect to queue, "
+                            "{0} tries remaining".format(
+                                max_tries
+                            )
+                        )
+                if max_tries <= 0:
+                    # Unable to resolve problem
+                    self.log(
+                        "could not connect to queue {0}, exciting".format(
+                            self.blob_queue
+                        ),
+                        level="error"
+                    )
+                    break
+            except Exception as e:
+                self.log(
+                    e,
+                    level="error",
+                    exc_info=True
+                )
+
             if path is None:
                 break
             self.copy(path)
             self.blob_queue.task_done()
             self.log("Done with {0}".format(path))
+        self.log("Exiting")
 
 
 def partition_copier(

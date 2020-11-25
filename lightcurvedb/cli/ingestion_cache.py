@@ -19,6 +19,7 @@ from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
 from lightcurvedb.models import Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from sqlalchemy.orm import sessionmaker
+from tabulate import tabulate
 
 TIC8Session = sessionmaker(autoflush=True)
 TIC8Session.configure(bind=TIC8_ENGINE)
@@ -224,3 +225,23 @@ def quality_flags(ctx, orbits, cameras, ccds):
         )
         cache.commit()
         click.echo("Done")
+
+
+@cache.command()
+@click.pass_context
+@click.argument('tic', type=int)
+def list_files_for(ctx, tic):
+    cache = IngestionCache()
+
+    q = cache.session.query(
+        FileObservation.camera,
+        FileObservation.ccd,
+        FileObservation.orbit_number,
+        FileObservation.file_path
+    ).filter(FileObservation.tic_id == tic)
+
+    click.echo(
+        tabulate(
+            q, headers=['camera', 'ccd', 'orbit_number', 'file_path']
+        )
+    )
