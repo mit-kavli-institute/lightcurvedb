@@ -1,7 +1,7 @@
 import click
 
 from lightcurvedb.cli.base import lcdbcli
-from lightcurvedb.cli.types import QLPModelType, ClickSQLParameter
+from lightcurvedb.cli.types import QLPModelType, ClickSQLParameter, OrderParameter
 from itertools import chain
 from tabulate import tabulate
 import pandas as pd
@@ -26,8 +26,10 @@ def query(ctx, model):
     "--parameter", "-p", "parameters", type=ClickSQLParameter(), multiple=True
 )
 @click.option("--filter", "-f", "filters", type=str, multiple=True)
+@click.option("--order-by", "-O", "orders", type=OrderParameter(), multiple=True)
 @click.option("--table-fmt", type=str, default="plain")
-def print_table(ctx, parameters, filters, table_fmt):
+@click.option("--header/--no-header", default=True)
+def print_table(ctx, parameters, filters, orders, table_fmt, header):
     # Construct an SQL query given the cli parameters
     with ctx.obj["dbconf"] as db:
         cols = tuple(col["column"] for col in parameters)
@@ -50,14 +52,19 @@ def print_table(ctx, parameters, filters, table_fmt):
         # Perform filters
         # TODO
 
+        # Perform orders
+        if orders:
+            q = q.order_by(*orders)
+
         results = q.all()
 
     # If CSV fmt, don't pass into tabulate
     if table_fmt == "csv":
         df = pd.DataFrame(results, columns=names)
         output = StringIO()
-        df.to_csv(output)
+        df.to_csv(output, index=False, header=header)
         output.seek(0)
         click.echo(output.read())
     else:
-        click.echo(tabulate(results, tablefmt=table_fmt))
+        headers = names if header else tuple()
+        click.echo(tabulate(results, headers=headers, tablefmt=table_fmt))

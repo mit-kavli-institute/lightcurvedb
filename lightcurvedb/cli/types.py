@@ -98,3 +98,28 @@ class FilterParameter(click.ParamType):
 
         # TODO implement small lightweight grammar
         return value
+
+
+class OrderParameter(click.ParamType):
+    name = "order_parameter"
+
+    def convert(self, value, param, ctx):
+
+        if value.startswith('-'):
+            parsed = value[1:]
+            descending = True
+        else:
+            parsed = value
+            descending = False
+
+        TargetModel = ctx.obj["target_model"]
+        param_paths = tuple(map(lambda p: p.strip(), parsed.split(".")))
+
+        try:
+            sql_col, contexts = TargetModel.get_property(*param_paths)
+        except KeyError as e:
+            self.fail(e, param, ctx)
+
+        if descending:
+            return sql_col.desc()
+        return sql_col.asc()
