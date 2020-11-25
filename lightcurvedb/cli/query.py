@@ -1,7 +1,11 @@
 import click
 
 from lightcurvedb.cli.base import lcdbcli
-from lightcurvedb.cli.types import QLPModelType, ClickSQLParameter, OrderParameter
+from lightcurvedb.cli.types import (
+    QLPModelType,
+    ClickSQLParameter,
+    OrderParameter,
+)
 from itertools import chain
 from tabulate import tabulate
 import pandas as pd
@@ -26,7 +30,9 @@ def query(ctx, model):
     "--parameter", "-p", "parameters", type=ClickSQLParameter(), multiple=True
 )
 @click.option("--filter", "-f", "filters", type=str, multiple=True)
-@click.option("--order-by", "-O", "orders", type=OrderParameter(), multiple=True)
+@click.option(
+    "--order-by", "-O", "orders", type=OrderParameter(), multiple=True
+)
 @click.option("--table-fmt", type=str, default="plain")
 @click.option("--header/--no-header", default=True)
 def print_table(ctx, parameters, filters, orders, table_fmt, header):
@@ -66,5 +72,5 @@ def print_table(ctx, parameters, filters, orders, table_fmt, header):
         output.seek(0)
         click.echo(output.read())
     else:
-        headers = names if header else tuple()
+        headers = names if header else ()
         click.echo(tabulate(results, headers=headers, tablefmt=table_fmt))

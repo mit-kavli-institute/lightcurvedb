@@ -105,7 +105,7 @@ class OrderParameter(click.ParamType):
 
     def convert(self, value, param, ctx):
 
-        if value.startswith('-'):
+        if value.startswith("-"):
             parsed = value[1:]
             descending = True
         else:
