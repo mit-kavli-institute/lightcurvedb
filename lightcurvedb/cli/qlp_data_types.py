@@ -6,7 +6,7 @@ from . import lcdbcli
 @lcdbcli.command()
 @click.pass_context
 @click.argument("lightcurve-type-name", type=str)
-def create_lightcurvetype(ctx, lightcurve_type_name):
+def add_lightcurvetype(ctx, lightcurve_type_name):
     with ctx.obj["dbconf"] as db:
         check = (
             db.session.query(LightcurveType)

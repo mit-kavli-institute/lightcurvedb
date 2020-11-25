@@ -23,7 +23,6 @@ copyright = '2020, William Fong'
 author = 'William Fong'
 
 # The full version, including alpha/beta/rc tags
-#release = 'July 16, 2020'
 release = datetime.now().strftime('%B %-d, %Y')
 
 

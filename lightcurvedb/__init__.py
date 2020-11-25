@@ -1,7 +1,7 @@
-__version__ = "0.3.7"
+__version__ = "0.5.6"
 
-from lightcurvedb.core.engines import __DEFAULT_PATH__, __SESSION_FACTORY__
 from lightcurvedb.core.connection import DB, db_from_config
+from lightcurvedb.core.engines import __DEFAULT_PATH__, __SESSION_FACTORY__
 from lightcurvedb.managers import LightcurveManager
 from lightcurvedb.models import (
     Aperture,
@@ -13,14 +13,14 @@ from lightcurvedb.models import (
 )
 
 __all__ = [
-    "Lightcurve",
-    "Lightpoint",
-    "Orbit",
-    "Observation",
     "Aperture",
-    "LightcurveType",
-    "db_from_config",
+    "Lightcurve",
     "LightcurveManager",
+    "LightcurveType",
+    "Lightpoint",
+    "Observation",
+    "Orbit",
+    "db_from_config",
 ]
 
 

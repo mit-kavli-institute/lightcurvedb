@@ -1,16 +1,27 @@
+import os
 import re
-from sqlalchemy import Column, Integer, String, Boolean, Sequence, func
+from multiprocessing import Pool
+
+import click
+import numpy as np
+
+from astropy.io import fits
+from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
+from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.models import CameraQuaternion, Frame
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    Sequence,
+    String,
+    func,
+    inspect,
+    select,
+)
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
-from lightcurvedb.core.base_model import QLPReference
-from lightcurvedb.core.fields import high_precision_column
-import numpy as np
-import click
-import os
-from astropy.io import fits
-from multiprocessing import Pool
-from lightcurvedb.core.constants import QLP_ORBITS, POC_ORBITS
-from lightcurvedb.models.frame import Frame
 
 
 def _extr_fits_header(f):
@@ -145,6 +156,14 @@ class Orbit(QLPReference):
         return min(cadences)
 
     @hybrid_property
+    def min_gps_time(self):
+        return min(f.gps_time for f in self.frames)
+
+    @hybrid_property
+    def max_gps_time(self):
+        return max(f.gps_time for f in self.frames)
+
+    @hybrid_property
     def ra(self):
         return self.right_ascension
 
@@ -168,6 +187,30 @@ class Orbit(QLPReference):
     def min_cadence(cls):
         return func.min(Frame.cadence).label("min_cadence")
 
+    @min_gps_time.expression
+    def min_gps_time(cls):
+        q = (
+            select([Frame.gps_time])
+            .where(Frame.orbit_id == cls.id)
+            .order_by(Frame.cadence.asc())
+            .limit(1)
+            .label("min_gps_time")
+        )
+
+        return q
+
+    @max_gps_time.expression
+    def max_gps_time(cls):
+        q = (
+            select([Frame.gps_time])
+            .where(Frame.orbit_id == cls.id)
+            .order_by(Frame.cadence.desc())
+            .limit(1)
+            .label("max_gps_time")
+        )
+
+        return q
+
     @ra.expression
     def ra(cls):
         return cls.right_ascension
@@ -186,6 +229,10 @@ class Orbit(QLPReference):
             *suffixes if suffixes else []
         )
 
+    def get_sector_directory(self, *suffixes):
+        base_sector_dir = QLP_SECTORS.format(sector=self.sector)
+        return os.path.join(base_sector_dir, *suffixes)
+
     def get_poc_directory(self, base_path=POC_ORBITS, suffixes=None):
         """
         Return the base POC orbit directory for the orbit.
@@ -201,3 +248,29 @@ class Orbit(QLPReference):
         base_dir = self.get_qlp_directory(base_path)
         run_dir = os.path.join(base_dir, "ffi", "run")
         return run_dir
+
+    def get_camera_quaternions(self, *cameras):
+        """
+        Build a query that returns the camera quaternions that were recorded
+        for this orbit's gps time limits.
+
+        Parameters
+        ----------
+        *cameras : int, variable
+            Camera discriminators to pass. If left empty (default) then no
+            cameras will be filtered for and all quaternions in this orbit
+            will be returned.
+        """
+        session = inspect(self).session
+        max_gps_time = self.max_gps_time
+        min_gps_time = self.min_gps_time
+
+        q = session.query(CameraQuaternion).filter(
+            CameraQuaternion.gps_time.between(min_gps_time, max_gps_time)
+        )
+
+        if len(cameras) == 1:
+            q = q.filter(CameraQuaternion.camera == cameras[0])
+        elif len(cameras) > 1:
+            q = q.filter(CameraQuaternion.camera.in_(cameras))
+        return q

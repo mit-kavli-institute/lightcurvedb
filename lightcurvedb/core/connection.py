@@ -888,7 +888,6 @@ class DB(object):
         return [r for r, in q.all()]
 
     def get_baked_lcs(self, ids):
-
         return (
             self.query(
                 models.Lightpoint.lightcurve_id,

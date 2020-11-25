@@ -41,7 +41,7 @@ def list_partitions(ctx, model):
             exit(1)
 
         partitions = db.get_partitions_df(target_model)
-        click.echo(partitions)
+        click.echo(partitions.sort_values("end_range"))
         click.echo(
             "A total of {0} partitions!".format(
                 click.style(str(len(partitions)), bold=True)
