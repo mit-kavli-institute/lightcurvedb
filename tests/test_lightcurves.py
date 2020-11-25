@@ -9,15 +9,15 @@ import numpy as np
 
 
 NP_ATTRS = {
-    'cadences',
-    'bjd',
-    'barycentric_julian_date',
-    'values',
-    'mag',
-    'errors',
-    'x_centroids',
-    'y_centroids',
-    'quality_flags'
+    "cadences",
+    "bjd",
+    "barycentric_julian_date",
+    "values",
+    "mag",
+    "errors",
+    "x_centroids",
+    "y_centroids",
+    "quality_flags",
 }
 
 
@@ -69,10 +69,7 @@ def test_lightpoint_collection_append(lp, tic, aperture, lc_type):
 def test_lightpoint_mass_assignment(lightcurve, data):
     lightcurve.id = 1
     lightpoints = data.draw(
-        st.lists(
-            lightpoint(id_=st.just(1)),
-            unique_by=lambda lp: lp.cadence
-        )
+        st.lists(lightpoint(id_=st.just(1)), unique_by=lambda lp: lp.cadence)
     )
 
     lightcurve.lightpoints = lightpoints
@@ -81,22 +78,15 @@ def test_lightpoint_mass_assignment(lightcurve, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_iterable_keying(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
     cadences = lightcurve.cadences
 
     idx = data.draw(
-        st.lists(
-            st.sampled_from(cadences),
-            max_size=len(cadences)
-        )
+        st.lists(st.sampled_from(cadences), max_size=len(cadences))
     )
 
     sliced = lightcurve.lightpoints[idx]
@@ -107,33 +97,26 @@ def test_iterable_keying(lightcurve, lightpoints, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_subslice_assignment(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
     cadences = lightcurve.cadences
 
     idx = data.draw(
-        st.lists(
-            st.sampled_from(cadences),
-            max_size=len(cadences)
-        )
+        st.lists(st.sampled_from(cadences), max_size=len(cadences))
     )
 
     sliced = lightcurve.lightpoints[idx]
 
     float_columns = {
-        'bjd': float,
-        'values': float,
-        'errors': float,
-        'x_centroids': float,
-        'y_centroids': float,
-        'quality_flags': int
+        "bjd": float,
+        "values": float,
+        "errors": float,
+        "x_centroids": float,
+        "y_centroids": float,
+        "quality_flags": int,
     }
 
     for col, type_ in float_columns.items():
@@ -148,23 +131,19 @@ def test_subslice_assignment(lightcurve, lightpoints, data):
 
 @given(
     lightcurve(),
-    st.lists(
-        lightpoint(),
-        min_size=1,
-        unique_by=lambda lp:lp.cadence
-    ),
-    st.data()
+    st.lists(lightpoint(), min_size=1, unique_by=lambda lp: lp.cadence),
+    st.data(),
 )
 def test_full_assignment(lightcurve, lightpoints, data):
     lightcurve.lightpoints = lightpoints
 
     float_columns = {
-        'bjd': float,
-        'values': float,
-        'errors': float,
-        'x_centroids': float,
-        'y_centroids': float,
-        'quality_flags': int
+        "bjd": float,
+        "values": float,
+        "errors": float,
+        "x_centroids": float,
+        "y_centroids": float,
+        "quality_flags": int,
     }
 
     for col, type_ in float_columns.items():

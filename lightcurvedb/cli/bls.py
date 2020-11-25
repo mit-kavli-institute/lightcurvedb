@@ -111,7 +111,8 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                 )
                 click.echo("\tObtaining stellar radii")
                 q = tic8.query(
-                    TIC_Entries.c.id.label("tic_id"), TIC_Entries.c.rad,
+                    TIC_Entries.c.id.label("tic_id"),
+                    TIC_Entries.c.rad,
                 ).filter(TIC_Entries.c.id.in_(set(tics)))
 
                 tic_params = pd.read_sql(

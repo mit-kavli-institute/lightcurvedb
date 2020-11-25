@@ -76,6 +76,9 @@ class TimeUnixLeap(formats.TimeFromEpoch):
 
 
 class CameraQuaternion(QLPReference):
+    """
+    This class encapsulates Camera orientation via quaternions.
+    """
 
     __tablename__ = "camera_quaternions"
 

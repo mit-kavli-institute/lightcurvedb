@@ -5,6 +5,7 @@ from functools import partial
 from lightcurvedb.models import FrameType, Frame, Orbit, CameraQuaternion
 from lightcurvedb.models.camera_quaternion import get_utc_time
 from lightcurvedb.util.contexts import get_parent_dir
+from lightcurvedb.core.ingestors.frame_ingestor import from_fits
 from multiprocessing import Pool
 from .base import lcdbcli
 
@@ -173,13 +174,14 @@ def ingest_directory(ctx, session, path, cadence_type):
         if not ctx.obj["dryrun"]:
             session.commit()
 
-    func = partial(Frame.from_fits, cadence_type=cadence_type)
-    with Pool() as p:
-        click.echo("Generating frames")
-        frames = p.map(func, accepted)
-        for frame in frames:
-            frame.orbit = orbit
-            frame.frame_type = frame_type
+    func = partial(from_fits, cadence_type=cadence_type)
+
+    p = Pool()
+    click.echo("Generating frames")
+    frames = p.map(func, accepted)
+    for frame in frames:
+        frame.orbit = orbit
+        frame.frame_type = frame_type
 
     click.echo(
         "Generated {0} frames from {1} files".format(

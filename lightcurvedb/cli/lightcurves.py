@@ -781,5 +781,4 @@ def get_partition_disk_def(ctx, partitions, n_mergers, not_orbits, merge_dir):
         worker.join()
 
     logger.debug("joining queue threads")
-    merge_queue.close()
     merge_queue.join()
