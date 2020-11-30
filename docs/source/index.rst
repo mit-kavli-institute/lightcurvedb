@@ -38,6 +38,7 @@ Submodule Documentation
     managers/managers
     metrics/metrics
     util/utils
+    cli/cli
 
 
 Indices and tables

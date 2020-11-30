@@ -22,6 +22,9 @@ except ImportError:
 @click.pass_context
 @click.argument("model", type=QLPModelType())
 def query(ctx, model):
+    """
+    A highly abstract query interface.
+    """
     ctx.obj["target_model"] = model
 
 

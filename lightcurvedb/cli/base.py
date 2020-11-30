@@ -20,10 +20,10 @@ from .types import Database
 @click.option(
     "--dryrun/--wetrun",
     default=False,
-    help="If dryrun, no changes will be commited, recommended for first runs",
+    help="If set to dryrun to permanent changes will be made to the database.",
 )
-@click.option("--logging", default="info")
-@click.option("--logfile", type=click.Path(dir_okay=False))
+@click.option("--logging", default="info", help="The global logging level.")
+@click.option("--logfile", type=click.Path(dir_okay=False), help="Tee logging output to the provided filename.")
 def lcdbcli(ctx, dbconf, dryrun, logging, logfile):
     """Master command for all lightcurve database commandline interaction"""
     add_stream_handler(logging)

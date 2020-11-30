@@ -206,6 +206,9 @@ def ingest_frames(
     ffi_subdir,
     quaternion_subdir,
 ):
+    """
+    Ingests new orbit FFIs for processing.
+    """
     with ctx.obj["dbconf"] as db:
         added_frames = []
         added_quaternions = []

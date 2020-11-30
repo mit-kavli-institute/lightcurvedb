@@ -52,6 +52,7 @@ def catalog_df(*catalog_files):
 @lcdbcli.group()
 @click.pass_context
 def cache(ctx):
+    """Subcommand for all ingestion cache interaction."""
     pass
 
 

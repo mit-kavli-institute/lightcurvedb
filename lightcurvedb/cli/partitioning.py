@@ -14,6 +14,9 @@ from sqlalchemy import text
 @lcdbcli.group()
 @click.pass_context
 def partitioning(ctx):
+    """
+    Administrative management of partitioned SQL tables.
+    """
     if ctx.obj["dryrun"]:
         click.echo(
             click.style(

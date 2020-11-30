@@ -1,5 +1,4 @@
 from __future__ import division, print_function
-
 from lightcurvedb.core.admin import get_psql_catalog_tables
 from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
@@ -118,6 +117,14 @@ class QLPDataSubType(QLPModel):
     @property
     def id(self):
         return self.name
+
+    @classmethod
+    def get_model(cls, modelname):
+        subclass_map = {
+            subclass.__name__: subclass
+            for subclass in cls.__subclasses__()
+        }
+        return subclass_map[modelname]
 
 
 class QLPReference(QLPModel):

@@ -18,6 +18,9 @@ COLS = {
 @lcdbcli.group()
 @click.pass_context
 def spacecraft(ctx):
+    """
+    Subcommand for importing various spacecraft telemetry.
+    """
     pass
 
 

@@ -154,6 +154,7 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
 @lcdbcli.group()
 @click.pass_context
 def lightcurve(ctx):
+    """Subcommand for all lightcurve interactions"""
     pass
 
 

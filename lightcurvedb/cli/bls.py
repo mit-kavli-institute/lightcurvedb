@@ -70,6 +70,9 @@ def get_tic(bls_summary):
 @lcdbcli.group()
 @click.pass_context
 def bls(ctx):
+    """
+    Subcommand for all BLS interaction.
+    """
     pass
 
 
@@ -80,6 +83,9 @@ def bls(ctx):
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--n-processes", type=click.IntRange(0), default=32)
 def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
+    """
+    Import BLS summary files.
+    """
     for sector in sectors:
         tic8 = TIC8Session()
         with ctx.obj["dbconf"] as db:
@@ -209,6 +215,10 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
 @click.argument("tics", type=int, nargs=-1)
 @click.option("--parameter", "-p", multiple=True, type=BLS.click_parameters)
 def query(ctx, tics, parameter):
+    """
+    DEPRECATED queries the BLS model.
+    This method is now deprecated, please use ``lcdb query``.
+    """
     with ctx.obj["dbconf"] as db:
         cols = [getattr(BLS, param) for param in parameter]
         q = (

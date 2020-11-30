@@ -8,6 +8,7 @@ from . import lcdbcli
 @click.argument("name", type=str)
 @click.argument("aperture-string", type=str)
 def add_aperture(ctx, name, aperture_string):
+    """Adds an aperture definition to the lightcurve database."""
     with ctx.obj["dbconf"] as db:
         check = (
             db.session.query(Aperture)
