@@ -25,7 +25,6 @@ from lightcurvedb.core.ingestors.lightpoint import (
     PartitionMerger,
     PartitionConsumer,
     PartitionJob,
-    merge_partition,
 )
 from lightcurvedb.core.ingestors.temp_table import (
     FileObservation,
@@ -612,7 +611,10 @@ def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, prec
 
         if precheck:
             check_q = text(
-                "SELECT lightcurve_id, MIN(cadence), MAX(cadence) FROM {0} LIMIT 1".format(partition_target)
+                "SELECT lightcurve_id, MIN(cadence), MAX(cadence) "
+                "FROM {0} "
+                "GROUP BY lightcurve_id "
+                "LIMIT 1".format(partition_target)
             )
 
             with ctx.obj["dbconf"] as db:
@@ -662,27 +664,24 @@ def partition_recovery(ctx, partitions, n_mergers, not_orbits, only_orbits, prec
     for _ in merge_workers:
         merge_queue.put(None)
 
+    logger.debug("joining queue threads")
+    merge_queue.join()
+
     logger.debug("joining merge workers to main process")
     for worker in merge_workers:
         worker.join()
-
-    logger.debug("joining queue threads")
-    merge_queue.close()
-    merge_queue.join()
 
     logger.debug("sending end-of-work signal to copy workers")
     for _ in copy_workers:
         ingestion_queue.put(None)
 
+    ingestion_queue.join()
+
     logger.debug("joining copy workers")
     for worker in copy_workers:
         worker.join()
 
-    ingestion_queue.close()
-    ingestion_queue.join()
-
     manager = None
-
     click.echo("Done")
 
 
@@ -779,6 +778,4 @@ def get_partition_disk_def(ctx, partitions, n_mergers, not_orbits, merge_dir):
     logger.debug("joining merge workers to main process")
     for worker in merge_workers:
         worker.join()
-
-    logger.debug("joining queue threads")
-    merge_queue.join()
+    logger.debug("Finished merging")

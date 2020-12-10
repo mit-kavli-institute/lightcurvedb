@@ -487,18 +487,25 @@ class PartitionMerger(LightpointProcessor):
             try:
                 job = self.partition_queue.get(block=True)
                 if job is None:
-                    # Poison pill
+                    self.log("received end-of-work signal")
+                    self.partition_queue.task_done()
                     break
+
                 partition_blob_path = self.merge(job)
 
                 if partition_blob_path is None:
+                    self.log("attempted to put empty partition...")
                     self.partition_queue.task_done()
                     continue
 
                 if not self.submit:
                     continue
 
-                self.log("submitting partition blob {0}".format(partition_blob_path))
+                self.log(
+                    "submitting partition blob {0}".format(
+                        partition_blob_path
+                    )
+                )
                 self.ingestion_queue.put(partition_blob_path)
                 self.partition_queue.task_done()
             except ConnectionResetError as e:
@@ -581,7 +588,6 @@ class PartitionConsumer(LightpointProcessor):
 
     def run(self):
         self.set_name()
-        self.log("main thread started.")
         while True:
             try:
                 path = self.blob_queue.get()

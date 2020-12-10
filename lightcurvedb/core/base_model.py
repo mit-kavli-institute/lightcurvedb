@@ -46,6 +46,7 @@ class QLPModel(object):
     def get_columns(cls):
         return tuple(col.name for col in cls.__table__.columns)
 
+    @classmethod
     def get_property(cls, *paths, **kwargs):
         """
         Traverse the relationship property graph and return
@@ -65,7 +66,12 @@ class QLPModel(object):
             Raised if any of the given paths does not result in a Column
             or Relationship Property.
         """
-        path = paths[0]
+        try:
+            path = paths[0]
+        except IndexError:
+            raise KeyError(
+                "give path {0} is empty".format(paths)
+            )
         remainder = paths[1:]
         try:
             class_attr = getattr(cls, path)

@@ -68,18 +68,25 @@ class ClickSQLParameter(click.ParamType):
     def convert(self, value, param, ctx):
 
         try:
-            param, alias = value.strip().split(":")
+            parsed, alias = value.strip().split(":")
         except ValueError:
             # No alias
-            param = alias = value.strip()
+            parsed = alias = value.strip()
 
         TargetModel = ctx.obj["target_model"]
-        param_paths = tuple(map(lambda p: p.strip(), param.split(".")))
+        param_paths = tuple(map(lambda p: p.strip(), parsed.split(".")))
 
         try:
             sql_col, contexts = TargetModel.get_property(*param_paths)
         except KeyError as e:
             self.fail(e, param, ctx)
+        except IndexError as e:
+            self.fail(
+                "unknown parameter on {0} with {1}".format(
+                    TargetModel,
+                    param_paths
+                )
+            )
 
         sql_col = sql_col.label(alias)
 
