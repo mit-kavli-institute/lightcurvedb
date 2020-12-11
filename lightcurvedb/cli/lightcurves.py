@@ -84,7 +84,12 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
         click.echo(
             "Determining TIC job ordering to optimize PSQL cache hits..."
         )
-        tic_q = db.query(Lightcurve.tic_id).order_by(Lightcurve.id).distinct()
+        tic_q = (
+            db.query(Lightcurve.tic_id)
+            .filter(Lightcurve.tic_id.in_(tics))
+            .order_by(Lightcurve.id)
+            .distinct()
+        )
 
         optimized_tics = []
         seen = set()
