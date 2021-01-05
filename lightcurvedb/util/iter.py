@@ -104,7 +104,7 @@ def partition(listlike, n):
     if n < 1:
         raise ValueError("Cannot create a partition of size < 1")
 
-        max_partition_length = len(listlike) // n
+    max_partition_length = len(listlike) // n
     return split_every(max_partition_length, listlike)
 
 

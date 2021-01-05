@@ -6,9 +6,11 @@ except ImportError:
 
 import os
 import struct
+from click import echo
 from collections import defaultdict, namedtuple
 from multiprocessing import Process
-from time import sleep
+from time import sleep, time
+from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -22,6 +24,8 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
     load_lightpoints,
+    get_missing_ids,
+    allocate_lightcurve_ids
 )
 from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.legacy.timecorrect import PartitionTimeCorrector
@@ -79,6 +83,95 @@ PartitionJob = namedtuple(
 )
 
 
+def get_jobs(
+        db,
+        file_df,
+        id_map,
+        already_observed,
+        apertures,
+        types,
+        fill_id_gaps=False,
+        bar=None):
+    """
+    Return single merge jobs from a observation file dataframe and
+    a list of apertures and lightcurve types.
+    """
+    tics = list(file_df.index)
+
+    if bar:
+        progress = bar(total=len(file_df)*len(apertures)*len(types))
+
+    for tic_id, orbit_number, _ in file_df.to_records():
+        if (tic_id, orbit_number) in already_observed:
+            yield None
+            if bar:
+                progress.update(len(apertures)*len(types))
+            continue
+        files = list(file_df.loc[tic_id])
+        for ap, lc_t in product(apertures, types):
+            try:
+                id_ = id_map[(tic_id, ap, lc_t)]
+                job = SingleMergeJob(
+                    id=id_,
+                    tic_id=tic_id,
+                    aperture=ap,
+                    lightcurve_type=lc_t,
+                    files=files
+                )
+                yield job
+            except KeyError:
+                missing_ids.append((tic_id, ap, lc_t))
+            finally:
+                if bar:
+                    progress.update(1)
+
+    if missing_ids:
+        echo(
+            (
+                "Need to assign {0} "
+                "new lightcurve ids".format(len(missing_ids))
+            )
+        )
+        n_required = len(missing_ids)
+        params = iter(missing_ids)
+        if fillgaps:
+            echo("Attempting to find gaps in id sequence")
+            usable_ids = get_missing_ids(db)
+            echo("Found {0} ids to fill".format(len(usable_ids)))
+        else:
+            usable_ids = set()
+
+        n_still_missing = len(usable_ids) - n_required
+        usable_ids.update(
+            allocate_lightcurve_ids(db, n_still_missing)
+        )
+        values_to_insert = []
+        echo("Creating jobs using queried ids")
+        progress = bar(total=len(missing_ids))
+        for id_, params in zip(usable_ids, missing_ids):
+            job = SingleMergeJob(
+                id=id_,
+                tic_id=params[0],
+                aperture=params[1],
+                lightcurve_type=params[2],
+            )
+            values_to_insert.append({
+                "id": id_,
+                "tic_id": job.tic_id,
+                "aperture_id": job.aperture,
+                "lightcurve_type_id": job.lightcurve_type
+            })
+            yield job
+            progress.update(1)
+        # update db
+        echo("Submitting new lightcurve parameters to database")
+        db.session.bulk_insert_mappings(
+            Lightcurve,
+            values_to_insert
+        )
+        db.commit()
+
+
 class LightpointNormalizer(object):
     def __init__(self, cache, db):
         self.time_corrector = PartitionTimeCorrector(db)
@@ -90,6 +183,9 @@ class LightpointNormalizer(object):
         )
 
         self.stellar_params = cache.tic_parameter_df
+
+        orbits = db.query(Orbit.orbit_number, Orbit.id)
+        self.orbit_map = dict(orbits.all())
 
     def get_stellar_params(self, tic_id):
         try:
@@ -398,8 +494,6 @@ class PartitionMerger(LightpointProcessor):
         self,
         corrector,
         partition_queue,
-        ingestion_queue,
-        orbit_map,
         **kwargs
     ):
         self.scratch_dir = kwargs.pop('scratch_dir', '/scratch2')
@@ -408,16 +502,9 @@ class PartitionMerger(LightpointProcessor):
         super(PartitionMerger, self).__init__(**kwargs)
         self.corrector = corrector
         self.partition_queue = partition_queue
-        self.ingestion_queue = ingestion_queue
-        self.orbit_map = orbit_map
 
     def merge(self, job):
         lps = []
-        writer = LightpointPartitionWriter(
-            job.partition_start,
-            job.partition_end,
-            self.scratch_dir
-        )
         self.log(
             "Processing partition {0} with {1} lightcurves".format(
                 job.partition_start,
@@ -434,6 +521,10 @@ class PartitionMerger(LightpointProcessor):
                 )
             )
             for h5 in merge_job.files:
+                self.log(
+                    "Parsing {0}".format(h5),
+                    level="trace"
+                )
                 try:
                     lp = load_lightpoints(
                         h5,
@@ -758,61 +849,106 @@ def partition_consumer(config, partition_path, id_cadence_blacklist=None):
         db.commit()
 
 
-def get_partition_h5_def(config, partition_start, partition_end):
-    cache = IngestionCache()
+def copy_lightpoints(config, corrector, merge_jobs, commit=True):
+    lps = []
+    start = time()
+    n_files = 0
+    missed_filepaths = []
+    for merge_job in merge_jobs:
+        for h5 in merge_job.files:
+            try:
+                lp = load_lightpoints(
+                    h5,
+                    merge_job.id,
+                    merge_job.aperture,
+                    merge_job.lightcurve_type
+                )
+                lp = corrector.correct(
+                    merge_job.tic_id,
+                    lp
+                )
+                lps.append(lp)
+                n_files += 1
+            except OSError:
+                missed_filepaths.append(h5)
+                continue
 
+    merge_elapsed = time() - start
 
-def merge_partition(config, partition_name, partition_path):
+    if not lps:
+        return {
+            'status': 'ERROR',
+            'n_files': len(merge_job.files),
+            'missed_files': missed_filepaths,
+        }
 
-    cols = Lightpoint.get_columns()
+    # Establish full datastructures for partition and observation
+    # updates
+    start = time()
+    raw_partition = pd.concat(lps)[list(Lightpoint.get_columns())]
+    raw_partition.set_index(["lightcurve_id", "cadence"], inplace=True)
+    raw_partition.sort_index(inplace=True)
+    
+    observations = raw_partition[
+        ["tic_id", "orbit_number", "camera", "ccd"]
+    ]
+    observations.set_index(["tic_id", "orbit_number"], inplace=True)
+    observations.sort_index(inplace=True)
 
-    logger.debug("Opening {0} for merging".format(partition_path))
-    reader = LightpointPartitonReader(partition_path)
-    lightpoints = reader.yield_lightpoints()
+    # Remove any duplication
+    lp = raw_partition[~raw_partition.index.duplicated(keep="last")]
+    obs = observations[~observations.index.duplicated(keep="last")]
 
-    sorted_lps = sorted(lightpoints, key=lambda lp: (lp[0], lp[1]))
-
-    disk_lp = pd.DataFrame(sorted_lps, columns=cols).set_index(
-        ["lightcurve_id", "cadence"]
+    obs.reset_index(inplace=True)
+    obs["orbit_id"] = obs.apply(
+        lambda row: corrector.orbit_map[row["orbit_number"]],
+        axis=1
     )
+    observations.drop(columns=["orbit_number"], inplace=True)
 
-    logger.debug("Read {0} points".format(len(disk_lp)))
-    obs_params = map(
-        lambda row: {
-            "tic_id": row[0],
-            "camera": row[1],
-            "ccd": row[2],
-            "orbit_id": row[3],
-        },
-        reader.yield_observations(),
-    )
+    validation_elapsed = time() - start
 
-    select_clause = ", ".join(cols)
-
-    q = text("SELECT {0} FROM {1}".format(select_clause, partition_name))
-
+    # Establish database connection
     with db_from_config(config) as db:
-        logger.debug("Querying remote partition")
-        results = db.session.execute(q)
-        remote_df = pd.DataFrame(results, columns=cols).set_index(
-            ["lightcurve_id", "cadence"]
-        )
-        logger.debug("Obtained {0} points".format(len(remote_df)))
+        # Set worker memory
+        mem_q = text("SET LOCAL work_mem TO '1GB'")
+        db.session.execute(mem_q)
 
-    # Copy only new lightpoints
-    existing_idx = remote_df.index
+        conn = db.session.connection().connection
 
-    new_lps = disk_lp.loc[~disk_lp.index.isin(existing_idx)]
-
-    with db_from_config(config) as db:
-        logger.debug("Pushing new data")
         mgr = CopyManager(
-            db.session.connection().connection, partition_name, cols
+            conn,
+            Lightpoint.__tablename__,
+            Lightpoint.get_columns()
         )
-        mgr.threading_copy(new_lps.to_records())
+
+        start = time()
+        mgr.threading_copy(
+            lp.to_records()
+        )
+        copy_elapsed = time() - start
+
         q = Observation.upsert_q()
 
-        db.session.execute(q, list(obs_params))
-        db.commit()
+        start = time()
+        db.session.execute(q, list(obs.to_dict('records')))
 
-    logger.debug("Done")
+        upsert_elapsed = time() - start
+        start = time()
+        if commit:
+            db.commit()
+        else:
+            db.rollback()
+        commit_elapsed = time() - start
+
+    return {
+        "status": "OK",
+        "n_files": len(merge_job.files),
+        "missed_files": missed_filepaths,
+        "merge_elapsed": merge_elapsed,
+        "validation_elapsed": validation_elapsed,
+        "copy_elapsed": copy_elapsed,
+        "upsert_elapsed": upsert_elapsed,
+        "commit_elapsed": commit_elapsed
+    }
+
