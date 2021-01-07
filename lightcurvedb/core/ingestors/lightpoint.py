@@ -7,7 +7,6 @@ except ImportError:
 import os
 import struct
 from click import echo
-from collections import defaultdict, namedtuple
 from multiprocessing import Process
 from time import sleep, time
 from itertools import product
@@ -37,8 +36,9 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 
 from lightcurvedb import db_from_config
 from sqlalchemy import bindparam, Sequence, Table, text
+from tqdm import tqdm
 from multiprocessing import Process
-
+from pgcopy import CopyManager
 
 try:
     from math import isclose
@@ -952,3 +952,153 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
         "commit_elapsed": commit_elapsed
     }
 
+
+def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
+    """
+    Get a list of SingleMergeJobs from TICs appearing in the
+    given orbits, cameras, and ccds. TICs and orbits already ingested
+    will *not* be in the returned list.
+
+    In addition, any new Lightcurves will be assigned IDs so it will
+    be deterministic in which partition its data will reside in.
+    """
+    cache_q = cache.session.query(
+        FileObservation.tic_id,
+        FileObservation.orbit_number,
+        FileObservation.file_path
+    )
+    
+    if not all(cam in cameras for cam in [1,2,3,4]):
+        cache_q = cache_q.filter(FileObservation.camera.in_(cameras))
+    if not all(ccd in ccds for ccd in [1,2,3,4]):
+        cache_q = cache_q.filter(FileObservation.ccd.in_(ccds))
+
+    file_df = pd.read_sql(
+        cache_q.statement,
+        cache.session.bind,
+        index_col=["tic_id"]
+    )
+
+    relevant_tics = set(
+        file_df[file_df.orbit_number.isin(orbits)].index
+    )
+
+    file_df = file_df.loc[relevant_tics].sort_index()
+
+    obs_clause = (
+        Orbit.orbit_number.in_(orbits),
+        Observation.camera.in_(cameras),
+        Observation.ccd.in_(ccds),
+    )
+    click.echo("Comparing cache file paths to lcdb observation table")
+    with ctx.obj["dbconf"] as db:
+        obs_q = db.query(
+            Observation.tic_id,
+            Orbit.orbit_number
+        ).join(
+            Observation.orbit       
+        ).filter(
+            *obs_clause
+        )
+        apertures = [ap.name for ap in db.query(Aperture)]
+        types = [t.name for t in db.query(LightcurveType)]
+        already_observed = set(obs_q)
+
+        click.echo("Preparing lightcurve id map")
+        lcs = db.lightcurves.filter(
+            Lightcurve.tic_id.in_(
+                db.query(
+                    Observation.tic_id
+                ).join(Observation.orbit).filter(
+                    *obs_clause
+                ).distinct().subquery()
+            )
+        ).all()
+        lc_id_map = {
+            (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
+            for lc in lcs
+        }
+        jobs = get_jobs(
+            db,
+            file_df,
+            already_observed,
+            apertures,
+            types,
+            fill_id_gaps=fillgaps,
+            bar=tqdm
+        )
+    return jobs
+
+
+def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
+    """
+    """
+    # Group each merge_job
+    bucket = defaultdict(list)
+    for merge_job in merge_jobs:
+        partition_id = (merge_job.id // 1000) * 1000
+        bucket[partition_id].append(merge_job)
+    click.echo(
+        "{0} partitions will be affected".format(len(bucket))
+    )
+
+    with db_from_config(config) as db:
+        normalizer = LightpointNormalizer(db)
+
+    func = partial(
+        copy_lightpoints,
+        db._config,
+        normalizer,
+        commit=commit
+    )
+
+    total_jobs = len(bucket)
+
+    err = click.style("ERROR", bg="red", blink=True)
+    ok = click.style("OK", fg="green", bold=True)
+
+    error_msg = (
+        "{0}: Could not open {{0}} files. "
+        "List written to {{1}}".format(
+            err
+        )
+    )
+    ok_msg = (
+        "{0}: Copied {{0}} files. "
+        "Merge time {{1}}s. "
+        "Validation time {{2}}s. "
+        "Copy time {{3}}s".format(
+            ok
+        )
+    )
+    all_results = []
+    click.echo("Sending work to {0} processes".format(n_processes))
+
+    with Pool(n_processes) as pool:
+        results = pool.imap_unordered(func, bucket.values())
+        if tqdm_bar:
+            bar = tqdm(total=total_jobs)
+        for r in results:
+            if r["missed_files"]:
+                with open("./missed_merges.txt", "at") as out:
+                    out.write("\n".join(r["missed_files"]))
+
+            if r["status"] == "ERROR":
+                path = os.path.abspath("./missed_merges.txt")
+                msg = error_msg.format(
+                    len(r["missed_files"]),
+                    path
+                )
+            elif r["STATUS"] == "OK":
+                msg = ok_msg.format(
+                    len("n_files"),
+                    r["merge_elapsed"],
+                    r["validation_elapsed"],
+                    r["copy_elapsed"]
+                )
+            all_results.append(r)
+            if tqdm_bar:
+                bar.write(msg)
+                bar.update(1)
+            else:
+                print(msg)

@@ -111,7 +111,7 @@ class DB(object):
             Returns itself in a closed state.
         """
         if self._session is not None:
-            self._session.close()
+            self.SessionClass.remove()
             self._session = None
             self._active = False
         else:
