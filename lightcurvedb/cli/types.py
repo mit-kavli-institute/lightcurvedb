@@ -2,6 +2,8 @@ import click
 import os
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb import models as Models
+from lightcurvedb.cli.utils import resolve_filter_column
+from lightcurvedb.util.sql import get_operator_f
 
 
 MODEL_LOOKUP = {
@@ -64,24 +66,39 @@ class ClickSQLParameter(click.ParamType):
     name = "sql_parameter"
 
     def convert(self, value, param, ctx):
+
         try:
-            param, alias = value.strip().split(":")
+            parsed, alias = value.strip().split(":")
         except ValueError:
             # No alias
-            param = alias = value.strip()
+            parsed = alias = value.strip()
 
         TargetModel = ctx.obj["target_model"]
-        param_paths = tuple(map(lambda p: p.strip(), param.split(".")))
+        param_paths = tuple(map(lambda p: p.strip(), parsed.split(".")))
 
         try:
             sql_col, contexts = TargetModel.get_property(*param_paths)
         except KeyError as e:
             self.fail(e, param, ctx)
+        except IndexError as e:
+            self.fail(
+                "unknown parameter on {0} with {1}".format(
+                    TargetModel, param_paths
+                )
+            )
+
+        sql_col = sql_col.label(alias)
 
         result = {
-            "column": sql_col.label(alias),
+            "column": sql_col,
             "alias": alias,
         }
+
+        current_columns = ctx.obj.get("queried_columns", {})
+        current_columns[alias] = sql_col
+
+        ctx.obj["queried_columns"] = current_columns
+
         if contexts:
             result.update(contexts)
         return result
@@ -91,13 +108,34 @@ class FilterParameter(click.ParamType):
     name = "sql_filter"
 
     def convert(self, value, param, ctx):
-        try:
-            column, op, cmpr = value.split()
-        except ValueError:
-            pass
 
-        # TODO implement small lightweight grammar
-        return value
+        model = ctx.obj["target_model"]
+
+        if "queried_columns" not in ctx.obj:
+            self.fail(
+                "attempting to filter on columns when none have been "
+                "specified"
+            )
+
+        try:
+            lhs, op, rhs = value.split()
+        except ValueError:
+            self.fail(
+                '"{0}" does not look like a valid '
+                "filter parameter...".format(value)
+            )
+
+        # Check to see if rhs or lhs are specfying given columns
+        rhs = resolve_filter_column(ctx.obj["queried_columns"], model, rhs)
+        lhs = resolve_filter_column(ctx.obj["queried_columns"], model, lhs)
+
+        clause = get_operator_f(op)(rhs, lhs)
+        filters = ctx.obj.get("filters", [])
+
+        filters.append(clause)
+        ctx.obj["filters"] = filters
+
+        return clause
 
 
 class OrderParameter(click.ParamType):

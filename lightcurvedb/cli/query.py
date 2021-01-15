@@ -4,6 +4,7 @@ from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import (
     QLPModelType,
     ClickSQLParameter,
+    FilterParameter,
     OrderParameter,
 )
 from itertools import chain
@@ -29,7 +30,9 @@ def query(ctx, model):
 @click.option(
     "--parameter", "-p", "parameters", type=ClickSQLParameter(), multiple=True
 )
-@click.option("--filter", "-f", "filters", type=str, multiple=True)
+@click.option(
+    "--filter", "-f", "filters", type=FilterParameter(), multiple=True
+)
 @click.option(
     "--order-by", "-O", "orders", type=OrderParameter(), multiple=True
 )
@@ -56,7 +59,8 @@ def print_table(ctx, parameters, filters, orders, table_fmt, header):
             q = q.join(join_clause)
 
         # Perform filters
-        # TODO
+        if filters:
+            q = q.filter(*filters)
 
         # Perform orders
         if orders:

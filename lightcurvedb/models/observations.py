@@ -2,12 +2,13 @@ import os
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.constants import QLP_ORBITS
+from lightcurvedb.core.datastructures.blob import Blobable
 from sqlalchemy import BigInteger, Column, ForeignKey, SmallInteger, bindparam
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import relationship
 
 
-class Observation(QLPModel):
+class Observation(QLPModel, Blobable):
     """
     This class allows easy queries between lightcurves and
     their observations per orbit.
@@ -27,7 +28,7 @@ class Observation(QLPModel):
     orbit = relationship("Orbit", back_populates="observations")
 
     @classmethod
-    def upsert_dicts(cls):
+    def upsert_q(cls):
         q = insert(cls).values(
             {
                 cls.tic_id: bindparam("tic_id"),
@@ -36,9 +37,7 @@ class Observation(QLPModel):
                 cls.orbit_id: bindparam("orbit_id"),
             }
         )
-        q = q.on_conflict_do_nothing(
-            constraint="observations_pkey",
-        )
+        q = q.on_conflict_do_nothing(constraint="observations_pkey",)
 
         return q
 

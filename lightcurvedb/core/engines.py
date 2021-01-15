@@ -20,8 +20,6 @@ from sqlalchemy.exc import DisconnectionError
 
 DB_TYPE = "postgresql+psycopg2"
 DEFAULT_ENGINE_KWARGS = {
-    "pool_size": 16,
-    "max_overflow": -1,
     "executemany_mode": "values",
     "executemany_values_page_size": 10000,
     "connect_args": {"client_encoding": "utf8"},
@@ -77,10 +75,6 @@ except KeyError:
 
 
 def init_LCDB(uri, **kwargs):
-    if "pool_size" not in kwargs:
-        kwargs["pool_size"] = 32
-    if "max_overflow" not in kwargs:
-        kwargs["max_overflow"] = -1
     ENGINE = create_engine(uri, **kwargs)
     # Register engine with to allow for easy pooling dissociation
     ENGINE = __register_process_guards__(ENGINE)

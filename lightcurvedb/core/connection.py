@@ -111,7 +111,7 @@ class DB(object):
             Returns itself in a closed state.
         """
         if self._session is not None:
-            self._session.close()
+            self.SessionClass.remove()
             self._session = None
             self._active = False
         else:
@@ -764,7 +764,10 @@ class DB(object):
             return q.all()
         return q
 
-    def lightcurve_id_map(self, filters, resolve=True):
+    def lightcurve_id_map(self, filters=None, resolve=True):
+        if not filters:
+            filters = []
+
         q = self.query(
             models.Lightcurve.id,
             models.Lightcurve.tic_id,

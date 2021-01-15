@@ -4,6 +4,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from lightcurvedb.models.lightcurve import Lightcurve
+from sqlalchemy import text
 
 
 with warnings.catch_warnings():
@@ -25,6 +27,21 @@ path_components = re.compile(
         r"\.h5$"
     )
 )
+
+
+def get_components(path):
+    result = path_components.search(path)
+    if not result:
+        raise RuntimeError(
+            "{0} does not look like a full H5 path.".format(path)
+        )
+    components = result.groupdict()
+    return dict(
+        tic_id=int(components["tic"]),
+        orbit_number=int(components["orbit"]),
+        camera=int(components["camera"]),
+        ccd=int(components["ccd"]),
+    )
 
 
 def quality_flag_extr(qflags):
@@ -102,3 +119,84 @@ def kwargs_to_df(*kwargs, **constants):
     for k, constant in constants.items():
         main[k] = constant
     return main
+
+
+def load_lightpoints(path, lightcurve_id, aperture, type_):
+
+    constants = get_components(path)
+    with H5File(path, "r") as h5in:
+        lc = h5in["LightCurve"]
+        cadences = lc["Cadence"][()].astype(int)
+        bjd = lc["BJD"][()]
+
+        lc = lc["AperturePhotometry"][aperture]
+        x_centroids = lc["X"][()]
+        y_centroids = lc["Y"][()]
+        quality_flags = quality_flag_extr(lc["QualityFlag"][()]).astype(int)
+
+        values = lc[type_][()]
+        has_error_field = H5_LC_TYPES[type_]
+
+        if has_error_field:
+            errors = lc["{0}Error".format(type_)][()]
+        else:
+            errors = np.full_like(cadences, np.nan, dtype=np.double)
+
+        lightpoints = pd.DataFrame(
+            data=dict(
+                cadence=cadences,
+                barycentric_julian_date=bjd,
+                data=values,
+                error=errors,
+                x_centroid=x_centroids,
+                y_centroid=y_centroids,
+                quality_flag=quality_flags,
+            )
+        )
+        lightpoints["lightcurve_id"] = lightcurve_id
+        for fieldname, constant in constants.items():
+            lightpoints[fieldname] = constant
+    return lightpoints
+
+
+def get_missing_ids(db, max_return=None):
+    """
+    Return missing lightcurve ids from the database. This method is
+    not multiprocess safe. And the results returned are true only if
+    no other processes are adding ids.
+
+    Parameters
+    ----------
+    db: lightcurvedb.core.connection.DB
+        An open database connection.
+    max_return: int, optional
+        The maximum number of ids to return. If this limit is reached
+        then the returned id set length will == ``max_return``.
+    Returns
+    -------
+    set
+        A set of integers.
+    """
+    id_q = db.query(Lightcurve.id)
+    ids = {id_ for id_ in id_q}
+
+    max_id = max(ids)
+    ref_ids = set(range(1, max_ids + 1))
+
+    missing = ref_ids - ids
+    if max_return:
+        return set(list(sorted(missing))[:max_return])
+    return missing
+
+
+def allocate_lightcurve_ids(db, n_ids):
+    """
+    Allocates ``n_ids`` ids from the database.
+    """
+    if n_ids <= 0:
+        return []
+
+    q = text(
+        "SELECT nextval('{0}') " "FROM generate_series(1, {1})".format(n_ids)
+    )
+    return [id_ for id_, in db.session.execute(q)]
