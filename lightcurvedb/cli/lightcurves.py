@@ -94,6 +94,88 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
         )
         previously_seen = {(tic, orbit) for tic, orbit in q.all()}
 
+        for _ in range(n_processes):
+            producer = MassIngestor(
+                db._config,
+                quality_flags,
+                time_corrector,
+                job_queue,
+                daemon=True,
+            )
+            workers.append(producer)
+
+        click.echo(
+            "Determining TIC job ordering to optimize PSQL cache hits..."
+        )
+        tic_q = (
+            db.query(Lightcurve.tic_id)
+            .filter(Lightcurve.tic_id.in_(tics))
+            .order_by(Lightcurve.id)
+            .distinct()
+        )
+
+        optimized_tics = []
+        seen = set()
+        for (tic,) in tic_q.all():
+            if tic not in seen and tic in tics:
+                optimized_tics.append(tic)
+                seen.add(tic)
+
+        click.echo(
+            "Optimized {0} out of {1} tics".format(
+                len(optimized_tics), len(tics)
+            )
+        )
+
+    # Exit DB to remove idle session
+    click.echo("Starting processes...")
+
+    for process in workers:
+        process.start()
+
+    for tic in yield_optimized_tics(optimized_tics, tics):
+        files = []
+
+        df = file_observations[file_observations["tic_id"] == tic]
+
+        for _, file_ in df.iterrows():
+            tic, orbit, _, _, _ = file_
+            if (file_.tic_id, file_.orbit_number) not in previously_seen:
+                files.append(
+                    (
+                        file_.tic_id,
+                        file_.orbit_number,
+                        file_.camera,
+                        file_.ccd,
+                        file_.file_path,
+                    )
+                )
+
+        if len(files) == 0:
+            # Skip this work
+            continue
+
+        stellar_parameters = cache.session.query(TIC8Parameters).get(tic)
+
+        if stellar_parameters is None:
+            click.echo("Could not find parameters for {0}".format(tic))
+            continue
+
+        job = MergeJob(
+            tic_id=tic,
+            ra=stellar_parameters.right_ascension,
+            dec=stellar_parameters.declination,
+            tmag=stellar_parameters.tmag,
+            file_observations=files,
+        )
+        job_queue.put(job)
+
+    job_queue.join()
+    click.echo("Merge-job queue empty")
+    for process in workers:
+        process.join()
+        click.echo("Joined process {0}".format(process))
+
     click.echo(click.style("Done", fg="green", bold=True))
 
 
