@@ -6,10 +6,11 @@ except ImportError:
 
 import os
 import struct
-from click import echo
+from click import echo, style
 from multiprocessing import Process
 from time import sleep, time
 from itertools import product
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ import pandas as pd
 from lightcurvedb import db_from_config
 from lightcurvedb.core.base_model import QLPModel
 from collections import namedtuple, defaultdict
-from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation
+from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation, Aperture, LightcurveType
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
@@ -26,6 +27,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_missing_ids,
     allocate_lightcurve_ids
 )
+from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.legacy.timecorrect import PartitionTimeCorrector
 from lightcurvedb.core.datastructures.data_packers import (
@@ -37,7 +39,7 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 from lightcurvedb import db_from_config
 from sqlalchemy import bindparam, Sequence, Table, text
 from tqdm import tqdm
-from multiprocessing import Process
+from multiprocessing import Process, Pool
 from pgcopy import CopyManager
 
 try:
@@ -97,6 +99,7 @@ def get_jobs(
     a list of apertures and lightcurve types.
     """
     tics = list(file_df.index)
+    missing_ids = []
 
     if bar:
         progress = bar(total=len(file_df)*len(apertures)*len(types))
@@ -885,26 +888,27 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     # Establish full datastructures for partition and observation
     # updates
     start = time()
-    raw_partition = pd.concat(lps)[list(Lightpoint.get_columns())]
-    raw_partition.set_index(["lightcurve_id", "cadence"], inplace=True)
-    raw_partition.sort_index(inplace=True)
-    
+    raw_partition = pd.concat(lps)
+    lp = raw_partition[list(Lightpoint.get_columns())]
     observations = raw_partition[
         ["tic_id", "orbit_number", "camera", "ccd"]
     ]
-    observations.set_index(["tic_id", "orbit_number"], inplace=True)
+    lp = lp.set_index(["lightcurve_id", "cadence"])
+    lp.sort_index(inplace=True)
+    
+    observations = observations.set_index(["tic_id", "orbit_number"])
     observations.sort_index(inplace=True)
 
     # Remove any duplication
-    lp = raw_partition[~raw_partition.index.duplicated(keep="last")]
+    lp = lp[~raw_partition.index.duplicated(keep="last")]
     obs = observations[~observations.index.duplicated(keep="last")]
-
     obs.reset_index(inplace=True)
+
     obs["orbit_id"] = obs.apply(
         lambda row: corrector.orbit_map[row["orbit_number"]],
         axis=1
     )
-    observations.drop(columns=["orbit_number"], inplace=True)
+    obs.drop(columns="orbit_number", inplace=True)
 
     validation_elapsed = time() - start
 
@@ -961,6 +965,27 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
 
     In addition, any new Lightcurves will be assigned IDs so it will
     be deterministic in which partition its data will reside in.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        A click context object which should contain an unopened
+        lightcurvedb.DB object
+    cache : IngestionCache
+        An opened ingestion cache object
+    orbits : sequence of int
+        The desired orbits to ingest.
+    cameras : sequence of int
+        The cameras to ingest
+    ccds : sequence of int
+        The ccds to ingest
+    fillgaps : bool, optional
+        If true, find gaps in the lightcurve id sequence and fill them with
+        any new lightcurves.
+    Returns
+    -------
+    sequence of lightcurve.core.ingestors.lightpoint.SingleMergeJob
+        Return a sequence of NamedTuples describing needed information for ingest.
     """
     cache_q = cache.session.query(
         FileObservation.tic_id,
@@ -990,7 +1015,7 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
         Observation.camera.in_(cameras),
         Observation.ccd.in_(ccds),
     )
-    click.echo("Comparing cache file paths to lcdb observation table")
+    echo("Comparing cache file paths to lcdb observation table")
     with ctx.obj["dbconf"] as db:
         obs_q = db.query(
             Observation.tic_id,
@@ -1004,7 +1029,7 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
         types = [t.name for t in db.query(LightcurveType)]
         already_observed = set(obs_q)
 
-        click.echo("Preparing lightcurve id map")
+        echo("Preparing lightcurve id map")
         lcs = db.lightcurves.filter(
             Lightcurve.tic_id.in_(
                 db.query(
@@ -1013,14 +1038,15 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
                     *obs_clause
                 ).distinct().subquery()
             )
-        ).all()
+        )
         lc_id_map = {
             (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
-            for lc in lcs
+            for lc in lcs.yield_per(1000)
         }
         jobs = get_jobs(
             db,
             file_df,
+            lc_id_map,
             already_observed,
             apertures,
             types,
@@ -1032,18 +1058,21 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
 
 def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
     """
+    Group single
     """
     # Group each merge_job
     bucket = defaultdict(list)
     for merge_job in merge_jobs:
         partition_id = (merge_job.id // 1000) * 1000
         bucket[partition_id].append(merge_job)
-    click.echo(
+    echo(
         "{0} partitions will be affected".format(len(bucket))
     )
 
     with db_from_config(config) as db:
-        normalizer = LightpointNormalizer(db)
+        cache = IngestionCache()
+        normalizer = LightpointNormalizer(cache, db)
+        cache.session.close()
 
     func = partial(
         copy_lightpoints,
@@ -1054,8 +1083,8 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
 
     total_jobs = len(bucket)
 
-    err = click.style("ERROR", bg="red", blink=True)
-    ok = click.style("OK", fg="green", bold=True)
+    err = style("ERROR", bg="red", blink=True)
+    ok = style("OK", fg="green", bold=True)
 
     error_msg = (
         "{0}: Could not open {{0}} files. "
@@ -1072,7 +1101,7 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
         )
     )
     all_results = []
-    click.echo("Sending work to {0} processes".format(n_processes))
+    echo("Sending work to {0} processes".format(n_processes))
 
     with Pool(n_processes) as pool:
         results = pool.imap_unordered(func, bucket.values())
@@ -1089,7 +1118,7 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
                     len(r["missed_files"]),
                     path
                 )
-            elif r["STATUS"] == "OK":
+            elif r["status"] == "OK":
                 msg = ok_msg.format(
                     len("n_files"),
                     r["merge_elapsed"],
