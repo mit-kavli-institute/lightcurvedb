@@ -79,11 +79,7 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 observed_tics.add(tic)
             if force_tic8_query:
                 q = tic8.mass_stellar_param_q(
-                    obs_ids,
-                    "id",
-                    "ra",
-                    "dec",
-                    "tmag",
+                    obs_ids, "id", "ra", "dec", "tmag",
                 )
 
                 tic_params = pd.read_sql(
@@ -135,34 +131,26 @@ def get_missing_stellar_param(ctx):
     # grab observed tics
     click.echo("querying cache for TIC definitions")
     obs_tics = set(tic for tic, in cache.session.query(FileObservation.tic_id))
-    tics_w_param = set(tic for tic, in cache.session.query(TIC8Parameters.tic_id))
+    tics_w_param = set(
+        tic for tic, in cache.session.query(TIC8Parameters.tic_id)
+    )
 
     missing = obs_tics - tics_w_param
     if len(missing) == 0:
         click.echo(
             click.style(
-                "No TICs in the cache are without TIC8 parameters",
-                fg="green"
+                "No TICs in the cache are without TIC8 parameters", fg="green"
             )
         )
         return 0
     else:
         click.echo(
             "Resolving {0} TICs from TIC8".format(
-                click.style(
-                    str(len(missing)),
-                    bold=True
-                )
+                click.style(str(len(missing)), bold=True)
             )
         )
 
-    q = tic8.mass_stellar_param_q(
-        missing,
-        "id",
-        "ra",
-        "dec",
-        "tmag"
-    )
+    q = tic8.mass_stellar_param_q(missing, "id", "ra", "dec", "tmag")
 
     insert_q = TIC8Parameters.__table__.insert().values(q)
     tic8.close()
@@ -185,40 +173,33 @@ def get_missing_stellar_param(ctx):
 
 @cache.command()
 @click.pass_context
-@click.argument('param-csv', type=click.Path(dir_okay=False, exists=True))
+@click.argument("param-csv", type=click.Path(dir_okay=False, exists=True))
 def stellar_params_from_file(ctx, param_csv):
     file_params = pd.read_csv(param_csv)
     file_tics = set(file_params.tic_id)
     cache = IngestionCache()
-    cache_tics = set(tic for tic, in cache.session.query(TIC8Parameters.tic_id).distinct())
+    cache_tics = set(
+        tic for tic, in cache.session.query(TIC8Parameters.tic_id).distinct()
+    )
 
     missing = file_tics - cache_tics
     new_params = file_params[file_params.tic_id.isin(missing)]
     cache.session.bulk_insert_mappings(
-        TIC8Parameters,
-        new_params.to_dict("records")
+        TIC8Parameters, new_params.to_dict("records")
     )
     if ctx.obj["dryrun"]:
         cache.session.rollback()
         click.echo(new_params)
         click.echo(
             "Would insert {0} new stellar parameter rows".format(
-                click.style(
-                    str(len(new_params)),
-                    bold=True,
-                    fg="yellow"
-                )
+                click.style(str(len(new_params)), bold=True, fg="yellow")
             )
         )
     else:
         cache.session.commit()
         click.echo(
             "Committed {0} new stellar parameter rows".format(
-                click.style(
-                    str(len(new_params)),
-                    bold=True,
-                    fg="green"
-                )
+                click.style(str(len(new_params)), bold=True, fg="green")
             )
         )
 
@@ -326,7 +307,7 @@ def quality_flags(ctx, orbits, cameras, ccds):
 
 @cache.command()
 @click.pass_context
-@click.argument('tic', type=int)
+@click.argument("tic", type=int)
 def list_files_for(ctx, tic):
     cache = IngestionCache()
 
@@ -334,11 +315,9 @@ def list_files_for(ctx, tic):
         FileObservation.camera,
         FileObservation.ccd,
         FileObservation.orbit_number,
-        FileObservation.file_path
+        FileObservation.file_path,
     ).filter(FileObservation.tic_id == tic)
 
     click.echo(
-        tabulate(
-            q, headers=['camera', 'ccd', 'orbit_number', 'file_path']
-        )
+        tabulate(q, headers=["camera", "ccd", "orbit_number", "file_path"])
     )

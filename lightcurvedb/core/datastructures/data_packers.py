@@ -217,11 +217,11 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
     def get_orbit_numbers(self, db):
         orbit_ids = self.get_orbit_ids()
-        q = db.query(
-            Orbit.orbit_number
-        ).filter(
-            Orbit.id.in_(orbit_ids)
-        ).distinct()
+        q = (
+            db.query(Orbit.orbit_number)
+            .filter(Orbit.id.in_(orbit_ids))
+            .distinct()
+        )
 
         return {number for number, in q.all()}
 
@@ -271,7 +271,9 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             _ = self.__get_preamble__(fin)
             fin.seek(offset, 1)
 
-            obs_iter = self.__obs_iter__(fin, preamble["number_of_observations"])
+            obs_iter = self.__obs_iter__(
+                fin, preamble["number_of_observations"]
+            )
             for obs in obs_iter:
                 # yield every item, returning the iterator will break as it will
                 # be out of scope of this file and break since the file will be
@@ -370,12 +372,8 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             # Copy lightpoints
             connection = db.session.connection().connection
 
-            work_mem_q = (
-                "SET LOCAL work_mem TO \"1GB\""
-            )
-            temp_buffers_q = (
-                "SET LOCAL temp_buffers TO \"2GB\""
-            )
+            work_mem_q = 'SET LOCAL work_mem TO "1GB"'
+            temp_buffers_q = 'SET LOCAL temp_buffers TO "2GB"'
             with connection.cursor() as cursor:
                 # cursor changes are visible across all shared
                 # cursors in one connection
@@ -383,17 +381,17 @@ class LightpointPartitionReader(LightpointPartitionBlob):
                 cursor.execute(temp_buffers_q)
 
             columns = [c.name for c in Lightpoint.__table__.columns]
-            mgr = CopyManager(
-                connection, partition, columns
-            )
+            mgr = CopyManager(connection, partition, columns)
             mgr.threading_copy(self.__lp_iter__(fin, n_lightpoints))
 
             # Observations can be inserted normally
             columns = [c.name for c in Observation.__table__.columns]
 
-            obs_df = pd.DataFrame(
-                self.__obs_iter__(fin, n_obs), columns=columns
-            ).set_index(["tic_id", "orbit_id"]).sort_index()
+            obs_df = (
+                pd.DataFrame(self.__obs_iter__(fin, n_obs), columns=columns)
+                .set_index(["tic_id", "orbit_id"])
+                .sort_index()
+            )
 
             # Remove duplication
             obs_df = obs_df[~obs_df.index.duplicated(keep="last")]

@@ -27,7 +27,7 @@ from lightcurvedb.core.ingestors.lightpoint import (
     PartitionConsumer,
     PartitionJob,
     get_merge_jobs,
-    ingest_merge_jobs
+    ingest_merge_jobs,
 )
 from lightcurvedb.core.ingestors.temp_table import (
     FileObservation,
@@ -41,7 +41,14 @@ from lightcurvedb.legacy.timecorrect import (
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
-from lightcurvedb.models import Lightcurve, Observation, Orbit, Lightpoint, Aperture, LightcurveType
+from lightcurvedb.models import (
+    Lightcurve,
+    Observation,
+    Orbit,
+    Lightpoint,
+    Aperture,
+    LightcurveType,
+)
 from lightcurvedb import models as defined_models
 from tqdm import tqdm
 from tabulate import tabulate
@@ -57,7 +64,7 @@ def gaps_in_ids(id_array):
     start = min(check_ids)
     end = max(check_ids)
 
-    ref = set(range(start, end+1))
+    ref = set(range(start, end + 1))
 
     return ref - check_ids
 
@@ -87,9 +94,7 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
         )
         previously_seen = {(tic, orbit) for tic, orbit in q.all()}
 
-
     click.echo(click.style("Done", fg="green", bold=True))
-
 
 
 @lcdbcli.group()
@@ -109,23 +114,13 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 
     cache = IngestionCache()
     click.echo("Connected to ingestion cache, determining filepaths")
-    jobs = get_merge_jobs(
-        ctx,
-        cache,
-        orbits,
-        cameras,
-        ccds,
-        fillgaps=fillgaps)
+    jobs = get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=fillgaps)
     click.echo("Obtained {0} jobs to perform".format(len(jobs)))
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"]._config,
-        jobs,
-        n_processes,
-        not ctx.obj["dryrun"]
+        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
     )
     click.echo("Done!")
-
 
 
 @lightcurve.group()

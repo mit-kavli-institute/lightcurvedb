@@ -69,9 +69,7 @@ class QLPModel(object):
         try:
             path = paths[0]
         except IndexError:
-            raise KeyError(
-                "give path {0} is empty".format(paths)
-            )
+            raise KeyError("give path {0} is empty".format(paths))
         remainder = paths[1:]
         try:
             class_attr = getattr(cls, path)

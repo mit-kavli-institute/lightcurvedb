@@ -197,9 +197,6 @@ def allocate_lightcurve_ids(db, n_ids):
         return []
 
     q = text(
-        "SELECT nextval('{0}') "
-        "FROM generate_series(1, {1})".format(
-            n_ids
-        )
+        "SELECT nextval('{0}') " "FROM generate_series(1, {1})".format(n_ids)
     )
     return [id_ for id_, in db.session.execute(q)]

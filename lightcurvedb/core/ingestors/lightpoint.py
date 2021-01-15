@@ -18,21 +18,28 @@ import pandas as pd
 from lightcurvedb import db_from_config
 from lightcurvedb.core.base_model import QLPModel
 from collections import namedtuple, defaultdict
-from lightcurvedb.models import Lightcurve, Lightpoint, Orbit, Observation, Aperture, LightcurveType
+from lightcurvedb.models import (
+    Lightcurve,
+    Lightpoint,
+    Orbit,
+    Observation,
+    Aperture,
+    LightcurveType,
+)
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
     load_lightpoints,
     get_missing_ids,
-    allocate_lightcurve_ids
+    allocate_lightcurve_ids,
 )
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.legacy.timecorrect import PartitionTimeCorrector
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionWriter,
-    LightpointPartitionReader
+    LightpointPartitionReader,
 )
 from lightcurvedb.util.logger import lcdb_logger as logger
 
@@ -86,14 +93,15 @@ PartitionJob = namedtuple(
 
 
 def get_jobs(
-        db,
-        file_df,
-        id_map,
-        already_observed,
-        apertures,
-        types,
-        fill_id_gaps=False,
-        bar=None):
+    db,
+    file_df,
+    id_map,
+    already_observed,
+    apertures,
+    types,
+    fill_id_gaps=False,
+    bar=None,
+):
     """
     Return single merge jobs from a observation file dataframe and
     a list of apertures and lightcurve types.
@@ -102,13 +110,13 @@ def get_jobs(
     missing_ids = []
 
     if bar:
-        progress = bar(total=len(file_df)*len(apertures)*len(types))
+        progress = bar(total=len(file_df) * len(apertures) * len(types))
 
     for tic_id, orbit_number, _ in file_df.to_records():
         if (tic_id, orbit_number) in already_observed:
             yield None
             if bar:
-                progress.update(len(apertures)*len(types))
+                progress.update(len(apertures) * len(types))
             continue
         files = list(file_df.loc[tic_id])
         for ap, lc_t in product(apertures, types):
@@ -119,7 +127,7 @@ def get_jobs(
                     tic_id=tic_id,
                     aperture=ap,
                     lightcurve_type=lc_t,
-                    files=files
+                    files=files,
                 )
                 yield job
             except KeyError:
@@ -145,9 +153,7 @@ def get_jobs(
             usable_ids = set()
 
         n_still_missing = len(usable_ids) - n_required
-        usable_ids.update(
-            allocate_lightcurve_ids(db, n_still_missing)
-        )
+        usable_ids.update(allocate_lightcurve_ids(db, n_still_missing))
         values_to_insert = []
         echo("Creating jobs using queried ids")
         progress = bar(total=len(missing_ids))
@@ -158,20 +164,19 @@ def get_jobs(
                 aperture=params[1],
                 lightcurve_type=params[2],
             )
-            values_to_insert.append({
-                "id": id_,
-                "tic_id": job.tic_id,
-                "aperture_id": job.aperture,
-                "lightcurve_type_id": job.lightcurve_type
-            })
+            values_to_insert.append(
+                {
+                    "id": id_,
+                    "tic_id": job.tic_id,
+                    "aperture_id": job.aperture,
+                    "lightcurve_type_id": job.lightcurve_type,
+                }
+            )
             yield job
             progress.update(1)
         # update db
         echo("Submitting new lightcurve parameters to database")
-        db.session.bulk_insert_mappings(
-            Lightcurve,
-            values_to_insert
-        )
+        db.session.bulk_insert_mappings(Lightcurve, values_to_insert)
         db.commit()
 
 
@@ -247,7 +252,9 @@ def remove_redundant(id_cadence_map, current_lp):
 
 class LightpointProcessor(Process):
     def log(self, msg, level="debug", exc_info=False):
-        getattr(logger, level)("{0}: {1}".format(self.name, msg), exc_info=exc_info)
+        getattr(logger, level)(
+            "{0}: {1}".format(self.name, msg), exc_info=exc_info
+        )
 
     def set_name(self):
         self.name = "{0}-{1}".format(self.prefix, os.getpid())
@@ -493,13 +500,8 @@ class PartitionMerger(LightpointProcessor):
 
     lp_cols = Lightpoint.get_columns()
 
-    def __init__(
-        self,
-        corrector,
-        partition_queue,
-        **kwargs
-    ):
-        self.scratch_dir = kwargs.pop('scratch_dir', '/scratch2')
+    def __init__(self, corrector, partition_queue, **kwargs):
+        self.scratch_dir = kwargs.pop("scratch_dir", "/scratch2")
         self.submit = kwargs.pop("submit", True)
 
         super(PartitionMerger, self).__init__(**kwargs)
@@ -510,8 +512,7 @@ class PartitionMerger(LightpointProcessor):
         lps = []
         self.log(
             "Processing partition {0} with {1} lightcurves".format(
-                job.partition_start,
-                len(job.merge_jobs)
+                job.partition_start, len(job.merge_jobs)
             )
         )
         for merge_job in job.merge_jobs:
@@ -520,30 +521,22 @@ class PartitionMerger(LightpointProcessor):
                     merge_job.tic_id,
                     merge_job.aperture,
                     merge_job.lightcurve_type,
-                    len(merge_job.files)
+                    len(merge_job.files),
                 )
             )
             for h5 in merge_job.files:
-                self.log(
-                    "Parsing {0}".format(h5),
-                    level="trace"
-                )
+                self.log("Parsing {0}".format(h5), level="trace")
                 try:
                     lp = load_lightpoints(
                         h5,
                         merge_job.id,
                         merge_job.aperture,
-                        merge_job.lightcurve_type
+                        merge_job.lightcurve_type,
                     )
-                    lp = self.corrector.correct(
-                        merge_job.tic_id,
-                        lp
-                    )
+                    lp = self.corrector.correct(merge_job.tic_id, lp)
                     lps.append(lp)
                 except OSError:
-                    self.log(
-                        "could not find {0}".format(h5)
-                    )
+                    self.log("could not find {0}".format(h5))
         if not lps:
             self.log("Found no valid jobs to make partition...")
             return None
@@ -560,8 +553,7 @@ class PartitionMerger(LightpointProcessor):
         observations = observations.sort_index().reset_index()
 
         observations["orbit_id"] = observations.apply(
-            lambda row: self.orbit_map[row["orbit_number"]],
-            axis=1
+            lambda row: self.orbit_map[row["orbit_number"]], axis=1
         )
 
         writer.add_observations(observations.to_dict("records"))
@@ -596,9 +588,7 @@ class PartitionMerger(LightpointProcessor):
                     continue
 
                 self.log(
-                    "submitting partition blob {0}".format(
-                        partition_blob_path
-                    )
+                    "submitting partition blob {0}".format(partition_blob_path)
                 )
                 self.ingestion_queue.put(partition_blob_path)
                 self.partition_queue.task_done()
@@ -615,9 +605,7 @@ class PartitionMerger(LightpointProcessor):
                         max_tries -= 1
                         self.log(
                             "Still unable to connect to queue, "
-                            "{0} tries remaining".format(
-                                max_tries
-                            )
+                            "{0} tries remaining".format(max_tries)
                         )
                 if max_tries <= 0:
                     # Unable to resolveproblem
@@ -625,7 +613,7 @@ class PartitionMerger(LightpointProcessor):
                         "could not connect to queue {0}, exiting".format(
                             self.ingestion_queue
                         ),
-                        level="error"
+                        level="error",
                     )
                     break
             except Exception as e:
@@ -639,7 +627,7 @@ class PartitionConsumer(LightpointProcessor):
     prefix = "PartitionConsumer"
 
     def __init__(self, config, blob_queue, **kwargs):
-        self.run_truncate = kwargs.pop('truncate', False)
+        self.run_truncate = kwargs.pop("truncate", False)
         super(PartitionConsumer, self).__init__(**kwargs)
         self.config = config
         self.blob_queue = blob_queue
@@ -654,20 +642,16 @@ class PartitionConsumer(LightpointProcessor):
             if self.run_truncate:
                 partition_name = reader.partition_name
                 TRUNCATE = text(
-                    "TRUNCATE partitions.{0}".format(
-                        partition_name
-                    )
+                    "TRUNCATE partitions.{0}".format(partition_name)
                 )
                 tic_ids = reader.get_tic_ids()
                 orbit_numbers = reader.get_orbit_numbers(db)
 
-                self.log(
-                    "Deleting and running truncate"
-                )
+                self.log("Deleting and running truncate")
 
                 db.query(Observation).filter(
                     Orbit.id == Observation.orbit_id,
-                    Observation.tic_id.in_(tic_ids)
+                    Observation.tic_id.in_(tic_ids),
                 ).delete(synchronize_session=False)
                 db.session.execute(TRUNCATE)
 
@@ -697,9 +681,7 @@ class PartitionConsumer(LightpointProcessor):
                         max_tries -= 1
                         self.log(
                             "Still unable to connect to queue, "
-                            "{0} tries remaining".format(
-                                max_tries
-                            )
+                            "{0} tries remaining".format(max_tries)
                         )
                 if max_tries <= 0:
                     # Unable to resolve problem
@@ -707,15 +689,11 @@ class PartitionConsumer(LightpointProcessor):
                         "could not connect to queue {0}, exciting".format(
                             self.blob_queue
                         ),
-                        level="error"
+                        level="error",
                     )
                     break
             except Exception as e:
-                self.log(
-                    e,
-                    level="error",
-                    exc_info=True
-                )
+                self.log(e, level="error", exc_info=True)
 
             if path is None:
                 break
@@ -864,12 +842,9 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
                     h5,
                     merge_job.id,
                     merge_job.aperture,
-                    merge_job.lightcurve_type
+                    merge_job.lightcurve_type,
                 )
-                lp = corrector.correct(
-                    merge_job.tic_id,
-                    lp
-                )
+                lp = corrector.correct(merge_job.tic_id, lp)
                 lps.append(lp)
                 n_files += 1
             except OSError:
@@ -880,9 +855,9 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
 
     if not lps:
         return {
-            'status': 'ERROR',
-            'n_files': len(merge_job.files),
-            'missed_files': missed_filepaths,
+            "status": "ERROR",
+            "n_files": len(merge_job.files),
+            "missed_files": missed_filepaths,
         }
 
     # Establish full datastructures for partition and observation
@@ -890,12 +865,10 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     start = time()
     raw_partition = pd.concat(lps)
     lp = raw_partition[list(Lightpoint.get_columns())]
-    observations = raw_partition[
-        ["tic_id", "orbit_number", "camera", "ccd"]
-    ]
+    observations = raw_partition[["tic_id", "orbit_number", "camera", "ccd"]]
     lp = lp.set_index(["lightcurve_id", "cadence"])
     lp.sort_index(inplace=True)
-    
+
     observations = observations.set_index(["tic_id", "orbit_number"])
     observations.sort_index(inplace=True)
 
@@ -905,8 +878,7 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     obs.reset_index(inplace=True)
 
     obs["orbit_id"] = obs.apply(
-        lambda row: corrector.orbit_map[row["orbit_number"]],
-        axis=1
+        lambda row: corrector.orbit_map[row["orbit_number"]], axis=1
     )
     obs.drop(columns="orbit_number", inplace=True)
 
@@ -921,21 +893,17 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
         conn = db.session.connection().connection
 
         mgr = CopyManager(
-            conn,
-            Lightpoint.__tablename__,
-            Lightpoint.get_columns()
+            conn, Lightpoint.__tablename__, Lightpoint.get_columns()
         )
 
         start = time()
-        mgr.threading_copy(
-            lp.to_records()
-        )
+        mgr.threading_copy(lp.to_records())
         copy_elapsed = time() - start
 
         q = Observation.upsert_q()
 
         start = time()
-        db.session.execute(q, list(obs.to_dict('records')))
+        db.session.execute(q, list(obs.to_dict("records")))
 
         upsert_elapsed = time() - start
         start = time()
@@ -953,7 +921,7 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
         "validation_elapsed": validation_elapsed,
         "copy_elapsed": copy_elapsed,
         "upsert_elapsed": upsert_elapsed,
-        "commit_elapsed": commit_elapsed
+        "commit_elapsed": commit_elapsed,
     }
 
 
@@ -990,23 +958,19 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     cache_q = cache.session.query(
         FileObservation.tic_id,
         FileObservation.orbit_number,
-        FileObservation.file_path
+        FileObservation.file_path,
     )
-    
-    if not all(cam in cameras for cam in [1,2,3,4]):
+
+    if not all(cam in cameras for cam in [1, 2, 3, 4]):
         cache_q = cache_q.filter(FileObservation.camera.in_(cameras))
-    if not all(ccd in ccds for ccd in [1,2,3,4]):
+    if not all(ccd in ccds for ccd in [1, 2, 3, 4]):
         cache_q = cache_q.filter(FileObservation.ccd.in_(ccds))
 
     file_df = pd.read_sql(
-        cache_q.statement,
-        cache.session.bind,
-        index_col=["tic_id"]
+        cache_q.statement, cache.session.bind, index_col=["tic_id"]
     )
 
-    relevant_tics = set(
-        file_df[file_df.orbit_number.isin(orbits)].index
-    )
+    relevant_tics = set(file_df[file_df.orbit_number.isin(orbits)].index)
 
     file_df = file_df.loc[relevant_tics].sort_index()
 
@@ -1017,13 +981,10 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     )
     echo("Comparing cache file paths to lcdb observation table")
     with ctx.obj["dbconf"] as db:
-        obs_q = db.query(
-            Observation.tic_id,
-            Orbit.orbit_number
-        ).join(
-            Observation.orbit       
-        ).filter(
-            *obs_clause
+        obs_q = (
+            db.query(Observation.tic_id, Orbit.orbit_number)
+            .join(Observation.orbit)
+            .filter(*obs_clause)
         )
         apertures = [ap.name for ap in db.query(Aperture)]
         types = [t.name for t in db.query(LightcurveType)]
@@ -1032,11 +993,11 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
         echo("Preparing lightcurve id map")
         lcs = db.lightcurves.filter(
             Lightcurve.tic_id.in_(
-                db.query(
-                    Observation.tic_id
-                ).join(Observation.orbit).filter(
-                    *obs_clause
-                ).distinct().subquery()
+                db.query(Observation.tic_id)
+                .join(Observation.orbit)
+                .filter(*obs_clause)
+                .distinct()
+                .subquery()
             )
         )
         lc_id_map = {
@@ -1051,7 +1012,7 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
             apertures,
             types,
             fill_id_gaps=fillgaps,
-            bar=tqdm
+            bar=tqdm,
         )
     return jobs
 
@@ -1065,21 +1026,14 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
     for merge_job in merge_jobs:
         partition_id = (merge_job.id // 1000) * 1000
         bucket[partition_id].append(merge_job)
-    echo(
-        "{0} partitions will be affected".format(len(bucket))
-    )
+    echo("{0} partitions will be affected".format(len(bucket)))
 
     with db_from_config(config) as db:
         cache = IngestionCache()
         normalizer = LightpointNormalizer(cache, db)
         cache.session.close()
 
-    func = partial(
-        copy_lightpoints,
-        db._config,
-        normalizer,
-        commit=commit
-    )
+    func = partial(copy_lightpoints, db._config, normalizer, commit=commit)
 
     total_jobs = len(bucket)
 
@@ -1087,18 +1041,13 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
     ok = style("OK", fg="green", bold=True)
 
     error_msg = (
-        "{0}: Could not open {{0}} files. "
-        "List written to {{1}}".format(
-            err
-        )
+        "{0}: Could not open {{0}} files. " "List written to {{1}}".format(err)
     )
     ok_msg = (
         "{0}: Copied {{0}} files. "
         "Merge time {{1}}s. "
         "Validation time {{2}}s. "
-        "Copy time {{3}}s".format(
-            ok
-        )
+        "Copy time {{3}}s".format(ok)
     )
     all_results = []
     echo("Sending work to {0} processes".format(n_processes))
@@ -1114,16 +1063,13 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
 
             if r["status"] == "ERROR":
                 path = os.path.abspath("./missed_merges.txt")
-                msg = error_msg.format(
-                    len(r["missed_files"]),
-                    path
-                )
+                msg = error_msg.format(len(r["missed_files"]), path)
             elif r["status"] == "OK":
                 msg = ok_msg.format(
                     len("n_files"),
                     r["merge_elapsed"],
                     r["validation_elapsed"],
-                    r["copy_elapsed"]
+                    r["copy_elapsed"],
                 )
             all_results.append(r)
             if tqdm_bar:

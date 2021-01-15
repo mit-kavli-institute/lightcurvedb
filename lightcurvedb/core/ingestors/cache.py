@@ -133,13 +133,10 @@ class IngestionCache(object):
             FileObservation.file_path,
             FileObservation.camera,
             FileObservation.ccd,
-            FileObservation.file_path
+            FileObservation.file_path,
         )
 
-        return pd.read_sql(
-            q.statement,
-            self.session.bind
-        )
+        return pd.read_sql(q.statement, self.session.bind)
 
     @property
     def query(self):
@@ -254,9 +251,7 @@ class IngestionCache(object):
                     tic8.ticentries.c.ra.label("right_ascension"),
                     tic8.ticentries.c.dec.label("declination"),
                     tic8.ticentries.c.tmag,
-                ).filter(
-                    tic8.ticentries.c.id.in_(to_consolidate)
-                )
+                ).filter(tic8.ticentries.c.id.in_(to_consolidate))
                 df = pd.read_sql(q.statement, tic8.bind)
 
         self.session.bulk_insert_mappings(

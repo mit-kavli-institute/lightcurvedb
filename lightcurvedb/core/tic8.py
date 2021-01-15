@@ -19,6 +19,7 @@ TIC8_CONFIGURATION = {
     "executemany_batch_page_size": 500,
 }
 
+
 class TIC8_DB(object):
     def __init__(self, config_path=CONFIG_PATH, greedy_reflect=True):
         """
@@ -49,13 +50,15 @@ class TIC8_DB(object):
                         **TIC8_CONFIGURATION
                     )
                 )
-        
+
                 @listens_for(TIC8_ENGINE, "connect")
                 def connect(dbapi_connection, connection_record):
                     connection_record.info["pid"] = os.getpid()
-        
+
                 @listens_for(TIC8_ENGINE, "checkout")
-                def checkout(dbapi_connection, connection_record, connection_proxy):
+                def checkout(
+                    dbapi_connection, connection_record, connection_proxy
+                ):
                     pid = os.getpid()
                     if connection_record.info["pid"] != pid:
                         connection_record.connection = None
@@ -63,7 +66,6 @@ class TIC8_DB(object):
                         raise DisconnectionError(
                             "Attempting to disassociate database connection"
                         )
-        
 
                 self.engine = TIC8_ENGINE
                 if greedy_reflect:
@@ -72,7 +74,9 @@ class TIC8_DB(object):
             sys.stderr.write(
                 (
                     "{0} was not found, "
-                    "please check your configuration environment\n".format(CONFIG_PATH)
+                    "please check your configuration environment\n".format(
+                        CONFIG_PATH
+                    )
                 )
             )
             self.TIC8_Base = None
@@ -86,10 +90,7 @@ class TIC8_DB(object):
         self.sessionclass = sessionmaker(autoflush=True)
         self.sessionclass.configure(bind=engine)
         self.data_class = Table(
-            "ticentries",
-            BASE.metadata,
-            autoload=True,
-            autoload_with=engine
+            "ticentries", BASE.metadata, autoload=True, autoload_with=engine
         )
 
     @property
@@ -124,7 +125,7 @@ class TIC8_DB(object):
             warnings.warn(
                 "TIC8 Session has already been scoped. Ignoring duplicate "
                 "open call",
-                RuntimeWarning
+                RuntimeWarning,
             )
         return self
 
@@ -140,7 +141,7 @@ class TIC8_DB(object):
             warnings.warn(
                 "TIC8 Session has already been closed. Ignoring duplicate "
                 "close call.",
-                RuntimeWarning
+                RuntimeWarning,
             )
         return self
 
@@ -160,22 +161,16 @@ class TIC8_DB(object):
             )
         return self.session.bind
 
-
     def get_stellar_param(self, tic_id, *parameters):
         cols = [self.ticentries.c[column] for column in parameters]
-        return self.query(
-            *cols
-        ).filter(
-            self.ticentries.c.id == tic_id
-        ).one()
+        return self.query(*cols).filter(self.ticentries.c.id == tic_id).one()
 
     def mass_stellar_param_q(self, tic_ids, *parameters):
         cols = [self.ticentries.c[column] for column in parameters]
-        return self.query(
-            *cols
-        ).filter(
-            self.ticentries.c.id.in_(tic_ids)
-        ).all()
+        return (
+            self.query(*cols).filter(self.ticentries.c.id.in_(tic_ids)).all()
+        )
+
 
 def one_off(tic_id, *parameters):
     conn = TIC8_DB()

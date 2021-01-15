@@ -83,8 +83,7 @@ class ClickSQLParameter(click.ParamType):
         except IndexError as e:
             self.fail(
                 "unknown parameter on {0} with {1}".format(
-                    TargetModel,
-                    param_paths
+                    TargetModel, param_paths
                 )
             )
 
