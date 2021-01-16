@@ -1004,15 +1004,17 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
             (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
             for lc in lcs.yield_per(1000)
         }
-        jobs = get_jobs(
-            db,
-            file_df,
-            lc_id_map,
-            already_observed,
-            apertures,
-            types,
-            fill_id_gaps=fillgaps,
-            bar=tqdm,
+        jobs = list(
+            get_jobs(
+                db,
+                file_df,
+                lc_id_map,
+                already_observed,
+                apertures,
+                types,
+                fill_id_gaps=fillgaps,
+                bar=tqdm,
+            )
         )
     return jobs
 
