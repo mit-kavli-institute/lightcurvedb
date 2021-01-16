@@ -114,7 +114,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 
     cache = IngestionCache()
     click.echo("Connected to ingestion cache, determining filepaths")
-    jobs = get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=fillgaps)
+    jobs = list(get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=fillgaps))
     click.echo("Obtained {0} jobs to perform".format(len(jobs)))
 
     ingest_merge_jobs(
