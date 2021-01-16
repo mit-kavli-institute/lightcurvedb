@@ -145,7 +145,7 @@ def get_jobs(
         )
         n_required = len(missing_ids)
         params = iter(missing_ids)
-        if fillgaps:
+        if fill_id_gaps:
             echo("Attempting to find gaps in id sequence")
             usable_ids = get_missing_ids(db)
             echo("Found {0} ids to fill".format(len(usable_ids)))
