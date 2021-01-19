@@ -121,42 +121,46 @@ def kwargs_to_df(*kwargs, **constants):
     return main
 
 
-def load_lightpoints(path, lightcurve_id, aperture, type_):
+def parse_h5(h5, constants, lightcurve_id, aperture, type_):
+    lc = h5in["LightCurve"]
+    cadences = lc["Cadence"][()].astype(int)
+    bjd = lc["BJD"][()]
 
-    constants = get_components(path)
-    with H5File(path, "r") as h5in:
-        lc = h5in["LightCurve"]
-        cadences = lc["Cadence"][()].astype(int)
-        bjd = lc["BJD"][()]
+    lc = lc["AperturePhotometry"][aperture]
+    x_centroids = lc["X"][()]
+    y_centroids = lc["Y"][()]
+    quality_flags = quality_flag_extr(lc["QualityFlag"][()]).astype(int)
 
-        lc = lc["AperturePhotometry"][aperture]
-        x_centroids = lc["X"][()]
-        y_centroids = lc["Y"][()]
-        quality_flags = quality_flag_extr(lc["QualityFlag"][()]).astype(int)
+    values = lc[type_][()]
+    has_error_field = H5_LC_TYPES[type_]
 
-        values = lc[type_][()]
-        has_error_field = H5_LC_TYPES[type_]
+    if has_error_field:
+        errors = lc["{0}Error".format(type_)][()]
+    else:
+        errors = np.full_like(cadences, np.nan, dtype=np.double)
 
-        if has_error_field:
-            errors = lc["{0}Error".format(type_)][()]
-        else:
-            errors = np.full_like(cadences, np.nan, dtype=np.double)
-
-        lightpoints = pd.DataFrame(
-            data=dict(
-                cadence=cadences,
-                barycentric_julian_date=bjd,
-                data=values,
-                error=errors,
-                x_centroid=x_centroids,
-                y_centroid=y_centroids,
-                quality_flag=quality_flags,
-            )
+    lightpoints = pd.DataFrame(
+        data=dict(
+            cadence=cadences,
+            barycentric_julian_date=bjd,
+            data=values,
+            error=errors,
+            x_centroid=x_centroids,
+            y_centroid=y_centroids,
+            quality_flag=quality_flags,
         )
-        lightpoints["lightcurve_id"] = lightcurve_id
-        for fieldname, constant in constants.items():
-            lightpoints[fieldname] = constant
+    )
+    lightpoints["lightcurve_id"] = lightcurve_id
+    for fieldname, constant in constants.items():
+        lightpoints[fieldname] = constant
     return lightpoints
+
+
+def load_lightpoints(cache, path, lightcurve_id, aperture, type_):
+    constants = get_components(path)
+    if path not in cache:
+        cache[path] = H5File(path, "r")
+    return parse_h5(cache[path], constants, lightcurve_id, aperture, type_)
 
 
 def get_missing_ids(db, max_return=None):

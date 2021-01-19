@@ -843,10 +843,12 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     start = time()
     n_files = 0
     missed_filepaths = []
+    file_cache = {}
     for merge_job in merge_jobs:
         for h5 in merge_job.files:
             try:
                 lp = load_lightpoints(
+                    cache,
                     h5,
                     merge_job.id,
                     merge_job.aperture,
@@ -860,6 +862,8 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
                 continue
 
     merge_elapsed = time() - start
+    for file_obj in file_cache.values:
+        file_obj.close()
 
     if not lps:
         return {
