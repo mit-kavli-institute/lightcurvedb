@@ -45,6 +45,7 @@ from lightcurvedb.util.logger import lcdb_logger as logger
 
 from lightcurvedb import db_from_config
 from sqlalchemy import bindparam, Sequence, Table, text
+from sqlalchemy.orm.exc import NoResultFound
 from tqdm import tqdm
 from multiprocessing import Process, Pool
 from pgcopy import CopyManager
@@ -107,18 +108,18 @@ def get_jobs(
     a list of apertures and lightcurve types.
     """
     tics = list(file_df.index)
-    missing_ids = []
+    missing_ids = set()
 
     if bar:
         progress = bar(total=len(file_df) * len(apertures) * len(types))
 
     for tic_id, orbit_number, _ in file_df.to_records():
         if (tic_id, orbit_number) in already_observed:
-            yield None
+            # yield None
             if bar:
                 progress.update(len(apertures) * len(types))
             continue
-        files = list(file_df.loc[tic_id])
+        files = list(file_df.loc[tic_id].file_path)
         for ap, lc_t in product(apertures, types):
             try:
                 id_ = id_map[(tic_id, ap, lc_t)]
@@ -131,10 +132,13 @@ def get_jobs(
                 )
                 yield job
             except KeyError:
-                missing_ids.append((tic_id, ap, lc_t))
+                missing_ids.add((tic_id, ap, lc_t))
             finally:
                 if bar:
                     progress.update(1)
+
+    if bar:
+        progress.close()
 
     if missing_ids:
         echo(
@@ -158,11 +162,13 @@ def get_jobs(
         echo("Creating jobs using queried ids")
         progress = bar(total=len(missing_ids))
         for id_, params in zip(usable_ids, missing_ids):
+            files = list(file_df.loc[params[0]].file_path)
             job = SingleMergeJob(
                 id=id_,
                 tic_id=params[0],
                 aperture=params[1],
                 lightcurve_type=params[2],
+                files=files,
             )
             values_to_insert.append(
                 {
@@ -174,6 +180,8 @@ def get_jobs(
             )
             yield job
             progress.update(1)
+
+        progress.close()
         # update db
         echo("Submitting new lightcurve parameters to database")
         db.session.bulk_insert_mappings(Lightcurve, values_to_insert)
@@ -847,7 +855,7 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
                 lp = corrector.correct(merge_job.tic_id, lp)
                 lps.append(lp)
                 n_files += 1
-            except OSError:
+            except (RuntimeError, OSError):
                 missed_filepaths.append(h5)
                 continue
 
@@ -869,17 +877,17 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     lp = lp.set_index(["lightcurve_id", "cadence"])
     lp.sort_index(inplace=True)
 
+    observations["orbit_id"] = observations.apply(
+        lambda row: corrector.orbit_map[row["orbit_number"]], axis=1
+    )
     observations = observations.set_index(["tic_id", "orbit_number"])
     observations.sort_index(inplace=True)
 
     # Remove any duplication
     lp = lp[~raw_partition.index.duplicated(keep="last")]
-    obs = observations[~observations.index.duplicated(keep="last")]
-    obs.reset_index(inplace=True)
-
-    obs["orbit_id"] = obs.apply(
-        lambda row: corrector.orbit_map[row["orbit_number"]], axis=1
-    )
+    obs = observations[
+        ~observations.index.duplicated(keep="last")
+    ].reset_index()
     obs.drop(columns="orbit_number", inplace=True)
 
     validation_elapsed = time() - start
@@ -991,18 +999,10 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
         already_observed = set(obs_q)
 
         echo("Preparing lightcurve id map")
-        lcs = db.lightcurves.filter(
-            Lightcurve.tic_id.in_(
-                db.query(Observation.tic_id)
-                .join(Observation.orbit)
-                .filter(*obs_clause)
-                .distinct()
-                .subquery()
-            )
-        )
+        lcs = db.lightcurves.filter(Lightcurve.tic_id.in_(relevant_tics))
         lc_id_map = {
             (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
-            for lc in lcs.yield_per(1000)
+            for lc in lcs.yield_per(10000)
         }
         jobs = list(
             get_jobs(
@@ -1079,3 +1079,5 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
                 bar.update(1)
             else:
                 print(msg)
+        if tqdm_bar:
+            bar.close()
