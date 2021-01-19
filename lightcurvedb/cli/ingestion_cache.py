@@ -90,8 +90,8 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 click.echo("Looking for catalogs in {0}".format(run_dir))
                 catalogs = glob(os.path.join(run_dir, "catalog*full.txt"))
                 tic_params = catalog_df(*catalogs)
-
-    tic8.close()
+    if tic8:
+        tic8.close()
 
     click.echo("Processing")
     click.echo(tic_params)
