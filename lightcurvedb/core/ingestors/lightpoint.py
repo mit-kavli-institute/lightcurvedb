@@ -168,7 +168,7 @@ def get_jobs(
                 tic_id=params[0],
                 aperture=params[1],
                 lightcurve_type=params[2],
-                files=files
+                files=files,
             )
             values_to_insert.append(
                 {
@@ -885,7 +885,9 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
 
     # Remove any duplication
     lp = lp[~raw_partition.index.duplicated(keep="last")]
-    obs = observations[~observations.index.duplicated(keep="last")].reset_index()
+    obs = observations[
+        ~observations.index.duplicated(keep="last")
+    ].reset_index()
     obs.drop(columns="orbit_number", inplace=True)
 
     validation_elapsed = time() - start
@@ -997,9 +999,7 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
         already_observed = set(obs_q)
 
         echo("Preparing lightcurve id map")
-        lcs = db.lightcurves.filter(
-            Lightcurve.tic_id.in_(relevant_tics)
-        )
+        lcs = db.lightcurves.filter(Lightcurve.tic_id.in_(relevant_tics))
         lc_id_map = {
             (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
             for lc in lcs.yield_per(10000)
