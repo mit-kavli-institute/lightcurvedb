@@ -178,10 +178,10 @@ def get_missing_ids(db, max_return=None):
         A set of integers.
     """
     id_q = db.query(Lightcurve.id)
-    ids = {id_ for id_ in id_q}
+    ids = {id_ for id_, in id_q}
 
     max_id = max(ids)
-    ref_ids = set(range(1, max_ids + 1))
+    ref_ids = set(range(1, max_id + 1))
 
     missing = ref_ids - ids
     if max_return:
@@ -197,6 +197,6 @@ def allocate_lightcurve_ids(db, n_ids):
         return []
 
     q = text(
-        "SELECT nextval('{0}') " "FROM generate_series(1, {1})".format(n_ids)
+        "SELECT nextval('{0}') " "FROM generate_series(1, {1})".format("lightcurves_id_seq", n_ids)
     )
     return [id_ for id_, in db.session.execute(q)]
