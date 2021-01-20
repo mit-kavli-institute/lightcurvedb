@@ -207,7 +207,10 @@ class LightpointNormalizer(object):
         self.time_cache = {}
         self.qflag_cache = {}
 
-    @lru_cache(maxsize=128)
+        # Avoid memory leak by assigning instance-wise an lru_cache
+        self.cached_get_flags = None
+        self.cached_get_bjd = None
+
     def get_stellar_params(self, tic_id):
         try:
             params = self.stellar_params.loc[tic_id]
@@ -215,7 +218,6 @@ class LightpointNormalizer(object):
             params = one_off(tic_id, "tmag", "ra", "dec")
         return params
 
-    @lru_cache(maxsize=16)
     def get_flags(self, tic_id, min_cadence, max_cadence):
         joined = self.cur_lp.merge(
             self.quality_flags, on=["cadence", "camera", "ccd"]
@@ -223,19 +225,23 @@ class LightpointNormalizer(object):
         flags = joined["new_qflag"]
         return flags
 
-    @lru_cache(maxsize=16)
     def get_bjd(self, ra, dec, min_cadence, max_cadence):
         bjd = self.time_corrector.correct_bjd(ra, dec, self.cur_lp)
         return bjd
 
     def correct(self, tic_id, lightpoint_df):
         # Grab relevant data
+        if not self.cached_get_flags:
+            self.cached_get_flags = lru_cache(maxsize=4)(self.get_flags)
+        if not self.cached_get_bjd:
+            self.cached_get_bjd = lru_cache(maxsize=4)(self.get_bjd)
+
         tmag, ra, dec = self.get_stellar_params(tic_id)
         min_cadence, max_cadence = lightpoint_df.cadence.min(), lightpoint_df.cadence.max()
         self.cur_lp = lightpoint_df
 
         # Assign new quality_flags
-        lightpoint_df["quality_flag"] = self.get_flags(tic_id, min_cadence, max_cadence)
+        lightpoint_df["quality_flag"] = self.cached_get_flags(tic_id, min_cadence, max_cadence)
 
         # Perform orbital aligment
         mask = lightpoint_df["quality_flag"] == 0
@@ -245,7 +251,7 @@ class LightpointNormalizer(object):
 
         # Time correct
         try:
-            lightpoint_df["barycentric_julian_date"] = self.get_bjd(ra, dec, min_cadence, max_cadence)
+            lightpoint_df["barycentric_julian_date"] = self.cached_get_bjd(ra, dec, min_cadence, max_cadence)
         except ValueError:
             logger.debug("Error correcting for BJD")
             raise RuntimeError(
