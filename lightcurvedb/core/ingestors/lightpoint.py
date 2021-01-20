@@ -10,7 +10,7 @@ from click import echo, style
 from multiprocessing import Process
 from time import sleep, time
 from itertools import product
-from functools import partial
+from functools import partial, lru_cache
 
 import numpy as np
 import pandas as pd
@@ -203,6 +203,10 @@ class LightpointNormalizer(object):
         orbits = db.query(Orbit.orbit_number, Orbit.id)
         self.orbit_map = dict(orbits.all())
 
+        self.time_cache = {}
+        self.qflag_cache = {}
+
+    @lru_cache(maxsize=128)
     def get_stellar_params(self, tic_id):
         try:
             params = self.stellar_params.loc[tic_id]
@@ -213,13 +217,19 @@ class LightpointNormalizer(object):
     def correct(self, tic_id, lightpoint_df):
         # Grab relevant data
         tmag, ra, dec = self.get_stellar_params(tic_id)
+        min_cadence, max_cadence = lightpoint_df.cadence.min(), lightpoint_df.cadence.max()
 
         # Assign new quality_flags
-        joined = lightpoint_df.merge(
-            self.quality_flags, on=["cadence", "camera", "ccd"]
-        )
+        try:
+            flags = self.qflag_cache[(tic_id, min_cadence, max_cadence)]
+        except KeyError:
+            joined = lightpoint_df.merge(
+                self.quality_flags, on=["cadence", "camera", "ccd"]
+            )
+            flags = joined["new_qflag"]
+            self.qflag_cache[(tic_id, min_cadence, max_cadence)] = flags
 
-        lightpoint_df["quality_flag"] = joined["new_qflag"]
+        lightpoint_df["quality_flag"] = flags
 
         # Perform orbital aligment
         mask = lightpoint_df["quality_flag"] == 0
@@ -228,7 +238,12 @@ class LightpointNormalizer(object):
         lightpoint_df["data"] = lightpoint_df["data"] - offset
 
         # Time correct
-        bjd = self.time_corrector.correct_bjd(ra, dec, lightpoint_df)
+        try:
+            bjd = self.time_cache[(tic_id, min_cadence, max_cadence)]
+        except KeyError:
+            bjd = self.time_corrector.correct_bjd(ra, dec, lightpoint_df)
+            self.time_cache[(tic_id, min_cadence, max_cadence)] = bjd
+
         try:
             lightpoint_df["barycentric_julian_date"] = bjd
         except ValueError:
@@ -843,10 +858,12 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     start = time()
     n_files = 0
     missed_filepaths = []
+    file_cache = {}
     for merge_job in merge_jobs:
         for h5 in merge_job.files:
             try:
                 lp = load_lightpoints(
+                    file_cache,
                     h5,
                     merge_job.id,
                     merge_job.aperture,
@@ -860,11 +877,13 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
                 continue
 
     merge_elapsed = time() - start
+    for file_obj in file_cache.values():
+        file_obj.close()
 
     if not lps:
         return {
             "status": "ERROR",
-            "n_files": len(merge_job.files),
+            "n_files": n_files,
             "missed_files": missed_filepaths,
         }
 
@@ -872,15 +891,17 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     # updates
     start = time()
     raw_partition = pd.concat(lps)
+    raw_partition["orbit_id"] = raw_partition.apply(
+        lambda row: corrector.orbit_map[row["orbit_number"]], axis=1
+    )
+    raw_partition.drop(columns="orbit_number", inplace=True)
+
     lp = raw_partition[list(Lightpoint.get_columns())]
-    observations = raw_partition[["tic_id", "orbit_number", "camera", "ccd"]]
+    observations = raw_partition[["tic_id", "orbit_id", "camera", "ccd"]]
     lp = lp.set_index(["lightcurve_id", "cadence"])
     lp.sort_index(inplace=True)
 
-    observations["orbit_id"] = observations.apply(
-        lambda row: corrector.orbit_map[row["orbit_number"]], axis=1
-    )
-    observations = observations.set_index(["tic_id", "orbit_number"])
+    observations = observations.set_index(["tic_id", "orbit_id"])
     observations.sort_index(inplace=True)
 
     # Remove any duplication
@@ -888,7 +909,6 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     obs = observations[
         ~observations.index.duplicated(keep="last")
     ].reset_index()
-    obs.drop(columns="orbit_number", inplace=True)
 
     validation_elapsed = time() - start
 
@@ -923,7 +943,7 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
 
     return {
         "status": "OK",
-        "n_files": len(merge_job.files),
+        "n_files": n_files,
         "missed_files": missed_filepaths,
         "merge_elapsed": merge_elapsed,
         "validation_elapsed": validation_elapsed,
