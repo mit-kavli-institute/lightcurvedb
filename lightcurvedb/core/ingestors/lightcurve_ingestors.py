@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from lightcurvedb.models.lightcurve import Lightcurve
 from sqlalchemy import text
+from functools import lru_cache
 
 
 with warnings.catch_warnings():
@@ -121,7 +122,7 @@ def kwargs_to_df(*kwargs, **constants):
     return main
 
 
-def parse_h5(h5, constants, lightcurve_id, aperture, type_):
+def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
     lc = h5in["LightCurve"]
     cadences = lc["Cadence"][()].astype(int)
     bjd = lc["BJD"][()]
@@ -156,11 +157,14 @@ def parse_h5(h5, constants, lightcurve_id, aperture, type_):
     return lightpoints
 
 
+@lru_cache(maxsize=100)
+def get_h5(path):
+    return H5File(path, "r")
+
+
 def load_lightpoints(cache, path, lightcurve_id, aperture, type_):
     constants = get_components(path)
-    if path not in cache:
-        cache[path] = H5File(path, "r")
-    return parse_h5(cache[path], constants, lightcurve_id, aperture, type_)
+    return parse_h5(get_h5(path), constants, lightcurve_id, aperture, type_)
 
 
 def get_missing_ids(db, max_return=None):
