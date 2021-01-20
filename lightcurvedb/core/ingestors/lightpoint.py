@@ -199,6 +199,7 @@ class LightpointNormalizer(object):
         )
 
         self.stellar_params = cache.tic_parameter_df
+        self.cur_lp = None
 
         orbits = db.query(Orbit.orbit_number, Orbit.id)
         self.orbit_map = dict(orbits.all())
@@ -214,22 +215,27 @@ class LightpointNormalizer(object):
             params = one_off(tic_id, "tmag", "ra", "dec")
         return params
 
+    @lru_cache(maxsize=16)
+    def get_flags(self, tic_id, min_cadence, max_cadence):
+        joined = self.cur_lp.merge(
+            self.quality_flags, on=["cadence", "camera", "ccd"]
+        )
+        flags = joined["new_qflag"]
+        return flags
+
+    @lru_cache(maxsize=16)
+    def get_bjd(self, ra, dec, min_cadence, max_cadence):
+        bjd = self.time_corrector.correct_bjd(ra, dec, self.cur_lp)
+        return bjd
+
     def correct(self, tic_id, lightpoint_df):
         # Grab relevant data
         tmag, ra, dec = self.get_stellar_params(tic_id)
         min_cadence, max_cadence = lightpoint_df.cadence.min(), lightpoint_df.cadence.max()
+        self.cur_lp = lightpoint_df
 
         # Assign new quality_flags
-        try:
-            flags = self.qflag_cache[(tic_id, min_cadence, max_cadence)]
-        except KeyError:
-            joined = lightpoint_df.merge(
-                self.quality_flags, on=["cadence", "camera", "ccd"]
-            )
-            flags = joined["new_qflag"]
-            self.qflag_cache[(tic_id, min_cadence, max_cadence)] = flags
-
-        lightpoint_df["quality_flag"] = flags
+        lightpoint_df["quality_flag"] = self.get_flags(tic_id, min_cadence, max_cadence)
 
         # Perform orbital aligment
         mask = lightpoint_df["quality_flag"] == 0
@@ -239,13 +245,7 @@ class LightpointNormalizer(object):
 
         # Time correct
         try:
-            bjd = self.time_cache[(tic_id, min_cadence, max_cadence)]
-        except KeyError:
-            bjd = self.time_corrector.correct_bjd(ra, dec, lightpoint_df)
-            self.time_cache[(tic_id, min_cadence, max_cadence)] = bjd
-
-        try:
-            lightpoint_df["barycentric_julian_date"] = bjd
+            lightpoint_df["barycentric_julian_date"] = self.get_bjd(ra, dec, min_cadence, max_cadence)
         except ValueError:
             logger.debug("Error correcting for BJD")
             raise RuntimeError(
