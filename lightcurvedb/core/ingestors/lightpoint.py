@@ -30,6 +30,7 @@ from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     h5_to_kwargs,
     kwargs_to_df,
+    get_components,
     load_lightpoints,
     get_missing_ids,
     allocate_lightcurve_ids,
@@ -110,16 +111,17 @@ def get_jobs(
     tics = list(file_df.index)
     missing_ids = set()
 
-    if bar:
-        progress = bar(total=len(file_df) * len(apertures) * len(types))
+    file_df = file_df.reset_index().set_index(["tic_id", "orbit_number"])
+    new_file_df = file_df[~file_df.index.isin(already_observed)]
 
-    for tic_id, orbit_number, _ in file_df.to_records():
-        if (tic_id, orbit_number) in already_observed:
-            # yield None
-            if bar:
-                progress.update(len(apertures) * len(types))
-            continue
-        files = list(file_df.loc[tic_id].file_path)
+    print("Removed {0} duplicate jobs".format(len(file_df) - len(new_file_df)))
+
+    if bar:
+        progress = bar(
+            total=len(new_file_df.reset_index().tic_id.unique()) * len(apertures) * len(types))
+
+    for tic_id, subdf in new_file_df.reset_index().groupby("tic_id"):
+        files = list(subdf.file_path)
         for ap, lc_t in product(apertures, types):
             try:
                 id_ = id_map[(tic_id, ap, lc_t)]
@@ -865,9 +867,12 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     n_files = 0
     missed_filepaths = []
     file_cache = {}
+    seen_obs = set()
+    obs = []
     for merge_job in merge_jobs:
         for h5 in merge_job.files:
             try:
+                context = get_components(h5)
                 lp = load_lightpoints(
                     file_cache,
                     h5,
@@ -877,6 +882,20 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
                 )
                 lp = corrector.correct(merge_job.tic_id, lp)
                 lps.append(lp)
+
+                orbit = int(context["orbit_number"])
+                orbit_id = corrector.orbit_map[orbit]
+                key = (merge_job.tic_id, orbit_id)
+                if key not in seen_obs:
+                    camera = int(context["camera"])
+                    ccd = int(context["ccd"])
+                    obs.append({
+                        'tic_id': merge_job.tic_id,
+                        'orbit_id': orbit_id,
+                        'camera': camera,
+                        'ccd': ccd
+                    })
+                    seen_obs.add(key)
                 n_files += 1
             except (RuntimeError, OSError):
                 missed_filepaths.append(h5)
@@ -903,18 +922,11 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
     raw_partition.drop(columns="orbit_number", inplace=True)
 
     lp = raw_partition[list(Lightpoint.get_columns())]
-    observations = raw_partition[["tic_id", "orbit_id", "camera", "ccd"]]
     lp = lp.set_index(["lightcurve_id", "cadence"])
     lp.sort_index(inplace=True)
 
-    observations = observations.set_index(["tic_id", "orbit_id"])
-    observations.sort_index(inplace=True)
-
     # Remove any duplication
     lp = lp[~raw_partition.index.duplicated(keep="last")]
-    obs = observations[
-        ~observations.index.duplicated(keep="last")
-    ].reset_index()
 
     validation_elapsed = time() - start
 
@@ -937,7 +949,7 @@ def copy_lightpoints(config, corrector, merge_jobs, commit=True):
         q = Observation.upsert_q()
 
         start = time()
-        db.session.execute(q, list(obs.to_dict("records")))
+        db.session.execute(q, obs)
 
         upsert_elapsed = time() - start
         start = time()
@@ -1015,13 +1027,26 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     )
     echo("Comparing cache file paths to lcdb observation table")
     with ctx.obj["dbconf"] as db:
+        sub_obs_q = (
+            db
+            .query(Observation.tic_id)
+            .join(Observation.orbit)
+            .filter(
+                *obs_clause
+            )
+        )
+
         obs_q = (
             db.query(Observation.tic_id, Orbit.orbit_number)
             .join(Observation.orbit)
-            .filter(*obs_clause)
+            .filter(
+                Observation.tic_id.in_(sub_obs_q.subquery())    
+            )
         )
         apertures = [ap.name for ap in db.query(Aperture)]
         types = [t.name for t in db.query(LightcurveType)]
+
+        echo("Determining existing observations")
         already_observed = set(obs_q)
 
         echo("Preparing lightcurve id map")
@@ -1054,6 +1079,15 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
     for merge_job in merge_jobs:
         partition_id = (merge_job.id // 1000) * 1000
         bucket[partition_id].append(merge_job)
+
+    for k, joblist in bucket.items():
+        bucket[k] = list(
+            sorted(
+                joblist,
+                key=lambda job: job.tic_id
+            )
+        )
+
     echo("{0} partitions will be affected".format(len(bucket)))
 
     with db_from_config(config) as db:
