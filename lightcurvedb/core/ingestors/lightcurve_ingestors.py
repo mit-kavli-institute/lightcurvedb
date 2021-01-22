@@ -162,7 +162,7 @@ def get_h5(path):
     return H5File(path, "r")
 
 
-def load_lightpoints(cache, path, lightcurve_id, aperture, type_):
+def load_lightpoints(path, lightcurve_id, aperture, type_):
     constants = get_components(path)
     return parse_h5(get_h5(path), constants, lightcurve_id, aperture, type_)
 
