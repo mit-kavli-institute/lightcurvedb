@@ -100,17 +100,17 @@ class IngestionCache(object):
     @property
     def quality_flag_df(self):
         q = self.session.query(
-            QualityFlags.cadence.label("cadences"),
+            QualityFlags.cadence,
             QualityFlags.camera,
             QualityFlags.ccd,
-            QualityFlags.quality_flag.label("quality_flags"),
+            QualityFlags.quality_flag,
         )
 
         return pd.read_sql(
             q.statement,
             self.session.bind,
-            index_col=["cadences", "camera", "ccd"],
-        )
+            index_col=["camera", "ccd", "cadence"],
+        ).sort_index()
 
     @property
     def tic_parameter_df(self):
@@ -124,7 +124,7 @@ class IngestionCache(object):
         tic_parameters = pd.read_sql(
             q.statement, self.session.bind, index_col=["tic_id"]
         )
-        return tic_parameters
+        return tic_parameters.sort_index()
 
     @property
     def file_observation_df(self):

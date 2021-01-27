@@ -157,7 +157,7 @@ def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
     return lightpoints
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=10)
 def get_h5(path):
     return H5File(path, "r")
 

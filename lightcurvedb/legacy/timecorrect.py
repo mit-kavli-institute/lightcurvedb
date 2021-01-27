@@ -47,7 +47,7 @@ def timecorrect(ephemris_data, mid_tjd, ra, dec, bjd_offset=2457000):
 
 
 class TimeCorrector:
-    def __init__(self, session, tic_parameters):
+    def __init__(self, session, cache):
         q = session.query(
             SpacecraftEphemris.barycentric_dynamical_time,
             SpacecraftEphemris.x,
@@ -55,16 +55,7 @@ class TimeCorrector:
             SpacecraftEphemris.z,
         )
         self.ephemris = pd.read_sql(q.statement, session.bind)
-        self.tic_parameters = tic_parameters
-
-        q = (
-            session.query(Frame.cadence, Frame.camera, Frame.mid_tjd,)
-            .order_by(Frame.cadence, Frame.camera)
-            .filter(Frame.frame_type_id == "Raw FFI")
-        )
-        self.mid_tjd_map = pd.read_sql(
-            q.statement, session.bind, index_col=["cadence", "camera"]
-        ).sort_index()
+        self.tic_parameters = cache.tic_parameter_df
 
         self.tess_x_interpolator = interp1d(
             self.ephemris.barycentric_dynamical_time,
@@ -79,12 +70,6 @@ class TimeCorrector:
             self.ephemris.z_coordinate,
         )
 
-    def mid_tjd(self, lightpoint_df):
-        index = [
-            tuple(r) for r in lightpoint_df[["cadences", "camera"]].values
-        ]
-        return self.mid_tjd_map.loc[index]["mid_tjd"].values
-
     def correct(self, tic, mid_tjd_array):
         tjd_delta = time.TimeDelta(mid_tjd_array, format="jd", scale="tdb")
         tjd_time = tjd_delta + BJD_EPOC
@@ -96,8 +81,8 @@ class TimeCorrector:
 
         # Radian conversion
         row = self.tic_parameters.loc[tic]
-        ra = np.radians(row["ra"])
-        dec = np.radians(row["dec"])
+        ra = np.radians(row["right_ascension"])
+        dec = np.radians(row["declination"])
         star_vector = np.array(
             [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
         )
