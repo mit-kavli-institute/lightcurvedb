@@ -1,26 +1,17 @@
 from __future__ import division, print_function
 
-from itertools import groupby, product, chain
 from multiprocessing import Manager, Pool
 from sqlalchemy import Sequence, text
-from functools import partial
 from collections import defaultdict
 
 import click
-import pandas as pd
-import sys
 import warnings
 import os
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
-from lightcurvedb.core.constants import CACHE_DIR
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.lightcurve_ingestors import load_lightpoints
 from lightcurvedb.core.ingestors.lightpoint import (
-    LightpointNormalizer,
-    PartitionMerger,
-    PartitionConsumer,
     PartitionJob,
     get_merge_jobs,
     ingest_merge_jobs,
@@ -41,11 +32,7 @@ from lightcurvedb.models import (
     Lightcurve,
     Observation,
     Orbit,
-    Lightpoint,
-    Aperture,
-    LightcurveType,
 )
-from lightcurvedb import models as defined_models
 from tqdm import tqdm
 from tabulate import tabulate
 from lightcurvedb.util.logger import lcdb_logger as logger
@@ -78,7 +65,6 @@ def ingest_by_tics(ctx, file_observations, tics, cache, n_processes, scratch):
     with ctx.obj["dbconf"] as db:
         m = Manager()
         job_queue = m.Queue(10000)
-        normalizer = LightpointNormalizer(cache, db)
         time_corrector = StaticTimeCorrector(db.session)
         workers = []
 

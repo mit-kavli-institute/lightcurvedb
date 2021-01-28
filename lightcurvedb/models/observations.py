@@ -37,7 +37,9 @@ class Observation(QLPModel, Blobable):
                 cls.orbit_id: bindparam("orbit_id"),
             }
         )
-        q = q.on_conflict_do_nothing(constraint="observations_pkey",)
+        q = q.on_conflict_do_nothing(
+            constraint="observations_pkey",
+        )
 
         return q
 
