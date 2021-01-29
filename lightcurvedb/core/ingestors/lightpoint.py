@@ -1,53 +1,41 @@
-try:
-    # Python agnostic import of Queue
-    import queue
-except ImportError:
-    import Queue as queue
-
 import os
 import warnings
-from click import echo, style
-from multiprocessing import Process, Manager
-from time import sleep, time
+from collections import defaultdict, namedtuple
+from functools import lru_cache
 from itertools import product
-from functools import partial, lru_cache
+from multiprocessing import Manager, Process
+from time import time
 
 import numpy as np
 import pandas as pd
-
-from lightcurvedb import db_from_config
-from collections import namedtuple, defaultdict
-from lightcurvedb.models import (
-    Lightcurve,
-    Lightpoint,
-    Orbit,
-    Frame,
-    Observation,
-    Aperture,
-    LightcurveType,
-)
-from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    get_components,
-    load_lightpoints,
-    get_h5,
-    get_missing_ids,
-    allocate_lightcurve_ids,
-)
-from lightcurvedb.core.ingestors.temp_table import FileObservation
-from lightcurvedb.core.tic8 import one_off
-from lightcurvedb.legacy.timecorrect import (
-    PartitionTimeCorrector,
-    TimeCorrector,
-)
-from lightcurvedb.util.logger import lcdb_logger as logger
-
-from lightcurvedb import db_from_config
+from click import echo
+from pgcopy import CopyManager
 from sqlalchemy import text
 from tqdm import tqdm
-from multiprocessing import Process, Pool
-from pgcopy import CopyManager
 
+from lightcurvedb import db_from_config
+from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.lightcurve_ingestors import (
+    allocate_lightcurve_ids,
+    get_components,
+    get_h5,
+    get_missing_ids,
+    load_lightpoints,
+)
+from lightcurvedb.core.ingestors.temp_table import FileObservation
+from lightcurvedb.legacy.timecorrect import (
+    TimeCorrector,
+)
+from lightcurvedb.models import (
+    Aperture,
+    Frame,
+    Lightcurve,
+    LightcurveType,
+    Lightpoint,
+    Observation,
+    Orbit,
+)
+from lightcurvedb.util.logger import lcdb_logger as logger
 
 LC_ERROR_TYPES = {"RawMagnitude"}
 
@@ -74,7 +62,6 @@ def get_jobs(
     Return single merge jobs from a observation file dataframe and
     a list of apertures and lightcurve types.
     """
-    tics = list(file_df.index)
     missing_ids = set()
 
     file_df = file_df.reset_index().set_index(["tic_id", "orbit_number"])
@@ -159,40 +146,6 @@ def get_jobs(
         db.commit()
 
 
-class LightpointNormalizer(object):
-    def __init__(self, db):
-        self.time_corrector = PartitionTimeCorrector(db)
-        self.stellar_params = cache.tic_parameter_df
-
-        # Avoid memory leak by assigning instance-wise an lru_cache
-
-    def get_stellar_params(self, tic_id):
-        try:
-            params = self.stellar_params.loc[tic_id]
-        except KeyError:
-            params = one_off(tic_id, "tmag", "ra", "dec")
-        return params
-
-    def correct(self, tic_id, mid_tjd):
-        # Grab relevant data
-
-        ra, dec = self.get_stellar_params(tic_id)
-        # Time correct
-        try:
-            lightpoint_df["barycentric_julian_date"] = self.get_bjd(
-                ra, dec, min_cadence, max_cadence
-            )
-        except ValueError:
-            logger.debug("Error correcting for BJD")
-            raise RuntimeError(
-                "Error processing\n{0}, got bjd array len {1}".format(
-                    lightpoint_df, len(bjd)
-                )
-            )
-
-        return lightpoint_df
-
-
 class LightpointProcessor(Process):
     def log(self, msg, level="debug", exc_info=False):
         getattr(logger, level)(
@@ -237,13 +190,11 @@ class PartitionConsumer(LightpointProcessor):
         return sqflag.quality_flag.to_numpy()
 
     def get_correct_mid_tjd(self, h5path):
-        h5in = get_h5(h5path)
         cadences = get_h5(h5path)["LightCurve"]["Cadence"][()].astype(int)
         context = get_components(h5path)
-        tic_id, camera, ccd = (
+        tic_id, camera = (
             context["tic_id"],
             context["camera"],
-            context["ccd"],
         )
         mid_tjd = self.mid_tjd.loc[camera].loc[cadences].mid_tjd.to_numpy()
 
@@ -525,7 +476,8 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     Returns
     -------
     sequence of lightcurve.core.ingestors.lightpoint.SingleMergeJob
-        Return a sequence of NamedTuples describing needed information for ingest.
+        Return a sequence of NamedTuples describing needed
+        information for ingest.
     """
     cache_q = cache.session.query(
         FileObservation.tic_id,
@@ -655,19 +607,6 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
             job_queue.put(None)  # Kill sig
             p.start()
 
-    err = style("ERROR", bg="red", blink=True)
-    ok = style("OK", fg="green", bold=True)
-
-    error_msg = (
-        "{0}: Could not open {{0}} files. " "List written to {{1}}".format(err)
-    )
-    ok_msg = (
-        "{0}: Copied {{0}} files. "
-        "Merge time {{1}}s. "
-        "Validation time {{2}}s. "
-        "Copy time {{3}}s".format(ok)
-    )
-
     with tqdm(range(len(jobs))) as bar:
         for _ in range(len(jobs)):
             timings = timing_queue.get()
@@ -690,5 +629,5 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
 
     echo("Joining work queues")
     job_queue.join()
-    timings_queue.join()
+    timing_queue.join()
     echo("Done!")

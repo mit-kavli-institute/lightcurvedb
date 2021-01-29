@@ -58,7 +58,7 @@ def test_datetime_equivalency(date):
     assert camera_quat.date == date
 
 
-@settings(deadline=None)
+@settings(deadline=None, max_examples=10)
 @given(
     quaternion(missing=False),
     st.integers(min_value=1, max_value=4),

@@ -1,14 +1,16 @@
-from abc import abstractmethod
-from pandas import read_csv
-import pandas as pd
-from datetime import datetime
-from lightcurvedb.core.datastructures.blob import Blob, RowWiseBlob
-from lightcurvedb.models import Observation, Lightpoint, Orbit
-from pgcopy import CopyManager
 import os
 import struct
-from io import BufferedIOBase
+from abc import abstractmethod
+from datetime import datetime
+
+import pandas as pd
+from pandas import read_csv
+from pgcopy import CopyManager
+from sqlalchemy import select, text
 from tabulate import tabulate
+
+from lightcurvedb.core.datastructures.blob import Blob, RowWiseBlob
+from lightcurvedb.models import Lightpoint, Observation, Orbit
 
 
 def mass_ingest(cursor, filelike, target_table, **options):
@@ -275,9 +277,6 @@ class LightpointPartitionReader(LightpointPartitionBlob):
                 fin, preamble["number_of_observations"]
             )
             for obs in obs_iter:
-                # yield every item, returning the iterator will break as it will
-                # be out of scope of this file and break since the file will be
-                # closed.
                 yield obs
 
     def print_lightpoints(self, db, **fmt_args):
@@ -325,7 +324,7 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
         with db as open_db:
             orbit_numbers = (
-                db.query(Orbit.orbit_number)
+                open_db.query(Orbit.orbit_number)
                 .filter(Orbit.id.in_(orbit_ids))
                 .order_by(Orbit.orbit_number)
             )
@@ -355,7 +354,7 @@ class LightpointPartitionReader(LightpointPartitionBlob):
         )
 
         q = select([Lightpoint]).select_from(text(partition_name))
-        pass
+        return q
 
     def upload(self, db, commit=True):
         with open(self.blob_path, "rb") as fin:
@@ -395,8 +394,6 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
             # Remove duplication
             obs_df = obs_df[~obs_df.index.duplicated(keep="last")]
-            q = Observation.upsert_q()
-
             db.session.execute(
                 Observation.upsert_q(), obs_df.reset_index().to_dict("records")
             )

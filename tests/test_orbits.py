@@ -4,7 +4,7 @@ from .strategies import frame_types, orbits, frames, orbit_frames
 from .fixtures import db_conn, clear_all
 
 
-@settings(deadline=None)
+@settings(deadline=None, max_samples=10)
 @given(st.data())
 def test_min_max_cadence_retrieval(db_conn, data):
     with db_conn as db:
@@ -38,7 +38,7 @@ def test_min_max_cadence_retrieval(db_conn, data):
             clear_all(db)
 
 
-@settings(deadline=None)
+@settings(deadline=None, max_samples=10)
 @given(st.data())
 def test_min_max_gps_time_retrieval(db_conn, data):
     with db_conn as db:

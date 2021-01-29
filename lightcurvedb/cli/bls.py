@@ -17,7 +17,6 @@ from lightcurvedb.core.ingestors.bls import (
 )
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import BLS, Lightcurve, Orbit
-from sqlalchemy.orm import sessionmaker
 from tabulate import tabulate
 from tqdm import tqdm
 

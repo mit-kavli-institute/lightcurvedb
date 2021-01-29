@@ -18,7 +18,6 @@ from lightcurvedb.core.ingestors.temp_table import (
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
-from sqlalchemy.orm import sessionmaker
 from tabulate import tabulate
 
 
@@ -79,7 +78,7 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 observed_tics.add(tic)
             if force_tic8_query:
                 q = tic8.mass_stellar_param_q(
-                    obs_ids,
+                    obs_tics,
                     "id",
                     "ra",
                     "dec",
@@ -134,10 +133,8 @@ def get_missing_stellar_param(ctx):
 
     # grab observed tics
     click.echo("querying cache for TIC definitions")
-    obs_tics = set(tic for tic, in cache.session.query(FileObservation.tic_id))
-    tics_w_param = set(
-        tic for tic, in cache.session.query(TIC8Parameters.tic_id)
-    )
+    obs_tics = {tic for tic, in cache.session.query(FileObservation.tic_id)}
+    tics_w_param = {tic for tic, in cache.session.query(TIC8Parameters.tic_id)}
 
     missing = obs_tics - tics_w_param
     if len(missing) == 0:
@@ -160,7 +157,7 @@ def get_missing_stellar_param(ctx):
     tic8.close()
 
     if not ctx.obj["dryrun"]:
-        rows = cache.session.execute(insert_q)
+        cache.session.execute(insert_q)
         cache.session.commit()
         click.echo(
             "Updated {0} TICs without stellar parameters".format(
@@ -182,9 +179,9 @@ def stellar_params_from_file(ctx, param_csv):
     file_params = pd.read_csv(param_csv)
     file_tics = set(file_params.tic_id)
     cache = IngestionCache()
-    cache_tics = set(
+    cache_tics = {
         tic for tic, in cache.session.query(TIC8Parameters.tic_id).distinct()
-    )
+    }
 
     missing = file_tics - cache_tics
     new_params = file_params[file_params.tic_id.isin(missing)]

@@ -1,6 +1,5 @@
 import struct
 import os
-from collections import OrderedDict
 from sqlalchemy.sql import sqltypes as sql_t
 from sqlalchemy.dialects.postgresql import base as psql_t
 from io import BytesIO
@@ -113,7 +112,5 @@ class Blobable(object):
     def pack_dictionaries(cls, data_rows):
         #  Transform into tuples
         columns = tuple(cls.__table__.columns)
-        normalized = []
-
         for row in data_rows:
             yield tuple(row[column.name] for column in columns)

@@ -1,5 +1,4 @@
 import pandas as pd
-from collections import OrderedDict
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.partitioning import (
     Partitionable,

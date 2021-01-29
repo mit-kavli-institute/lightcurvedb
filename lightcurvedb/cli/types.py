@@ -80,7 +80,7 @@ class ClickSQLParameter(click.ParamType):
             sql_col, contexts = TargetModel.get_property(*param_paths)
         except KeyError as e:
             self.fail(e, param, ctx)
-        except IndexError as e:
+        except IndexError:
             self.fail(
                 "unknown parameter on {0} with {1}".format(
                     TargetModel, param_paths

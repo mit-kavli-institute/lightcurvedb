@@ -37,12 +37,12 @@ def get_components(path):
             "{0} does not look like a full H5 path.".format(path)
         )
     components = result.groupdict()
-    return dict(
-        tic_id=int(components["tic"]),
-        orbit_number=int(components["orbit"]),
-        camera=int(components["camera"]),
-        ccd=int(components["ccd"]),
-    )
+    return {
+        "tic_id": int(components["tic"]),
+        "orbit_number": int(components["orbit"]),
+        "camera": int(components["camera"]),
+        "ccd": int(components["ccd"]),
+    }
 
 
 def quality_flag_extr(qflags):
@@ -141,15 +141,15 @@ def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
         errors = np.full_like(cadences, np.nan, dtype=np.double)
 
     lightpoints = pd.DataFrame(
-        data=dict(
-            cadence=cadences,
-            barycentric_julian_date=bjd,
-            data=values,
-            error=errors,
-            x_centroid=x_centroids,
-            y_centroid=y_centroids,
-            quality_flag=quality_flags,
-        )
+        data={
+            "cadence": cadences,
+            "barycentric_julian_date": bjd,
+            "data": values,
+            "error": errors,
+            "x_centroid": x_centroids,
+            "y_centroid": y_centroids,
+            "quality_flag": quality_flags,
+        }
     )
     lightpoints["lightcurve_id"] = lightcurve_id
     for fieldname, constant in constants.items():
@@ -193,7 +193,7 @@ def get_missing_ids(db, max_return=None):
 
     missing = ref_ids - ids
     if max_return:
-        return set(list(sorted(missing))[:max_return])
+        return set(sorted(missing)[:max_return])
     return missing
 
 
