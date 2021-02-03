@@ -65,3 +65,40 @@ def group_h5(files):
     groups = groupby(sorted(files, key=extr_tic), key=extr_tic)
     for tic, files in groups:
         yield tic, list(files)
+
+
+def slow_typecheck(string_param):
+    """Attempt to interpret string into a core python type"""
+
+    # Check to see if forcefully given string literal
+    if string_param.startswith("'") and string_param.endswith("'"):
+        return str(string_param)
+
+    try:
+        return int(string_param)
+    except ValueError:
+        # Not an integer
+        pass
+    try:
+        return float(string_param)
+    except ValueError:
+        # Not a float
+        pass
+
+    # Default to resolve by string
+    return str(string_param)
+
+
+def resolve_filter_column(defined_columns, model, parameter):
+    try:
+        resolved = defined_columns[parameter]
+    except KeyError:
+        # see if value is on literal model field
+        try:
+            resolved = getattr(model, parameter)
+        except AttributeError:
+            # Must be literal scalar value
+            # type check, could be a float, int or string
+            resolved = slow_typecheck(parameter)
+
+    return resolved

@@ -74,7 +74,7 @@ class Frame(QLPDataProduct):
             "cam={1} "
             "ccd={2} "
             "cadence={3}>".format(
-                self.frame_type.name, self.camera, self.ccd, self.cadence
+                self.frame_type_id, self.camera, self.ccd, self.cadence
             )
         )
 

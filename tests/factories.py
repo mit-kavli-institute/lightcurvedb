@@ -22,16 +22,12 @@ from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
 
-ABC = 'abcdefghijklmnopqrstuvwxyz'
+ABC = "abcdefghijklmnopqrstuvwxyz"
 
 if sys.version_info.major >= 3:
-    alphabet = characters(whitelist_categories=[
-        'L', 'M', 'N', 'P', 'S', 'Z'
-    ])
+    alphabet = characters(whitelist_categories=["L", "M", "N", "P", "S", "Z"])
 else:
-    alphabet = sampled_from(
-        ABC + ABC.upper()
-    )
+    alphabet = sampled_from(ABC + ABC.upper())
 
 
 define_strategy = lambda f: f
@@ -320,10 +316,10 @@ def lightcurve_list(
     lightcurve_types=None,
 ):
     """
-        Strategy for building lists of lightcurves.
-        If passed apertures and/or lightcurve_types, examples will be drawn
-        from the passed parameters. If set to None, the lightcurve_list will
-        hold a common aperture/type.
+    Strategy for building lists of lightcurves.
+    If passed apertures and/or lightcurve_types, examples will be drawn
+    from the passed parameters. If set to None, the lightcurve_list will
+    hold a common aperture/type.
     """
 
     if apertures:
@@ -355,10 +351,10 @@ def lightcurve_list(
 
 
 quat_params = {
-    'min_value': -1.0,
-    'max_value': 1.0,
-    'allow_nan': False,
-    'allow_infinity': False
+    "min_value": -1.0,
+    "max_value": 1.0,
+    "allow_nan": False,
+    "allow_infinity": False,
 }
 
 
@@ -366,9 +362,7 @@ quat_params = {
 def quaternion(missing=False):
     if missing:
         ret = tuples(
-            floats(**quat_params),
-            floats(**quat_params),
-            floats(**quat_params)
+            floats(**quat_params), floats(**quat_params), floats(**quat_params)
         )
         return ret
 
@@ -376,7 +370,7 @@ def quaternion(missing=False):
         floats(**quat_params),
         floats(**quat_params),
         floats(**quat_params),
-        floats(**quat_params)
+        floats(**quat_params),
     )
     return ret
 
@@ -408,6 +402,6 @@ def bls(make_lc=True):
             signal_to_noise=floats(),
             sde=floats(),
             sr=floats(),
-            period_inv_transit=floats()
+            period_inv_transit=floats(),
         )
     )
