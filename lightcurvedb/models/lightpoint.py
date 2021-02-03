@@ -1,10 +1,10 @@
 import pandas as pd
-
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.partitioning import (
     Partitionable,
     emit_ranged_partition_ddl,
 )
+from lightcurvedb.core.datastructures.blob import Blobable
 from lightcurvedb.util.iter import keyword_zip
 from sqlalchemy import (
     BigInteger,
@@ -44,7 +44,7 @@ LIGHTPOINT_ALIASES = {
 }
 
 
-class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
+class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
     """
     This SQLAlchemy model is used to represent individual datapoints of
     a ``Lightcurve``.
@@ -59,7 +59,6 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id")):
         index=Index(
             "ix_lightpoints_lightcurve_id",
             "lightpoint_id",
-            postgresql_using="brin",
         ),
         nullable=False,
     )

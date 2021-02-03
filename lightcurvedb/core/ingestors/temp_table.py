@@ -29,6 +29,9 @@ class FileObservation(TemporaryQLPModel):
     orbit_number = Column(Integer, index=True, nullable=False)
     file_path = Column(String(255), unique=True, nullable=False)
 
+    def __repr__(self):
+        return "{0} File {1}".format(self.tic_id, self.file_path)
+
 
 class TempObservation(TemporaryQLPModel):
     __tablename__ = "temp_observations"

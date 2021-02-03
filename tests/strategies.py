@@ -33,7 +33,6 @@ else:
 def postgres_text(**text_args):
     return st.text(alphabet=alphabet, **text_args)
 
-
 def apertures(**overrides):
     return st.builds(
         models.Aperture,

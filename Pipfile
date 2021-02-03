@@ -26,7 +26,6 @@ pandas = "*"
 cython = "*"
 alembic = "*"
 h5py = "*"
-llvmlite = "*"
 isort = "*"
 flake8 = "*"
 coverage = "*"
@@ -36,6 +35,10 @@ scipy = "*"
 tabulate = "*"
 pgcopy = "*"
 psycopg2 = "*"
+black = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3"
+
+[pipenv]
+allow_prereleases = true

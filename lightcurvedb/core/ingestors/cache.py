@@ -16,7 +16,7 @@ from lightcurvedb.core.ingestors.temp_table import (
     QualityFlags,
     FileObservation,
 )
-from lightcurvedb.core.tic8 import TIC_Entries
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Lightcurve
 
 
@@ -100,17 +100,47 @@ class IngestionCache(object):
     @property
     def quality_flag_df(self):
         q = self.session.query(
-            QualityFlags.cadence.label("cadences"),
+            QualityFlags.cadence,
             QualityFlags.camera,
             QualityFlags.ccd,
-            QualityFlags.quality_flag.label("quality_flags"),
+            QualityFlags.quality_flag,
         )
 
         return pd.read_sql(
             q.statement,
             self.session.bind,
-            index_col=["cadences", "camera", "ccd"],
+            index_col=["camera", "ccd", "cadence"],
+        ).sort_index()
+
+    @property
+    def tic_parameter_df(self):
+        q = self.session.query(
+            TIC8Parameters.tic_id,
+            TIC8Parameters.tmag,
+            TIC8Parameters.right_ascension,
+            TIC8Parameters.declination,
         )
+
+        tic_parameters = pd.read_sql(
+            q.statement, self.session.bind, index_col=["tic_id"]
+        )
+        return tic_parameters.sort_index()
+
+    @property
+    def file_observation_df(self):
+        q = self.session.query(
+            FileObservation.tic_id,
+            FileObservation.file_path,
+            FileObservation.camera,
+            FileObservation.ccd,
+            FileObservation.file_path,
+        )
+
+        return pd.read_sql(q.statement, self.session.bind)
+
+    @property
+    def query(self):
+        return self.session.query
 
     def load_observations(self, observation_df):
         """
@@ -203,28 +233,30 @@ class IngestionCache(object):
             q.statement, self.session.bind, index_col=["tic_id"]
         )
 
-    def load_tic8_parameters(self, tic8):
+    def load_tic8_parameters(self):
         tics = set(self.job_tics)
         defined_tics = set(
             self.session.query(TIC8Parameters.tic_id)
             .filter(TIC8Parameters.tic_id.in_(tics))
             .all()
         )
-        to_consolidate = set(tics) - defined_tics
 
+        to_consolidate = set(tics) - defined_tics
         if len(to_consolidate) > 0:
             # New parameters to query for
-            q = tic8.query(
-                TIC_Entries.c.id.label("tic_id"),
-                TIC_Entries.c.ra.label("right_ascension"),
-                TIC_Entries.c.dec.label("declination"),
-                TIC_Entries.c.tmag,
-            )
-            df = pd.read_sql(q, tic8.bind)
 
-            self.session.bulk_insert_mappings(
-                TIC8Parameters, df.to_dict("records")
-            )
+            with TIC8_DB as tic8:
+                q = tic8.query(
+                    tic8.ticentries.c.id.label("tic_id"),
+                    tic8.ticentries.c.ra.label("right_ascension"),
+                    tic8.ticentries.c.dec.label("declination"),
+                    tic8.ticentries.c.tmag,
+                ).filter(tic8.ticentries.c.id.in_(to_consolidate))
+                df = pd.read_sql(q.statement, tic8.bind)
+
+        self.session.bulk_insert_mappings(
+            TIC8Parameters, df.to_dict("records")
+        )
 
     def consolidate_quality_flags(self, quality_flag_df):
         q = self.session.query(

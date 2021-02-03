@@ -120,7 +120,7 @@ class DB(object):
             Returns itself in a closed state.
         """
         if self._session is not None:
-            self._session.close()
+            self.SessionClass.remove()
             self._session = None
             self._active = False
         else:
@@ -916,7 +916,10 @@ class DB(object):
             return q.all()
         return q
 
-    def lightcurve_id_map(self, filters, resolve=True):
+    def lightcurve_id_map(self, filters=None, resolve=True):
+        if not filters:
+            filters = []
+
         q = self.query(
             models.Lightcurve.id,
             models.Lightcurve.tic_id,
@@ -1026,6 +1029,13 @@ class DB(object):
         self._session.delete(
             model_inst, synchronize_session=synchronize_session
         )
+
+    def execute(self, *args, **kwargs):
+        """
+        Alias for db session execution. See sqlalchemy.Session.execute for
+        more information.
+        """
+        return self._session.execute(*args, **kwargs)
 
     # Begin helper methods to quickly grab reference maps
     @property

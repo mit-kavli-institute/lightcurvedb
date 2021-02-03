@@ -15,13 +15,10 @@ from lightcurvedb.core.ingestors.temp_table import (
     FileObservation,
     TIC8Parameters,
 )
-from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
-from sqlalchemy.orm import sessionmaker
-
-TIC8Session = sessionmaker(autoflush=True)
-TIC8Session.configure(bind=TIC8_ENGINE)
+from tabulate import tabulate
 
 
 def catalog_df(*catalog_files):
@@ -61,7 +58,7 @@ def cache(ctx):
 @click.option("--force-tic8-query", is_flag=True)
 def load_stellar_param(ctx, orbits, force_tic8_query):
     cache = IngestionCache()
-    tic8 = TIC8Session() if force_tic8_query else None
+    tic8 = TIC8_DB().open() if force_tic8_query else None
     observed_tics = set()
     with ctx.obj["dbconf"] as db:
         for orbit_number in orbits:
@@ -80,21 +77,24 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
             for tic in obs_tics:
                 observed_tics.add(tic)
             if force_tic8_query:
-                q = tic8.query(
-                    TIC_Entries.c.id.label("tic_id"),
-                    TIC_Entries.c.ra,
-                    TIC_Entries.c.dec,
-                    TIC_Entries.c.tmag,
-                ).filter(TIC_Entries.c.id.in_(obs_tics))
+                q = tic8.mass_stellar_param_q(
+                    obs_tics,
+                    "id",
+                    "ra",
+                    "dec",
+                    "tmag",
+                )
 
                 tic_params = pd.read_sql(
-                    q.statement, tic8.bind, index_col=["tic_id"]
+                    q.statement, tic8.bind, index_col=["id"]
                 )
             else:
                 run_dir = orbit.get_qlp_directory(suffixes=["ffi", "run"])
                 click.echo("Looking for catalogs in {0}".format(run_dir))
                 catalogs = glob(os.path.join(run_dir, "catalog*full.txt"))
                 tic_params = catalog_df(*catalogs)
+    if tic8:
+        tic8.close()
 
     click.echo("Processing")
     click.echo(tic_params)
@@ -123,6 +123,86 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
 
     click.echo("Added {0} definitions".format(len(params)))
     click.echo("Done")
+
+
+@cache.command()
+@click.pass_context
+def get_missing_stellar_param(ctx):
+    cache = IngestionCache()
+    tic8 = TIC8_DB().open()
+
+    # grab observed tics
+    click.echo("querying cache for TIC definitions")
+    obs_tics = {tic for tic, in cache.session.query(FileObservation.tic_id)}
+    tics_w_param = {tic for tic, in cache.session.query(TIC8Parameters.tic_id)}
+
+    missing = obs_tics - tics_w_param
+    if len(missing) == 0:
+        click.echo(
+            click.style(
+                "No TICs in the cache are without TIC8 parameters", fg="green"
+            )
+        )
+        return 0
+    else:
+        click.echo(
+            "Resolving {0} TICs from TIC8".format(
+                click.style(str(len(missing)), bold=True)
+            )
+        )
+
+    q = tic8.mass_stellar_param_q(missing, "id", "ra", "dec", "tmag")
+
+    insert_q = TIC8Parameters.__table__.insert().values(q)
+    tic8.close()
+
+    if not ctx.obj["dryrun"]:
+        cache.session.execute(insert_q)
+        cache.session.commit()
+        click.echo(
+            "Updated {0} TICs without stellar parameters".format(
+                click.style(str(len(missing)), fg="green", bold=True)
+            )
+        )
+    else:
+        "Would update {0} TICs".format(
+            click.style(str(len(missing)), fg="yellow", bold=True)
+        )
+
+    cache.session.close()
+
+
+@cache.command()
+@click.pass_context
+@click.argument("param-csv", type=click.Path(dir_okay=False, exists=True))
+def stellar_params_from_file(ctx, param_csv):
+    file_params = pd.read_csv(param_csv)
+    file_tics = set(file_params.tic_id)
+    cache = IngestionCache()
+    cache_tics = {
+        tic for tic, in cache.session.query(TIC8Parameters.tic_id).distinct()
+    }
+
+    missing = file_tics - cache_tics
+    new_params = file_params[file_params.tic_id.isin(missing)]
+    cache.session.bulk_insert_mappings(
+        TIC8Parameters, new_params.to_dict("records")
+    )
+    if ctx.obj["dryrun"]:
+        cache.session.rollback()
+        click.echo(new_params)
+        click.echo(
+            "Would insert {0} new stellar parameter rows".format(
+                click.style(str(len(new_params)), bold=True, fg="yellow")
+            )
+        )
+    else:
+        cache.session.commit()
+        click.echo(
+            "Committed {0} new stellar parameter rows".format(
+                click.style(str(len(new_params)), bold=True, fg="green")
+            )
+        )
 
 
 @cache.command()
@@ -224,3 +304,21 @@ def quality_flags(ctx, orbits, cameras, ccds):
         )
         cache.commit()
         click.echo("Done")
+
+
+@cache.command()
+@click.pass_context
+@click.argument("tic", type=int)
+def list_files_for(ctx, tic):
+    cache = IngestionCache()
+
+    q = cache.session.query(
+        FileObservation.camera,
+        FileObservation.ccd,
+        FileObservation.orbit_number,
+        FileObservation.file_path,
+    ).filter(FileObservation.tic_id == tic)
+
+    click.echo(
+        tabulate(q, headers=["camera", "ccd", "orbit_number", "file_path"])
+    )

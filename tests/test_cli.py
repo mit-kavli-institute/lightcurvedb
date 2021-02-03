@@ -12,10 +12,12 @@ from .factories import orbit
 from .fixtures import clear_all, db_conn
 
 
-@settings(deadline=None)
+@settings(deadline=None, max_examples=10)
 @given(
     st.lists(
-        orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename)
+        orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
+        min_size=1,
+        max_size=3
     )
 )
 def test_query_on_orbits(db_conn, orbits):
@@ -48,12 +50,12 @@ def test_query_on_orbits(db_conn, orbits):
             clear_all(db)
 
 
-@settings(deadline=None)
+@settings(deadline=None, max_examples=10)
 @given(
     st.lists(
         orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
         min_size=1,
-        max_size=10
+        max_size=3
     )
 )
 def test_query_on_orbits_w_filter(db_conn, orbits):

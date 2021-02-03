@@ -15,14 +15,10 @@ from lightcurvedb.core.ingestors.bls import (
     get_bls_run_parameters,
     normalize,
 )
-from lightcurvedb.core.tic8 import TIC8_ENGINE, TIC_Entries
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import BLS, Lightcurve, Orbit
-from sqlalchemy.orm import sessionmaker
 from tabulate import tabulate
 from tqdm import tqdm
-
-TIC8Session = sessionmaker(autoflush=True)
-TIC8Session.configure(bind=TIC8_ENGINE)
 
 
 def process_summary(args):
@@ -81,7 +77,7 @@ def bls(ctx):
 @click.option("--n-processes", type=click.IntRange(0), default=32)
 def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
     for sector in sectors:
-        tic8 = TIC8Session()
+        tic8 = TIC8_DB().open()
         with ctx.obj["dbconf"] as db:
             orbit = db.orbits.filter(Orbit.sector == sector).first()
 
@@ -110,14 +106,12 @@ def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
                     )
                 )
                 click.echo("\tObtaining stellar radii")
-                q = tic8.query(
-                    TIC_Entries.c.id.label("tic_id"),
-                    TIC_Entries.c.rad,
-                ).filter(TIC_Entries.c.id.in_(set(tics)))
+                q = tic8.mass_stellar_param_q(set(tics), "id", "rad")
 
                 tic_params = pd.read_sql(
-                    q.statement, tic8.bind, index_col="tic_id"
+                    q.statement, tic8.bind, index_col="id"
                 )
+                tic8.close()
 
                 click.echo("\tGetting TIC -> ID Map via best aperture table")
                 q = db.lightcurves_from_best_aperture(resolve=False)
