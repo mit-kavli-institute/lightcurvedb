@@ -846,6 +846,13 @@ class DB(object):
             model_inst, synchronize_session=synchronize_session
         )
 
+    def execute(self, *args, **kwargs):
+        """
+        Alias for db session execution. See sqlalchemy.Session.execute for
+        more information.
+        """
+        return self._session.execute(*args, **kwargs)
+
     # Begin helper methods to quickly grab reference maps
     @property
     def observation_df(self):
