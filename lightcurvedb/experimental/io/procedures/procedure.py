@@ -3,7 +3,7 @@ from glob import glob
 from sqlalchemy import DDL
 
 PROCEDURE_BASE = os.path.dirname(os.path.realpath(__file__))
-PROCEDURE_DEF_DIR = os.path.join(PROCEDURE_BASE, "procedures")
+PROCEDURE_DEF_DIR = os.path.join(PROCEDURE_BASE)
 PROCEDURE_FILES = glob(os.path.join(PROCEDURE_DEF_DIR, "*.sql"))
 
 

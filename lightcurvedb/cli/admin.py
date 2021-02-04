@@ -2,10 +2,6 @@ import click
 from sqlalchemy import text
 from tabulate import tabulate
 
-from lightcurvedb.experimental.io.procedures.procedure import (
-    _yield_procedure_ddl,
-)
-
 from . import lcdbcli
 
 
@@ -26,6 +22,10 @@ def procedures(ctx):
 @procedures.command()
 @click.pass_context
 def reload(ctx):
+    from lightcurvedb.experimental.io.procedures.procedure import (
+        _yield_procedure_ddl,
+    )
+
     with ctx.obj["dbconf"] as db:
         for ddl in _yield_procedure_ddl():
             click.echo("Executing {0}".format(ddl))
