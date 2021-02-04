@@ -543,6 +543,60 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     return jobs
 
 
+def get_jobs_by_tic(ctx, cache, tics, fillgaps=False, orbits=None, apertures=None, types=None):
+    cache_q = (
+        cache
+        .session
+        .query(
+            FileObservation.tic_id,
+            FileObservation.orbit_number,
+            FileObservation.file_path
+        )
+        .filter(
+            FileObservation.tic_id.in_(tics)
+        )
+    )
+    if orbits:
+        cache_q = cache_q.filter(Fileobservation.orbit_number.in_(orbits))
+
+    file_df = pd.read_sql(cache_q.statement, cache.session.bind, index_col=["tic_id"]).sort_index()
+
+    echo("Comparing cache file paths to lcdb observation table")
+    with ctx.obj["dbconf"] as db:
+        obs_q = (
+            db
+            .query(Observation.tic_id, Orbit.orbit_number)
+            .join(Observation.orbit)
+            .filter(Observation.tic_id.in_(tics))
+        )
+        apertures = [ap.name for ap in db.query(Aperture)] if not apertures else apertures
+        types = [t.name for t in db.query(LightcurveType)] if not types else types
+
+        echo("Determining existing observations")
+        already_observed = set(obs_q)
+
+        echo("Preparing lightcurve id map")
+        lcs = db.lightcurves.filter(Lightcurve.tic_id.in_(tics))
+        lc_id_map = {
+            (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
+            for lc in lcs.yield_per(10000)
+        }
+
+        jobs = list(
+            get_jobs(
+                db,
+                file_df,
+                lc_id_map,
+                already_observed,
+                apertures,
+                types,
+                fill_id_gaps=fillgaps,
+                bar=tqdm
+            )
+        )
+    return jobs
+
+
 def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
     """
     Group single

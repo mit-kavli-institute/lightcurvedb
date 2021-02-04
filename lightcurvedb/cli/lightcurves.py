@@ -11,6 +11,7 @@ from lightcurvedb.core.datastructures.data_packers import (
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightpoint import (
     get_merge_jobs,
+    get_jobs_by_tic,
     ingest_merge_jobs,
 )
 
@@ -55,6 +56,28 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
     )
     click.echo("Done!")
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("tics", type=int, nargs=-1)
+@click.option("--only-orbit", "-o", "orbits", type=int, multiple=True)
+@click.option("--aperture", "-a", "apertures", type=str, multiple=True)
+@click.option("--type", "-t", "types", type=str, multiple=True)
+@click.option("--n-processes", default=16, type=click.IntRange(min=1))
+@click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
+def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
+    if not tics:
+        click.echo("No tic ids passed...")
+        return
+    cache = IngestionCache()
+    click.echo("Connected to ingestion cache, determining filepaths")
+    jobs = list(
+        get_jobs_by_tic(ctx, cache, tics, fillgaps=fillgaps, orbits=orbits, apertures=apertures, types=types)
+    )
+    click.echo("Obtained {0} jobs to perform".format(len(jobs)))
+    ingest_merge_jobs(
+        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+    )
 
 
 @lightcurve.group()
