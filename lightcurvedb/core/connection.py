@@ -17,6 +17,7 @@ from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
+from lightcurvedb.io.procedures import procedure
 
 
 # Bring legacy capability

@@ -22,7 +22,7 @@ def procedures(ctx):
 @procedures.command()
 @click.pass_context
 def reload(ctx):
-    from lightcurvedb.experimental.io.procedures.procedure import (
+    from lightcurvedb.io.procedures.procedure import (
         _yield_procedure_ddl,
     )
 
