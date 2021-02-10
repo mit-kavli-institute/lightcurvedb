@@ -43,6 +43,17 @@ LIGHTPOINT_ALIASES = {
     "quality_flags": "quality_flag",
 }
 
+LIGHTPOINT_NP_DTYPES = {
+    'lightcurve_id': 'uint64',
+    'cadence': 'uint64',
+    'barycentric_julian_date': 'float64',
+    'data': 'float64',
+    'error': 'float64',
+    'x_centroid': 'float64',
+    'y_centroid': 'float64',
+    'quality_flag': 'uint16',
+}
+
 
 class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
     """

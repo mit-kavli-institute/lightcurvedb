@@ -4,7 +4,7 @@ get_lightcurve_data_by_id(
 )
 RETURNS SETOF lightpoints AS $$
 BEGIN
-    RETURN QUERY SELECT DISTINCT cadence * FROM lighpoints WHERE lightcurve_id = _lightcurve_id;
+    RETURN QUERY SELECT DISTINCT ON (cadence) * FROM lightpoints WHERE lightcurve_id = _lightcurve_id;
 END;
 $$ STABLE ROWS 100000 PARALLEL SAFE LANGUAGE plpgsql;
 

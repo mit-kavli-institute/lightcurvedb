@@ -33,8 +33,6 @@ def get_bestaperture_data(tic_id, *columns):
     """
     Interface for get_bestaperture_data.sql stored procedure.
     """
-    if not columns:
-        columns = ('lightcurve_id', 'cadence', 'barycentric_julian_date', 'data', 'error', 'x_centroid', 'y_centroid', 'quality_flag')
 
     lp_cols = (
         LIGHTPOINT_COL_AS_PROC[c] for c in columns

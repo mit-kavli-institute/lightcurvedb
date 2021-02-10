@@ -18,6 +18,7 @@ from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
 from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 
 
 # Bring legacy capability
@@ -1114,6 +1115,16 @@ class DB(object):
             .join(models.Lightpoint.lightcurve)
             .filter(models.Lightpoint.lightcurve_id.in_(ids))
             .group_by(models.Lightpoint.lightcurve_id)
+        )
+
+    def get_best_aperture_data(self, tic_id, *columns):
+        if not columns:
+            columns = models.Lightpoint.get_columns()
+
+        stmt = procedure.get_bestaperture_data(tic_id, *columns)
+        return np.array(
+            list(map(tuple, self.execute(stmt))),
+            dtype=[(column, LIGHTPOINT_NP_DTYPES[column]) for column in columns]
         )
 
 

@@ -211,7 +211,6 @@ class Lightcurve(QLPDataProduct):
         "Lightpoint",
         backref="lightcurve",
         collection_class=CadenceTracked,
-        primaryjoin="func.get_lightcurve_data_by_id(Lightcurve.id)"
     )
 
     lightpoint_q = relationship(

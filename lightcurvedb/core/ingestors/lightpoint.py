@@ -114,7 +114,7 @@ def get_jobs(
         else:
             usable_ids = set()
 
-        n_still_missing = len(usable_ids) - n_required
+        n_still_missing = n_required - len(usable_ids)
         usable_ids.update(allocate_lightcurve_ids(db, n_still_missing))
         values_to_insert = []
         echo("Creating jobs using queried ids")
