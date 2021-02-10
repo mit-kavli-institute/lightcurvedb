@@ -3,8 +3,14 @@ get_lightcurve_data_by_id(
     _lightcurve_id bigint
 )
 RETURNS SETOF lightpoints AS $$
+DECLARE
+    partition_id bigint;
+    partition_name varchar;
 BEGIN
-    RETURN QUERY SELECT DISTINCT ON (cadence) * FROM lightpoints WHERE lightcurve_id = _lightcurve_id;
+    partition_id := _lightcurve_id / 1000;
+    partition_name := FORMAT('partition.lightpoints_%%d_%%d', partition_id, partition_id + 1000);
+
+    RETURN QUERY EXECUTE 'SELECT * FROM ' || partition_name;
 END;
 $$ STABLE ROWS 100000 PARALLEL SAFE LANGUAGE plpgsql;
 
