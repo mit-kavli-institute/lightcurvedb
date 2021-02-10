@@ -3,7 +3,7 @@ from sqlalchemy.dialects import postgresql as psql
 from sqlalchemy.schema import CreateColumn
 from sqlalchemy.ext.compiler import compiles
 from psycopg2.extensions import register_adapter, AsIs, Float
-from numpy import NaN
+from numpy import isnan
 
 
 def high_precision_column(precision=None, asdecimal=False, **column_args):
@@ -26,7 +26,7 @@ def nan_safe_adapter(f):
     nan strings, resulting in postgres looking for a column literally named
     "nan". Convert these to strings so postgres can safely cast the value.
     """
-    if f is NaN:
+    if isnan(f):
         return Float(float('nan'))
     return Float(f)
 
