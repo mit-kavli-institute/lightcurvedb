@@ -44,14 +44,14 @@ LIGHTPOINT_ALIASES = {
 }
 
 LIGHTPOINT_NP_DTYPES = {
-    'lightcurve_id': 'uint64',
-    'cadence': 'uint64',
-    'barycentric_julian_date': 'float64',
-    'data': 'float64',
-    'error': 'float64',
-    'x_centroid': 'float64',
-    'y_centroid': 'float64',
-    'quality_flag': 'uint16',
+    "lightcurve_id": "uint64",
+    "cadence": "uint64",
+    "barycentric_julian_date": "float64",
+    "data": "float64",
+    "error": "float64",
+    "x_centroid": "float64",
+    "y_centroid": "float64",
+    "quality_flag": "uint16",
 }
 
 
@@ -67,10 +67,7 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
     lightcurve_id = Column(
         ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,
-        index=Index(
-            "ix_lightpoints_lightcurve_id",
-            "lightpoint_id",
-        ),
+        index=Index("ix_lightpoints_lightcurve_id", "lightpoint_id",),
         nullable=False,
     )
 

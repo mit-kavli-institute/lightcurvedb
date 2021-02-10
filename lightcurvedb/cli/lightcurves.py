@@ -57,6 +57,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
     )
     click.echo("Done!")
 
+
 @lightcurve.command()
 @click.pass_context
 @click.argument("tics", type=int, nargs=-1)
@@ -72,7 +73,15 @@ def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
     cache = IngestionCache()
     click.echo("Connected to ingestion cache, determining filepaths")
     jobs = list(
-        get_jobs_by_tic(ctx, cache, tics, fillgaps=fillgaps, orbits=orbits, apertures=apertures, types=types)
+        get_jobs_by_tic(
+            ctx,
+            cache,
+            tics,
+            fillgaps=fillgaps,
+            orbits=orbits,
+            apertures=apertures,
+            types=types,
+        )
     )
     click.echo("Obtained {0} jobs to perform".format(len(jobs)))
     ingest_merge_jobs(

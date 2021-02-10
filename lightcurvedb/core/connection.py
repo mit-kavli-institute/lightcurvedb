@@ -1118,13 +1118,40 @@ class DB(object):
         )
 
     def get_best_aperture_data(self, tic_id, *columns):
+        """
+        Build a structured numpy array with the best aperture lightcurve
+        data associated with the given TIC id. Columns can also be provided
+        if one does not want the full representation of the lightcurve.
+
+        Parameters
+        ----------
+        tic_id : int
+            The TIC id to find lightcurve data for. This entry must
+            have defined lightcurves as well as an associated bestaperture
+            entry.
+        *columns : variadic str, optional
+            If empty all columns of Lightpoint will be returned. Otherwise,
+            one may specify a subset of Lightpoint columns. These names
+            must appear as they do on the Lightpoint model.
+        Returns
+        ------
+        A structured numpy.ndarray with Lightpoint fieldnames as the
+        field keys.
+
+        Raises
+        ------
+        InternalError:
+            No data was found for this TIC id.
+        """
         if not columns:
             columns = models.Lightpoint.get_columns()
 
         stmt = procedure.get_bestaperture_data(tic_id, *columns)
         return np.array(
             list(map(tuple, self.execute(stmt))),
-            dtype=[(column, LIGHTPOINT_NP_DTYPES[column]) for column in columns]
+            dtype=[
+                (column, LIGHTPOINT_NP_DTYPES[column]) for column in columns
+            ],
         )
 
 

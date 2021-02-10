@@ -18,14 +18,14 @@ def _yield_procedure_ddl():
 
 
 LIGHTPOINT_COL_AS_PROC = {
-        'lightcurve_id': column('lightcurve_id'),
-        'cadence': column('cadence'),
-        'barycentric_julian_date': column('barycentric_julian_date'),
-        'data': column('data'),
-        'error': column('error'),
-        'x_centroid': column('x_centroid'),
-        'y_centroid': column('y_centroid'),
-        'quality_flag': column('quality_flag'),
+    "lightcurve_id": column("lightcurve_id"),
+    "cadence": column("cadence"),
+    "barycentric_julian_date": column("barycentric_julian_date"),
+    "data": column("data"),
+    "error": column("error"),
+    "x_centroid": column("x_centroid"),
+    "y_centroid": column("y_centroid"),
+    "quality_flag": column("quality_flag"),
 }
 
 
@@ -34,15 +34,10 @@ def get_bestaperture_data(tic_id, *columns):
     Interface for get_bestaperture_data.sql stored procedure.
     """
 
-    lp_cols = (
-        LIGHTPOINT_COL_AS_PROC[c] for c in columns
-    )
+    lp_cols = (LIGHTPOINT_COL_AS_PROC[c] for c in columns)
 
-    stmt = (
-        select(lp_cols)
-        .select_from(
-            func.get_bestaperture_data(tic_id).alias()
-        )
+    stmt = select(lp_cols).select_from(
+        func.get_bestaperture_data(tic_id).alias()
     )
 
     return stmt
