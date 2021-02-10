@@ -27,7 +27,7 @@ def nan_safe_adapter(f):
     "nan". Convert these to strings so postgres can safely cast the value.
     """
     if isnan(f):
-        return Float(float('nan'))
+        return AsIs("'NaN'")
     return Float(f)
 
 
