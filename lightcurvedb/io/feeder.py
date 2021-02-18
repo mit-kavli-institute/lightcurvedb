@@ -4,7 +4,10 @@ IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
 from lightcurvedb import db_from_config
-from lightcurvedb.io.procedures.procedure import get_bestaperture_data, get_lightcurve_data
+from lightcurvedb.io.procedures.procedure import (
+    get_bestaperture_data,
+    get_lightcurve_data,
+)
 from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from multiprocessing import Process, Manager
 from sqlalchemy.exc import InternalError
@@ -12,7 +15,15 @@ import numpy as np
 
 
 class LightcurveFeeder(Process):
-    def __init__(self, columns, id_queue, result_queue, stmt_func, config=None, process_kwargs=None):
+    def __init__(
+        self,
+        columns,
+        id_queue,
+        result_queue,
+        stmt_func,
+        config=None,
+        process_kwargs=None,
+    ):
         super(LightcurveFeeder, self).__init__(daemon=True)
         self.id_queue = id_queue
         self.result_queue = result_queue
@@ -29,7 +40,8 @@ class LightcurveFeeder(Process):
                     data = np.array(
                         list(map(tuple, db.execute(stmt))),
                         dtype=[
-                            (column, LIGHTPOINT_NP_DTYPES[column]) for column in self.columns
+                            (column, LIGHTPOINT_NP_DTYPES[column])
+                            for column in self.columns
                         ],
                     )
                 except InternalError:
@@ -39,7 +51,7 @@ class LightcurveFeeder(Process):
                 except Exception:
                     # Catch all, clean queues and exit
                     data = None
-                    break;
+                    break
                 finally:
                     self.result_queue.put(data)
                     self.id_queue.task_done()
@@ -77,11 +89,27 @@ def _yield_data(func, columns, ids, db_config_override=None, n_threads=None):
         worker.join()
 
 
-def yield_lightcurve_data(ids, db_config_override=None, n_threads=None, columns=None):
-    for data in _yield_data(get_lightcurve_data, columns, ids, db_config_override=db_config_override, n_threads=n_threads):
+def yield_lightcurve_data(
+    ids, db_config_override=None, n_threads=None, columns=None
+):
+    for data in _yield_data(
+        get_lightcurve_data,
+        columns,
+        ids,
+        db_config_override=db_config_override,
+        n_threads=n_threads,
+    ):
         yield data
 
 
-def yield_best_aperture_data(tic_ids, db_config_override=None, n_threads=None, columns=None):
-    for data in _yield_data(get_bestaperture_data, columns, tic_ids, db_config_override=db_config_override, n_threads=n_threads):
+def yield_best_aperture_data(
+    tic_ids, db_config_override=None, n_threads=None, columns=None
+):
+    for data in _yield_data(
+        get_bestaperture_data,
+        columns,
+        tic_ids,
+        db_config_override=db_config_override,
+        n_threads=n_threads,
+    ):
         yield data

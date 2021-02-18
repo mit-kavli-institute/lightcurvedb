@@ -1169,7 +1169,9 @@ def db_from_config(config_path=None, **engine_kwargs):
         Arguments to pass off into engine construction.
     """
     parser = ConfigParser()
-    parser.read(os.path.expanduser(config_path if config_path else __DEFAULT_PATH__))
+    parser.read(
+        os.path.expanduser(config_path if config_path else __DEFAULT_PATH__)
+    )
 
     kwargs = {
         "username": parser.get("Credentials", "username"),
