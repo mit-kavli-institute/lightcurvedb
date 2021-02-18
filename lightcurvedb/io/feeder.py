@@ -92,6 +92,31 @@ def _yield_data(func, columns, ids, db_config_override=None, n_threads=None):
 def yield_lightcurve_data(
     ids, db_config_override=None, n_threads=None, columns=None
 ):
+    """
+    Iterate over lightcurve data given a list of lightcurve ids.
+    The underlying query is performed asynchronously with a configurable
+    number of readers.
+
+    Parameters
+    ----------
+    ids: iterable sequence of ints
+        The lightcurve ids to query for.
+    db_config_override: Pathlike, optional
+        Configuration override for the lightcurve readers.
+    n_threads: int, optional
+        The number of threads working on querying for lightcurves.
+        By default this parameter is 1.
+    columns: list of strings
+        A list of lightpoint columns to return. By default all Lightpoint
+        columns are queried.
+
+    Returns
+    -------
+    np.ndarray
+        A structured numpy 2D array. The array can be accessed by keywords
+        either provided in the columns argument or any Lightpoint column
+        name.
+    """
     for data in _yield_data(
         get_lightcurve_data,
         columns,
@@ -105,6 +130,32 @@ def yield_lightcurve_data(
 def yield_best_aperture_data(
     tic_ids, db_config_override=None, n_threads=None, columns=None
 ):
+    """
+    Iterate over lightcurve data given a list of TIC ids. The TIC ids are
+    translated through BestApertureMap and through KSPMagnitude types
+    The underlying query is performed asynchronously with a configurable
+    number of readers.
+
+    Parameters
+    ----------
+    tic_ids: iterable sequence of ints
+        The TIC identifiers to query for.
+    db_config_override: Pathlike, optional
+        Configuration override for the lightcurve readers.
+    n_threads: int, optional
+        The number of threads working on querying for lightcurves.
+        By default this parameter is 1.
+    columns: list of strings
+        A list of lightpoint columns to return. By default all Lightpoint
+        columns are queried.
+
+    Returns
+    -------
+    np.ndarray
+        A structured numpy 2D array. The array can be accessed by keywords
+        either provided in the columns argument or any Lightpoint column
+        name.
+    """
     for data in _yield_data(
         get_bestaperture_data,
         columns,
