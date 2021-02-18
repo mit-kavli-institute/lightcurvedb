@@ -41,3 +41,16 @@ def get_bestaperture_data(tic_id, *columns):
     )
 
     return stmt
+
+
+def get_lightcurve_data(lightcurve_id, *columns):
+    """
+    Interface for get_lightcurve_data_by_id stored procedure
+    """
+    lp_cols = (LIGHTPOINT_COL_AS_PROC[c] for c in columns)
+
+    stmt = select(lp_cols).select_from(
+        func.get_lightcurve_data_by_id(lightcurve_id).alias()
+    )
+
+    return stmt

@@ -1155,7 +1155,7 @@ class DB(object):
         )
 
 
-def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
+def db_from_config(config_path=None, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
 
@@ -1169,7 +1169,7 @@ def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
         Arguments to pass off into engine construction.
     """
     parser = ConfigParser()
-    parser.read(os.path.expanduser(config_path))
+    parser.read(os.path.expanduser(config_path if config_path else __DEFAULT_PATH__))
 
     kwargs = {
         "username": parser.get("Credentials", "username"),
