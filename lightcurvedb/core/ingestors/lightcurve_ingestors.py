@@ -4,7 +4,8 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from lightcurvedb.models.lightcurve import Lightcurve
+from lightcurvedb.models import Lightcurve, Observation, Orbit
+from lightcurvedb.core.ingestors.temp_table import FileObservation
 from sqlalchemy import text
 from functools import lru_cache
 
@@ -155,6 +156,45 @@ def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
     for fieldname, constant in constants.items():
         lightpoints[fieldname] = constant
     return lightpoints
+
+def get_ingestion_plan(db, cache, orbits=None, cameras=None, ccds=None, tic_mask=None, invert_mask=False):
+    db_obs_q = db.query(Observation.tic_id, Orbit.orbit_number).join(Observation.orbit)
+    cache_obs_q = cache.query(FileObservation)
+
+    if orbits:
+        db_obs_q = db_obs_q.filter(Orbit.orbit_number.in_(orbits))
+        cache_obs_q = cache_obs_q.filter(FileObservation.orbit_number.in_(orbits))
+
+    if cameras:
+        db_obs_q = db_obs_q.filter(Observation.camera.in_(cameras))
+        cache_obs_q = cache_obs_q.filter(FileObservation.camera.in_(cameras))
+
+    if ccds:
+        db_obs_q = db_obs_q.filter(Observation.ccd.in_(ccds))
+        cache_obs_q = cache_obs_q.filter(FileObservation.ccd.in_(ccds))
+
+    if tic_mask:
+        db_tic_filter = ~Observation.tic_id.in_(tic_mask) if invert_mask else Observation.tic_id.in_(tic_mask)
+        cache_tic_filter = (
+            ~FileObservation.tic_id.in_(tic_mask)
+            if invert_mask
+            else FileObservation.tic_id.in_(tic_mask)
+        )
+        db_obs_q = db_obs_q.filter(db_tic_filter)
+        cache_obs_q = cache_obs_q.filter(cache_tic_filter)
+
+    seen_cache = set(db_obs_q)
+
+    plan = []
+
+    for file_obs in cache_obs_q:
+        key = (file_obs.tic_id, file_obs.orbit_number)
+        if key in seen_cache:
+            continue
+
+        plan.append(file_obs)
+        seen_cache.add((file_obs.tic_id, file_obs.orbit_number))
+    return plan
 
 
 @lru_cache(maxsize=10)

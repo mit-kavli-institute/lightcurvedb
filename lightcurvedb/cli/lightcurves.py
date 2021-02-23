@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 
 import click
+import pandas as pd
 from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
@@ -14,6 +15,7 @@ from lightcurvedb.core.ingestors.lightpoint import (
     get_jobs_by_tic,
     ingest_merge_jobs,
 )
+from lightcurvedb.core.ingestors.lightcurve_ingestors import get_ingestion_plan
 
 
 def gaps_in_ids(id_array):
@@ -88,6 +90,42 @@ def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
     )
 
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("orbits", type=int, nargs=-1)
+@click.option("--cameras", type=CommaList(int), default="1,2,3,4")
+@click.option("--ccds", type=CommaList(int), default="1,2,3,4")
+def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
+    cache = IngestionCache()
+    with ctx.obj["dbconf"] as db:
+        plan = get_ingestion_plan(db, cache, orbits=orbits, cameras=cameras, ccds=ccds)
+        df = pd.DataFrame(obs.to_dict for obs in plan)
+
+    try:
+        grouped_summary = df.groupby(["orbit_number", "camera", "ccd"]).size()
+        click.echo("Orbital Summary")
+        click.echo(grouped_summary)
+    except KeyError:
+        click.echo(df)
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("tic_ids", type=int, nargs=-1)
+@click.option("--cameras", type=CommaList(int), default="1,2,3,4")
+@click.option("--ccds", type=CommaList(int), default="1,2,3,4")
+def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
+    cache = IngestionCache()
+    with ctx.obj["dbconf"] as db:
+        plan = get_ingestion_plan(db, cache, tic_mask=tics, cameras=cameras, ccds=ccds)
+        df = pd.DataFrame(obs.to_dict for obs in plan)
+
+    try:
+        click.echo("TIC Plan Summary")
+        click.echo(df)
+    except KeyError:
+        click.echo(df)
 
 @lightcurve.group()
 @click.pass_context

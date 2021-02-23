@@ -297,7 +297,9 @@ class PartitionConsumer(LightpointProcessor):
 
         with db_from_config() as db:
             mem_q = text("SET LOCAL work_mem TO '2GB'")
+            async_q = text("SET LOCAL synchronous_commit = OFF")
             db.session.execute(mem_q)
+            db.session.execute(async_q)
 
             conn = db.session.connection().connection
             mgr = CopyManager(
