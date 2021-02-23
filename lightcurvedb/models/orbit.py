@@ -21,6 +21,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 
 
@@ -69,6 +70,7 @@ class Orbit(QLPReference):
     # Relationships
     frames = relationship("Frame", back_populates="orbit")
     observations = relationship("Observation", back_populates="orbit")
+    lightcurves = association_proxy("complete_observations", "lightcurve")
 
     # Click Parameters
     click_parameters = click.Choice(

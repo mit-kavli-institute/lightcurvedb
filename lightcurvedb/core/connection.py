@@ -684,14 +684,14 @@ class DB(object):
         if not isiterable(orbit_numbers):
             orbit_numbers = [orbit_numbers]
 
-        col = models.Observation.tic_id
+        col = models.Lightcurve.tic_id
 
         if unique:
             col = col.distinct()
 
         q = (
             self.query(col)
-            .join(models.Observation.orbit)
+            .join(models.Lightcurve.orbits)
             .filter(models.Orbit.orbit_number.in_(orbit_numbers))
         )
 
@@ -701,7 +701,7 @@ class DB(object):
             q = q.filter(models.Observation.ccd.in_(ccds))
 
         if sort:
-            q = q.order_by(models.Observation.tic_id.asc())
+            q = q.order_by(models.Lightcurve.tic_id.asc())
 
         if resolve:
             return [r for r, in q.all()]
@@ -753,25 +753,23 @@ class DB(object):
         if not isiterable(sectors):
             sectors = [sectors]
 
-        col = models.Observation.tic_id
+        col = models.Lightcurve.tic_id
         if unique:
             col = col.distinct()
 
         q = (
-            self.query(models.Observation.tic_id)
-            .join(models.Observation.orbit)
+            self.query(col)
+            .join(models.lightcurve.orbits)
             .filter(models.Orbit.sector.in_(sectors))
         )
-
-        if unique:
-            q = q.distinct()
 
         if cameras:
             q = q.filter(models.Observation.camera.in_(cameras))
         if ccds:
             q = q.filter(models.Observation.ccd.in_(ccds))
+
         if sort:
-            q = q.order_by(models.Observation.tic_id.asc())
+            q = q.order_by(models.Lightcurve.tic_id.asc())
 
         if resolve:
             return [r for r, in q.all()]
@@ -805,15 +803,20 @@ class DB(object):
             Returns either the result of the query or the Query object itself.
         """
 
-        tic_sub_q = self.tics_by_orbit(
-            orbit_numbers,
-            cameras=cameras,
-            ccds=ccds,
-            resolve=False,
-            sort=False,
-        ).subquery("tics_from_observations")
+        q = self.lightcurves.join(models.Lightcurve.observations).join(
+            models.Observation.orbit
+        )
 
-        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        if isinstance(orbit_numbers, int):
+            q = q.filter(models.Orbit.orbit_number == orbit_numbers)
+        else:
+            q = q.filter(models.Orbit.orbit_number.in_(orbit_numbers))
+
+        if cameras:
+            q = q.filter(models.Observation.camera.in_(cameras))
+        if ccds:
+            q = q.filter(models.Observation.ccd.in_(ccds))
+
         if resolve:
             return q.all()
         return q
@@ -847,11 +850,19 @@ class DB(object):
 
         """
 
-        tic_sub_q = self.tics_by_sector(
-            sectors, cameras=cameras, ccds=ccds, resolve=False, sort=False
-        ).subquery("tics_from_observations")
+        q = self.lightcurves.join(models.Lightcurve.observations).join(
+            models.Observation.orbit
+        )
 
-        q = self.lightcurves.filter(models.Lightcurve.tic_id.in_(tic_sub_q))
+        if isinstance(sectors, int):
+            q = q.filter(models.Orbit.sector == sectors)
+        else:
+            q = q.filter(models.Orbit.sector.in_(sectors))
+
+        if cameras:
+            q = q.filter(models.Observation.camera.in_(cameras))
+        if ccds:
+            q = q.filter(models.Observation.ccd.in_(ccds))
 
         if resolve:
             return q.all()
