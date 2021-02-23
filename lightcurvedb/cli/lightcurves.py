@@ -118,7 +118,7 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
 def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = get_ingestion_plan(db, cache, tic_mask=tics, cameras=cameras, ccds=ccds)
+        plan = get_ingestion_plan(db, cache, tic_mask=tic_ids, cameras=cameras, ccds=ccds)
         df = pd.DataFrame(obs.to_dict for obs in plan)
 
     try:
