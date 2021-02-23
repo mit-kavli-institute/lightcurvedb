@@ -32,6 +32,16 @@ class FileObservation(TemporaryQLPModel):
     def __repr__(self):
         return "{0} File {1}".format(self.tic_id, self.file_path)
 
+    @property
+    def to_dict(self):
+        return {
+            "tic_id": self.tic_id,
+            "orbit_number": self.orbit_number,
+            "camera": self.camera,
+            "ccd": self.ccd,
+            "file_path": self.file_path,
+        }
+
 
 class TempObservation(TemporaryQLPModel):
     __tablename__ = "temp_observations"

@@ -23,9 +23,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     load_lightpoints,
 )
 from lightcurvedb.core.ingestors.temp_table import FileObservation
-from lightcurvedb.legacy.timecorrect import (
-    TimeCorrector,
-)
+from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (
     Aperture,
     Frame,
@@ -114,7 +112,7 @@ def get_jobs(
         else:
             usable_ids = set()
 
-        n_still_missing = len(usable_ids) - n_required
+        n_still_missing = n_required - len(usable_ids)
         usable_ids.update(allocate_lightcurve_ids(db, n_still_missing))
         values_to_insert = []
         echo("Creating jobs using queried ids")
@@ -299,7 +297,9 @@ class PartitionConsumer(LightpointProcessor):
 
         with db_from_config() as db:
             mem_q = text("SET LOCAL work_mem TO '2GB'")
+            async_q = text("SET LOCAL synchronous_commit = OFF")
             db.session.execute(mem_q)
+            db.session.execute(async_q)
 
             conn = db.session.connection().connection
             mgr = CopyManager(
@@ -543,34 +543,36 @@ def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
     return jobs
 
 
-def get_jobs_by_tic(ctx, cache, tics, fillgaps=False, orbits=None, apertures=None, types=None):
-    cache_q = (
-        cache
-        .session
-        .query(
-            FileObservation.tic_id,
-            FileObservation.orbit_number,
-            FileObservation.file_path
-        )
-        .filter(
-            FileObservation.tic_id.in_(tics)
-        )
-    )
+def get_jobs_by_tic(
+    ctx, cache, tics, fillgaps=False, orbits=None, apertures=None, types=None
+):
+    cache_q = cache.session.query(
+        FileObservation.tic_id,
+        FileObservation.orbit_number,
+        FileObservation.file_path,
+    ).filter(FileObservation.tic_id.in_(tics))
     if orbits:
         cache_q = cache_q.filter(Fileobservation.orbit_number.in_(orbits))
 
-    file_df = pd.read_sql(cache_q.statement, cache.session.bind, index_col=["tic_id"]).sort_index()
+    file_df = pd.read_sql(
+        cache_q.statement, cache.session.bind, index_col=["tic_id"]
+    ).sort_index()
 
     echo("Comparing cache file paths to lcdb observation table")
     with ctx.obj["dbconf"] as db:
         obs_q = (
-            db
-            .query(Observation.tic_id, Orbit.orbit_number)
+            db.query(Observation.tic_id, Orbit.orbit_number)
             .join(Observation.orbit)
             .filter(Observation.tic_id.in_(tics))
         )
-        apertures = [ap.name for ap in db.query(Aperture)] if not apertures else apertures
-        types = [t.name for t in db.query(LightcurveType)] if not types else types
+        apertures = (
+            [ap.name for ap in db.query(Aperture)]
+            if not apertures
+            else apertures
+        )
+        types = (
+            [t.name for t in db.query(LightcurveType)] if not types else types
+        )
 
         echo("Determining existing observations")
         already_observed = set(obs_q)
@@ -591,7 +593,7 @@ def get_jobs_by_tic(ctx, cache, tics, fillgaps=False, orbits=None, apertures=Non
                 apertures,
                 types,
                 fill_id_gaps=fillgaps,
-                bar=tqdm
+                bar=tqdm,
             )
         )
     return jobs
@@ -626,9 +628,7 @@ def ingest_merge_jobs(config, merge_jobs, n_processes, commit, tqdm_bar=True):
         echo("Reading assigned quality flags")
         quality_flags = cache.quality_flag_df
         mid_tjd_q = db.query(
-            Frame.camera,
-            Frame.cadence,
-            Frame.mid_tjd,
+            Frame.camera, Frame.cadence, Frame.mid_tjd,
         ).filter(Frame.frame_type_id == "Raw FFI")
         echo("Getting Raw FFI Mid TJD arrays")
         mid_tjd = pd.read_sql(

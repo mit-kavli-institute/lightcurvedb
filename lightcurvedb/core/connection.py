@@ -17,6 +17,8 @@ from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
+from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 
 
 # Bring legacy capability
@@ -69,6 +71,15 @@ class DB(object):
             self._session = None
             self._active = False
         self._config = None
+
+    def __repr__(self):
+        """
+        Return a human friendly string representation of the DB session.
+        """
+        if self._active:
+            return "<DB status=open>"
+        else:
+            return "<DB status=closed>"
 
     def __enter__(self):
         """Enter into the context of a SQLAlchemy open session"""
@@ -210,22 +221,58 @@ class DB(object):
 
     @property
     def is_active(self):
+        """
+        Is the DB object maintaining an active connection to a remote
+        postgreSQL server?
+
+        Returns
+        -------
+        bool
+        """
         return self._active
 
     @property
     def orbits(self):
+        """
+        A quick property that aliases ``db.query(Orbit)``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
         return self.session.query(models.Orbit)
 
     @property
     def apertures(self):
+        """
+        A quick property that aliases ``db.query(Aperture)``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
         return self.session.query(models.Aperture)
 
     @property
     def lightcurves(self):
+        """
+        A quick property that aliases ``db.query(Lightcurve)``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
         return self.session.query(models.Lightcurve)
 
     @property
     def lightcurve_types(self):
+        """
+        A quick property that aliases ``db.query(LightcurveType)``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
         return self.session.query(models.LightcurveType)
 
     # Begin orbit methods
@@ -239,9 +286,36 @@ class DB(object):
         return np.array(orbits.all(), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(
-        self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID
+        self,
+        orbit_number,
+        cadence_type,
+        camera,
+        frame_type=LEGACY_FRAME_TYPE_ID,
     ):
+        """
+        Returns the upper and lower cadence boundaries of an orbit. Since each
+        orbit will have frames from multiple cameras a camera parameter is
+        needed. In addition, TESS switched to 10 minute cadence numberings
+        in July 2020.
 
+        Parameters
+        ----------
+        orbit_number : int
+            The orbit number.
+        cadence_type : int
+            The cadence type to consider for each frame.
+        camera : int
+            The camera number.
+        frame_type : optional, str
+            The frame type to consider. By default the type is of "Raw FFI".
+            But this can be changed for any defined ``FrameType.name``.
+
+        Returns
+        -------
+        tuple(int, int)
+            A tuple representing the (min, max) cadence boundaries of the given
+            parameters.
+        """
         cadence_limit = (
             self.query(
                 func.min(models.Frame.cadence), func.max(models.Frame.cadence)
@@ -251,13 +325,38 @@ class DB(object):
                 models.Frame.cadence_type == cadence_type,
                 models.Frame.camera == camera,
                 models.Frame.frame_type_id == frame_type,
-                models.Orbit.orbit_number == orbit_id,
+                models.Orbit.orbit_number == orbit_number,
             )
         )
 
         return cadence_limit.one()
 
     def query_orbit_tjd_limit(self, orbit_id, cadence_type, camera):
+        """
+        Returns the upper and lower tjd boundaries of an orbit. Since each
+        orbit will have frames from multiple cameras a camera parameter is
+        needed. In addition, TESS switched to 10 minute cadence numberings
+        in July 2020.
+
+        Parameters
+        ----------
+        orbit_number : int
+            The orbit number.
+        cadence_type : int
+            The cadence type to consider for each frame.
+        camera : int
+            The camera number.
+        frame_type : optional, str
+            The frame type to consider. By default the type is of "Raw FFI".
+            But this can be changed for any defined ``FrameType.name``.
+
+        Returns
+        -------
+        tuple(float, float)
+            A tuple representing the (min, max) tjd boundaries of the given
+            parameters.
+
+        """
         tjd_limit = (
             self.query(
                 func.min(models.Frame.start_tjd),
@@ -273,7 +372,27 @@ class DB(object):
 
         return tjd_limit.one()
 
-    def query_frames_by_orbit(self, orbit_id, cadence_type, camera):
+    def query_frames_by_orbit(self, orbit_number, cadence_type, camera):
+        """
+        Determines the per-frame parameters of a given orbit, camera, and
+        cadence type.
+
+        Parameters
+        ----------
+        orbit_number : int
+            The physical orbit number wanted.
+        cadence_type : int
+            The frame cadence type to consider. TESS switched to 10 minute
+            cadences starting July 2020.
+        camera : int
+            Only frames recorded in this camera will be queried for.
+
+        Returns
+        -------
+        np.ndarray
+            See `Frame.get_legacy_attrs()` for a list of parameter names
+            and their respective dtypes.
+        """
         # Differs from PATools in that orbit_id != orbit number
         # so we need to record that.
         cols = [models.Orbit.orbit_number] + list(
@@ -285,7 +404,7 @@ class DB(object):
             .filter(
                 models.Frame.cadence_type == cadence_type,
                 models.Frame.camera == camera,
-                models.Orbit.orbit_number == orbit_id,
+                models.Orbit.orbit_number == orbit_number,
             )
             .order_by(models.Frame.cadence.asc())
             .all()
@@ -294,6 +413,27 @@ class DB(object):
         return np.array(values, dtype=FRAME_COMP_DTYPE)
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
+        """
+        Determines the per-frame parameters of given cadences and
+        by camera, and cadence type.
+
+        Parameters
+        ----------
+        camera : int
+            Only frames recorded in this camera will be queried for.
+        cadence_type : int
+            The frame cadence type to consider. TESS switched to 10 minute
+            cadences starting July 2020.
+        cadences : an iterable of integers
+            Only frames with the provided cadences will be queries for.
+
+        Returns
+        -------
+        np.ndarray
+            See `Frame.get_legacy_attrs()` for a list of parameter names
+            and their respective dtypes.
+
+        """
         cols = [models.Orbit.orbit_number] + list(
             models.Frame.get_legacy_attrs()
         )
@@ -312,6 +452,20 @@ class DB(object):
         return np.array(values, dtype=FRAME_COMP_DTYPE)
 
     def query_all_orbit_ids(self):
+        """
+        A legacy method to return all orbit numbers in ascending
+        order.
+
+        Returns
+        -------
+        list
+            A list of 1 element tuples containing ``(orbit_number,)``
+
+        Note
+        ----
+        This is a legacy method. In this context ``orbit_id`` corresponds
+        to the parameter ``Orbit.orbit_number`` and **not** ``Orbit.id``.
+        """
         return (
             self.query(models.Orbit.orbit_number)
             .order_by(models.Orbit.orbit_number.asc())
@@ -585,7 +739,7 @@ class DB(object):
             and JOIN statements produce cross products of Tables, query
             results might contain duplicate TICs. Setting ``unique`` to
             ``True`` will make the return be a proper set of TICs.
-        sort : bool, optional
+        sort : bool, option
             If ``True`` apply an Ascending sort to the return.
 
         Returns
@@ -836,15 +990,54 @@ class DB(object):
         self._session.rollback()
 
     def add(self, model_inst):
+        """
+        Adds the given QLPModel instance to be inserted into the database.
+
+        Parameters
+        ----------
+        model_inst : QLPModel
+            The new model to insert into the database.
+
+        Raises
+        ------
+        sqlalchemy.IntegrityError
+            Raised if the given instance violates given SQL constraints.
+        """
         self._session.add(model_inst)
 
     def update(self, *args, **kwargs):
+        """
+        A helper method to ``db.session.update()``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
         self._session.update(*args, **kwargs)
 
     def delete(self, model_inst, synchronize_session="evaluate"):
+        """
+        A helper method to ``db.session.delete()``.
+
+        Parameters
+        ----------
+        model_inst : QLPModel
+            The model to delete from the database.
+        synchronize_session : str, optional
+            How the session should change it's internal records to
+            reflect changes made to the database. See SQLAlchemy
+            docs for details.
+        """
         self._session.delete(
             model_inst, synchronize_session=synchronize_session
         )
+
+    def execute(self, *args, **kwargs):
+        """
+        Alias for db session execution. See sqlalchemy.Session.execute for
+        more information.
+        """
+        return self._session.execute(*args, **kwargs)
 
     # Begin helper methods to quickly grab reference maps
     @property
@@ -875,11 +1068,29 @@ class DB(object):
         return pd_read_sql(q.statement, self.session.bind)
 
     def get_partitions_df(self, model):
+        """
+        Attempt to return a pd.DataFrame on any partitions found
+        on the given model.
+
+        Parameters
+        ----------
+        model : QLPModel Class
+            The model to search for partitions.
+
+        Returns
+        -------
+        pd.DataFrame
+        """
         return model.partition_df(self)
 
     def get_cadences_in_orbits(self, orbits):
         """
         Get the defined cadences observed in the given orbits.
+
+        Parameters
+        ----------
+        orbits : iterable of int
+            The orbit numbers to search for cadences.
         """
         q = (
             self.query(models.Frame.cadence)
@@ -906,8 +1117,45 @@ class DB(object):
             .group_by(models.Lightpoint.lightcurve_id)
         )
 
+    def get_best_aperture_data(self, tic_id, *columns):
+        """
+        Build a structured numpy array with the best aperture lightcurve
+        data associated with the given TIC id. Columns can also be provided
+        if one does not want the full representation of the lightcurve.
 
-def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
+        Parameters
+        ----------
+        tic_id : int
+            The TIC id to find lightcurve data for. This entry must
+            have defined lightcurves as well as an associated bestaperture
+            entry.
+        *columns : variadic str, optional
+            If empty all columns of Lightpoint will be returned. Otherwise,
+            one may specify a subset of Lightpoint columns. These names
+            must appear as they do on the Lightpoint model.
+        Returns
+        ------
+        A structured numpy.ndarray with Lightpoint fieldnames as the
+        field keys.
+
+        Raises
+        ------
+        InternalError:
+            No data was found for this TIC id.
+        """
+        if not columns:
+            columns = models.Lightpoint.get_columns()
+
+        stmt = procedure.get_bestaperture_data(tic_id, *columns)
+        return np.array(
+            list(map(tuple, self.execute(stmt))),
+            dtype=[
+                (column, LIGHTPOINT_NP_DTYPES[column]) for column in columns
+            ],
+        )
+
+
+def db_from_config(config_path=None, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
 
@@ -921,7 +1169,9 @@ def db_from_config(config_path=__DEFAULT_PATH__, **engine_kwargs):
         Arguments to pass off into engine construction.
     """
     parser = ConfigParser()
-    parser.read(os.path.expanduser(config_path))
+    parser.read(
+        os.path.expanduser(config_path if config_path else __DEFAULT_PATH__)
+    )
 
     kwargs = {
         "username": parser.get("Credentials", "username"),
