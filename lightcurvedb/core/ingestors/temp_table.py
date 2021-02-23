@@ -39,7 +39,7 @@ class FileObservation(TemporaryQLPModel):
             "orbit_number": self.orbit_number,
             "camera": self.camera,
             "ccd": self.ccd,
-            "file_path": self.file_path
+            "file_path": self.file_path,
         }
 
 

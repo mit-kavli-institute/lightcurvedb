@@ -157,13 +157,26 @@ def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
         lightpoints[fieldname] = constant
     return lightpoints
 
-def get_ingestion_plan(db, cache, orbits=None, cameras=None, ccds=None, tic_mask=None, invert_mask=False):
-    db_obs_q = db.query(Observation.tic_id, Orbit.orbit_number).join(Observation.orbit)
+
+def get_ingestion_plan(
+    db,
+    cache,
+    orbits=None,
+    cameras=None,
+    ccds=None,
+    tic_mask=None,
+    invert_mask=False,
+):
+    db_obs_q = db.query(Observation.tic_id, Orbit.orbit_number).join(
+        Observation.orbit
+    )
     cache_obs_q = cache.query(FileObservation)
 
     if orbits:
         db_obs_q = db_obs_q.filter(Orbit.orbit_number.in_(orbits))
-        cache_obs_q = cache_obs_q.filter(FileObservation.orbit_number.in_(orbits))
+        cache_obs_q = cache_obs_q.filter(
+            FileObservation.orbit_number.in_(orbits)
+        )
 
     if cameras:
         db_obs_q = db_obs_q.filter(Observation.camera.in_(cameras))
@@ -174,7 +187,11 @@ def get_ingestion_plan(db, cache, orbits=None, cameras=None, ccds=None, tic_mask
         cache_obs_q = cache_obs_q.filter(FileObservation.ccd.in_(ccds))
 
     if tic_mask:
-        db_tic_filter = ~Observation.tic_id.in_(tic_mask) if invert_mask else Observation.tic_id.in_(tic_mask)
+        db_tic_filter = (
+            ~Observation.tic_id.in_(tic_mask)
+            if invert_mask
+            else Observation.tic_id.in_(tic_mask)
+        )
         cache_tic_filter = (
             ~FileObservation.tic_id.in_(tic_mask)
             if invert_mask

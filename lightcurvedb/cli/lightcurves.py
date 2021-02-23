@@ -99,7 +99,9 @@ def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
 def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = get_ingestion_plan(db, cache, orbits=orbits, cameras=cameras, ccds=ccds)
+        plan = get_ingestion_plan(
+            db, cache, orbits=orbits, cameras=cameras, ccds=ccds
+        )
         df = pd.DataFrame(obs.to_dict for obs in plan)
 
     try:
@@ -118,7 +120,9 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
 def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = get_ingestion_plan(db, cache, tic_mask=tic_ids, cameras=cameras, ccds=ccds)
+        plan = get_ingestion_plan(
+            db, cache, tic_mask=tic_ids, cameras=cameras, ccds=ccds
+        )
         df = pd.DataFrame(obs.to_dict for obs in plan)
 
     try:
@@ -126,6 +130,7 @@ def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
         click.echo(df)
     except KeyError:
         click.echo(df)
+
 
 @lightcurve.group()
 @click.pass_context
