@@ -24,7 +24,8 @@ class LightcurveFeeder(Process):
         config=None,
         process_kwargs=None,
     ):
-        super(LightcurveFeeder, self).__init__(daemon=True)
+        super(LightcurveFeeder, self).__init__()
+        self.daemon = True
         self.id_queue = id_queue
         self.result_queue = result_queue
         self.columns = columns
@@ -65,7 +66,7 @@ def _yield_data(func, columns, ids, db_config_override=None, n_threads=None):
     workers = []
     m = Manager()
     id_queue = m.Queue()
-    result_queue = m.Queue()
+    result_queue = m.Queue(maxsize=1000)
     columns = columns if columns else Lightpoint.get_columns()
 
     # Filter out input signals which are used for IO control
