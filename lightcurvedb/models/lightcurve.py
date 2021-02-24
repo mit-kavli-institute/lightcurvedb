@@ -13,7 +13,7 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 from lightcurvedb.core.collection import CadenceTracked
-from lightcurvedb.models import Frame, Lightpoint, Orbit
+from lightcurvedb.models import Frame, Lightpoint, Orbit, Observation
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -215,11 +215,9 @@ class Lightcurve(QLPDataProduct):
     bls_results = relationship(
         "BLS", back_populates="lightcurve", order_by="BLS.created_on"
     )
+    observations = relationship(Observation, back_populates="lightcurve")
+
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
-
-    observations = relationship("Observation", back_populates="lightcurve")
-    orbits = association_proxy("complete_observations", "orbit")
-
     def __len__(self):
         """
         Returns

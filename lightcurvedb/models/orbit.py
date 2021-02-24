@@ -9,7 +9,7 @@ from astropy.io import fits
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
-from lightcurvedb.models import CameraQuaternion, Frame
+from lightcurvedb.models import CameraQuaternion, Frame, Observation
 from sqlalchemy import (
     Boolean,
     Column,
@@ -69,9 +69,7 @@ class Orbit(QLPReference):
 
     # Relationships
     frames = relationship("Frame", back_populates="orbit")
-    observations = relationship("Observation", back_populates="orbit")
-    lightcurves = association_proxy("complete_observations", "lightcurve")
-
+    observations = relationship(Observation, back_populates="orbit")
     # Click Parameters
     click_parameters = click.Choice(
         ["orbit_number", "sector", "ra", "dec", "roll", "basename"],

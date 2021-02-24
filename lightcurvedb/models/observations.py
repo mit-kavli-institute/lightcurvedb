@@ -6,7 +6,7 @@ from lightcurvedb.core.datastructures.blob import Blobable
 from lightcurvedb.core.partitioning import Partitionable
 from sqlalchemy import BigInteger, Column, ForeignKey, SmallInteger, bindparam
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 
 class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
@@ -16,8 +16,9 @@ class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
     """
 
     __tablename__ = "observations"
+    __abstract__ = False
 
-    lightcurve_id = Column(BigInteger, primary_key=True, nullable=False)
+    lightcurve_id = Column(ForeignKey("lightcurves.id", ondelete="CASCADE"), primary_key=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=False)
     orbit_id = Column(
@@ -29,6 +30,14 @@ class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
 
     lightcurve = relationship("Lightcurve", back_populates="observations")
     orbit = relationship("Orbit", back_populates="observations")
+
+    def __repr__(self):
+        return "Observation Orbit-{0} Camera {1} CCD {2}, LC {3}".format(
+            self.orbit.orbit_number,
+            self.camera,
+            self.ccd,
+            self.lightcurve_id
+        )
 
     @classmethod
     def upsert_q(cls):
