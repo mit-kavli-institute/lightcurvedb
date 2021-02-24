@@ -24,7 +24,8 @@ class LightcurveFeeder(Process):
         config=None,
         process_kwargs=None,
     ):
-        super(LightcurveFeeder, self).__init__(daemon=True)
+        super(LightcurveFeeder, self).__init__()
+        self.daemon = True
         self.id_queue = id_queue
         self.result_queue = result_queue
         self.columns = columns
