@@ -9,13 +9,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import relationship
 
 
-class Observation(QLPReference, Blobable, Partitionable("hash")):
+class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
     """
     This class allows easy queries between lightcurves and
     their observations per orbit.
     """
 
-    __tablename__ = "complete_observations"
+    __tablename__ = "observations"
 
     lightcurve_id = Column(BigInteger, primary_key=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
@@ -27,7 +27,7 @@ class Observation(QLPReference, Blobable, Partitionable("hash")):
         index=True,
     )
 
-    lightcurve = relationship("Lightcurve", back_populates, "observations")
+    lightcurve = relationship("Lightcurve", back_populates="observations")
     orbit = relationship("Orbit", back_populates="observations")
 
     @classmethod
