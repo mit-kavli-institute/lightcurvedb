@@ -26,7 +26,7 @@ def Partitionable(partition_type, *columns):
     Parameters
     ----------
     partition_type: str
-        The partition type, for PSQL 12 this can be ``range``, ``values``,
+        The partition type, for PSQL 12 this can be ``range``, ``list``,
         ``hash``, and some others. Please reference the postgresql
         partitioning documentation.
     *columns : Variable str parameter
@@ -47,8 +47,10 @@ def Partitionable(partition_type, *columns):
             ),
             "extend_existing": True,
         }
+        __partitioning_type__ = partition_type.lower()
 
-        def emit_new_partition(self, constraint_str):
+        @classmethod
+        def emit_new_partition(cls, table_identifier, constraint_str):
             """
             Tell SQLAlchemy DDL to create a new partition. Emits an
             SQLAlchemy DDL object to be executed. No validation is made
@@ -57,11 +59,19 @@ def Partitionable(partition_type, *columns):
 
             Parameters
             ----------
+            table_identifier : str
+                The unique suffix to have the partition tablename be under.
             constraint_str : str
                 The constraint rule to apply
 
             """
-            raise NotImplementedError
+            PARENT_TBL = cls.__tablename__
+            PATTERN = "CREATE TABLE {0}_{{0}} PARTITION OF {0} FOR VALUES IN ({{1}})".format(
+                PARENT_TBL
+            )
+
+            ddl_str = PATTERN.format(table_identifier, constraint_str)
+            return DDL(ddl_str)
 
         @hybrid_property
         def partition_oids(self):

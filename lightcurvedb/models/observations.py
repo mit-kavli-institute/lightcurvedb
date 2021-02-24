@@ -1,37 +1,49 @@
 import os
 
-from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import QLP_ORBITS
 from lightcurvedb.core.datastructures.blob import Blobable
+from lightcurvedb.core.partitioning import Partitionable
 from sqlalchemy import BigInteger, Column, ForeignKey, SmallInteger, bindparam
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 
-class Observation(QLPModel, Blobable):
+class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
     """
     This class allows easy queries between lightcurves and
     their observations per orbit.
     """
 
     __tablename__ = "observations"
+    __abstract__ = False
 
-    tic_id = Column(BigInteger, primary_key=True, nullable=False)
+    lightcurve_id = Column(ForeignKey("lightcurves.id", ondelete="CASCADE"), primary_key=True, nullable=False)
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=False)
     orbit_id = Column(
         ForeignKey("orbits.id", ondelete="RESTRICT"),
         primary_key=True,
         nullable=False,
+        index=True,
     )
 
+    lightcurve = relationship("Lightcurve", back_populates="observations")
     orbit = relationship("Orbit", back_populates="observations")
+
+    def __repr__(self):
+        return "Observation Orbit-{0} Camera {1} CCD {2}, LC {3}".format(
+            self.orbit.orbit_number,
+            self.camera,
+            self.ccd,
+            self.lightcurve_id
+        )
 
     @classmethod
     def upsert_q(cls):
         q = insert(cls).values(
             {
-                cls.tic_id: bindparam("tic_id"),
+                cls.lightcurve_id: bindparam("lightcurve_id"),
                 cls.camera: bindparam("camera"),
                 cls.ccd: bindparam("ccd"),
                 cls.orbit_id: bindparam("orbit_id"),
