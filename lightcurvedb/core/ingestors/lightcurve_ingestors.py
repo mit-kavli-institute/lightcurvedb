@@ -4,9 +4,15 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from lightcurvedb.models import Lightcurve, Observation, Orbit
+from lightcurvedb.models import (
+    Lightcurve,
+    Observation,
+    Orbit,
+    Aperture,
+    LightcurveType,
+)
 from lightcurvedb.core.ingestors.temp_table import FileObservation
-from sqlalchemy import text
+from sqlalchemy import text, distinct
 from functools import lru_cache
 
 
@@ -167,24 +173,25 @@ def get_ingestion_plan(
     tic_mask=None,
     invert_mask=False,
 ):
-    db_obs_q = db.query(Observation.tic_id, Orbit.orbit_number).join(
-        Observation.orbit
-    )
-    cache_obs_q = cache.query(FileObservation)
+
+    cache_subquery = cache.query(distinct(FileObservation.tic_id))
+    db_subquery = db.query(distinct(Observation.lightcurve_id))
 
     if orbits:
-        db_obs_q = db_obs_q.filter(Orbit.orbit_number.in_(orbits))
-        cache_obs_q = cache_obs_q.filter(
+        db_subquery = db_subquery.filter(Orbit.orbit_number.in_(orbits))
+        cache_subquery = cache_subquery.filter(
             FileObservation.orbit_number.in_(orbits)
         )
 
     if cameras:
-        db_obs_q = db_obs_q.filter(Observation.camera.in_(cameras))
-        cache_obs_q = cache_obs_q.filter(FileObservation.camera.in_(cameras))
+        db_subquery = db_subquery.filter(Observation.camera.in_(cameras))
+        cache_subquery = cache_subquery.filter(
+            FileObservation.camera.in_(cameras)
+        )
 
     if ccds:
-        db_obs_q = db_obs_q.filter(Observation.ccd.in_(ccds))
-        cache_obs_q = cache_obs_q.filter(FileObservation.ccd.in_(ccds))
+        db_subquery = db_subquery.filter(Observation.ccd.in_(ccds))
+        cache_subquery = cache_subquery.filter(FileObservation.ccd.in_(ccds))
 
     if tic_mask:
         db_tic_filter = (
@@ -197,20 +204,51 @@ def get_ingestion_plan(
             if invert_mask
             else FileObservation.tic_id.in_(tic_mask)
         )
-        db_obs_q = db_obs_q.filter(db_tic_filter)
-        cache_obs_q = cache_obs_q.filter(cache_tic_filter)
+        db_subquery = db_subquery.filter(db_tic_filter)
+        cache_subquery = cache_subquery.filter(cache_tic_filter)
 
-    seen_cache = set(db_obs_q)
+    seen_cache = set(
+        db.query(Observation.lightcurve_id, Orbit.orbit_number)
+        .join(Observation.orbit)
+        .filter(Observation.lightcurve_id.in_(db_subquery.subquery()))
+    )
+
+    relevant_ids = set(row[0] for row in seen_cache)
+    id_map = {
+        (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)
+        for lc in db.lightcurves.filter(Lightcurve.id.in_(relevant_ids))
+    }
+    apertures = [ap.name for ap in db.query(Aperture)]
+    lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
 
     plan = []
+    cur_tmp_id = -1
 
-    for file_obs in cache_obs_q:
-        key = (file_obs.tic_id, file_obs.orbit_number)
-        if key in seen_cache:
-            continue
+    for file_obs in cache.query(FileObservation).filter(
+        FileObservation.tic_id.in_(cache_subquery.subquery())
+    ):
+        for ap, lc_t in product(apertures, lightcurve_types):
+            lc_key = (file_obs.tic_id, ap, lc_t)
+            try:
+                id_ = id_map[lc_key]
+            except KeyError:
+                id_ = cur_tmp_id
+                id_map[lc_key] = id_
+                cur_tmp_id -= 1
 
-        plan.append(file_obs)
-        seen_cache.add((file_obs.tic_id, file_obs.orbit_number))
+            ingest_job = {
+                "lightcurve_id": id_,
+                "tic_id": file_obs.tic_id,
+                "aperture": ap,
+                "lightcurve_type": lc_t,
+                "orbit": orbit,
+                "camera": file_obs.camera,
+                "ccd": file_obs.ccd,
+                "file_path": file_obs.file_path,
+            }
+
+            plan.append(file_obs)
+            seen_cache.add((file_obs.tic_id, file_obs.orbit_number))
     return plan
 
 

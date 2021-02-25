@@ -15,10 +15,10 @@ from .metrics import QLPProcess, QLPAlteration
 # Configure relationships to avoid circular dependencies
 # Observation.lightcurve = _rel(Lightcurve, back_populates="observations")
 # Observation.orbit = _rel(Orbit, back_populates="observations")
-# 
+#
 # Lightcurve.observations = _rel(Observation, back_populates="lightcurve")
 # Lightcurve.orbits = _ap("observations", "orbit")
-# 
+#
 # Orbit.observations = _rel(Observation, back_populates="orbit")
 # Orbit.lightcurves = _ap("observations", "lightcurve")
 
