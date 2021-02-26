@@ -218,6 +218,7 @@ class Lightcurve(QLPDataProduct):
     observations = relationship(Observation, back_populates="lightcurve")
 
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
+
     def __len__(self):
         """
         Returns

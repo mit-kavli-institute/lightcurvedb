@@ -66,7 +66,7 @@ def _yield_data(func, columns, ids, db_config_override=None, n_threads=None):
     workers = []
     m = Manager()
     id_queue = m.Queue()
-    result_queue = m.Queue()
+    result_queue = m.Queue(maxsize=1000)
     columns = columns if columns else Lightpoint.get_columns()
 
     # Filter out input signals which are used for IO control

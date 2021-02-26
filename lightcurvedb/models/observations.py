@@ -18,7 +18,11 @@ class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
     __tablename__ = "observations"
     __abstract__ = False
 
-    lightcurve_id = Column(ForeignKey("lightcurves.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    lightcurve_id = Column(
+        ForeignKey("lightcurves.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
     camera = Column(SmallInteger, index=True, nullable=False)
     ccd = Column(SmallInteger, index=True, nullable=False)
     orbit_id = Column(
@@ -33,10 +37,7 @@ class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
 
     def __repr__(self):
         return "Observation Orbit-{0} Camera {1} CCD {2}, LC {3}".format(
-            self.orbit.orbit_number,
-            self.camera,
-            self.ccd,
-            self.lightcurve_id
+            self.orbit.orbit_number, self.camera, self.ccd, self.lightcurve_id
         )
 
     @classmethod

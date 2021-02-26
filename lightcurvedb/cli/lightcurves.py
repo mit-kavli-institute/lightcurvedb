@@ -6,15 +6,13 @@ from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
+from lightcurvedb.models import Lightcurve
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.lightpoint import (
-    get_merge_jobs,
-    get_jobs_by_tic,
-    ingest_merge_jobs,
-)
+from lightcurvedb.core.ingestors.jobs import IngestionPlan
+from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
 from lightcurvedb.core.ingestors.lightcurve_ingestors import get_ingestion_plan
 
 
@@ -48,11 +46,14 @@ def lightcurve(ctx):
 def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 
     cache = IngestionCache()
-    click.echo("Connected to ingestion cache, determining filepaths")
-    jobs = list(
-        get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=fillgaps)
-    )
-    click.echo("Obtained {0} jobs to perform".format(len(jobs)))
+    with ctx.obj["dbconf"] as db:
+        plan = IngestionPlan(
+            db, cache, orbits=orbits, cameras=cameras, ccds=ccds
+        )
+        click.echo(plan)
+        plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
+
+    jobs = plan.get_jobs_by_partition()
 
     ingest_merge_jobs(
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
@@ -63,32 +64,23 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 @lightcurve.command()
 @click.pass_context
 @click.argument("tics", type=int, nargs=-1)
-@click.option("--only-orbit", "-o", "orbits", type=int, multiple=True)
-@click.option("--aperture", "-a", "apertures", type=str, multiple=True)
-@click.option("--type", "-t", "types", type=str, multiple=True)
-@click.option("--n-processes", default=16, type=click.IntRange(min=1))
+@click.option("--n-processes", default=1, type=click.IntRange(min=1))
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
-def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
-    if not tics:
-        click.echo("No tic ids passed...")
-        return
+def ingest_tic(ctx, tics, n_processes, fillgaps):
     cache = IngestionCache()
-    click.echo("Connected to ingestion cache, determining filepaths")
-    jobs = list(
-        get_jobs_by_tic(
-            ctx,
-            cache,
-            tics,
-            fillgaps=fillgaps,
-            orbits=orbits,
-            apertures=apertures,
-            types=types,
+    with ctx.obj["dbconf"] as db:
+        plan = IngestionPlan(
+            db, cache, tic_mask=tics, cameras=cameras, ccds=ccds
         )
-    )
-    click.echo("Obtained {0} jobs to perform".format(len(jobs)))
+        click.echo(plan)
+        plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
+
+    jobs = plan.get_jobs_by_partition()
+
     ingest_merge_jobs(
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
     )
+    click.echo("Done!")
 
 
 @lightcurve.command()
@@ -99,17 +91,10 @@ def ingest_tic(ctx, tics, orbits, apertures, types, n_processes, fillgaps):
 def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = get_ingestion_plan(
-            db, cache, orbits=orbits, cameras=cameras, ccds=ccds
+        plan = IngestionPlan(
+            db, cache, orbits=orbits, cameras=cameras, ccds=ccds,
         )
-        df = pd.DataFrame(obs.to_dict for obs in plan)
-
-    try:
-        grouped_summary = df.groupby(["orbit_number", "camera", "ccd"]).size()
-        click.echo("Orbital Summary")
-        click.echo(grouped_summary)
-    except KeyError:
-        click.echo(df)
+    click.echo(plan)
 
 
 @lightcurve.command()
@@ -120,16 +105,23 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
 def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = get_ingestion_plan(
-            db, cache, tic_mask=tic_ids, cameras=cameras, ccds=ccds
+        plan = IngestionPlan(
+            db, cache, cameras=cameras, ccds=ccds, tic_mask=tic_ids
         )
-        df = pd.DataFrame(obs.to_dict for obs in plan)
+    click.echo(plan)
 
-    try:
-        click.echo("TIC Plan Summary")
-        click.echo(df)
-    except KeyError:
-        click.echo(df)
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("lightcurve_ids", type=int, nargs=-1)
+def view_lightcurve_id_ingestion_plan(ctx, lightcurve_ids):
+    cache = IngestionCache()
+    with ctx.obj["dbconf"] as db:
+        tics = db.query(Lightcurve.tic_id).filter(
+            Lightcurve.id.in_(lightcurve_ids)
+        )
+        plan = IngestionPlan(db, cache, tic_mask=set(tic for tic, in tics))
+    click.echo(plan)
 
 
 @lightcurve.group()
