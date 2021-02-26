@@ -185,7 +185,7 @@ class IngestionPlan(object):
 
     def assign_new_lightcurves(self, db, fill_id_gaps=False):
         new_jobs = self._df[self._df.lightcurve_id < 0]
-        new_ids = set(new_jobs.lightcurve_id.distinct())
+        new_ids = set(new_jobs.lightcurve_id)
 
         if len(new_ids) == 0:
             echo("No temporary lightcurve ids found")
@@ -253,7 +253,7 @@ class IngestionPlan(object):
 
     def get_jobs_by_partition(self):
         self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_id"], inplace=True
+            subset=["lightcurve_id", "orbit_number"], inplace=True
         )
         buckets = defaultdict(list)
 
