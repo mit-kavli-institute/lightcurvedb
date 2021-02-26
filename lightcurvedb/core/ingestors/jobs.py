@@ -9,8 +9,10 @@ from lightcurvedb.models import (
     Aperture,
     LightcurveType,
 )
+from lightcurvedb.util.iter import chunkify
 from collections import namedtuple, defaultdict
 from sqlalchemy import distinct
+from sqlalchemy.orm import joinedload
 from click import echo
 from tqdm import tqdm
 from itertools import product
@@ -48,25 +50,24 @@ class IngestionPlan(object):
         invert_mask=False,
     ):
         echo("Constructing LightcurveDB and Cache queries")
+
         cache_subquery = cache.query(distinct(FileObservation.tic_id))
-        db_subquery = db.query(Observation.lightcurve_id).join(
-            Observation.orbit
-        )
+        db_lc_query = db.query(Lightcurve).join(Lightcurve.observations)
 
         if orbits:
-            db_subquery = db_subquery.filter(Orbit.orbit_number.in_(orbits))
+            db_lc_query = db_lc_query.join(Observation.orbit).filter(Orbit.orbit_number.in_(orbits))
             cache_subquery = cache_subquery.filter(
                 FileObservation.orbit_number.in_(orbits)
             )
 
         if cameras:
-            db_subquery = db_subquery.filter(Observation.camera.in_(cameras))
+            db_lc_query = db_lc_query.filter(Observation.camera.in_(cameras))
             cache_subquery = cache_subquery.filter(
                 FileObservation.camera.in_(cameras)
             )
 
         if ccds:
-            db_subquery = db_subquery.filter(Observation.ccd.in_(ccds))
+            db_lc_query = db_lc_query.filter(Observation.ccd.in_(ccds))
             cache_subquery = cache_subquery.filter(
                 FileObservation.ccd.in_(ccds)
             )
@@ -82,40 +83,53 @@ class IngestionPlan(object):
                 if invert_mask
                 else FileObservation.tic_id.in_(tic_mask)
             )
-            db_subquery = db_subquery.join(Observation.lightcurve).filter(
+            db_lc_query = db_subquery.filter(
                 db_tic_filter
             )
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
-        echo("Performing observational diff")
-        ids = [id_ for id_, in db_subquery.distinct()]
-        echo("Obtained {0} distinct lightcurve ids".format(len(ids)))
-        seen_cache = set(
-            db.query(Observation.lightcurve_id, Orbit.orbit_number)
-            .join(Observation.orbit)
-            .filter(Observation.lightcurve_id.in_(ids))
+        echo("Querying file cache")
+        file_observations = cache.query(FileObservation).filter(FileObservation.tic_id.in_(cache_subquery.subquery())).all()
+        tic_ids = {file_obs.tic_id for file_obs in file_observations}
+        relevant_orbit_check = {file_obs.orbit_number for file_obs in file_observations}
+
+        echo("Getting current observations from database")
+        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+        current_obs_q = (
+            db
+            .query(Observation.lightcurve_id, Observation.orbit_id)
+            .join(Observation.lightcurve)
+            .filter(
+                Lightcurve.tic_id.in_(tic_ids),
+                Observation.orbit_id.in_({orbit_map[orbit] for orbit in relevant_orbit_check})
+            )
         )
 
-        echo("Building lightcurve map")
-        id_map = {
-            (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
-            for lc in db.lightcurves.filter(Lightcurve.id.in_(ids))
-        }
+        seen_cache = set(tqdm(current_obs_q, unit="observations"))
+
+        echo("Performing lightcurve query")
         apertures = [ap.name for ap in db.query(Aperture)]
         lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
+
+        lightcurves = db.query(Lightcurve)
+        lightcurves = lightcurves.filter(Lightcurve.tic_id.in_(tic_ids))
+
+        id_map = {}
+        echo("Reading lightcurves for existing observations and ID mapping")
+        for lc in tqdm(lightcurves, unit="lightcurves"):
+            id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
 
         plan = []
         cur_tmp_id = -1
 
         echo("Building job list")
-        for file_obs in cache.query(FileObservation).filter(
-            FileObservation.tic_id.in_(cache_subquery.subquery())
-        ):
+        for file_obs in tqdm(file_observations):
+            orbit_id = orbit_map[file_obs.orbit_number]
             for ap, lc_t in product(apertures, lightcurve_types):
                 lc_key = (file_obs.tic_id, ap, lc_t)
                 try:
                     id_ = id_map[lc_key]
-                    if (id_, file_obs.orbit_number) in seen_cache:
+                    if (id_, orbit_id) in seen_cache:
                         continue
                 except KeyError:
                     id_ = cur_tmp_id

@@ -46,9 +46,9 @@ def lightcurve(ctx):
 def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 
     cache = IngestionCache()
-    with ctx["dbconf"] as db:
+    with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
-            cache, db, orbits=orbits, cameras=cameras, ccds=ccds
+            db, cache, orbits=orbits, cameras=cameras, ccds=ccds
         )
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
@@ -68,9 +68,9 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 def ingest_tic(ctx, tics, n_processes, fillgaps):
     cache = IngestionCache()
-    with ctx["dbconf"] as db:
+    with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
-            cache, db, tic_mask=tics, cameras=cameras, ccds=ccds
+            db, cache, tic_mask=tics, cameras=cameras, ccds=ccds
         )
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
