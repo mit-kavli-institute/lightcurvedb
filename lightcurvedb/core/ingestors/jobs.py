@@ -55,7 +55,9 @@ class IngestionPlan(object):
         db_lc_query = db.query(Lightcurve).join(Lightcurve.observations)
 
         if orbits:
-            db_lc_query = db_lc_query.join(Observation.orbit).filter(Orbit.orbit_number.in_(orbits))
+            db_lc_query = db_lc_query.join(Observation.orbit).filter(
+                Orbit.orbit_number.in_(orbits)
+            )
             cache_subquery = cache_subquery.filter(
                 FileObservation.orbit_number.in_(orbits)
             )
@@ -83,25 +85,30 @@ class IngestionPlan(object):
                 if invert_mask
                 else FileObservation.tic_id.in_(tic_mask)
             )
-            db_lc_query = db_subquery.filter(
-                db_tic_filter
-            )
+            db_lc_query = db_subquery.filter(db_tic_filter)
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
         echo("Querying file cache")
-        file_observations = cache.query(FileObservation).filter(FileObservation.tic_id.in_(cache_subquery.subquery())).all()
+        file_observations = (
+            cache.query(FileObservation)
+            .filter(FileObservation.tic_id.in_(cache_subquery.subquery()))
+            .all()
+        )
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
-        relevant_orbit_check = {file_obs.orbit_number for file_obs in file_observations}
+        relevant_orbit_check = {
+            file_obs.orbit_number for file_obs in file_observations
+        }
 
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
-            db
-            .query(Observation.lightcurve_id, Observation.orbit_id)
+            db.query(Observation.lightcurve_id, Observation.orbit_id)
             .join(Observation.lightcurve)
             .filter(
                 Lightcurve.tic_id.in_(tic_ids),
-                Observation.orbit_id.in_({orbit_map[orbit] for orbit in relevant_orbit_check})
+                Observation.orbit_id.in_(
+                    {orbit_map[orbit] for orbit in relevant_orbit_check}
+                ),
             )
         )
 
