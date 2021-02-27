@@ -147,11 +147,11 @@ class PartitionConsumer(LightpointProcessor):
         return lp, timings
 
     def ingest_data(self, partition_relname, lightpoints, observations):
-        result = {}
         with db_from_config() as db:
             conn = db.session.connection().connection
-            conn.execute("SET LOCAL work_mem TO '2GB'")
-            conn.execute("SET LOCAL synchronous_commit = OFF")
+            with conn.cursor() as cursor:
+                cursor.execute("SET LOCAL work_mem TO '2GB'")
+                cursor.execute("SET LOCAL synchronous_commit = OFF")
 
             mgr = CopyManager(
                 conn, partition_relname, Lightpoint.get_columns()
@@ -168,10 +168,10 @@ class PartitionConsumer(LightpointProcessor):
 
             mgr.threading_copy(observations)
 
-            result["copy_elapsed"] = time() - stamp
+            copy_elapsed = time() - stamp
 
             conn.commit()
-        return result
+        return copy_elapsed
 
     def process_job(self, partition_job):
         lps = []
@@ -179,6 +179,7 @@ class PartitionConsumer(LightpointProcessor):
         timings = []
         validation_time = 0
         total_points = 0
+        copy_elapsed = 0
 
         optimized_path = sorted(
             partition_job.single_merge_jobs,
@@ -186,7 +187,6 @@ class PartitionConsumer(LightpointProcessor):
         )
 
         for lc_job in optimized_path:
-            context = get_components(h5file)
             lp, timing = self.process_h5(
                 lc_job.lightcurve_id,
                 lc_job.aperture,
@@ -201,7 +201,7 @@ class PartitionConsumer(LightpointProcessor):
             validation_time += time() - stamp
 
             if len(lp) > 0:
-                orbit_id = self.orbit_map[context["orbit_number"]]
+                orbit_id = self.orbit_map[lc_job.orbit_number]
                 observations = [
                     (
                         lc_job.lightcurve_id,
@@ -211,13 +211,14 @@ class PartitionConsumer(LightpointProcessor):
                     )
                 ]
 
-                ingest_data(job.partition_relname, lp, observations)
+                copy_elapsed += self.ingest_data(partition_job.partition_relname, lp, observations)
                 total_points += len(lp)
 
         result = dict(pd.DataFrame(timings).sum())
-        result["relname"] = job.partition_relname
+        result["relname"] = partition_job.partition_relname
         result["n_lightpoints"] = total_points
         result["validation"] = validation_time
+        result["copy_elapsed"] = copy_elapsed
 
         return result
 

@@ -263,11 +263,11 @@ class IngestionPlan(object):
             relname = "partitions.lightpoints_{0}_{1}".format(
                 partition_start, partition_end
             )
-            buckets[partition_start].append(SingleMergeJob(**row))
+            buckets[relname].append(SingleMergeJob(**row))
 
         partition_jobs = []
         for partition_relname, jobs in buckets.items():
             partition_jobs.append(
-                PartitionJob(partition_relname=relname, single_merge_jobs=jobs)
+                PartitionJob(partition_relname=partition_relname, single_merge_jobs=jobs)
             )
         return partition_jobs
