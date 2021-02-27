@@ -106,9 +106,6 @@ class IngestionPlan(object):
             .join(Observation.lightcurve)
             .filter(
                 Lightcurve.tic_id.in_(tic_ids),
-                Observation.orbit_id.in_(
-                    {orbit_map[orbit] for orbit in relevant_orbit_check}
-                ),
             )
         )
 

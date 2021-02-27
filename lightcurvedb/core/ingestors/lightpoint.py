@@ -4,13 +4,14 @@ from collections import defaultdict, namedtuple
 from functools import lru_cache
 from itertools import product
 from multiprocessing import Manager, Process
-from time import time
+from time import time, sleep
 
 import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -230,12 +231,23 @@ class PartitionConsumer(LightpointProcessor):
         )
 
         job = self.job_queue.get()
+        timeout = 1
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", r"All-NaN (slice|axis) encountered"
             )
             while job is not None:
-                results = self.process_job(job)
+                for _ in range(20):
+                    try:
+                        results = self.process_job(job)
+                        break
+                    except OperationalError:
+                        sleep(timeout)
+                        timeout *= 2
+                        continue
+                    self.job_queue.task_done()
+                    raise RuntimeError("Database too busy, worker exiting prematurely")
+
                 self.result_queue.put(results)
                 self.job_queue.task_done()
                 job = self.job_queue.get()
