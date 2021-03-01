@@ -201,7 +201,7 @@ class PartitionConsumer(LightpointProcessor):
             lp = lp[~lp.index.duplicated(keep="last")]
             validation_time += time() - stamp
 
-            if len(lp) > 0:
+            if not lp.empty():
                 orbit_id = self.orbit_map[lc_job.orbit_number]
                 observations = [
                     (
