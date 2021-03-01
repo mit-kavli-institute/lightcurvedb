@@ -212,7 +212,9 @@ class PartitionConsumer(LightpointProcessor):
                     )
                 ]
 
-                copy_elapsed += self.ingest_data(partition_job.partition_relname, lp, observations)
+                copy_elapsed += self.ingest_data(
+                    partition_job.partition_relname, lp, observations
+                )
                 total_points += len(lp)
 
         result = dict(pd.DataFrame(timings).sum())
@@ -246,7 +248,9 @@ class PartitionConsumer(LightpointProcessor):
                         timeout *= 2
                         continue
                     self.job_queue.task_done()
-                    raise RuntimeError("Database too busy, worker exiting prematurely")
+                    raise RuntimeError(
+                        "Database too busy, worker exiting prematurely"
+                    )
 
                 self.result_queue.put(results)
                 self.job_queue.task_done()

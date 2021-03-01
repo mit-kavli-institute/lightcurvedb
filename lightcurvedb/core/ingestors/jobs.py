@@ -104,9 +104,7 @@ class IngestionPlan(object):
         current_obs_q = (
             db.query(Observation.lightcurve_id, Observation.orbit_id)
             .join(Observation.lightcurve)
-            .filter(
-                Lightcurve.tic_id.in_(tic_ids),
-            )
+            .filter(Lightcurve.tic_id.in_(tic_ids),)
         )
 
         seen_cache = set(tqdm(current_obs_q, unit=" observations"))
@@ -272,6 +270,8 @@ class IngestionPlan(object):
         partition_jobs = []
         for partition_relname, jobs in buckets.items():
             partition_jobs.append(
-                PartitionJob(partition_relname=partition_relname, single_merge_jobs=jobs)
+                PartitionJob(
+                    partition_relname=partition_relname, single_merge_jobs=jobs
+                )
             )
         return partition_jobs
