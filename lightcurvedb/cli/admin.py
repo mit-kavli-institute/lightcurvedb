@@ -47,23 +47,31 @@ def recover(maximum_missing, lightcurve_ids):
         )
 
         q = (
-            db.query(distinct(Lightpoint.lightcurve_id, Frame.orbit_id))
-            .join(
-                Lightpoint,
-                Observation.lightcurve_id == Lightpoint.lightcurve_id,
+            db
+            .query(
+                Lightpoint.lightcurve_id,
+                Frame.orbit_id,
             )
             .outerjoin(
                 Frame,
+                Lightpoint.cadence == Frame.cadence
+            )
+            .join(
+                Observation,
                 and_(
-                    Observation.orbit_id == Frame.orbit_id,
-                    Observation.camera == Frame.camera,
-                    Frame.cadence == Lightpoint.cadence,
-                ),
+                    Frame.orbit_id == Observation.orbit_id,
+                    Frame.camera == Observation.camera,
+                    Observation.lightcurve_id == Lightpoint.lightcurve_id,
+                )
             )
             .filter(
                 Lightpoint.lightcurve_id.in_(lightcurve_ids),
                 Lightpoint.cadence == None,
                 Frame.frame_type_id == "Raw FFI",
+            )
+            .distinct(
+                Lightpoint.lightcurve_id,
+                Frame.orbit_id
             )
         )
 
@@ -197,14 +205,12 @@ def delete_invalid_orbit_observations(
             .distinct()
         )
         click.echo("Querying ids")
-        for (id_,) in q:
+        for id_, in q:
             if id_ not in mask:
                 ids.append(id_)
             else:
                 skipped += 1
-    click.echo(
-        "Ignoring {0} ids as they have already been processed".format(skipped)
-    )
+    click.echo("Ignoring {0} ids as they have already been processed".format(skipped))
 
     click.echo("Gonna process {0} lightcurves".format(len(ids)))
     jobs = list(chunkify(ids, 1000))
@@ -213,11 +219,7 @@ def delete_invalid_orbit_observations(
         results = pool.imap_unordered(func, jobs)
         with tqdm(results, total=len(jobs)) as bar:
             for result in bar:
-                bar.write(
-                    "{0} OK lightcurves, {1} bad lightcurves".format(
-                        len(result[0]), len(result[1])
-                    )
-                )
+                bar.write("{0} OK lightcurves, {1} bad lightcurves".format(len(result[0]), len(result[1])))
             bar.update(1)
 
 
