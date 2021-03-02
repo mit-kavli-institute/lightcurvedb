@@ -172,6 +172,7 @@ class PartitionConsumer(LightpointProcessor):
             copy_elapsed = time() - stamp
 
             conn.commit()
+
         return copy_elapsed
 
     def process_job(self, partition_job):
@@ -208,21 +209,21 @@ class PartitionConsumer(LightpointProcessor):
 
             if not lp.empty:
                 orbit_id = self.orbit_map[lc_job.orbit_number]
-                observations = [
+                observations.append(
                     (
                         lc_job.lightcurve_id,
                         orbit_id,
                         lc_job.camera,
                         lc_job.ccd,
                     )
-                ]
-
-                copy_elapsed += self.ingest_data(
-                    partition_job.partition_relname, lp, observations
                 )
-                total_points += len(lp)
-                seen_cache.add((lc_job.lightcurve_id, lc_job.orbit_number))
+                lps.append(lp)
 
+        copy_elapsed += self.ingest_data(
+            partition_job.partition_relname, pd.concat(lps), observations
+        )
+
+        total_points = sum([len(lp) for lp in lps])
         result = dict(pd.DataFrame(timings).sum())
         result["relname"] = partition_job.partition_relname
         result["n_lightpoints"] = total_points
@@ -245,19 +246,7 @@ class PartitionConsumer(LightpointProcessor):
                 "ignore", r"All-NaN (slice|axis) encountered"
             )
             while job is not None:
-                for _ in range(20):
-                    try:
-                        results = self.process_job(job)
-                        break
-                    except OperationalError:
-                        sleep(timeout)
-                        timeout *= 2
-                        continue
-                    self.job_queue.task_done()
-                    raise RuntimeError(
-                        "Database too busy, worker exiting prematurely"
-                    )
-
+                results = self.process_job(job)
                 self.result_queue.put(results)
                 self.job_queue.task_done()
                 job = self.job_queue.get()
