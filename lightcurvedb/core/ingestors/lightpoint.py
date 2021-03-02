@@ -182,12 +182,17 @@ class PartitionConsumer(LightpointProcessor):
         total_points = 0
         copy_elapsed = 0
 
+        seen_cache = set()
+
         optimized_path = sorted(
             partition_job.single_merge_jobs,
             key=lambda job: (job.lightcurve_id, job.orbit_number),
         )
 
         for lc_job in optimized_path:
+            if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
+                continue
+
             lp, timing = self.process_h5(
                 lc_job.lightcurve_id,
                 lc_job.aperture,
@@ -216,6 +221,7 @@ class PartitionConsumer(LightpointProcessor):
                     partition_job.partition_relname, lp, observations
                 )
                 total_points += len(lp)
+                seen_cache.add((lc_job.lightcurve_id, lc_job.orbit_number))
 
         result = dict(pd.DataFrame(timings).sum())
         result["relname"] = partition_job.partition_relname
