@@ -16,6 +16,7 @@ from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DisconnectionError
+from psycopg2 import connect
 
 
 DB_TYPE = "postgresql+psycopg2"
@@ -26,7 +27,7 @@ DEFAULT_ENGINE_KWARGS = {
 }
 
 
-def __config_to_url__(path):
+def __config_to_kwargs__(path):
     parser = ConfigParser()
     parser.read(path)
     kwargs = {
@@ -36,7 +37,12 @@ def __config_to_url__(path):
         "host": parser.get("Credentials", "database_host"),
         "port": parser.get("Credentials", "database_port"),
     }
-    return URL(DB_TYPE, **kwargs)
+    return kwargs
+
+
+def __config_to_url__(path):
+
+    return URL(DB_TYPE, **__config_to_kwargs__(path))
 
 
 def __register_process_guards__(engine):
@@ -82,3 +88,32 @@ def init_LCDB(uri, **kwargs):
     FACTORY = sessionmaker(bind=ENGINE)
 
     return FACTORY
+
+
+def psycopg_connection(uri_override=None):
+    """
+    Create a raw psycopg2 connection to a postgreSQL database using the
+    provided configuration path or using lightcurvedb's default config
+    path.
+
+    Parameters
+    ----------
+    uri_override: pathlike, optional
+        The path to a configuration file to configure a psycopg2 connection.
+        If not provided then lightcurvedb will use the default user
+        configuration path
+    Returns
+    -------
+    psycopg2.Connection
+    """
+    kwargs = __config_to_kwargs__(
+        uri_override if uri_override else __DEFAULT_PATH__
+    )
+
+    return connect(
+        dbname=kwargs["database"],
+        user=kwargs["username"],
+        password=kwargs["password"],
+        host=kwargs["host"],
+        port=kwargs["port"],
+    )

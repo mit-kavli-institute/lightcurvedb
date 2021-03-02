@@ -101,7 +101,7 @@ class DB(object):
         """
         if not self._active:
             if not self._session:
-                self._session = self.SessionClass()
+                self._session = self.__FACTORY__()
                 self._active = True
                 return self
         else:
@@ -122,7 +122,8 @@ class DB(object):
             Returns itself in a closed state.
         """
         if self._session is not None:
-            self.SessionClass.remove()
+            # self.SessionClass.remove()
+            self._session.close()
             self._session = None
             self._active = False
         else:

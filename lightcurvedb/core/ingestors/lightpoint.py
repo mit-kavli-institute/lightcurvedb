@@ -15,6 +15,7 @@ from sqlalchemy.exc import OperationalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
+from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.jobs import IngestionPlan, SingleMergeJob
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
@@ -148,31 +149,28 @@ class PartitionConsumer(LightpointProcessor):
         return lp, timings
 
     def ingest_data(self, partition_relname, lightpoints, observations):
-        with db_from_config() as db:
-            conn = db.session.connection().connection
-            with conn.cursor() as cursor:
-                cursor.execute("SET LOCAL work_mem TO '2GB'")
-                cursor.execute("SET LOCAL synchronous_commit = OFF")
+        conn = psycopg_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SET LOCAL work_mem TO '2GB'")
+            cursor.execute("SET LOCAL synchronous_commit = OFF")
 
-            mgr = CopyManager(
-                conn, partition_relname, Lightpoint.get_columns()
-            )
+        mgr = CopyManager(conn, partition_relname, Lightpoint.get_columns())
 
-            stamp = time()
-            mgr.threading_copy(lightpoints.to_records())
+        stamp = time()
+        mgr.threading_copy(lightpoints.to_records())
 
-            mgr = CopyManager(
-                conn,
-                Observation.__tablename__,
-                ["lightcurve_id", "orbit_id", "camera", "ccd"],
-            )
+        mgr = CopyManager(
+            conn,
+            Observation.__tablename__,
+            ["lightcurve_id", "orbit_id", "camera", "ccd"],
+        )
 
-            mgr.threading_copy(observations)
+        mgr.threading_copy(observations)
 
-            copy_elapsed = time() - stamp
+        copy_elapsed = time() - stamp
 
-            conn.commit()
-
+        conn.commit()
+        conn.close()
         return copy_elapsed
 
     def process_job(self, partition_job):
