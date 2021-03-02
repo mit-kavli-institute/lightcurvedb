@@ -104,12 +104,10 @@ class IngestionPlan(object):
         current_obs_q = (
             db.query(Observation.lightcurve_id, Observation.orbit_id)
             .join(Observation.lightcurve)
-            .filter(
-                Lightcurve.tic_id.in_(tic_ids),
-            )
+            .filter(Lightcurve.tic_id.in_(tic_ids),)
         )
 
-        seen_cache = set(tqdm(current_obs_q, unit="observations"))
+        seen_cache = set(tqdm(current_obs_q, unit=" observations"))
 
         echo("Performing lightcurve query")
         apertures = [ap.name for ap in db.query(Aperture)]
@@ -120,11 +118,13 @@ class IngestionPlan(object):
 
         id_map = {}
         echo("Reading lightcurves for existing observations and ID mapping")
-        for lc in tqdm(lightcurves, unit="lightcurves"):
+        for lc in tqdm(lightcurves, unit=" lightcurves"):
             id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
 
         plan = []
         cur_tmp_id = -1
+
+        self.ignored_jobs = 0
 
         echo("Building job list")
         for file_obs in tqdm(file_observations):
@@ -133,12 +133,14 @@ class IngestionPlan(object):
                 lc_key = (file_obs.tic_id, ap, lc_t)
                 try:
                     id_ = id_map[lc_key]
-                    if (id_, orbit_id) in seen_cache:
-                        continue
                 except KeyError:
                     id_ = cur_tmp_id
                     id_map[lc_key] = id_
                     cur_tmp_id -= 1
+
+                if (id_, orbit_id) in seen_cache:
+                    self.ignored_jobs += 1
+                    continue
 
                 ingest_job = {
                     "lightcurve_id": id_,
@@ -150,6 +152,7 @@ class IngestionPlan(object):
                     "ccd": file_obs.ccd,
                     "file_path": file_obs.file_path,
                 }
+                seen_cache.add((id_, orbit_id))
 
                 plan.append(ingest_job)
         self._df = pd.DataFrame(plan)
@@ -161,10 +164,11 @@ class IngestionPlan(object):
         Total jobs       = {1}
         Total partitions = {2}
         -------------------------------------------
-        Total existing lightcurves = {3}
-        Total new lightcurves =      {4}
+        Total existing lightcurves =     {3}
+        Total new lightcurves =          {4}
+        Total Ignored Jobs (Duplicate) = {5}
         ===========================================
-        # TICs split across cameras = {5}
+        # TICs split across cameras = {6}
         """
         if len(self._df) == 0:
             return "No Ingestion Plan. Everything looks to be in order."
@@ -177,6 +181,7 @@ class IngestionPlan(object):
             len(partitions),
             len(set(self._df[self._df.lightcurve_id > 0].lightcurve_id)),
             len(set(self._df[self._df.lightcurve_id < 0].lightcurve_id)),
+            self.ignored_jobs,
             len(self.targets_across_many_cameras),
         )
 
@@ -265,6 +270,8 @@ class IngestionPlan(object):
         partition_jobs = []
         for partition_relname, jobs in buckets.items():
             partition_jobs.append(
-                PartitionJob(partition_relname=partition_relname, single_merge_jobs=jobs)
+                PartitionJob(
+                    partition_relname=partition_relname, single_merge_jobs=jobs
+                )
             )
         return partition_jobs
