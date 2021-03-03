@@ -36,6 +36,7 @@ tabulate = "*"
 pgcopy = "*"
 psycopg2 = "*"
 black = "*"
+pyquaternion = "*"
 
 [requires]
 python_version = "3"
