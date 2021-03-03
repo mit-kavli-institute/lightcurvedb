@@ -3,9 +3,11 @@ Welcome to LightcurveDB's documentation!
 
 Installation
 ############
-Clone the repository onto the target machine using ``git``. And using the
-desired ``pip`` install the package by entering into the project's root
-directory and running ``pip install .``
+To install from git lab run:
+.. code-block:: console
+    pip install git+https://tessgit.mit.edu/wcfong/lightcurve-database.git
+
+See other :doc:`installation <installation.rst>` steps for specific computer contexts.
 
 Development
 ###########
