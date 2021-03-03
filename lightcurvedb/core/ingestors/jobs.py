@@ -1,5 +1,6 @@
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     allocate_lightcurve_ids,
+    get_missing_ids,
 )
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
@@ -9,10 +10,8 @@ from lightcurvedb.models import (
     Aperture,
     LightcurveType,
 )
-from lightcurvedb.util.iter import chunkify
 from collections import namedtuple, defaultdict
 from sqlalchemy import distinct
-from sqlalchemy.orm import joinedload
 from click import echo
 from tqdm import tqdm
 from itertools import product
@@ -85,7 +84,7 @@ class IngestionPlan(object):
                 if invert_mask
                 else FileObservation.tic_id.in_(tic_mask)
             )
-            db_lc_query = db_subquery.filter(db_tic_filter)
+            db_lc_query = db_lc_query.filter(db_tic_filter)
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
         echo("Querying file cache")
@@ -95,16 +94,15 @@ class IngestionPlan(object):
             .all()
         )
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
-        relevant_orbit_check = {
-            file_obs.orbit_number for file_obs in file_observations
-        }
 
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
             db.query(Observation.lightcurve_id, Observation.orbit_id)
             .join(Observation.lightcurve)
-            .filter(Lightcurve.tic_id.in_(tic_ids),)
+            .filter(
+                Lightcurve.tic_id.in_(tic_ids),
+            )
         )
 
         seen_cache = set(tqdm(current_obs_q, unit=" observations"))
@@ -204,7 +202,6 @@ class IngestionPlan(object):
         n_still_missing = len(new_ids) - len(usable_ids)
         n_still_missing = n_still_missing if n_still_missing >= 0 else 0
         usable_ids.update(allocate_lightcurve_ids(db, n_still_missing))
-        values_to_insert = []
 
         update_map = dict(zip(new_ids, usable_ids))
 
@@ -259,7 +256,7 @@ class IngestionPlan(object):
         )
         buckets = defaultdict(list)
 
-        for idx, row in self._df.iterrows():
+        for _, row in self._df.iterrows():
             partition_start = (row["lightcurve_id"] // 1000) * 1000
             partition_end = partition_start + 1000
             relname = "partitions.lightpoints_{0}_{1}".format(

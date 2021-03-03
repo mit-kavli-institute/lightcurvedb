@@ -66,9 +66,11 @@ def Partitionable(partition_type, *columns):
 
             """
             PARENT_TBL = cls.__tablename__
-            PATTERN = "CREATE TABLE {0}_{{0}} PARTITION OF {0} FOR VALUES IN ({{1}})".format(
-                PARENT_TBL
-            )
+            PATTERN = (
+                "CREATE TABLE {0}_{{0}} "
+                "PARTITION OF {0} FOR VALUES IN "
+                "({{1}})"
+            ).format(PARENT_TBL)
 
             ddl_str = PATTERN.format(table_identifier, constraint_str)
             return DDL(ddl_str)

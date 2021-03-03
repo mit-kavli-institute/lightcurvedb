@@ -4,7 +4,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from glob import glob
 from functools import partial
-from sqlalchemy import text, func, and_, distinct
+from sqlalchemy import text, and_
 from tabulate import tabulate
 from multiprocessing import Pool
 
@@ -17,7 +17,6 @@ from lightcurvedb.models import (
     Lightcurve,
 )
 from lightcurvedb.cli.types import CommaList
-from lightcurvedb.io.feeder import yield_lightcurve_data
 from lightcurvedb.util.iter import chunkify
 
 from . import lcdbcli
@@ -36,18 +35,15 @@ def get_mask(scratch_dir="/scratch/tmp/lcdb_ingestion"):
 
 
 def recover(maximum_missing, lightcurve_ids):
-    pid = os.getpid()
+    # pid = os.getpid()
     to_ingest = []
     fine = []
     with db:
-        cadence_map = dict(
-            db.query(Frame.cadence, Orbit.orbit_number)
-            .join(Frame.orbit)
-            .filter(Frame.frame_type_id == "Raw FFI")
-        )
-
         q = (
-            db.query(Lightpoint.lightcurve_id, Frame.orbit_id,)
+            db.query(
+                Lightpoint.lightcurve_id,
+                Frame.orbit_id,
+            )
             .outerjoin(Frame, Lightpoint.cadence == Frame.cadence)
             .join(
                 Observation,
@@ -59,7 +55,7 @@ def recover(maximum_missing, lightcurve_ids):
             )
             .filter(
                 Lightpoint.lightcurve_id.in_(lightcurve_ids),
-                Lightpoint.cadence == None,
+                Lightpoint.cadence is None,
                 Frame.frame_type_id == "Raw FFI",
             )
             .distinct(Lightpoint.lightcurve_id, Frame.orbit_id)
@@ -69,12 +65,9 @@ def recover(maximum_missing, lightcurve_ids):
 
         bulk = defaultdict(list)
         for lightcurve_id, orbit_id in q.yield_per(10):
-            existing_cadences = db.query(Lightpoint.cadence).filter_by(
-                lightcurve_id=lightcurve_id
-            )
             if lightcurve_id in fine:
                 fine.remove(lightcurve_id)
-                to_reingest.append(lightcurve_id)
+                to_ingest.append(lightcurve_id)
 
             bulk[lightcurve_id].append(orbit_id)
         print(bulk)
@@ -265,7 +258,7 @@ def delete_invalid_tic_observations(ctx, tics, maximum_missing):
 
             if len(missing_cadences) > maximum_missing:
                 orbits_missing = sorted(
-                    set(cadence_map[cadence] for cadence, in missing_cadences)
+                    {cadence_map[cadence] for cadence, in missing_cadences}
                 )
                 click.echo(
                     "Lightcurve {0} missing orbits {1}".format(

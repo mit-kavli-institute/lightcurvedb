@@ -1,37 +1,25 @@
 import os
 import warnings
-from collections import defaultdict, namedtuple
 from functools import lru_cache
-from itertools import product
 from multiprocessing import Manager, Process
-from time import time, sleep
+from time import time
 
 import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.jobs import IngestionPlan, SingleMergeJob
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    allocate_lightcurve_ids,
     get_components,
     get_h5,
-    get_missing_ids,
-    load_lightpoints,
 )
-from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (
-    Aperture,
     Frame,
-    Lightcurve,
-    LightcurveType,
     Lightpoint,
     Observation,
     Orbit,
@@ -221,7 +209,7 @@ class PartitionConsumer(LightpointProcessor):
             partition_job.partition_relname, pd.concat(lps), observations
         )
 
-        total_points = sum([len(lp) for lp in lps])
+        total_points = sum(len(lp) for lp in lps)
         result = dict(pd.DataFrame(timings).sum())
         result["relname"] = partition_job.partition_relname
         result["n_lightpoints"] = total_points
@@ -238,7 +226,6 @@ class PartitionConsumer(LightpointProcessor):
         )
 
         job = self.job_queue.get()
-        timeout = 1
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", r"All-NaN (slice|axis) encountered"
@@ -253,101 +240,6 @@ class PartitionConsumer(LightpointProcessor):
         self.log("Recieved end-of-work signal")
 
 
-def get_merge_jobs(ctx, cache, orbits, cameras, ccds, fillgaps=False):
-    """
-    Get a list of SingleMergeJobs from TICs appearing in the
-    given orbits, cameras, and ccds. TICs and orbits already ingested
-    will *not* be in the returned list.
-
-    In addition, any new Lightcurves will be assigned IDs so it will
-    be deterministic in which partition its data will reside in.
-
-    Parameters
-    ----------
-    ctx : click.Context
-        A click context object which should contain an unopened
-        lightcurvedb.DB object
-    cache : IngestionCache
-        An opened ingestion cache object
-    orbits : sequence of int
-        The desired orbits to ingest.
-    cameras : sequence of int
-        The cameras to ingest
-    ccds : sequence of int
-        The ccds to ingest
-    fillgaps : bool, optional
-        If true, find gaps in the lightcurve id sequence and fill them with
-        any new lightcurves.
-    Returns
-    -------
-    sequence of lightcurve.core.ingestors.lightpoint.SingleMergeJob
-        Return a sequence of NamedTuples describing needed
-        information for ingest.
-    """
-    cache_q = cache.session.query(
-        FileObservation.tic_id,
-        FileObservation.orbit_number,
-        FileObservation.file_path,
-    )
-
-    if not all(cam in cameras for cam in [1, 2, 3, 4]):
-        cache_q = cache_q.filter(FileObservation.camera.in_(cameras))
-    if not all(ccd in ccds for ccd in [1, 2, 3, 4]):
-        cache_q = cache_q.filter(FileObservation.ccd.in_(ccds))
-
-    file_df = pd.read_sql(
-        cache_q.statement, cache.session.bind, index_col=["tic_id"]
-    )
-
-    relevant_tics = set(file_df[file_df.orbit_number.isin(orbits)].index)
-
-    file_df = file_df.loc[relevant_tics].sort_index()
-
-    obs_clause = (
-        Orbit.orbit_number.in_(orbits),
-        Observation.camera.in_(cameras),
-        Observation.ccd.in_(ccds),
-    )
-    echo("Comparing cache file paths to lcdb observation table")
-    with ctx.obj["dbconf"] as db:
-        sub_obs_q = (
-            db.query(Observation.tic_id)
-            .join(Observation.orbit)
-            .filter(*obs_clause)
-        )
-
-        obs_q = (
-            db.query(Observation.tic_id, Orbit.orbit_number)
-            .join(Observation.orbit)
-            .filter(Observation.tic_id.in_(sub_obs_q.subquery()))
-        )
-        apertures = [ap.name for ap in db.query(Aperture)]
-        types = [t.name for t in db.query(LightcurveType)]
-
-        echo("Determining existing observations")
-        already_observed = set(obs_q)
-
-        echo("Preparing lightcurve id map")
-        lcs = db.lightcurves.filter(Lightcurve.tic_id.in_(relevant_tics))
-        lc_id_map = {
-            (lc.tic_id, lc.aperture_id, lc.lightcurve_type_id): lc.id
-            for lc in lcs.yield_per(10000)
-        }
-        jobs = list(
-            get_jobs(
-                db,
-                file_df,
-                lc_id_map,
-                already_observed,
-                apertures,
-                types,
-                fill_id_gaps=fillgaps,
-                bar=tqdm,
-            )
-        )
-    return jobs
-
-
 def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
     """
     Group single
@@ -360,7 +252,9 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
         echo("Reading assigned quality flags")
         quality_flags = cache.quality_flag_df
         mid_tjd_q = db.query(
-            Frame.camera, Frame.cadence, Frame.mid_tjd,
+            Frame.camera,
+            Frame.cadence,
+            Frame.mid_tjd,
         ).filter(Frame.frame_type_id == "Raw FFI")
         echo("Getting Raw FFI Mid TJD arrays")
         mid_tjd = pd.read_sql(

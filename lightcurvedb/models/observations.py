@@ -4,9 +4,9 @@ from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import QLP_ORBITS
 from lightcurvedb.core.datastructures.blob import Blobable
 from lightcurvedb.core.partitioning import Partitionable
-from sqlalchemy import BigInteger, Column, ForeignKey, SmallInteger, bindparam
+from sqlalchemy import Column, ForeignKey, SmallInteger, bindparam
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship
 
 
 class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
@@ -50,7 +50,9 @@ class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):
                 cls.orbit_id: bindparam("orbit_id"),
             }
         )
-        q = q.on_conflict_do_nothing(constraint="observations_pkey",)
+        q = q.on_conflict_do_nothing(
+            constraint="observations_pkey",
+        )
 
         return q
 

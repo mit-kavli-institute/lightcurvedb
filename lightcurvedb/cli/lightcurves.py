@@ -1,7 +1,6 @@
 from __future__ import division, print_function
 
 import click
-import pandas as pd
 from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
@@ -13,7 +12,6 @@ from lightcurvedb.core.datastructures.data_packers import (
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.jobs import IngestionPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
-from lightcurvedb.core.ingestors.lightcurve_ingestors import get_ingestion_plan
 
 
 def gaps_in_ids(id_array):
@@ -69,9 +67,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
 def ingest_tic(ctx, tics, n_processes, fillgaps):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
-        plan = IngestionPlan(
-            db, cache, tic_mask=tics, cameras=cameras, ccds=ccds
-        )
+        plan = IngestionPlan(db, cache, tic_mask=tics)
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
@@ -92,7 +88,11 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
-            db, cache, orbits=orbits, cameras=cameras, ccds=ccds,
+            db,
+            cache,
+            orbits=orbits,
+            cameras=cameras,
+            ccds=ccds,
         )
     click.echo(plan)
 
@@ -120,7 +120,7 @@ def view_lightcurve_id_ingestion_plan(ctx, lightcurve_ids):
         tics = db.query(Lightcurve.tic_id).filter(
             Lightcurve.id.in_(lightcurve_ids)
         )
-        plan = IngestionPlan(db, cache, tic_mask=set(tic for tic, in tics))
+        plan = IngestionPlan(db, cache, tic_mask={tic for tic, in tics})
     click.echo(plan)
 
 
