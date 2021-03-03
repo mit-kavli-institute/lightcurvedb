@@ -3,11 +3,13 @@ Welcome to LightcurveDB's documentation!
 
 Installation
 ############
-To install from git lab run:
+To install from git lab run
+
 .. code-block:: console
+
     pip install git+https://tessgit.mit.edu/wcfong/lightcurve-database.git
 
-See other :doc:`installation <installation.rst>` steps for specific computer contexts.
+See other :doc:`installation <installation>` steps for specific computer contexts.
 
 Development
 ###########
@@ -35,6 +37,7 @@ Submodule Documentation
 .. toctree::
     :maxdepth: 2
 
+    installation
     db/db
     lightcurves/lightcurves
     managers/managers
