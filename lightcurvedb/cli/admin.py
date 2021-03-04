@@ -4,7 +4,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from glob import glob
 from functools import partial
-from sqlalchemy import text, and_
+from sqlalchemy import text, and_, func
 from tabulate import tabulate
 from multiprocessing import Pool
 
@@ -35,62 +35,43 @@ def get_mask(scratch_dir="/scratch/tmp/lcdb_ingestion"):
 
 
 def recover(maximum_missing, lightcurve_ids):
-    # pid = os.getpid()
+    pid = os.getpid()
     to_ingest = []
     fine = []
     with db:
-        q = (
-            db.query(
-                Lightpoint.lightcurve_id,
-                Frame.orbit_id,
+        orbit_map = dict(db.query(Orbit.id, Orbit.orbit_number))
+        for id_ in sorted(lightcurve_ids):
+            existing_cadence_q = (
+                db
+                .query(Lightpoint.cadence)
+                .filter_by(lightcurve_id=id_)
+            ).subquery("existing_cadences")
+
+            missing_orbits = (
+                db
+                .query(Frame.orbit_id, func.count(Frame.orbit_id))
+                .join(Observation, and_(Observation.orbit_id == Frame.orbit_id, Observation.camera == Observation.camera))
+                .group_by(Frame.orbit_id)
+                .filter(
+                    ~Frame.cadence.in_(existing_cadence_q),
+                    Frame.frame_type_id == "Raw FFI",
+                    Observation.lightcurve_id == id_
+                )
+                .distinct()
             )
-            .outerjoin(Frame, Lightpoint.cadence == Frame.cadence)
-            .join(
-                Observation,
-                and_(
-                    Frame.orbit_id == Observation.orbit_id,
-                    Frame.camera == Observation.camera,
-                    Observation.lightcurve_id == Lightpoint.lightcurve_id,
-                ),
-            )
-            .filter(
-                Lightpoint.lightcurve_id.in_(lightcurve_ids),
-                Lightpoint.cadence is None,
-                Frame.frame_type_id == "Raw FFI",
-            )
-            .distinct(Lightpoint.lightcurve_id, Frame.orbit_id)
-        )
+            missing_orbits = [orbit_id for orbit_id, count in missing_orbits if count <= maximum_missing]
+            if missing_orbits:
+                orbit_numbers = list(str(orbit_map[orbit_id]) for orbit_id in missing_orbits)
+                db.query(Observation).filter(Observation.orbit_id.in_(missing_orbits), Observation.lightcurve_id == id_).delete(synchronize_session=False)
+                db.commit()
+                with open("/scratch/tmp/lcdb_ingestion/{0}_to_reingest.ls".format(pid), "at") as fout:
+                    fout.write("{0}\n".format(id_))
+                to_ingest.append(id_)
+            else:
+                with open("/scratch/tmp/lcdb_ingestion/{0}_fine.ls".format(pid), "at") as fout:
+                    fout.write("{0}\n".format(id_))
+                fine.append(id_)
 
-        fine = set(lightcurve_ids)
-
-        bulk = defaultdict(list)
-        for lightcurve_id, orbit_id in q.yield_per(10):
-            if lightcurve_id in fine:
-                fine.remove(lightcurve_id)
-                to_ingest.append(lightcurve_id)
-
-            bulk[lightcurve_id].append(orbit_id)
-        print(bulk)
-
-        # for lightcurve_id, orbit_ids in bulk.items():
-        #     db.query(Observation).filter(
-        #         Observation.lightcurve_id == lightcurve_id,
-        #         Observation.orbit_id.in_(orbit_ids),
-        #     ).delete(synchronize_session=False)
-        #     db.commit()
-
-    # with open(
-    #     "/scratch/tmp/lcdb_ingestion/{0}_to_reingest.ls".format(pid), "at"
-    # ) as fout:
-    #     fout.write("\n".join(map(str, to_ingest)))
-    #     if len(to_ingest) > 0:
-    #         fout.write("\n")
-    # with open(
-    #     "/scratch/tmp/lcdb_ingestion/{0}_fine.ls".format(pid), "at"
-    # ) as fout:
-    #     fout.write("\n".join(map(str, fine)))
-    #     if len(fine) > 0:
-    #         fout.write("\n")
     return fine, to_ingest
 
 
@@ -105,12 +86,18 @@ def administration(ctx):
 @administration.group()
 @click.pass_context
 def procedures(ctx):
+    """
+    Base SQL Procedure Commands
+    """
     pass
 
 
 @procedures.command()
 @click.pass_context
 def reload(ctx):
+    """
+    Read the defined SQL files and submit any changes to the database.
+    """
     from lightcurvedb.io.procedures.procedure import _yield_procedure_ddl
 
     with ctx.obj["dbconf"] as db:
