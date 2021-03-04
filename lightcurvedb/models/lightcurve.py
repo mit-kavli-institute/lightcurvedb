@@ -60,13 +60,9 @@ class LightcurveType(QLPDataSubType):
 class LightcurveFrameMap(QLPModel):
     __tablename__ = "lightcurveframemapping"
     lightcurve_type_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"),
-        primary_key=True,
+        ForeignKey("lightcurves.id", ondelete="CASCADE"), primary_key=True,
     )
-    frame_id = Column(
-        ForeignKey("frames.id"),
-        primary_key=True,
-    )
+    frame_id = Column(ForeignKey("frames.id"), primary_key=True,)
 
     lightcurve = relationship(
         "Lightcurve",
@@ -208,9 +204,7 @@ class Lightcurve(QLPDataProduct):
         "LightcurveType", back_populates="lightcurves"
     )
     lightpoints = relationship(
-        "Lightpoint",
-        backref="lightcurve",
-        collection_class=CadenceTracked,
+        "Lightpoint", backref="lightcurve", collection_class=CadenceTracked,
     )
 
     lightpoint_q = relationship(

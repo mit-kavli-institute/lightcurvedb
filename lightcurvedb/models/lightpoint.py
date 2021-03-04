@@ -67,10 +67,7 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
     lightcurve_id = Column(
         ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,
-        index=Index(
-            "ix_lightpoints_lightcurve_id",
-            "lightpoint_id",
-        ),
+        index=Index("ix_lightpoints_lightcurve_id", "lightpoint_id",),
         nullable=False,
     )
 
