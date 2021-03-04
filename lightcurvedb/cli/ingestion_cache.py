@@ -81,7 +81,11 @@ def load_stellar_param(ctx, orbits, force_tic8_query):
                 observed_tics.add(tic)
             if force_tic8_query:
                 q = tic8.mass_stellar_param_q(
-                    obs_tics, "id", "ra", "dec", "tmag",
+                    obs_tics,
+                    "id",
+                    "ra",
+                    "dec",
+                    "tmag",
                 )
 
                 tic_params = pd.read_sql(

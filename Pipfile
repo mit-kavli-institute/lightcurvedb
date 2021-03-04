@@ -6,6 +6,7 @@ verify_ssl = true
 [dev-packages]
 sphinx = "*"
 flake8 = "*"
+sphinx-click = "*"
 
 [packages]
 sqlalchemy = "*"
@@ -37,6 +38,7 @@ pgcopy = "*"
 psycopg2 = "*"
 black = "*"
 pyquaternion = "*"
+tqdm = "*"
 
 [requires]
 python_version = "3"
