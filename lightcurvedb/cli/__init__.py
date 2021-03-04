@@ -1,6 +1,7 @@
 from .base import lcdbcli
 from .admin import administration
 from .apertures import add_aperture
+from .frames import add_frametype
 from .qlp_data_types import add_lightcurvetype
 from .new_orbit import ingest_frames
 from .orbit import orbit
