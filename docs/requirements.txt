@@ -12,4 +12,4 @@ scipy
 pgcopy
 pyquaternion
 tqdm
-sphinx_click
+sphinx-click
