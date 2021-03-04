@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 
 project = 'LightcurveDB'
-copyright = '2020, William Fong'
+copyright = '2021, William Fong'
 author = 'William Fong'
 
 # The full version, including alpha/beta/rc tags
@@ -34,7 +34,8 @@ master_doc = 'index'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
-    'sphinx.ext.intersphinx'
+    'sphinx.ext.intersphinx',
+    'sphinx_click',
 ]
 
 # Add any paths that contain templates here, relative to this directory.

@@ -7,6 +7,9 @@ from . import lcdbcli
 @click.pass_context
 @click.argument("lightcurve-type-name", type=str)
 def add_lightcurvetype(ctx, lightcurve_type_name):
+    """
+    Adds a lightcurve-type definition to the database.
+    """
     with ctx.obj["dbconf"] as db:
         check = (
             db.session.query(LightcurveType)
@@ -58,3 +61,5 @@ def add_lightcurvetype(ctx, lightcurve_type_name):
             prompt = click.style("Do these changes look ok?", bold=True)
             click.confirm(prompt, abort=True)
             db.commit()
+        else:
+            db.rollback()

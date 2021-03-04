@@ -8,7 +8,10 @@ from . import lcdbcli
 @lcdbcli.command()
 @click.pass_context
 @click.argument("frametype-name", type=str)
-def create_frametype(ctx, frametype_name):
+def add_frametype(ctx, frametype_name):
+    """
+    Add a Frame-Type Definition to the database.
+    """
     with ctx.obj["dbconf"] as db:
         # Check if we're updating or inserting
         check = (

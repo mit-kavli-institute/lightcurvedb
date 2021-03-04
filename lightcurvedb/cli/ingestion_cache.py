@@ -49,6 +49,9 @@ def catalog_df(*catalog_files):
 @lcdbcli.group()
 @click.pass_context
 def cache(ctx):
+    """
+    Commands for interacting with local disk-cache.
+    """
     pass
 
 

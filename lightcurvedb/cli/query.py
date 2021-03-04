@@ -22,6 +22,9 @@ except ImportError:
 @click.pass_context
 @click.argument("model", type=QLPModelType())
 def query(ctx, model):
+    """
+    Commands for executing subsets of SQL and displaying tabular data.
+    """
     ctx.obj["target_model"] = model
 
 

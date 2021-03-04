@@ -66,6 +66,9 @@ def get_tic(bls_summary):
 @lcdbcli.group()
 @click.pass_context
 def bls(ctx):
+    """
+    BLS Result Commands
+    """
     pass
 
 
