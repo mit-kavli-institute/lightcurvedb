@@ -3,10 +3,10 @@ from __future__ import division, print_function
 import os
 
 try:
-    from configparser import ConfigParser
+    from configparser import ConfigParser, NoSectionError
 except ImportError:
     # Python 2?
-    from ConfigParser import ConfigParser
+    from ConfigParser import ConfigParser, NoSectionError
 
 
 from lightcurvedb.util.constants import __DEFAULT_PATH__
@@ -74,7 +74,7 @@ try:
     __LCDB_ENGINE__ = __init_engine__(url, **DEFAULT_ENGINE_KWARGS)
     __SESSION_FACTORY__ = sessionmaker(bind=__LCDB_ENGINE__)
 
-except KeyError:
+except (KeyError, NoSectionError):
     # Unknown config location, do not prepare default engine
     __LCDB_ENGINE__ = None
     __SESSION_FACTORY__ = None
