@@ -9,4 +9,6 @@ formats:
 python:
   version: 3
   install:
-    - requirements: docs/requirements.txt
+    - method: pip
+      path: .
+      extra_requirements: docs
