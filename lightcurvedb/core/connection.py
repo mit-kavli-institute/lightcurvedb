@@ -694,7 +694,7 @@ class DB(object):
             self.query(col)
             .join(models.Lightcurve.observations)
             .join(models.Observation.orbit)
-            .filter(Orbit.orbit_numbers.in_(orbit_numbers))
+            .filter(models.Orbit.orbit_numbers.in_(orbit_numbers))
         )
 
         if cameras:
@@ -764,7 +764,7 @@ class DB(object):
             self.query(col)
             .join(models.Lightcurve.observations)
             .join(models.Observation.orbit)
-            .filter(Orbit.sector.in_(sectors))
+            .filter(models.Orbit.sector.in_(sectors))
         )
 
         if cameras:
