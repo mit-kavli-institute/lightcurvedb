@@ -28,6 +28,8 @@ __all__ = [
 if __SESSION_FACTORY__ is not None:
     db = DB(__SESSION_FACTORY__)
     db._config = __DEFAULT_PATH__
+else:
+    db = None
 
 # Avoid polluting namespace
 del __SESSION_FACTORY__

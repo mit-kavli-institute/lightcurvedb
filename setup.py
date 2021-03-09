@@ -25,6 +25,9 @@ with open('README.md', 'r') as fh:
 with open('requirements.txt', 'rt') as f:
     requirements = [l.strip() for l in f.readlines()]
 
+with open('./docs/requirements.txt', 'rt') as f:
+    doc_requirements = [l.strip() for l in f.readlines()]
+
 setuptools.setup(
     name='lightcurvedb',
     version=get_version('lightcurvedb/__init__.py'),
@@ -44,4 +47,5 @@ setuptools.setup(
         ],
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4',
     install_requires=requirements,
+    extras_require={"docs": doc_requirements}
 )

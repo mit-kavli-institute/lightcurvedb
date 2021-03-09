@@ -48,3 +48,13 @@ script.
 .. code-block:: console
 
    bash pdo_user_install.sh {Python Major Version, defaults to 3}
+
+
+Extras Installation
+*******************
+If you wish to install the documentation dependencies
+(to build the docs yourself) you can use pip.
+
+.. code-block:: console
+
+    pip install ".[docs]"
