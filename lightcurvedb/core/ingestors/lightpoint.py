@@ -179,13 +179,15 @@ class PartitionConsumer(LightpointProcessor):
         for lc_job in optimized_path:
             if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
                 continue
-
-            lp, timing = self.process_h5(
-                lc_job.lightcurve_id,
-                lc_job.aperture,
-                lc_job.lightcurve_type,
-                lc_job.file_path,
-            )
+            try:
+                lp, timing = self.process_h5(
+                    lc_job.lightcurve_id,
+                    lc_job.aperture,
+                    lc_job.lightcurve_type,
+                    lc_job.file_path,
+                )
+            except OSError:
+                self.log("Unable to open {0}".format(lc_job.filepath), level="error")
             timings.append(timing)
 
             stamp = time()
