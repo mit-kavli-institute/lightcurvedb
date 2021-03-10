@@ -218,6 +218,7 @@ class PartitionConsumer(LightpointProcessor):
         result["n_lightpoints"] = total_points
         result["validation"] = validation_time
         result["copy_elapsed"] = copy_elapsed
+        result["n_jobs"] = len(partition_job.single_merge_jobs)
 
         return result
 
@@ -269,9 +270,11 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
     manager = Manager()
     job_queue = manager.Queue()
     timing_queue = manager.Queue()
+    total_single_jobs = 0
 
     for job in jobs:
         job_queue.put(job)
+        total_single_jobs += len(job.single_merge_jobs)
 
     echo("Initializing workers, beginning processing...")
     with db_from_config(config) as db:
@@ -288,11 +291,19 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
             job_queue.put(None)  # Kill sig
             p.start()
 
-    with tqdm(range(len(jobs))) as bar:
+    with tqdm(total=total_single_jobs) as bar:
         for _ in range(len(jobs)):
             timings = timing_queue.get()
+            total_time = (
+                timings["file_load"] +
+                timings["bjd_correction"] +
+                timings["validation"] +
+                timings["copy_elapsed"]
+            )
+            timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
+
             msg = (
-                "{relname}: {n_lightpoints} | "
+                "{relname}: {lightpoint_rate:}lp/s | "
                 "File Load: {file_load:3.2f}s | "
                 "QFlag Load: {quality_flag_assignment:3.2f}s | "
                 "BJD Load: {bjd_correction:3.2f}s | "
@@ -302,7 +313,7 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
             bar.write(msg.format(**timings))
 
             timing_queue.task_done()
-            bar.update(1)
+            bar.update(timings["n_jobs"])
 
     echo("Expected number of returns reached, joining processes...")
     for worker in workers:
