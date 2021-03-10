@@ -188,6 +188,7 @@ class PartitionConsumer(LightpointProcessor):
                 )
             except OSError:
                 self.log("Unable to open {0}".format(lc_job.filepath), level="error")
+                continue
             timings.append(timing)
 
             stamp = time()
