@@ -255,7 +255,7 @@ class IngestionPlan(object):
         buckets = defaultdict(list)
 
         for _, row in self._df.iterrows():
-            partition_start = (row["lightcurve_id"] // 1000) * 1000
+            partition_start = int(row["lightcurve_id"] // 1000) * 1000
             partition_end = partition_start + 1000
             relname = "partitions.lightpoints_{0}_{1}".format(
                 partition_start, partition_end
