@@ -100,7 +100,9 @@ class IngestionPlan(object):
         current_obs_q = (
             db.query(Observation.lightcurve_id, Observation.orbit_id)
             .join(Observation.lightcurve)
-            .filter(Lightcurve.tic_id.in_(tic_ids),)
+            .filter(
+                Lightcurve.tic_id.in_(tic_ids),
+            )
         )
 
         seen_cache = set(tqdm(current_obs_q, unit=" observations"))

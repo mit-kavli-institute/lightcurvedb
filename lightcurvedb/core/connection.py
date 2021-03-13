@@ -692,8 +692,9 @@ class DB(object):
 
         q = (
             self.query(col)
-            .join(models.Lightcurve.orbits)
-            .filter(models.Orbit.orbit_number.in_(orbit_numbers))
+            .join(models.Lightcurve.observations)
+            .join(models.Observation.orbit)
+            .filter(models.Orbit.orbit_numbers.in_(orbit_numbers))
         )
 
         if cameras:
@@ -748,6 +749,7 @@ class DB(object):
         list of integers or ``sqlalchemy.orm.Query``
             Returns either the result of the query or the Query object itself.
         """
+
         if isinstance(sectors, str):
             sectors = [int(sectors)]
 
@@ -760,7 +762,8 @@ class DB(object):
 
         q = (
             self.query(col)
-            .join(models.lightcurve.orbits)
+            .join(models.Lightcurve.observations)
+            .join(models.Observation.orbit)
             .filter(models.Orbit.sector.in_(sectors))
         )
 

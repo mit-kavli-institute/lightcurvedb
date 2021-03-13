@@ -8,6 +8,9 @@ from . import lcdbcli
 @click.argument("name", type=str)
 @click.argument("aperture-string", type=str)
 def add_aperture(ctx, name, aperture_string):
+    """
+    Add an aperture definition to the database
+    """
     with ctx.obj["dbconf"] as db:
         check = (
             db.session.query(Aperture)
@@ -51,3 +54,5 @@ def add_aperture(ctx, name, aperture_string):
             prompt = click.style("Do these changes look ok?", bold=True)
             click.confirm(prompt, abort=True)
             db.commit()
+        else:
+            db.rollback()

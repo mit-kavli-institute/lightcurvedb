@@ -31,6 +31,9 @@ def gaps_in_ids(id_array):
 @lcdbcli.group()
 @click.pass_context
 def lightcurve(ctx):
+    """
+    Commands for ingesting and displaying lightcurves.
+    """
     pass
 
 
@@ -88,7 +91,11 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
-            db, cache, orbits=orbits, cameras=cameras, ccds=ccds,
+            db,
+            cache,
+            orbits=orbits,
+            cameras=cameras,
+            ccds=ccds,
         )
     click.echo(plan)
 

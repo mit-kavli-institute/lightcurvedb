@@ -265,7 +265,9 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
         echo("Reading assigned quality flags")
         quality_flags = cache.quality_flag_df
         mid_tjd_q = db.query(
-            Frame.camera, Frame.cadence, Frame.mid_tjd,
+            Frame.camera,
+            Frame.cadence,
+            Frame.mid_tjd,
         ).filter(Frame.frame_type_id == "Raw FFI")
         echo("Getting Raw FFI Mid TJD arrays")
         mid_tjd = pd.read_sql(
