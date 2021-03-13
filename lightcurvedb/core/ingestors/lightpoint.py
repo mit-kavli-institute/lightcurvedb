@@ -187,7 +187,7 @@ class PartitionConsumer(LightpointProcessor):
                     lc_job.file_path,
                 )
             except OSError:
-                self.log("Unable to open {0}".format(lc_job.filepath), level="error")
+                self.log("Unable to open {0}".format(lc_job.file_path), level="error")
                 continue
             timings.append(timing)
 
@@ -207,6 +207,15 @@ class PartitionConsumer(LightpointProcessor):
                     )
                 )
                 lps.append(lp)
+
+        if not lps:
+            result = dict(pd.DataFrame(timings).sum())
+            result["relname"] = partition_job.partition_relname
+            result["n_lightpoints"] = 0
+            result["validation"] = validation_time
+            result["copy_elapsed"] = copy_elapsed
+            result["n_jobs"] = len(partition_job.single_merge_jobs)
+            return result
 
         copy_elapsed += self.ingest_data(
             partition_job.partition_relname, pd.concat(lps), observations
@@ -303,12 +312,12 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
             timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
 
             msg = (
-                "{relname}: {lightpoint_rate:}lp/s | "
+                "{relname}: {lightpoint_rate:5.2f} lp/s | "
                 "File Load: {file_load:3.2f}s | "
                 "QFlag Load: {quality_flag_assignment:3.2f}s | "
                 "BJD Load: {bjd_correction:3.2f}s | "
-                "Validate: {validation:3.2f}s | "
-                "COPY TIME: {copy_elapsed:3.2f}s"
+                "COPY TIME: {copy_elapsed:3.2f}s | "
+                "# of Jobs: {n_jobs}s"
             )
             bar.write(msg.format(**timings))
 
