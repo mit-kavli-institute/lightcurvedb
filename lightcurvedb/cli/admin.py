@@ -68,9 +68,6 @@ def recover(maximum_missing, lightcurve_ids):
                 if count <= maximum_missing
             ]
             if missing_orbits:
-                orbit_numbers = list(
-                    str(orbit_map[orbit_id]) for orbit_id in missing_orbits
-                )
                 db.query(Observation).filter(
                     Observation.orbit_id.in_(missing_orbits),
                     Observation.lightcurve_id == id_,
