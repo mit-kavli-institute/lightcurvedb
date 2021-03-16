@@ -46,26 +46,27 @@ def recover(maximum_missing, lightcurve_ids):
             ).subquery("existing_cadences")
 
             missing_orbits = (
-                db.query(Frame.orbit_id, func.count(Frame.orbit_id))
+                db
+                .query(Frame.orbit_id, func.count(Frame.orbit_id))
                 .join(
                     Observation,
                     and_(
                         Observation.orbit_id == Frame.orbit_id,
-                        Observation.camera == Observation.camera,
-                    ),
+                        Observation.camera == Frame.camera,
+                    )
                 )
-                .group_by(Frame.orbit_id)
                 .filter(
                     ~Frame.cadence.in_(existing_cadence_q),
                     Frame.frame_type_id == "Raw FFI",
                     Observation.lightcurve_id == id_,
                 )
-                .distinct()
+                .group_by(Frame.orbit_id)
+                
             )
             missing_orbits = [
                 orbit_id
                 for orbit_id, count in missing_orbits
-                if count <= maximum_missing
+                if count >= maximum_missing
             ]
             if missing_orbits:
                 db.query(Observation).filter(
@@ -222,63 +223,11 @@ def delete_invalid_orbit_observations(
 def delete_invalid_tic_observations(ctx, tics, maximum_missing):
     with ctx.obj["dbconf"] as db:
         q = (
-            db.query(Observation.lightcurve_id)
-            .join(Observation.lightcurve)
+            db.query(Lightcurve.id)
             .filter(Lightcurve.tic_id.in_(tics))
-            .distinct()
-            .order_by(Observation.lightcurve_id)
         )
         click.echo("Querying ids")
-        ids = [id_ for id_, in q]
-        click.echo("Building cadence to orbit number map")
-        cadence_map = dict(
-            db.query(Frame.cadence, Orbit.orbit_number)
-            .join(Frame.orbit)
-            .filter(Frame.frame_type_id == "Raw FFI")
-        )
-
-        click.echo("Gonna process {0} lightcurves".format(len(ids)))
-        for lightcurve_id in ids:
-            existing_cadences = db.query(Lightpoint.cadence).filter_by(
-                lightcurve_id=lightcurve_id
-            )
-            missing_cadences = (
-                db.query(Frame.cadence)
-                .join(
-                    Observation,
-                    and_(
-                        Observation.orbit_id == Frame.orbit_id,
-                        Observation.camera == Frame.camera,
-                    ),
-                )
-                .filter(
-                    Observation.lightcurve_id == lightcurve_id,
-                    Frame.frame_type_id == "Raw FFI",
-                    ~Frame.cadence.in_(existing_cadences.subquery()),
-                )
-                .all()
-            )
-
-            if len(missing_cadences) > maximum_missing:
-                orbits_missing = sorted(
-                    {cadence_map[cadence] for cadence, in missing_cadences}
-                )
-                click.echo(
-                    "Lightcurve {0} missing orbits {1}".format(
-                        lightcurve_id, ", ".join(map(str, orbits_missing))
-                    )
-                )
-                orbit_ids = [
-                    n
-                    for n, in db.query(Orbit.id).filter(
-                        Orbit.orbit_number.in_(orbits_missing)
-                    )
-                ]
-                db.query(Observation).filter(
-                    Observation.lightcurve_id == lightcurve_id,
-                    Observation.orbit_id.in_(orbit_ids),
-                ).delete(synchronize_session=False)
-                db.commit()
-
-            else:
-                click.echo("Lightcurve {0} is fine".format(lightcurve_id))
+        ids = sorted(id_ for id_, in q)
+    fine, to_reingest = recover(maximum_missing, ids)
+    click.echo("OK IDS: {0}".format(fine))
+    click.echo("BAD IDS: {0}".format(to_reingest))
