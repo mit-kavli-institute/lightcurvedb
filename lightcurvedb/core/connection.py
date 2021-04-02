@@ -19,6 +19,7 @@ from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
+from lightcurvedb.models.table_track import TableTrackerAPIMixin
 
 
 # Bring legacy capability
@@ -39,7 +40,7 @@ def engine_overrides(**engine_kwargs):
     return engine_kwargs
 
 
-class DB(object):
+class DB(TableTrackerAPIMixin):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
