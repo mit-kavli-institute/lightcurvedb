@@ -7,6 +7,8 @@ from sqlalchemy import (
     Column, Sequence,
     ForeignKey
 )
+from multiprocessing import Pool
+from functools import partial
 from sqlalchemy.ext.hybrid import hybrid_method
 
 
@@ -80,6 +82,13 @@ class RangedPartitionTrack(PartitionTrack):
 
     def get_check_func(self):
         return self.contains_value
+
+
+def range_check(ranges, value):
+    for min_, max_, oid in ranges:
+        if min_ <= value < max_:
+            return value, oid
+    return None, oid
     
 
 class TableTrackerAPIMixin(object):
@@ -94,3 +103,47 @@ class TableTrackerAPIMixin(object):
                 "{0} on model {1}".format(value, Model)
             )
         return dynamic_map
+
+    def map_values_to_partitions(self, Model, values, n_workers=None):
+        """
+        Map given values against a Partitioned model. This function is
+        multiprocessed and thus the order of return is not promised to be
+        the same as the input.
+
+        Parameters
+        ----------
+        Model: str or Class
+            The model to check the values against. If a Class is passed, the
+            name of the class is used.
+        values: iterable
+            An iterable of values to be compared with Partition Tracks of the
+            given Model.
+        n_workers: int, optional
+            The number of workers to compare values. If set to None, all CPU
+            cores will be utilized.
+        Yields
+        ------
+        (object, integer)
+            Yields tuples of (value, table OID). The value is of whatever was
+            passed as the input sequence. OID is a unique integer describing
+            a table relation on the database.
+
+        Raises
+        ------
+        NotImplementedError:
+            Raised if the given Model is not supported for multiprocess mapping.
+        """
+        partition_tracks = list(self.query(PartitionTrack).filter(PartitionTrack.same_model(Model)))
+        if isinstance(partition_tracks[0], RangedPartitionTrack):
+            ranges = [(t.min_range, t.max_range, t.oid) for t in partition_tracks]
+            func = partial(range_check, ranges)
+        else:
+            raise NotImplementedError(
+                "No multiprocessing support for tracking type {0}".format(type(partition_tracks[0]))
+            )
+
+        with Pool(processes=n_workers) as pool:
+            for value, oid in pool.imap_unordered(func, values, chunksize=100):
+                yield value, oid
+
+

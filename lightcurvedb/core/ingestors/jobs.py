@@ -6,6 +6,7 @@ from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
     Observation,
     Lightcurve,
+    Lightpoint,
     Orbit,
     Aperture,
     LightcurveType,
@@ -33,7 +34,7 @@ SingleMergeJob = namedtuple(
 )
 
 PartitionJob = namedtuple(
-    "PartitionJob", ("partition_relname", "single_merge_jobs")
+    "PartitionJob", ("partition_oid", "single_merge_jobs")
 )
 
 
@@ -250,25 +251,25 @@ class IngestionPlan(object):
         )
         return split_df
 
-    def get_jobs_by_partition(self):
+    def get_jobs_by_partition(self, db):
         self._df.drop_duplicates(
             subset=["lightcurve_id", "orbit_number"], inplace=True
         )
         buckets = defaultdict(list)
+        echo("Grabbing partition ranges...")
+        results = db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
+        partition_oid_df = pd.DataFrame(results, names=["lightcurve_id", "partition_oid"])
+        self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
 
         for _, row in self._df.iterrows():
-            partition_start = int(row["lightcurve_id"] // 1000) * 1000
-            partition_end = partition_start + 1000
-            relname = "partitions.lightpoints_{0}_{1}".format(
-                partition_start, partition_end
-            )
-            buckets[relname].append(SingleMergeJob(**row))
+            oid = row.pop("partition_oid")
+            buckets[oid].append(SingleMergeJob(**row))
 
         partition_jobs = []
-        for partition_relname, jobs in buckets.items():
+        for partition_oid, jobs in buckets.items():
             partition_jobs.append(
                 PartitionJob(
-                    partition_relname=partition_relname, single_merge_jobs=jobs
+                    partition_oid=partition_oid, single_merge_jobs=jobs
                 )
             )
         return partition_jobs

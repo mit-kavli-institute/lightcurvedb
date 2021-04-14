@@ -175,6 +175,23 @@ class PartitionConsumer(LightpointProcessor):
             partition_job.single_merge_jobs,
             key=lambda job: (job.lightcurve_id, job.orbit_number),
         )
+        with db_from_config() as db:
+            q = text(
+                """
+                SELECT nsp.nspname, pgc.relname
+                FROM pg_class pgc
+                JOIN pg_namespace nsp
+                    ON pgc.relnamespace = pgc.oid
+                WHERE pgc.oid = {0}
+                """
+                .format(
+                    partition_job.partition_oid
+                )
+            )
+            results = list(db.execute(q))
+            namespace, tablename = results[0]
+
+        target_table = "{0}.{1}".format(namespace, tablename)
 
         for lc_job in optimized_path:
             if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
@@ -210,7 +227,7 @@ class PartitionConsumer(LightpointProcessor):
 
         if not lps:
             result = dict(pd.DataFrame(timings).sum())
-            result["relname"] = partition_job.partition_relname
+            result["relname"] = target_table
             result["n_lightpoints"] = 0
             result["validation"] = validation_time
             result["copy_elapsed"] = copy_elapsed
@@ -218,12 +235,12 @@ class PartitionConsumer(LightpointProcessor):
             return result
 
         copy_elapsed += self.ingest_data(
-            partition_job.partition_relname, pd.concat(lps), observations
+            target_table, pd.concat(lps), observations
         )
 
         total_points = sum(len(lp) for lp in lps)
         result = dict(pd.DataFrame(timings).sum())
-        result["relname"] = partition_job.partition_relname
+        result["relname"] = target_relname
         result["n_lightpoints"] = total_points
         result["validation"] = validation_time
         result["copy_elapsed"] = copy_elapsed

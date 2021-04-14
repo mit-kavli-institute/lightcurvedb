@@ -7,10 +7,7 @@ DECLARE
     partition_id bigint;
     partition_name varchar;
 BEGIN
-    partition_id := (_lightcurve_id / 1000) * 1000;
-    partition_name := 'partitions.lightpoints_' || partition_id::text || '_' || (partition_id + 1000)::text;
-
-    RETURN QUERY EXECUTE FORMAT('SELECT DISTINCT ON (cadence) * FROM %%s WHERE lightcurve_id = $1 ORDER BY cadence ASC', partition_name) USING _lightcurve_id;
+    RETURN QUERY EXECUTE FORMAT('SELECT DISTINCT ON (cadence) * FROM lightpoints WHERE lightcurve_id = $1 ORDER BY cadence ASC', partition_name) USING _lightcurve_id;
 END;
 $$ STABLE ROWS 100000 PARALLEL SAFE LANGUAGE plpgsql;
 
