@@ -5,16 +5,18 @@ import warnings
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from lightcurvedb.models import Lightcurve
+from lightcurvedb.models import Lightcurve, Frame
+from lightcurvedb.core.connection import db_from_config
+from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.temp_table import QualityFlags
 from functools import lru_cache
+from lightcurvedb.util.decorators import track_runtime
 
+LC_ERROR_TYPES = {"RawMagnitude"}
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", category=FutureWarning)
     from h5py import File as H5File
-
-
-THRESHOLD = 1 * 10 ** 9 / 4  # bytes
 
 
 path_components = re.compile(
@@ -45,126 +47,114 @@ def get_components(path):
     }
 
 
-def quality_flag_extr(qflags):
-    accept = np.ones(qflags.shape[0], dtype=np.int64)
-    for i in range(qflags.shape[0]):
-        if qflags[i] == b"G":
-            accept[i] = 1
-        else:
-            accept[i] = 0
-    return accept
-
-
-# Def: KEY -> Has error field
-H5_LC_TYPES = {"KSPMagnitude": False, "RawMagnitude": True}
-
-
-def h5_to_kwargs(filepath, **constants):
-    with H5File(filepath, "r") as h5in:
-        lc = h5in["LightCurve"]
-        tic = int(os.path.basename(filepath).split(".")[0])
-        cadences = lc["Cadence"][()].astype(int)
-        bjd = lc["BJD"][()]
-        apertures = lc["AperturePhotometry"].keys()
-
-        for aperture in apertures:
-            lc_by_ap = lc["AperturePhotometry"][aperture]
-            x_centroids = lc_by_ap["X"][()]
-            y_centroids = lc_by_ap["Y"][()]
-            quality_flags = quality_flag_extr(
-                lc_by_ap["QualityFlag"][()]
-            ).astype(int)
-
-            for lc_type, has_error_field in H5_LC_TYPES.items():
-                if lc_type not in lc_by_ap:
-                    continue
-                values = lc_by_ap[lc_type][()]
-                if has_error_field:
-                    errors = lc_by_ap["{0}Error".format(lc_type)][()]
-                else:
-                    errors = np.full_like(cadences, np.nan, dtype=np.double)
-
-                yield dict(
-                    tic_id=tic,
-                    lightcurve_type_id=lc_type,
-                    aperture_id=aperture,
-                    cadences=cadences,
-                    barycentric_julian_date=bjd,
-                    values=values,
-                    errors=errors,
-                    x_centroids=x_centroids,
-                    y_centroids=y_centroids,
-                    quality_flags=quality_flags,
-                    **constants
-                )
-
-
-def kwargs_to_df(*kwargs, **constants):
-    dfs = []
-    keys = [
-        "cadences",
-        "barycentric_julian_date",
-        "values",
-        "errors",
-        "x_centroids",
-        "y_centroids",
-        "quality_flags",
-    ]
-
-    for kwarg in kwargs:
-        df = pd.DataFrame(data={k: kwarg[k] for k in keys})
-        df["lightcurve_id"] = kwarg["id"]
-        df = df.set_index(["lightcurve_id", "cadences"])
-        dfs.append(df)
-    main = pd.concat(dfs)
-    for k, constant in constants.items():
-        main[k] = constant
-    return main
-
-
-def parse_h5(h5in, constants, lightcurve_id, aperture, type_):
-    lc = h5in["LightCurve"]
-    cadences = lc["Cadence"][()].astype(int)
-    bjd = lc["BJD"][()]
-
-    lc = lc["AperturePhotometry"][aperture]
-    x_centroids = lc["X"][()]
-    y_centroids = lc["Y"][()]
-    quality_flags = quality_flag_extr(lc["QualityFlag"][()]).astype(int)
-
-    values = lc[type_][()]
-    has_error_field = H5_LC_TYPES[type_]
-
-    if has_error_field:
-        errors = lc["{0}Error".format(type_)][()]
-    else:
-        errors = np.full_like(cadences, np.nan, dtype=np.double)
-
-    lightpoints = pd.DataFrame(
-        data={
-            "cadence": cadences,
-            "barycentric_julian_date": bjd,
-            "data": values,
-            "error": errors,
-            "x_centroid": x_centroids,
-            "y_centroid": y_centroids,
-            "quality_flag": quality_flags,
-        }
+@lru_cache(maxsize=32)
+def get_qflags(min_cadence, max_cadence, camera, ccd):
+    cache = IngestionCache()
+    q = (
+        cache
+        .query(
+            QualityFlags.cadence,
+            QualityFlags.quality_flag
+        )
+        .filter(
+            QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
+            QualityFlags.camera == camera,
+            QualityFlags.ccd == ccd,
+        )
     )
-    lightpoints["lightcurve_id"] = lightcurve_id
-    for fieldname, constant in constants.items():
-        lightpoints[fieldname] = constant
-    return lightpoints
+    return pd.read_sql(
+        q.statement,
+        cache.session.bind,
+        index_col=["cadence"]
+    )
 
+@lru_cache(maxsize=32)
+def get_mid_tjd(min_cadence, max_cadence, camera, config_override=None):
+    with db_from_config(config_path=config_override) as db:
+        q = (
+            db
+            .query(
+                Frame.cadence,
+                Frame.mid_tjd
+            )
+            .filter(
+                Frame.frame_type_id == "Raw FFI",
+                Frame.camera == camera,
+                Frame.cadence.between(int(min_cadence), int(max_cadence))
+            )
+            .distinct(
+                Frame.cadence
+            )
+        )
+        df = pd.read_sql(
+            q.statement,
+            db.bind,
+            index_col=["cadence"]
+        )
+    return df
 
 @lru_cache(maxsize=10)
 def get_h5(path):
     return H5File(path, "r")
 
 
-def load_lightpoints(path, lightcurve_id, aperture, type_):
-    constants = get_components(path)
-    return parse_h5(get_h5(path), constants, lightcurve_id, aperture, type_)
+@track_runtime
+def get_h5_data(merge_job):
+    lc = get_h5(merge_job.file_path)
+    lc = lc["LightCurve"]
+    cadences = lc["Cadence"][()].astype(int)
+
+    lc = lc["AperturePhotometry"][merge_job.aperture]
+    x_centroids = lc["X"][()]
+    y_centroids = lc["Y"][()]
+    data = lc[merge_job.lightcurve_type][()]
+    errors = (
+        lc["{0}Error".format(merge_job.lightcurve_type)][()]
+        if merge_job.lightcurve_type in LC_ERROR_TYPES
+        else np.full_like(cadences, np.nan, dtype=np.double)
+    )
+    return {
+        "cadence": cadences,
+        "data": data,
+        "error": errors,
+        "x_centroid": x_centroids,
+        "y_centroid": y_centroids
+    }
+
+
+@track_runtime
+def get_correct_qflags(merge_job, cadences):
+    """
+    Grab the user-assigned quality flags from cache usiing a single merge job
+    as a filter as well as a list of reference cadences.
+
+    Returns
+    -------
+    np.ndarray
+        A numpy array of quality flag integers in order of the provided
+        cadences.
+    """
+    min_c, max_c = min(cadences), max(cadences)
+    qflag_df = get_qflags(min_c, max_c, merge_job.camera, merge_job.ccd)
+    return qflag_df.loc[cadences]["quality_flag"].to_numpy()
+
+
+@track_runtime
+def get_tjd(merge_job, cadences, config_override=None):
+    min_c, max_c = min(cadences), max(cadences)
+    tjd_df = get_mid_tjd(
+        min_c,
+        max_c,
+        merge_job.camera,
+        config_override=config_override
+    )
+    return tjd_df.reindex(cadences)["mid_tjd"].to_numpy()
+
+@track_runtime
+def get_lightcurve_median(data, quality_flags, tmag):
+    mask = quality_flags == 0
+    offset = np.nanmedian(data[mask]) - tmag
+    return data - offset
 
 
 def get_missing_ids(db, max_return=None):
