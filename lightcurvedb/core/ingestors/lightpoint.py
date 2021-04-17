@@ -14,8 +14,11 @@ from lightcurvedb import db_from_config
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    get_components,
     get_h5,
+    get_h5_data,
+    get_correct_qflags,
+    get_lightcurve_median,
+    get_tjd
 )
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (
@@ -25,8 +28,60 @@ from lightcurvedb.models import (
     Orbit,
 )
 from lightcurvedb.util.logger import lcdb_logger as logger
+from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
+
+
+def yield_lp_kwarg_from_merge_jobs(normalizer, stellar_params, merge_job, config_override=None):
+    tmag = stellar_params.loc[merge_job.tic_id]["tmag"]
+    # Load in h5 data
+    lp_raw_kwargs, file_time = get_h5_data(merge_job)
+
+    # Load in manual quality flags
+    qflags, qflag_time = get_correct_qflags(merge_job, lp_raw_kwargs["cadence"])
+
+    # Align orbit data to tmag median
+    aligned_data, align_time = get_lightcurve_median(
+        lp_raw_kwargs["data"],
+        qflags,
+        tmag
+    )
+
+    # Pull tjd data from Frame table and correct for earth time
+    tjd, tjd_pull_time = get_tjd(merge_job, lp_raw_kwargs["cadence"], config_override=config_override)
+    correct_bjd = normalizer.correct(merge_job.tic_id, tjd)
+
+    lp_raw_kwargs["data"] = aligned_data
+    lp_raw_kwargs["barycentric_julian_date"] = correct_bjd
+    lp_raw_kwargs["quality_flag"] = qflags
+    lp_raw_kwargs["lightcurve_id"] = np.full_like(lp_raw_kwargs["cadence"], merge_job.lightcurve_id, dtype=int)
+
+    timings = {
+            "file_load": file_time,
+            "quality_flag_assignment": qflag_time,
+            "bjd_correction": tjd_pull_time,
+            "alignment": align_time,
+    }
+
+    return lp_raw_kwargs, timings
+
+
+
+def yield_lp_df_from_merge_jobs(normalizer, stellar_params, single_merge_jobs, config_override=None):
+    for job in single_merge_jobs:
+        lp_raw_kwargs, timings = yield_lp_kwarg_from_merge_jobs(
+            normalizer,
+            stellar_params,
+            job,
+            config_override=config_override
+        )
+
+        lp = pd.DataFrame(
+            data=lp_raw_kwargs
+        )
+
+        yield lp, timings
 
 
 class LightpointProcessor(Process):
