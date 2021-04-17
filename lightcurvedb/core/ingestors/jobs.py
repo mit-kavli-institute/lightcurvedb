@@ -261,7 +261,7 @@ class IngestionPlan(object):
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
         results = db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
-        partition_oid_df = pd.DataFrame(results, names=["lightcurve_id", "partition_oid"])
+        partition_oid_df = pd.DataFrame(results, columns=["lightcurve_id", "partition_oid"])
         self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
 
         for _, row in self._df.iterrows():
