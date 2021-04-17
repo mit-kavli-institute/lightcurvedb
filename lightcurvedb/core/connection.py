@@ -855,8 +855,14 @@ class DB(TableTrackerAPIMixin):
 
         """
 
-        q = self.lightcurves.join(models.Lightcurve.observations).join(
-            models.Observation.orbit
+        q = (
+            self
+            .lightcurves.join(
+                models.Lightcurve.observations
+            )
+            .join(
+                models.Observation.orbit
+            )
         )
 
         if isinstance(sectors, int):
