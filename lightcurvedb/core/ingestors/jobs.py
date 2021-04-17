@@ -52,7 +52,7 @@ class IngestionPlan(object):
         echo("Constructing LightcurveDB and Cache queries")
 
         cache_subquery = cache.query(distinct(FileObservation.tic_id))
-        db_lc_query = db.query(Lightcurve).join(Lightcurve.observations)
+        db_lc_query = db.query(Lightcurve.id).join(Lightcurve.observations)
 
         if orbits:
             db_lc_query = db_lc_query.join(Observation.orbit).filter(
@@ -99,10 +99,13 @@ class IngestionPlan(object):
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
-            db.query(Observation.lightcurve_id, Observation.orbit_id)
-            .join(Observation.lightcurve)
+            db
+            .query(
+                Observation.lightcurve_id,
+                Observation.orbit_id
+            )
             .filter(
-                Lightcurve.tic_id.in_(tic_ids),
+                Observation.lightcurve_id.in_(db_lc_query.subquery())
             )
         )
 
