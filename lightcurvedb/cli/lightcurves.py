@@ -54,7 +54,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-    jobs = plan.get_jobs_by_partition()
+    jobs = plan.get_jobs_by_partition(db)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
