@@ -52,40 +52,29 @@ class IngestionPlan(object):
         echo("Constructing LightcurveDB and Cache queries")
 
         cache_subquery = cache.query(distinct(FileObservation.tic_id))
-        db_lc_query = db.query(Lightcurve.id).join(Lightcurve.observations)
+        db_lc_query = db.query(Lightcurve.id)
 
         if orbits:
-            db_lc_query = db_lc_query.join(Observation.orbit).filter(
-                Orbit.orbit_number.in_(orbits)
-            )
             cache_subquery = cache_subquery.filter(
                 FileObservation.orbit_number.in_(orbits)
             )
 
         if cameras:
-            db_lc_query = db_lc_query.filter(Observation.camera.in_(cameras))
             cache_subquery = cache_subquery.filter(
                 FileObservation.camera.in_(cameras)
             )
 
         if ccds:
-            db_lc_query = db_lc_query.filter(Observation.ccd.in_(ccds))
             cache_subquery = cache_subquery.filter(
                 FileObservation.ccd.in_(ccds)
             )
 
         if tic_mask:
-            db_tic_filter = (
-                ~Lightcurve.tic_id.in_(tic_mask)
-                if invert_mask
-                else Lightcurve.tic_id.in_(tic_mask)
-            )
             cache_tic_filter = (
                 ~FileObservation.tic_id.in_(tic_mask)
                 if invert_mask
                 else FileObservation.tic_id.in_(tic_mask)
             )
-            db_lc_query = db_lc_query.filter(db_tic_filter)
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
         echo("Querying file cache")
@@ -95,7 +84,7 @@ class IngestionPlan(object):
             .all()
         )
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
-
+        db_lc_query.filter(Lightcurve.tic_id.in_(tic_ids))
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
