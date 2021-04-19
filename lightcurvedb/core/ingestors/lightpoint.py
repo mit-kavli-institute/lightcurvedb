@@ -1,6 +1,7 @@
 import os
 import warnings
 from functools import lru_cache
+from sqlalchemy import text
 from multiprocessing import Manager, Process
 from time import time
 
