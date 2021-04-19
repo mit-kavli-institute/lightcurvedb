@@ -136,7 +136,7 @@ def get_correct_qflags(merge_job, cadences):
     """
     min_c, max_c = min(cadences), max(cadences)
     qflag_df = get_qflags(min_c, max_c, merge_job.camera, merge_job.ccd)
-    return qflag_df.loc[cadences]["quality_flag"].to_numpy()
+    return qflag_df.loc[list(cadences)]["quality_flag"].to_numpy()
 
 
 @track_runtime
