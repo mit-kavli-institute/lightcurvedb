@@ -238,15 +238,22 @@ class PartitionConsumer(LightpointProcessor):
                 SELECT nsp.nspname, pgc.relname
                 FROM pg_class pgc
                 JOIN pg_namespace nsp
-                    ON pgc.relnamespace = pgc.oid
+                    ON pgc.relnamespace = nsp.oid
                 WHERE pgc.oid = {0}
                 """
                 .format(
                     partition_job.partition_oid
                 )
             )
-            results = list(db.execute(q))
-            namespace, tablename = results[0]
+            try:
+                results = list(db.execute(q))
+                namespace, tablename = results[0]
+            except IndexError:
+                raise RuntimeError(
+                    "Could not find table for partition oid {0}".format(
+                        partition_job.partition_oid
+                    )
+                )
 
         target_table = "{0}.{1}".format(namespace, tablename)
 
