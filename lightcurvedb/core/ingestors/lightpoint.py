@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
+from sqlalchemy import text
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
