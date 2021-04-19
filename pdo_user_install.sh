@@ -21,8 +21,8 @@ echo "Installing lightcurvedb: ${current_branch} via pdodev using pip${PIP_VERSI
 ssh pdodev PATH=${PATH} PYTHONPATH=${PYTHONPATH} /bin/bash << EOF
     . /etc/bashrc
     . /sw/bin/setup-pdo.sh
-    export LD_LIBRARY_PATH=/sw/openssl-versions/openssl-1.1.1d/lib:/sw/python-versions/python-3.7.5/lib/:$LD_LIBRARY_PATH
-    export PATH=/sw/python-versions/python-3.7.5/bin/:$PATH
+    export LD_LIBRARY_PATH=/sw/openssl-versions/openssl-1.1.1d/lib:/sw/python-versions/python-3.9.2/lib/:$LD_LIBRARY_PATH
+    export PATH=/sw/python-versions/python-3.9.2/bin/:$PATH
     export PATH=/sw/cmake-versions/cmake-3.15.3/bin/:$PATH
     cd ${lightcurvedb_path}
     ./install.sh ${PIP_PATH}
