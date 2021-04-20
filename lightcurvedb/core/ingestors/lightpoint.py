@@ -18,6 +18,7 @@ from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5,
     get_h5_data,
+    get_components,
     get_correct_qflags,
     get_lightcurve_median,
     get_tjd
@@ -304,7 +305,7 @@ class PartitionConsumer(LightpointProcessor):
 
         total_points = sum(len(lp) for lp in lps)
         result = dict(pd.DataFrame(timings).sum())
-        result["relname"] = target_relname
+        result["relname"] = target_table
         result["n_lightpoints"] = total_points
         result["validation"] = validation_time
         result["copy_elapsed"] = copy_elapsed
