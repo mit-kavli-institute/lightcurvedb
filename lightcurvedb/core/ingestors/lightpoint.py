@@ -18,6 +18,7 @@ from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5,
     get_h5_data,
+    get_components,
     get_correct_qflags,
     get_lightcurve_median,
     get_tjd
