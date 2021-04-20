@@ -305,7 +305,7 @@ class PartitionConsumer(LightpointProcessor):
 
         total_points = sum(len(lp) for lp in lps)
         result = dict(pd.DataFrame(timings).sum())
-        result["relname"] = target_relname
+        result["relname"] = target_table
         result["n_lightpoints"] = total_points
         result["validation"] = validation_time
         result["copy_elapsed"] = copy_elapsed
