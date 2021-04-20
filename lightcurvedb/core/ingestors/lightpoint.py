@@ -20,7 +20,8 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5_data,
     get_correct_qflags,
     get_lightcurve_median,
-    get_tjd
+    get_tjd,
+    get_components
 )
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (

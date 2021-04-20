@@ -12,7 +12,7 @@ from lightcurvedb.models import (
     LightcurveType,
 )
 from collections import namedtuple, defaultdict
-from sqlalchemy import distinct
+from sqlalchemy import distinct, text, func
 from click import echo
 from tqdm import tqdm
 from itertools import product
@@ -85,21 +85,8 @@ class IngestionPlan(object):
         )
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
         db_lc_query.filter(Lightcurve.tic_id.in_(tic_ids))
-        echo("Getting current observations from database")
-        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-        current_obs_q = (
-            db
-            .query(
-                Observation.lightcurve_id,
-                Observation.orbit_id
-            )
-            .filter(
-                Observation.lightcurve_id.in_(db_lc_query.subquery())
-            )
-        )
 
-        seen_cache = set(tqdm(current_obs_q, unit=" observations"))
-
+        db.execute(text("SET LOCAL work_mem TO '1GB'"))
         echo("Performing lightcurve query")
         apertures = [ap.name for ap in db.query(Aperture)]
         lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
@@ -111,6 +98,25 @@ class IngestionPlan(object):
         echo("Reading lightcurves for existing observations and ID mapping")
         for lc in tqdm(lightcurves, unit=" lightcurves"):
             id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
+
+        echo("Getting current observations from database")
+        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+        current_obs_q = (
+            db
+            .query(
+                Observation.lightcurve_id,
+                func.array_agg(Observation.orbit_id)
+            )
+            .filter(
+                Observation.lightcurve_id.in_(id_map.values())
+            )
+            .group_by(Observation.lightcurve_id)
+        )
+        seen_cache = set()
+
+        for lc_id, orbit_ids in tqdm(current_obs_q, unit=" observations", total=len(id_map)):
+            for orbit_id in orbit_ids:
+                seen_cache.add((lc_id, orbit_id))
 
         plan = []
         cur_tmp_id = -1
