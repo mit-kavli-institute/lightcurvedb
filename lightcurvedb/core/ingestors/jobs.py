@@ -2,6 +2,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     allocate_lightcurve_ids,
     get_missing_ids,
 )
+from lightcurvedb.util.iter import chunkify
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
     Observation,
@@ -69,7 +70,7 @@ class IngestionPlan(object):
                 FileObservation.ccd.in_(ccds)
             )
 
-        if tic_mask:
+        if tic_mask and len(tic_mask) <= 999:
             cache_tic_filter = (
                 ~FileObservation.tic_id.in_(tic_mask)
                 if invert_mask
@@ -78,15 +79,29 @@ class IngestionPlan(object):
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
         echo("Querying file cache")
-        file_observations = (
-            cache.query(FileObservation)
-            .filter(FileObservation.tic_id.in_(cache_subquery.subquery()))
-            .all()
-        )
+        if tic_mask and len(tic_mask) > 999:
+            echo("tic id mask is too large for single sqlite queries...")
+            file_observations = []
+            safe_for_sqlite = list(chunkify(tic_mask, 999))
+            for tic_chunk in tqdm(safe_for_sqlite):
+                file_obs_q = (
+                    cache.query(FileObservation)
+                    .filter(
+                        FileObservation.tic_id.in_(tic_chunk)
+                    )
+                )
+                file_observations.extend(file_obs_q.all())
+        else:
+            file_observations = (
+                cache.query(FileObservation)
+                .filter(FileObservation.tic_id.in_(cache_subquery.subquery()))
+                .all()
+            )
+
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
         db_lc_query.filter(Lightcurve.tic_id.in_(tic_ids))
 
-        db.execute(text("SET LOCAL work_mem TO '1GB'"))
+        db.execute(text("SET LOCAL work_mem TO '2GB'"))
         echo("Performing lightcurve query")
         apertures = [ap.name for ap in db.query(Aperture)]
         lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]

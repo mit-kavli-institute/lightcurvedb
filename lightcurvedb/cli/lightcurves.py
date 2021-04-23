@@ -1,7 +1,9 @@
 from __future__ import division, print_function
 
 import click
+import re
 from tabulate import tabulate
+from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
@@ -80,6 +82,37 @@ def ingest_tic(ctx, tics, n_processes, fillgaps):
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
     )
     click.echo("Done!")
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("tic-list-file", type=click.File("rt"))
+@click.option("--n-processes", default=1, type=click.IntRange(min=1))
+@click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
+def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
+    extr = re.compile(r"(?P<tic_id>\d+)")
+    data_buffer = tic_list_file.read()
+    tic_ids = set()
+    for token in extr.split(data_buffer):
+        try:
+            tic_ids.add(int(token))
+        except ValueError:
+            continue
+    click.echo(
+        "Parsed {0} unique tic ids from file".format(
+            click.style(str(len(tic_ids)), bold=True)
+        )    
+    )
+    cache = IngestionCache()
+    with ctx.obj["dbconf"] as db:
+        plan = IngestionPlan(db, cache, tic_mask=tic_ids)
+        click.echo(plan)
+        plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
+
+        jobs = plan.get_jobs_by_partition(db)
+
+    ingest_merge_jobs(
+        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+    )
 
 
 @lightcurve.command()

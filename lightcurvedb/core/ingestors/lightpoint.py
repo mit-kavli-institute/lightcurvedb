@@ -290,6 +290,7 @@ class PartitionConsumer(LightpointProcessor):
                     )
                 )
                 lps.append(lp)
+                seen_cache.add((lc_job.lightcurve_id, lc_job.orbit_number))
 
         if not lps:
             result = dict(pd.DataFrame(timings).sum())
