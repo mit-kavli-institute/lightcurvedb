@@ -94,7 +94,7 @@ def recover(maximum_missing, lightcurve_ids):
 
 @lcdbcli.group()
 @click.pass_context
-def administration(ctx):
+def admin(ctx):
     """Base LCDB Administration Commands"""
     click.echo("Entering administration context, please use responsibly!" "")
 
