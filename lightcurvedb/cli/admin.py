@@ -16,7 +16,10 @@ from lightcurvedb.models import (
     Lightpoint,
     Lightcurve,
 )
-from lightcurvedb.cli.types import CommaList
+from lightcurvedb.cli.types import CommaList, ModelField
+from lightcurvedb.cli.utils import tabulate_query
+from lightcurvedb.core import admin as psql_admin
+from lightcurvedb.core.psql_tables import PGStatActivity
 from lightcurvedb.util.iter import chunkify
 
 from . import lcdbcli
@@ -95,12 +98,12 @@ def recover(maximum_missing, lightcurve_ids):
 @lcdbcli.group()
 @click.pass_context
 def admin(ctx):
-    """Base LCDB Administration Commands"""
-    click.echo("Entering administration context, please use responsibly!" "")
+    """Base LCDB admin Commands"""
+    click.echo("Entering admin context, please use responsibly!" "")
 
 
 # Define procedure cli commands
-@administration.group()
+@admin.group()
 @click.pass_context
 def procedures(ctx):
     """
@@ -160,7 +163,7 @@ def list_defined(ctx):
         )
 
 
-@administration.group()
+@admin.group()
 @click.pass_context
 def maintenance(ctx):
     pass
@@ -231,3 +234,76 @@ def delete_invalid_tic_observations(ctx, tics, maximum_missing):
     fine, to_reingest = recover(maximum_missing, ids)
     click.echo("OK IDS: {0}".format(fine))
     click.echo("BAD IDS: {0}".format(to_reingest))
+
+
+@admin.group()
+@click.pass_context
+def state(ctx):
+    pass
+
+
+@state.command()
+@click.pass_context
+@click.option(
+    "--column",
+    "-c",
+    "columns",
+    multiple=True,
+    type=ModelField(PGStatActivity),
+    default=["pid", "state", "query"]
+)
+def get_all_queries(ctx, columns):
+    with ctx.obj["dbconf"] as db:
+        q = (
+            db
+            .query(*columns)
+            .filter(
+                PGStatActivity.database == "lightpointdb"
+            )
+        )
+        click.echo(tabulate_query(q))
+
+
+@state.command()
+@click.pass_context
+@click.option(
+    "--column",
+    "-c",
+    "columns",
+    multiple=True,
+    type=ModelField(PGStatActivity),
+    default=["pid", "query", "blocked_by"]
+)
+def get_blocked_queries(ctx, columns):
+    with ctx.obj["dbconf"] as db:
+        q = (
+            db
+            .query(*columns)
+            .filter(
+                PGStatActivity.database == "lightpointdb",
+                PGStatActivity.is_blocked()
+            )
+        )
+        click.echo(tabulate_query(q))
+
+@state.command()
+@click.pass_context
+@click.argument("pids", type=int, nargs=-1)
+@click.option(
+    "--column",
+    "-c",
+    "columns",
+    multiple=True,
+    type=ModelField(PGStatActivity),
+    default=["pid", "state", "query"]
+)
+def get_info(ctx, pids, columns):
+    with ctx.obj["dbconf"] as db:
+        q = (
+            db
+            .query(*columns)
+            .filter(
+                PGStatActivity.pid.in_(pids)
+            )
+        )
+        click.echo(tabulate_query(q))

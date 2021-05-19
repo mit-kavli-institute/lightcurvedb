@@ -46,6 +46,23 @@ class Database(click.ParamType):
             executemany_batch_page_size=500,
         )
 
+class ModelField(click.ParamType):
+
+    name = "model_fields"
+
+    def __init__(self, Model, *args, **kwargs):
+        super(ModelField, self).__init__(*args, **kwargs)
+        self.Model = Model
+
+    def convert(self, value, param, ctx):
+        try:
+            field = getattr(self.Model, value)
+            return field
+        except AttributeError:
+            self.fail(
+                "{0} does not have the attribute {1}".format(Model, value)
+            )
+
 
 class QLPModelType(click.ParamType):
 
