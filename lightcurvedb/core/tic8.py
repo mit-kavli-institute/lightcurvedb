@@ -45,8 +45,9 @@ class TIC8_DB(object):
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=SAWarning)
+
                 TIC8_ENGINE = create_engine(
-                    "postgresql://{dbuser}:{dbpass}@{dbhost}/{dbname}".format(
+                    "postgresql://{dbuser}:{dbpass}@{dbhost}:{dbport}/{dbname}".format(
                         **TIC8_CONFIGURATION
                     )
                 )
