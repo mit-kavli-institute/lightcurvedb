@@ -14,7 +14,6 @@ from lightcurvedb.util.constants import __DEFAULT_PATH__
 from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DisconnectionError
 from psycopg2 import connect
 
@@ -40,11 +39,6 @@ def __config_to_kwargs__(path):
     return kwargs
 
 
-def __config_to_url__(path):
-
-    return URL(DB_TYPE, **__config_to_kwargs__(path))
-
-
 def __register_process_guards__(engine):
     """Add SQLAlchemy process guards to the given engine"""
 
@@ -67,27 +61,6 @@ def __register_process_guards__(engine):
 def __init_engine__(uri, **engine_kwargs):
     engine = create_engine(uri, **engine_kwargs)
     return __register_process_guards__(engine)
-
-
-try:
-    url = __config_to_url__(os.path.expanduser(__DEFAULT_PATH__))
-    __LCDB_ENGINE__ = __init_engine__(url, **DEFAULT_ENGINE_KWARGS)
-    __SESSION_FACTORY__ = sessionmaker(bind=__LCDB_ENGINE__)
-
-except (KeyError, NoSectionError):
-    # Unknown config location, do not prepare default engine
-    __LCDB_ENGINE__ = None
-    __SESSION_FACTORY__ = None
-
-
-def init_LCDB(uri, **kwargs):
-    ENGINE = create_engine(uri, **kwargs)
-    # Register engine with to allow for easy pooling dissociation
-    ENGINE = __register_process_guards__(ENGINE)
-
-    FACTORY = sessionmaker(bind=ENGINE)
-
-    return FACTORY
 
 
 def psycopg_connection(uri_override=None):
@@ -117,3 +90,45 @@ def psycopg_connection(uri_override=None):
         host=kwargs["host"],
         port=kwargs["port"],
     )
+
+ENGINE_CONF_REQ_ARGS = {
+    "username": "username",
+    "password": "password",
+    "database": "database_name",
+}
+
+ENGINE_CONF_OPT_ARGS = {
+    "dialect": "dialect",
+    "host": "database_host",
+    "port": "database_port",
+}
+
+OPT_DEFAULTS = {
+    "dialect": "postgresql+psycopg2",
+    "host": "localhost",
+    "port": 5432
+}
+
+def engine_from_config(config_path, config_group="Credentials", **engine_overrides):
+    """
+    Create an SQLAlchemy engine from the configuration path.
+    """
+    config = ConfigParser()
+    config.read(os.path.expanduser(config_path))
+
+    section = config[config_group]
+
+    kwargs = {}
+    # Absolutely required
+    for kwarg, config_path in ENGINE_CONF_REQ_ARGS.items():
+        kwargs[kwarg] = section[config_path]
+
+    for kwarg, config_path in ENGINE_CONF_OPT_ARGS.items():
+        kwargs[kwarg] = section.get(config_path, OPT_DEFAULTS[kwarg])
+
+
+    url = (
+        "{dialect}://{username}:{password}@{host}:{port}/{database}".format(**kwargs)
+    )
+    engine = __init_engine__(url, **engine_overrides)
+    return __register_process_guards__(engine)
