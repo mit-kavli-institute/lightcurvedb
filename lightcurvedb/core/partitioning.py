@@ -1,13 +1,14 @@
 """
 This module describes partitioning of the lightcurve database.
 """
-from sqlalchemy import DDL, select, func
+from sqlalchemy import DDL, select, func, inspect
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.hybrid import hybrid_property
 from math import ceil
 import re
 from pandas import to_numeric, read_sql as pd_read_sql
 from lightcurvedb.core.admin import get_psql_catalog_tables
+from lightcurvedb.core.psql_tables import PGClass, PGInherits
 
 
 partition_range_extr = re.compile(
@@ -77,56 +78,28 @@ def Partitionable(partition_type, *columns):
 
         @hybrid_property
         def partition_oids(self):
-            pg_class, pg_inherits = get_psql_catalog_tables(
-                "pg_class", "pg_inherits"
-            )
+            children = self.children
+            return [c.oid for c in children]
 
         @partition_oids.expression
         def partition_oids(cls):
-            pg_inherits = get_psql_catalog_tables("pg_inherits")
-
             return (
-                select([pg_inherits.c.inhrelid])
-                .where(pg_inherits.c.inhparent == cls.oid)
+                select([PGInherits.child_oid])
+                .where(PGInherits.parent_oid == cls.oid)
                 .label("partition_oids")
             )
 
-        @hybrid_property
-        def partition_info(self):
-            raise NotImplementedError
-
-        @partition_info.expression
-        def partition_info(cls):
-            pg_class = get_psql_catalog_tables("pg_class")
-            return select(
-                [
-                    pg_class.c.relname,
-                    func.pg_get_expr(
-                        pg_class.c.relpartbound, pg_class.c.oid
-                    ).label("expression"),
-                ]
-            ).where(pg_class.c.oid.in_(cls.partition_oids))
-
         @classmethod
         def partition_df(cls, db):
-            pg_class, pg_inherits = get_psql_catalog_tables(
-                "pg_class", "pg_inherits"
-            )
+            parent = aliased(PGClass)
 
-            child = aliased(pg_class, alias="child")
-            parent = aliased(pg_class, alias="parent")
-
-            info_q = (
-                db.query(
-                    child.c.relname,
-                    func.pg_get_expr(child.c.relpartbound, child.c.oid).label(
-                        "expression"
-                    ),
-                )
-                .join(pg_inherits, child.c.oid == pg_inherits.c.inhrelid)
-                .join(parent, parent.c.oid == pg_inherits.c.inhparent)
-                .filter(parent.c.relname == cls.__tablename__)
+            info_q = db.query(PGClass.relname, PGClass.expression())
+            info_q = info_q.join(
+                PGInherits, PGInherits.child_oid == PGClass.oid
             )
+            info_q = info_q.join(
+                parent, PGInherits.parent_oid == parent.oid
+            ).filter(parent.relname == cls.__tablename__)
 
             df = pd_read_sql(info_q.statement, db.session.bind)
 

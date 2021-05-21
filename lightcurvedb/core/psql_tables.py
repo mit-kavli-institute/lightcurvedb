@@ -6,9 +6,20 @@ This table should be modified depending on which version of PostgreSQL
 is used.
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, inspect
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    inspect,
+    Boolean,
+    Float,
+    ForeignKey,
+)
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -16,6 +27,8 @@ from datetime import datetime
 
 # Alias referenced datatypes to better match internal datatypes
 XID = Integer
+NAME = String(64)
+
 
 @as_declarative()
 class PGStatModel(object):
@@ -26,18 +39,35 @@ class PGStatModel(object):
     __abstract__ = True
 
 
+@as_declarative()
+class PGCatalogModel(object):
+    """
+    Wrapper for PG Catalogs
+    """
+
+    __abstract__ = True
+
+
+"""
+##############
+Begin PGState Model definitions
+##############
+"""
+
+
 class PGStatActivity(PGStatModel):
     """
     Wraps behavior around PostgreSQL's pg_stat_activity.
     """
+
     __tablename__ = "pg_stat_activity"
 
     pid = Column(Integer, primary_key=True)
 
     datid = Column(OID)
-    datname = Column(String(64))
+    datname = Column(NAME)
     usesysid = Column(OID)
-    usename = Column(String(64))
+    usename = Column(NAME)
     application_name = Column(Text)
 
     client_addr = Column(INET)
@@ -49,10 +79,10 @@ class PGStatActivity(PGStatModel):
     query_start = Column(DateTime(timezone=True))
     state_change = Column(DateTime(timezone=True))
 
-    wait_event_type = Column(String(64))
-    wait_event = Column(String(64))
+    wait_event_type = Column(NAME)
+    wait_event = Column(NAME)
 
-    state = Column(String(64))
+    state = Column(NAME)
 
     backend_xid = Column(XID)
     backend_xmin = Column(XID)
@@ -214,15 +244,129 @@ class PGStatActivity(PGStatModel):
         return func.cardinality(cls.blocked_by) > 0
 
 
-# class PostgresAPIMixin(object):
-#     """
-#     Grant easy administration definitions to a database object.
-#     """
-#     def get_blocked_queries(self):
-#         cardinality = func.cardinality
-#         q = (
-#             self
-#             .query(PGStatActivity)
-#             .
-#         )
+"""
+##############
+Begin PGCatalog Model definitions
+##############
+"""
 
+
+class PGAuthID(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_authid catalog.
+    """
+
+    __tablename__ = "pg_authid"
+
+    oid = Column(OID, primary_key=True)
+    rolname = Column(NAME)
+    rolsuper = Column(Boolean)
+    rolinherit = Column(Boolean)
+    rolcreaterole = Column(Boolean)
+    rolcreatedb = Column(Boolean)
+    rolcanlogin = Column(Boolean)
+
+
+class PGNamespace(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_namespace catalog.
+    """
+
+    __tablename__ = "pg_namespace"
+
+    oid = Column(OID, primary_key=True)
+    nspname = Column(NAME)
+    nspowner = Column(ForeignKey(PGAuthID.__tablename__ + ".oid"))
+
+    owner = relationship(PGAuthID, backref="namespaces")
+
+
+class PGType(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_type catalog.
+    """
+
+    __tablename__ = "pg_type"
+
+    oid = Column(OID, primary_key=True)
+    typname = Column(NAME)
+    typnamespace = Column(OID, ForeignKey(PGNamespace.__tablename__ + ".oid"))
+
+
+class PGInherits(PGCatalogModel):
+    """
+    Wraps behavior around Many to Many PGInherits catalog.
+    """
+
+    __tablename__ = "pg_inherits"
+
+    inhrelid = Column(OID, ForeignKey("pg_class.oid"), primary_key=True)
+    inhparent = Column(OID, ForeignKey("pg_class.oid"), primary_key=True)
+
+    @hybrid_property
+    def child_oid(self):
+        return self.inhrelid
+
+    @child_oid.expression
+    def child_oid(cls):
+        return cls.inhrelid
+
+    @hybrid_property
+    def parent_oid(self):
+        return self.inhparent
+
+    @parent_oid.expression
+    def parent_oid(cls):
+        return cls.inhparent
+
+
+class PGClass(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_class catalog.
+    """
+
+    __tablename__ = "pg_class"
+
+    oid = Column(OID, primary_key=True)
+    relname = Column(NAME)
+    reltype = Column(OID, ForeignKey(PGType.__tablename__ + ".oid"))
+    relowner = Column(ForeignKey(PGAuthID.__tablename__ + ".oid"))
+    relpages = Column(Integer)
+    reltuples = Column(Float)
+    relispartition = Column(Boolean)
+    relpartbound = Column(Text)
+
+    type_ = relationship(PGType, backref="classes")
+    owner = relationship(PGAuthID, backref="classes")
+    parent = relationship(
+        "PGClass",
+        secondary=PGInherits.__table__,
+        primaryjoin=(oid == PGInherits.child_oid),
+        secondaryjoin=(oid == PGInherits.parent_oid),
+        single_parent=True,
+        backref=backref("children"),
+    )
+
+    @classmethod
+    def expression(cls):
+        return func.pg_get_expr(cls.relpartbound, cls.oid).label("expression")
+
+
+class PGCatalogMixin(object):
+    """
+    Mixing to provide database objects PGCatalog API methods.
+    """
+
+    def get_pg_oid(self, tablename):
+        """
+        Obtain postgres's internal OID for the given tablename.
+
+        Returns
+        -------
+        int or None:
+            Returns the OID (int) of the given table or ``None`` if no such
+            table exists.
+        """
+        return (
+            self.query(PGClass.oid).filter_by(relname=tablename).one_or_none()
+        )

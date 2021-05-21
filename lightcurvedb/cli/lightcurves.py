@@ -83,6 +83,7 @@ def ingest_tic(ctx, tics, n_processes, fillgaps):
     )
     click.echo("Done!")
 
+
 @lightcurve.command()
 @click.pass_context
 @click.argument("tic-list-file", type=click.File("rt"))
@@ -100,7 +101,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
     click.echo(
         "Parsed {0} unique tic ids from file".format(
             click.style(str(len(tic_ids)), bold=True)
-        )    
+        )
     )
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:

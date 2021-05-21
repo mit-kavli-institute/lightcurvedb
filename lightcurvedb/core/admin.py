@@ -47,8 +47,7 @@ def get_psql_catalog_tables(*tables):
     except KeyError:
         raise KeyError(
             "Unknown catalogs {0}. Registered catalogs: {1}".format(
-                *tables,
-                catalogs.keys()
+                *tables, catalogs.keys()
             )
         )
     if len(results) == 1:

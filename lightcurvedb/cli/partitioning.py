@@ -1,10 +1,12 @@
 from __future__ import division, print_function
 
 from sys import exit
+from tqdm import tqdm
 
 import click
 
 import lightcurvedb.models as defined_models
+from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
 from lightcurvedb.core.admin import psql_tables
@@ -61,7 +63,7 @@ def list_partitions(ctx, model):
     "--schema",
     type=str,
     default="partitions",
-    help="Schema space to place the partition under (organization)",
+    help="Schema space to place the partition under.",
 )
 def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
     """
@@ -99,7 +101,20 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
                 current_max + blocksize,
                 schema=schema,
             )
-            new_partition_models.append(ddl)
+            partition_name = "{0}_{1}_{2}".format(
+                target_model.__tablename__,
+                current_max,
+                current_max + blocksize,
+            )
+
+            info = {
+                "partition_name": partition_name,
+                "min_range": current_max,
+                "max_range": current_max + blocksize,
+                "model": target_model.__name__,
+            }
+
+            new_partition_models.append((ddl, info))
 
             click.echo(
                 "\tWill emit new PARTITION FROM VALUES "
@@ -145,9 +160,16 @@ def create_partitions(ctx, model, number_of_new_partitions, blocksize, schema):
 
         if not ctx.obj["dryrun"]:
             click.confirm("Do the following changes look okay?", abort=True)
-            for partition in new_partition_models:
+            for partition, info in tqdm(
+                new_partition_models, desc="Creating Tables..."
+            ):
                 db.session.execute(partition)
-                click.echo("\tMade {0}".format(partition))
+                tablename = info.pop("partition_name")
+
+                oid = db.get_pg_oid(tablename)
+
+                track = RangedPartitionTrack(oid=oid, **info)
+                db.add(track)
 
             db.commit()
             click.echo(

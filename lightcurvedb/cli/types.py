@@ -46,6 +46,7 @@ class Database(click.ParamType):
             executemany_batch_page_size=500,
         )
 
+
 class ModelField(click.ParamType):
 
     name = "model_fields"

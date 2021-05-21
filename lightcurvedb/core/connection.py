@@ -17,6 +17,7 @@ from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
 from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
+from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
@@ -40,7 +41,7 @@ def engine_overrides(**engine_kwargs):
     return engine_kwargs
 
 
-class DB(TableTrackerAPIMixin):
+class DB(TableTrackerAPIMixin, PGCatalogMixin):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
@@ -855,14 +856,8 @@ class DB(TableTrackerAPIMixin):
 
         """
 
-        q = (
-            self
-            .lightcurves.join(
-                models.Lightcurve.observations
-            )
-            .join(
-                models.Observation.orbit
-            )
+        q = self.lightcurves.join(models.Lightcurve.observations).join(
+            models.Observation.orbit
         )
 
         if isinstance(sectors, int):

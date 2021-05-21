@@ -84,11 +84,8 @@ class IngestionPlan(object):
             file_observations = []
             safe_for_sqlite = list(chunkify(tic_mask, 999))
             for tic_chunk in tqdm(safe_for_sqlite):
-                file_obs_q = (
-                    cache.query(FileObservation)
-                    .filter(
-                        FileObservation.tic_id.in_(tic_chunk)
-                    )
+                file_obs_q = cache.query(FileObservation).filter(
+                    FileObservation.tic_id.in_(tic_chunk)
                 )
                 file_observations.extend(file_obs_q.all())
         else:
@@ -117,19 +114,17 @@ class IngestionPlan(object):
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
-            db
-            .query(
-                Observation.lightcurve_id,
-                func.array_agg(Observation.orbit_id)
+            db.query(
+                Observation.lightcurve_id, func.array_agg(Observation.orbit_id)
             )
-            .filter(
-                Observation.lightcurve_id.in_(id_map.values())
-            )
+            .filter(Observation.lightcurve_id.in_(id_map.values()))
             .group_by(Observation.lightcurve_id)
         )
         seen_cache = set()
 
-        for lc_id, orbit_ids in tqdm(current_obs_q, unit=" observations", total=len(id_map)):
+        for lc_id, orbit_ids in tqdm(
+            current_obs_q, unit=" observations", total=len(id_map)
+        ):
             for orbit_id in orbit_ids:
                 seen_cache.add((lc_id, orbit_id))
 
@@ -270,8 +265,12 @@ class IngestionPlan(object):
         )
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
-        results = db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
-        partition_oid_df = pd.DataFrame(results, columns=["lightcurve_id", "partition_oid"])
+        results = db.map_values_to_partitions(
+            Lightpoint, self._df["lightcurve_id"]
+        )
+        partition_oid_df = pd.DataFrame(
+            results, columns=["lightcurve_id", "partition_oid"]
+        )
         self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
 
         for _, row in self._df.iterrows():
