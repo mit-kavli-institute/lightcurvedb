@@ -18,14 +18,6 @@ from sqlalchemy.exc import DisconnectionError
 from psycopg2 import connect
 
 
-DB_TYPE = "postgresql+psycopg2"
-DEFAULT_ENGINE_KWARGS = {
-    "executemany_mode": "values",
-    "executemany_values_page_size": 10000,
-    "connect_args": {"client_encoding": "utf8"},
-}
-
-
 def __config_to_kwargs__(path):
     parser = ConfigParser()
     parser.read(path)
