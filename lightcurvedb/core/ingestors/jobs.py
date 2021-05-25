@@ -53,22 +53,30 @@ class IngestionPlan(object):
         echo("Constructing LightcurveDB and Cache queries")
 
         cache_subquery = cache.query(distinct(FileObservation.tic_id))
+        obs_subquery = db.query(Observation.lightcurve_id)
         db_lc_query = db.query(Lightcurve.id)
 
         if orbits:
             cache_subquery = cache_subquery.filter(
                 FileObservation.orbit_number.in_(orbits)
             )
+            db_lc_query = (
+                db_lc_query
+                .join(Observation.orbit)
+                .filter(Orbit.orbit_number.in_(orbits))
+            )
 
         if cameras:
             cache_subquery = cache_subquery.filter(
                 FileObservation.camera.in_(cameras)
             )
+            db_lc_query = db_lc_query.filter(Observation.camera.in_(cameras))
 
         if ccds:
             cache_subquery = cache_subquery.filter(
                 FileObservation.ccd.in_(ccds)
             )
+            db_lc_query = db_lc_query.filter(Observation.ccd.in_(ccds))
 
         if tic_mask and len(tic_mask) <= 999:
             cache_tic_filter = (
@@ -79,6 +87,12 @@ class IngestionPlan(object):
             cache_subquery = cache_subquery.filter(cache_tic_filter)
 
         echo("Querying file cache")
+        if tic_mask:
+            db_lc_query = (
+                db_lc_query
+                .join(Observation.lightcurve)
+                .filter(Lightcurve.tic_id.in_(tic_mask))
+            )
         if tic_mask and len(tic_mask) > 999:
             echo("tic id mask is too large for single sqlite queries...")
             file_observations = []
@@ -103,8 +117,11 @@ class IngestionPlan(object):
         apertures = [ap.name for ap in db.query(Aperture)]
         lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
 
-        lightcurves = db.query(Lightcurve)
-        lightcurves = lightcurves.filter(Lightcurve.tic_id.in_(tic_ids))
+        lightcurves = (
+            db
+            .query(Lightcurve)
+            .filter(Lightcurve.tic_id.in_(tic_ids))
+        )
 
         id_map = {}
         echo("Reading lightcurves for existing observations and ID mapping")
@@ -115,18 +132,16 @@ class IngestionPlan(object):
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         current_obs_q = (
             db.query(
-                Observation.lightcurve_id, func.array_agg(Observation.orbit_id)
+                Observation.lightcurve_id, Observation.orbit_id
             )
-            .filter(Observation.lightcurve_id.in_(id_map.values()))
-            .group_by(Observation.lightcurve_id)
+            .filter(Observation.lightcurve_id.in_(db_lc_query.subquery()))
         )
         seen_cache = set()
 
-        for lc_id, orbit_ids in tqdm(
+        for lc_id, orbit_id in tqdm(
             current_obs_q, unit=" observations", total=len(id_map)
         ):
-            for orbit_id in orbit_ids:
-                seen_cache.add((lc_id, orbit_id))
+            seen_cache.add((lc_id, orbit_id))
 
         plan = []
         cur_tmp_id = -1
