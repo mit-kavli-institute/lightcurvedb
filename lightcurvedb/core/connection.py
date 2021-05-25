@@ -46,9 +46,11 @@ class ORM_DB(object):
         """Enter into the context of an open SQLAlchemy session"""
         return self.open()
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self, exc_type, exc_value, traceback):
         """Exit from the current SQLAlchemy session"""
-        return self.close()
+        self.close()
+
+        return exc_type is None
 
     def open(self):  # noqa: B006
         """
