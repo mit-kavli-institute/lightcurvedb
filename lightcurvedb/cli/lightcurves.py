@@ -46,12 +46,17 @@ def lightcurve(ctx):
 @click.option("--cameras", type=CommaList(int), default="1,2,3,4")
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
-def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps):
-
+@click.option("--full-diff/--only-listed-orbits", is_flag=True, default=True)
+def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
-            db, cache, orbits=orbits, cameras=cameras, ccds=ccds
+            db,
+            cache,
+            full_diff=full_diff,
+            orbits=orbits,
+            cameras=cameras,
+            ccds=ccds
         )
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
