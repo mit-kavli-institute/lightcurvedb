@@ -60,8 +60,8 @@ class IngestionPlan(object):
             cache_subquery = cache_subquery.filter(
                 FileObservation.orbit_number.in_(orbits)
             )
-            db_lc_query = (
-                db_lc_query
+            obs_subquery = (
+                obs_subquery
                 .join(Observation.orbit)
                 .filter(Orbit.orbit_number.in_(orbits))
             )
@@ -70,14 +70,22 @@ class IngestionPlan(object):
             cache_subquery = cache_subquery.filter(
                 FileObservation.camera.in_(cameras)
             )
-            db_lc_query = db_lc_query.filter(Observation.camera.in_(cameras))
+            obs_subquery = obs_subquery.filter(Observation.camera.in_(cameras))
 
         if ccds:
             cache_subquery = cache_subquery.filter(
                 FileObservation.ccd.in_(ccds)
             )
-            db_lc_query = db_lc_query.filter(Observation.ccd.in_(ccds))
+            obs_subquery = obs_subquery.filter(Observation.ccd.in_(ccds))
 
+        if tic_mask:
+            obs_subquery = (
+                obs_subquery
+                .join(Observation.lightcurve)
+                .filter(Lightcurve.tic_id.in_(tic_mask))
+            )
+
+        echo("Querying file cache")
         if tic_mask and len(tic_mask) <= 999:
             cache_tic_filter = (
                 ~FileObservation.tic_id.in_(tic_mask)
@@ -85,21 +93,15 @@ class IngestionPlan(object):
                 else FileObservation.tic_id.in_(tic_mask)
             )
             cache_subquery = cache_subquery.filter(cache_tic_filter)
-
-        echo("Querying file cache")
-        if tic_mask:
-            db_lc_query = (
-                db_lc_query
-                .join(Observation.lightcurve)
-                .filter(Lightcurve.tic_id.in_(tic_mask))
-            )
-        if tic_mask and len(tic_mask) > 999:
+        elif tic_mask and len(tic_mask) > 999:
             echo("tic id mask is too large for single sqlite queries...")
             file_observations = []
             safe_for_sqlite = list(chunkify(tic_mask, 999))
             for tic_chunk in tqdm(safe_for_sqlite):
                 file_obs_q = cache.query(FileObservation).filter(
-                    FileObservation.tic_id.in_(tic_chunk)
+                    ~FileObservation.tic_id.in_(tic_chunk)
+                    if invert_mask
+                    else FileObservation.tic_id.in_(tic_chunk)
                 )
                 file_observations.extend(file_obs_q.all())
         else:
@@ -134,12 +136,12 @@ class IngestionPlan(object):
             db.query(
                 Observation.lightcurve_id, Observation.orbit_id
             )
-            .filter(Observation.lightcurve_id.in_(db_lc_query.subquery()))
+            .filter(Observation.lightcurve_id.in_(obs_subquery.subquery()))
         )
         seen_cache = set()
 
         for lc_id, orbit_id in tqdm(
-            current_obs_q, unit=" observations", total=len(id_map)
+            current_obs_q, unit=" observations"
         ):
             seen_cache.add((lc_id, orbit_id))
 
@@ -208,6 +210,10 @@ class IngestionPlan(object):
         )
 
     def assign_new_lightcurves(self, db, fill_id_gaps=False):
+        if len(self._df) == 0:
+            # Nothing todo
+            return
+
         new_jobs = self._df[self._df.lightcurve_id < 0]
         new_ids = set(new_jobs.lightcurve_id)
 
