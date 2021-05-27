@@ -5,18 +5,16 @@ import warnings
 import numpy as np
 from pandas import read_sql as pd_read_sql
 
-from configparser import ConfigParser
-
 from sqlalchemy import and_, func
-from sqlalchemy.pool import QueuePool
-from sqlalchemy.orm import scoped_session
-from sqlalchemy.engine.url import URL
+from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
+from lightcurvedb.core.engines import engine_from_config
 from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.frame import FRAME_DTYPE
 from lightcurvedb.util.type_check import isiterable
-from lightcurvedb.core.engines import init_LCDB, __DEFAULT_PATH__
+from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
@@ -28,90 +26,53 @@ LEGACY_FRAME_TYPE_ID = "Raw FFI"
 FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
 
-def engine_overrides(**engine_kwargs):
-    if "pool_size" not in engine_kwargs:
-        engine_kwargs["pool_size"] = 12
-    if "max_overflow" not in engine_kwargs:
-        engine_kwargs["max_overflow"] = -1
-    if "pool_pre_ping" not in engine_kwargs:
-        engine_kwargs["pool_pre_ping"] = True
-    if "poolclass" not in engine_kwargs:
-        engine_kwargs["poolclass"] = QueuePool
-    return engine_kwargs
-
-
-class DB(TableTrackerAPIMixin):
-    """Wrapper for SQLAlchemy sessions. This is the primary way to interface
-    with the lightcurve database.
-
-    It is advised not to instantiate this class directly. The preferred
-    methods are through
-
-    ::
-
-        from lightcurvedb import db
-        with db as opendb:
-            foo
-
-        # or
-        from lightcurvedb import db_from_config
-        db = db_from_config('path_to_config')
-
+class ORM_DB(object):
     """
-
-    def __init__(self, FACTORY, SESSIONCLASS=None, pg_catalog=False):
-
-        if SESSIONCLASS:
-            # Createdb instance opened
-            self.SessionClass = SESSIONCLASS
-            self._session = SESSIONCLASS()
-            self._active = True
-        else:
-            self.__FACTORY__ = FACTORY
-            self.SessionClass = scoped_session(self.__FACTORY__)
-            self._session = None
-            self._active = False
+    Base Wrapper for all SQLAlchemy Session objects
+    """
+    def __init__(self, SessionMaker):
+        self._sessionmaker = SessionMaker
+        self._session = None
+        self._active = False
         self._config = None
 
     def __repr__(self):
-        """
-        Return a human friendly string representation of the DB session.
-        """
         if self._active:
             return "<DB status=open>"
         else:
             return "<DB status=closed>"
 
     def __enter__(self):
-        """Enter into the context of a SQLAlchemy open session"""
+        """Enter into the context of an open SQLAlchemy session"""
         return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
         """Exit from the current SQLAlchemy session"""
         self.close()
 
+        return exc_type is None
+
     def open(self):  # noqa: B006
         """
-        Establish a connection to the database. If this session has already
-        been opened it will issue a warning before a no-op.
+        Establish a connection to the URI given to this instance. If the
+        session has already been opened this function will cowardly exit.
 
         Returns
         -------
-        DB
+        ORM_DB
             Returns itself in an open state.
         """
-        if not self._active:
-            if not self._session:
-                self._session = self.__FACTORY__()
-                self._active = True
-                return self
-        else:
+        if self._active:
             warnings.warn(
                 "DB session is already scoped. Ignoring duplicate open call",
                 RuntimeWarning,
             )
-        return self
+        else:
+            self._session = self._sessionmaker()
+            self._active = True
 
+        return self
+ 
     def close(self):
         """
         Closes the database connection. If this session has not been opened
@@ -119,11 +80,10 @@ class DB(TableTrackerAPIMixin):
 
         Returns
         -------
-        DB
+        ORM_DB
             Returns itself in a closed state.
         """
-        if self._session is not None:
-            # self.SessionClass.remove()
+        if self._active:
             self._session.close()
             self._session = None
             self._active = False
@@ -221,6 +181,69 @@ class DB(TableTrackerAPIMixin):
         """
         return self._session.query(*args)
 
+    def commit(self):
+        """
+        Commit the executed queries in the database to make any
+        changes permanent.
+        """
+        self._session.commit()
+
+    def rollback(self):
+        """
+        Rollback all changes to the previous commit.
+        """
+        self._session.rollback()
+
+    def add(self, model_inst):
+        """
+        Adds the given QLPModel instance to be inserted into the database.
+
+        Parameters
+        ----------
+        model_inst : QLPModel
+            The new model to insert into the database.
+
+        Raises
+        ------
+        sqlalchemy.IntegrityError
+            Raised if the given instance violates given SQL constraints.
+        """
+        self._session.add(model_inst)
+
+    def update(self, *args, **kwargs):
+        """
+        A helper method to ``db.session.update()``.
+
+        Returns
+        -------
+        sqlalchemy.Query
+        """
+        self._session.update(*args, **kwargs)
+
+    def delete(self, model_inst, synchronize_session="evaluate"):
+        """
+        A helper method to ``db.session.delete()``.
+
+        Parameters
+        ----------
+        model_inst : QLPModel
+            The model to delete from the database.
+        synchronize_session : str, optional
+            How the session should change it's internal records to
+            reflect changes made to the database. See SQLAlchemy
+            docs for details.
+        """
+        self._session.delete(
+            model_inst, synchronize_session=synchronize_session
+        )
+
+    def execute(self, *args, **kwargs):
+        """
+        Alias for db session execution. See sqlalchemy.Session.execute for
+        more information.
+        """
+        return self._session.execute(*args, **kwargs)
+
     @property
     def is_active(self):
         """
@@ -233,6 +256,24 @@ class DB(TableTrackerAPIMixin):
         """
         return self._active
 
+class DB(ORM_DB, TableTrackerAPIMixin, PGCatalogMixin):
+    """Wrapper for SQLAlchemy sessions. This is the primary way to interface
+    with the lightcurve database.
+
+    It is advised not to instantiate this class directly. The preferred
+    methods are through
+
+    ::
+
+        from lightcurvedb import db
+        with db as opendb:
+            foo
+
+        # or
+        from lightcurvedb import db_from_config
+        db = db_from_config('path_to_config')
+
+    """
     @property
     def orbits(self):
         """
@@ -855,14 +896,8 @@ class DB(TableTrackerAPIMixin):
 
         """
 
-        q = (
-            self
-            .lightcurves.join(
-                models.Lightcurve.observations
-            )
-            .join(
-                models.Observation.orbit
-            )
+        q = self.lightcurves.join(models.Lightcurve.observations).join(
+            models.Observation.orbit
         )
 
         if isinstance(sectors, int):
@@ -998,68 +1033,6 @@ class DB(TableTrackerAPIMixin):
         if check:
             check.delete()
 
-    def commit(self):
-        """
-        Commit the executed queries in the database to make any
-        changes permanent.
-        """
-        self._session.commit()
-
-    def rollback(self):
-        """
-        Rollback all changes to the previous commit.
-        """
-        self._session.rollback()
-
-    def add(self, model_inst):
-        """
-        Adds the given QLPModel instance to be inserted into the database.
-
-        Parameters
-        ----------
-        model_inst : QLPModel
-            The new model to insert into the database.
-
-        Raises
-        ------
-        sqlalchemy.IntegrityError
-            Raised if the given instance violates given SQL constraints.
-        """
-        self._session.add(model_inst)
-
-    def update(self, *args, **kwargs):
-        """
-        A helper method to ``db.session.update()``.
-
-        Returns
-        -------
-        sqlalchemy.Query
-        """
-        self._session.update(*args, **kwargs)
-
-    def delete(self, model_inst, synchronize_session="evaluate"):
-        """
-        A helper method to ``db.session.delete()``.
-
-        Parameters
-        ----------
-        model_inst : QLPModel
-            The model to delete from the database.
-        synchronize_session : str, optional
-            How the session should change it's internal records to
-            reflect changes made to the database. See SQLAlchemy
-            docs for details.
-        """
-        self._session.delete(
-            model_inst, synchronize_session=synchronize_session
-        )
-
-    def execute(self, *args, **kwargs):
-        """
-        Alias for db session execution. See sqlalchemy.Session.execute for
-        more information.
-        """
-        return self._session.execute(*args, **kwargs)
 
     # Begin helper methods to quickly grab reference maps
     @property
@@ -1190,21 +1163,17 @@ def db_from_config(config_path=None, **engine_kwargs):
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
-    parser = ConfigParser()
-    parser.read(
-        os.path.expanduser(config_path if config_path else __DEFAULT_PATH__)
+    engine = engine_from_config(
+        os.path.expanduser(config_path if config_path else __DEFAULT_PATH__),
+        **engine_kwargs
     )
 
-    kwargs = {
-        "username": parser.get("Credentials", "username"),
-        "password": parser.get("Credentials", "password"),
-        "database": parser.get("Credentials", "database_name"),
-        "host": parser.get("Credentials", "database_host"),
-        "port": parser.get("Credentials", "database_port"),
-    }
+    factory = sessionmaker(bind=engine)
+    
+    new_db = DB(factory)
+    new_db._config = config_path
+    return new_db
 
-    url = URL("postgresql+psycopg2", **kwargs)
-    factory = init_LCDB(url, **engine_kwargs)
-    db = DB(factory)
-    db._config = config_path
-    return db
+
+# Try and instantiate "global" lcdb
+db = db_from_config()
