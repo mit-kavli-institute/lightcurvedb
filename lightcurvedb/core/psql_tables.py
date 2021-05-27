@@ -320,6 +320,18 @@ class PGInherits(PGCatalogModel):
         return cls.inhparent
 
 
+class PGIndex(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_indexes catalog.
+    """
+
+    __tablename__ = "pg_indexes"
+
+    schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
+    tablename = Column(NAME, ForeignKey("pg_class.relname"))
+    indexname = Column(NAME, ForeignKey("pg_class.relname"))
+
+
 class PGClass(PGCatalogModel):
     """
     Wraps behavior around postgresql's pg_class catalog.
@@ -346,10 +358,21 @@ class PGClass(PGCatalogModel):
         single_parent=True,
         backref=backref("children"),
     )
+    index_parent = relationship(
+        "PGClass",
+        secondary=PGIndex.__table__,
+        primaryjoin=(relname == PGIndex.indexname),
+        secondaryjoin=(relname == PGIndex.tablename),
+        single_parent=True,
+        backref=backref("indexes")
+    )
 
     @classmethod
     def expression(cls):
         return func.pg_get_expr(cls.relpartbound, cls.oid).label("expression")
+
+
+
 
 
 class PGCatalogMixin(object):
