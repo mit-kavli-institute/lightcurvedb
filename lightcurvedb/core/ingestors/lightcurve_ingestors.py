@@ -50,48 +50,29 @@ def get_components(path):
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
     cache = IngestionCache()
-    q = (
-        cache
-        .query(
-            QualityFlags.cadence,
-            QualityFlags.quality_flag
-        )
-        .filter(
-            QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
-            QualityFlags.camera == camera,
-            QualityFlags.ccd == ccd,
-        )
+    q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
+        QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
+        QualityFlags.camera == camera,
+        QualityFlags.ccd == ccd,
     )
-    return pd.read_sql(
-        q.statement,
-        cache.session.bind,
-        index_col=["cadence"]
-    )
+    return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
+
 
 @lru_cache(maxsize=32)
 def get_mid_tjd(min_cadence, max_cadence, camera, config_override=None):
     with db_from_config(config_path=config_override) as db:
         q = (
-            db
-            .query(
-                Frame.cadence,
-                Frame.mid_tjd
-            )
+            db.query(Frame.cadence, Frame.mid_tjd)
             .filter(
                 Frame.frame_type_id == "Raw FFI",
                 Frame.camera == camera,
-                Frame.cadence.between(int(min_cadence), int(max_cadence))
+                Frame.cadence.between(int(min_cadence), int(max_cadence)),
             )
-            .distinct(
-                Frame.cadence
-            )
+            .distinct(Frame.cadence)
         )
-        df = pd.read_sql(
-            q.statement,
-            db.bind,
-            index_col=["cadence"]
-        )
+        df = pd.read_sql(q.statement, db.bind, index_col=["cadence"])
     return df
+
 
 @lru_cache(maxsize=10)
 def get_h5(path):
@@ -118,7 +99,7 @@ def get_h5_data(merge_job):
         "data": data,
         "error": errors,
         "x_centroid": x_centroids,
-        "y_centroid": y_centroids
+        "y_centroid": y_centroids,
     }
 
 
@@ -143,12 +124,10 @@ def get_correct_qflags(merge_job, cadences):
 def get_tjd(merge_job, cadences, config_override=None):
     min_c, max_c = min(cadences), max(cadences)
     tjd_df = get_mid_tjd(
-        min_c,
-        max_c,
-        merge_job.camera,
-        config_override=config_override
+        min_c, max_c, merge_job.camera, config_override=config_override
     )
     return tjd_df.reindex(cadences)["mid_tjd"].to_numpy()
+
 
 @track_runtime
 def get_lightcurve_median(data, quality_flags, tmag):

@@ -37,6 +37,23 @@ SingleMergeJob = namedtuple(
 PartitionJob = namedtuple(
     "PartitionJob", ("partition_oid", "single_merge_jobs")
 )
+PHYSICAL_LIMIT = {1, 2, 3, 4}
+
+
+def apply_physical_filter(filters, attr, tokens):
+    """
+    For cameras and ccds, if all of them are listed, don't bother with
+    a query. Otherwise construct the filter object and apply it to the
+    list of filters.
+
+    Returns
+    -------
+    List of SQLAlchemy filters
+    """
+    if all(token in PHYSICAL_LIMIT for token in tokens):
+        # No need to filter
+        return filters
+    return filters + [attr.in_(tokens)]
 
 
 class IngestionPlan(object):
@@ -44,6 +61,7 @@ class IngestionPlan(object):
         self,
         db,
         cache,
+        full_diff=True,
         orbits=None,
         cameras=None,
         ccds=None,
@@ -52,85 +70,112 @@ class IngestionPlan(object):
     ):
         echo("Constructing LightcurveDB and Cache queries")
 
-        cache_subquery = cache.query(distinct(FileObservation.tic_id))
-        db_lc_query = db.query(Lightcurve.id)
-
+        # Construct relevant TIC ID query from file observations in cache
+        cache_filters = []
         if orbits:
-            cache_subquery = cache_subquery.filter(
+            cache_filters.append(
                 FileObservation.orbit_number.in_(orbits)
             )
 
         if cameras:
-            cache_subquery = cache_subquery.filter(
-                FileObservation.camera.in_(cameras)
+            cache_filters = apply_physical_filter(
+                cache_filters,
+                FileObservation.camera,
+                cameras
             )
 
         if ccds:
-            cache_subquery = cache_subquery.filter(
-                FileObservation.ccd.in_(ccds)
+            cache_filters = apply_physical_filter(
+                cache_filters,
+                FileObservation.ccd,
+                ccds
             )
 
+        if full_diff:
+            cache_filters = (
+                FileObservation.tic_id.in_(
+                    cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
+                ),
+            )
+
+        echo("Querying file cache")
         if tic_mask and len(tic_mask) <= 999:
-            cache_tic_filter = (
+            cache_filters.append(
                 ~FileObservation.tic_id.in_(tic_mask)
                 if invert_mask
                 else FileObservation.tic_id.in_(tic_mask)
             )
-            cache_subquery = cache_subquery.filter(cache_tic_filter)
-
-        echo("Querying file cache")
-        if tic_mask and len(tic_mask) > 999:
+            file_observations = (
+                cache
+                .query(FileObservation)
+                .filter(*cache_filters)
+            )
+        elif tic_mask and len(tic_mask) > 999:
             echo("tic id mask is too large for single sqlite queries...")
             file_observations = []
             safe_for_sqlite = list(chunkify(tic_mask, 999))
             for tic_chunk in tqdm(safe_for_sqlite):
-                file_obs_q = (
-                    cache.query(FileObservation)
-                    .filter(
-                        FileObservation.tic_id.in_(tic_chunk)
-                    )
+                file_obs_q = cache.query(FileObservation).filter(
+                    ~FileObservation.tic_id.in_(tic_chunk)
+                    if invert_mask
+                    else FileObservation.tic_id.in_(tic_chunk),
+                    *cache_filters
                 )
                 file_observations.extend(file_obs_q.all())
         else:
             file_observations = (
-                cache.query(FileObservation)
-                .filter(FileObservation.tic_id.in_(cache_subquery.subquery()))
-                .all()
+                cache
+                .query(FileObservation)
+                .filter(*cache_filters)
             )
 
         tic_ids = {file_obs.tic_id for file_obs in file_observations}
-        db_lc_query.filter(Lightcurve.tic_id.in_(tic_ids))
-
         db.execute(text("SET LOCAL work_mem TO '2GB'"))
+
         echo("Performing lightcurve query")
         apertures = [ap.name for ap in db.query(Aperture)]
         lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
 
-        lightcurves = db.query(Lightcurve)
-        lightcurves = lightcurves.filter(Lightcurve.tic_id.in_(tic_ids))
+        lightcurves = (
+            db
+            .query(Lightcurve)
+            .filter(Lightcurve.tic_id.in_(tic_ids))
+        )
 
         id_map = {}
-        echo("Reading lightcurves for existing observations and ID mapping")
+        echo("Reading lightcurves for ID mapping")
         for lc in tqdm(lightcurves, unit=" lightcurves"):
             id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
 
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+
         current_obs_q = (
             db
             .query(
-                Observation.lightcurve_id,
-                func.array_agg(Observation.orbit_id)
+                Lightcurve.id, func.array_agg(Observation.orbit_id)
+            ).join(
+                Observation.lightcurve
             )
             .filter(
-                Observation.lightcurve_id.in_(id_map.values())
+                Lightcurve.tic_id.in_(tic_ids)
             )
-            .group_by(Observation.lightcurve_id)
+            .group_by(Lightcurve.id)
         )
+
+        if not full_diff and orbits:
+            orbit_ids = set(orbit_map[number] for number in orbits)
+            current_obs_q = (
+                current_obs_q
+                .filter(Observation.orbit_id.in_(orbit_ids))
+            )
+
         seen_cache = set()
 
-        for lc_id, orbit_ids in tqdm(current_obs_q, unit=" observations", total=len(id_map)):
-            for orbit_id in orbit_ids:
+        for lc_id, orbit_array in tqdm(
+            current_obs_q, unit=" observations", total=len(id_map)
+        ):
+            for orbit_id in orbit_array:
                 seen_cache.add((lc_id, orbit_id))
 
         plan = []
@@ -198,6 +243,10 @@ class IngestionPlan(object):
         )
 
     def assign_new_lightcurves(self, db, fill_id_gaps=False):
+        if len(self._df) == 0:
+            # Nothing todo
+            return
+
         new_jobs = self._df[self._df.lightcurve_id < 0]
         new_ids = set(new_jobs.lightcurve_id)
 
@@ -270,8 +319,12 @@ class IngestionPlan(object):
         )
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
-        results = db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
-        partition_oid_df = pd.DataFrame(results, columns=["lightcurve_id", "partition_oid"])
+        results = db.map_values_to_partitions(
+            Lightpoint, self._df["lightcurve_id"]
+        )
+        partition_oid_df = pd.DataFrame(
+            results, columns=["lightcurve_id", "partition_oid"]
+        )
         self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
 
         for _, row in self._df.iterrows():

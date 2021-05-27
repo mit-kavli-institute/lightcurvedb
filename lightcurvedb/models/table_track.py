@@ -4,8 +4,9 @@ from sqlalchemy import (
     Integer,
     String,
     CheckConstraint,
-    Column, Sequence,
-    ForeignKey
+    Column,
+    Sequence,
+    ForeignKey,
 )
 from multiprocessing import Pool
 from functools import partial
@@ -22,7 +23,7 @@ class PartitionTrack(QLPMetric):
 
     __mapper_args__ = {
         "polymorphic_identity": "tracks",
-        "polymorphic_on": tracker_type
+        "polymorphic_on": tracker_type,
     }
 
     @hybrid_method
@@ -62,15 +63,10 @@ class RangedPartitionTrack(PartitionTrack):
     max_range = Column(Integer, index=True)
 
     __table_args__ = (
-        CheckConstraint(
-            "max_range > min_range",
-            name="range_validity"
-        ),
+        CheckConstraint("max_range > min_range", name="range_validity"),
     )
 
-    __mapper_args__ = {
-        "polymorphic_identity": "ranged"
-    }
+    __mapper_args__ = {"polymorphic_identity": "ranged"}
 
     @hybrid_method
     def contains_value(self, value):
@@ -89,11 +85,14 @@ def range_check(ranges, value):
         if min_ <= value < max_:
             return value, oid
     return None, oid
-    
+
 
 class TableTrackerAPIMixin(object):
     def get_partition_map_func(self, Model):
-        partition_tracks = self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))
+        partition_tracks = self.query(PartitionTrack).filter(
+            PartitionTrack.same_model(Model)
+        )
+
         def dynamic_map(value):
             for track in partition_tracks:
                 if track.contains_value(value):
@@ -102,6 +101,7 @@ class TableTrackerAPIMixin(object):
                 "Unable to find Partition Track for "
                 "{0} on model {1}".format(value, Model)
             )
+
         return dynamic_map
 
     def map_values_to_partitions(self, Model, values, n_workers=None):
@@ -133,17 +133,21 @@ class TableTrackerAPIMixin(object):
         NotImplementedError:
             Raised if the given Model is not supported for multiprocess mapping.
         """
-        partition_tracks = list(self.query(PartitionTrack).filter(PartitionTrack.same_model(Model)))
+        partition_tracks = list(
+            self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))
+        )
         if isinstance(partition_tracks[0], RangedPartitionTrack):
-            ranges = [(t.min_range, t.max_range, t.oid) for t in partition_tracks]
+            ranges = [
+                (t.min_range, t.max_range, t.oid) for t in partition_tracks
+            ]
             func = partial(range_check, ranges)
         else:
             raise NotImplementedError(
-                "No multiprocessing support for tracking type {0}".format(type(partition_tracks[0]))
+                "No multiprocessing support for tracking type {0}".format(
+                    type(partition_tracks[0])
+                )
             )
 
         with Pool(processes=n_workers) as pool:
             for value, oid in pool.imap_unordered(func, values, chunksize=100):
                 yield value, oid
-
-
