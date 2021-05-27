@@ -17,6 +17,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
 )
+from sqlalchemy.types import CHAR
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import relationship, backref
@@ -345,6 +346,7 @@ class PGClass(PGCatalogModel):
     relowner = Column(ForeignKey(PGAuthID.__tablename__ + ".oid"))
     relpages = Column(Integer)
     reltuples = Column(Float)
+    relkind = Column(CHAR)
     relispartition = Column(Boolean)
     relpartbound = Column(Text)
 
