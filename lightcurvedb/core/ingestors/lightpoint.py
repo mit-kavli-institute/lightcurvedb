@@ -421,4 +421,3 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
     echo("Joining work queues")
     job_queue.join()
     timing_queue.join()
-    echo("Done!")
