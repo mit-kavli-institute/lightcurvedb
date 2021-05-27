@@ -39,9 +39,10 @@ PartitionJob = namedtuple(
 )
 PHYSICAL_LIMIT = {1, 2, 3, 4}
 
+
 def apply_physical_filter(filters, attr, tokens):
     """
-    For cameras as ccds, if all of them are listed, don't bother with
+    For cameras and ccds, if all of them are listed, don't bother with
     a query. Otherwise construct the filter object and apply it to the
     list of filters.
 
@@ -142,7 +143,7 @@ class IngestionPlan(object):
         )
 
         id_map = {}
-        echo("Reading lightcurves for and ID mapping")
+        echo("Reading lightcurves for ID mapping")
         for lc in tqdm(lightcurves, unit=" lightcurves"):
             id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
 
