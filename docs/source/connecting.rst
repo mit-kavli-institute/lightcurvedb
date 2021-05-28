@@ -61,8 +61,9 @@ Connections may be manually opened and closed via:
     :linenos:
 
     db.open()
-
     # Perform queries, inserts, updates, deletions, etc
+    foo()
+
     db.close()
 
 In this manner, users are expected to open and close their connections
