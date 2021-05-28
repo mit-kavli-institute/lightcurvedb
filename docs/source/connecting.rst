@@ -221,7 +221,9 @@ function an open database instance.
     operation()
 
 The ``db_scope()`` decorator automatically provides an open database object as
-the first positional argument to the wrapped function.
+the first positional argument to the wrapped function. Upon return of the
+function the connection is freed and the database object is transitioned into
+a closed state.
 
 This decorator also inspects the wrapped function and provides the connection
 with the ``application_name`` parameter with the wrapped function name. This
