@@ -14,6 +14,8 @@ Your default configuration is expected to be at
 database class is by:
 
 .. code-block:: python
+    :linenos:
+
     from lightcurvedb import db
 
 Where `db` is a closed database connection object.
@@ -30,6 +32,8 @@ allows specification of different configuration files or runtime
 overrides/parameters.
 
 .. code-block:: python
+    :linenos:
+
     from lightcurvedb import db_from_config
 
     # Equivalent to previous example
@@ -51,6 +55,8 @@ Declaratively
 Connections may be manually opened and closed via:
 
 .. code-block:: python
+    :linenos:
+
     db.open()
 
     # Perform queries, inserts, updates, deletions, etc
@@ -71,6 +77,8 @@ it's best to allow python to manage cleaning up resources in a clear manner.
 This is accomplished using the `with` python block.
 
 .. code-block:: python
+    :linenos:
+
     with db as open_db:
         open_db.foo()
         # Other commands...
@@ -92,6 +100,8 @@ What happens if you open a connection multiple times?
 Repeatedly opening and closing a connection is fine.
 
 .. code-block:: python
+    :linenos:
+
     for _ in range(20:
         db.open()
         db.close()
@@ -102,6 +112,8 @@ Problems arise when attempting to open an already established connection
 or closing one that has already been closed.
 
 .. code-block:: python
+    :linenos:
+
     db.open()  # DB object is in an open state
     with db:
         # Entering the with block inheritly calls 'open()'.
@@ -124,6 +136,8 @@ Functional Wrappers
 indented blocks.
 
 .. code-block:: python
+    :linenos:
+
     with db:
         if something:
             for x in array:
@@ -145,6 +159,8 @@ as to be syntactically inside the block. One could get around this by defining
 the code-block inside a function.
 
 .. code-block:: python
+    :linenos:
+
     def operation(db):
         if something:
             for x in array:
@@ -174,6 +190,8 @@ So `lightcurvedb` defines a decorator which always gives the wrapped
 function an open database instance.
 
 .. code-block:: python
+    :linenos:
+
     from lightcurvedb.io.pipeline import db_scope
 
     @db_scope()
