@@ -89,6 +89,7 @@ This is accomplished using the ``with`` python block.
     # db is now closed
 
 You may also short-hand this a little further with:
+
 .. code-block:: python
     :linenos:
 
@@ -137,7 +138,6 @@ could be quite verbose.
 
 Functional Wrappers
 ###################
-
 ``with`` blocks are fine until you notice your code starting to have major
 indented blocks.
 
