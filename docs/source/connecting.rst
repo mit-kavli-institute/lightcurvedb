@@ -3,14 +3,14 @@ Connecting to the Database
 
 Creating connection instance
 ############################
-All connection IO is served through a `lightcurvedb.core.connection.ORM_DB`
-instance. There are a couple of methods of instantiating a `DB` instance.
+All connection IO is served through a ``lightcurvedb.core.connection.ORM_DB``
+instance. There are a couple of methods of instantiating a ``DB`` instance.
 
 *********************
 Default configuration
 *********************
 Your default configuration is expected to be at
-`~/.config/lightcurvedb/db.conf`. One of the easier forms of getting a
+``~/.config/lightcurvedb/db.conf``. One of the easier forms of getting a
 database class is by:
 
 .. code-block:: python
@@ -18,16 +18,16 @@ database class is by:
 
     from lightcurvedb import db
 
-Where `db` is a closed database connection object.
+Where ``db`` is a closed database connection object.
 
 ************************
 Overriding configuration
 ************************
 Sometimes you might want to connect to a different database or provide
-different runtime connection parameters. *The default `db` object does not
+different runtime connection parameters. *The default ``db`` object does not
 provide this functionality*.
 
-Instead `lightcurvedb` exposes the factory function `db_from_config` which
+Instead ``lightcurvedb`` exposes the factory function ``db_from_config`` which
 allows specification of different configuration files or runtime
 overrides/parameters.
 
@@ -45,7 +45,7 @@ overrides/parameters.
 
 Opening A Connection
 ####################
-Obtaining database instances will return a `ORM_DB` object in a closed state.
+Obtaining database instances will return a ``ORM_DB`` object in a closed state.
 There are a few ways to open and close connections to the database.
 
 
@@ -74,7 +74,7 @@ Maintaining manual connections can be cumbersome, especially when taking into
 consideration that exceptions may arise and other runtime effects. Generally
 it's best to allow python to manage cleaning up resources in a clear manner.
 
-This is accomplished using the `with` python block.
+This is accomplished using the ``with`` python block.
 
 .. code-block:: python
     :linenos:
@@ -89,9 +89,9 @@ You may also short-hand this a little further with:
     with db:
         db.foo()
 
-Existing the `with` block will always free the resource. Whether that reason
+Existing the ``with`` block will always free the resource. Whether that reason
 is reaching the end of the block, or an exception being raised somewhere
-within the block, or even a `return` statement.
+within the block, or even a ``return`` statement.
 
 Runtime Checks
 ==============
@@ -124,7 +124,7 @@ or closing one that has already been closed.
     # DB is in a closed state
     db.close()  # <- Will result in another warning
 
-Generally speaking `lightcurvedb` handles these cases without causing an
+Generally speaking ``lightcurvedb`` handles these cases without causing an
 exception. But it is considered a code smell and will raise warnings which
 could be quite verbose.
 
@@ -132,7 +132,7 @@ could be quite verbose.
 *******************
 Functional Wrappers
 *******************
-`with` blocks are fine until you notice your code starting to have major
+``with`` blocks are fine until you notice your code starting to have major
 indented blocks.
 
 .. code-block:: python
@@ -186,7 +186,7 @@ Which is arguably more DRY, you can call this function on any open
 database connection. But could still result in errors if called
 without an active connection.
 
-So `lightcurvedb` defines a decorator which always gives the wrapped
+So ``lightcurvedb`` defines a decorator which always gives the wrapped
 function an open database instance.
 
 .. code-block:: python
@@ -214,14 +214,14 @@ function an open database instance.
     # ...
     operation()
 
-The `db_scope()` decorator automatically provides an open database object as
+The ``db_scope()`` decorator automatically provides an open database object as
 the first positional argument to the wrapped function.
 
 This decorator also inspects the wrapped function and provides the connection
-with the `application_name` parameter with the wrapped function name. This
+with the ``application_name`` parameter with the wrapped function name. This
 provides database administrators to quickly determine which python function
 is performing operations.
 
-This can be overridden by `db_scope(application_name="foo")` in special
+This can be overridden by ``db_scope(application_name="foo")`` in special
 cases. But generally your python function should provide enough context
 of its purpose within its name.
