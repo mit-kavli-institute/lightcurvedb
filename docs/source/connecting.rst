@@ -108,7 +108,7 @@ Repeatedly opening and closing a connection like this:
 .. code-block:: python
     :linenos:
 
-    for _ in range(20:
+    for _ in range(20):
         db.open()
         db.close()
 This is *fine*, but an irresonsible use case that might interfere with
