@@ -90,6 +90,8 @@ This is accomplished using the ``with`` python block.
 
 You may also short-hand this a little further with:
 .. code-block:: python
+    :linenos:
+
     with db:
         db.foo()
 
