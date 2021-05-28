@@ -135,9 +135,9 @@ exception. But it is considered a code smell and will raise warnings which
 could be quite verbose.
 
 
-*******************
 Functional Wrappers
-*******************
+###################
+
 ``with`` blocks are fine until you notice your code starting to have major
 indented blocks.
 
