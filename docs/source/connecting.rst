@@ -103,7 +103,7 @@ Runtime Checks
 ==============
 What happens if you open a connection multiple times?
 
-Repeatedly opening and closing a connection is fine.
+Repeatedly opening and closing a connection like this:
 
 .. code-block:: python
     :linenos:
@@ -122,7 +122,7 @@ or closing one that has already been closed.
 
     db.open()  # DB object is in an open state
     with db:
-        # Entering the with block inheritly calls 'open()'.
+        # Entering the with block calls 'db.open()'.
         # A warning will be raised but the program will continue
         # execution
         db.foo()  # <- Will proceed normally
