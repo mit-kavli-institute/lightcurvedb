@@ -42,6 +42,9 @@ overrides/parameters.
     # Or you can override configs
     db = db_from_config(config_path="/path/to/config.conf")
 
+    # You can even provide user-relative paths
+    db = db_from_config(config_path="~/some/user/relativepath.conf")
+
 
 Opening A Connection
 ####################
