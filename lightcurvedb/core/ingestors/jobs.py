@@ -319,6 +319,9 @@ class IngestionPlan(object):
         )
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
+        if len(self._df) == 0:
+            # No duplicates, partition is empty
+            return []
         results = db.map_values_to_partitions(
             Lightpoint, self._df["lightcurve_id"]
         )
