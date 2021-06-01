@@ -38,6 +38,7 @@ Submodule Documentation
     :maxdepth: 2
 
     installation
+    connecting
     cli/main
     db/db
     lightcurves/lightcurves
