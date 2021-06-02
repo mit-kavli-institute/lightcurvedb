@@ -17,10 +17,8 @@ from sqlalchemy import (
     Float,
     ForeignKey,
 )
-<<<<<<< HEAD
-=======
+
 from sqlalchemy.types import CHAR
->>>>>>> staging
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import relationship, backref
