@@ -89,7 +89,6 @@ class IngestionPlan(object):
                 cache_filters,
                 FileObservation.ccd,
                 ccds
-<<<<<<< HEAD
             )
 
         if full_diff:
@@ -98,18 +97,6 @@ class IngestionPlan(object):
                     cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
                 ),
             )
-
-=======
-            )
-
-        if full_diff:
-            cache_filters = (
-                FileObservation.tic_id.in_(
-                    cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
-                ),
-            )
-
->>>>>>> staging
         echo("Querying file cache")
         if tic_mask and len(tic_mask) <= 999:
             cache_filters.append(
