@@ -3,6 +3,7 @@ import click
 from astropy.io import fits
 from itertools import groupby, product
 from glob import glob
+from tabulate import tabulate
 
 
 def extr_tic(filepath):
@@ -102,3 +103,20 @@ def resolve_filter_column(defined_columns, model, parameter):
             resolved = slow_typecheck(parameter)
 
     return resolved
+
+
+def tabulate_query(q, **tabulate_kwargs):
+    """
+    Provide a quick and dirty solution to pass an SQLAlchemy query into
+    ``tabulate``.
+
+    Returns
+    -------
+    str:
+        The tabulated query.
+    """
+    query_info = q.column_descriptions
+    results = q.all()
+
+    column_names = [c["name"] for c in query_info]
+    return tabulate(results, headers=column_names, **tabulate_kwargs)

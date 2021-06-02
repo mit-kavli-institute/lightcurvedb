@@ -1,5 +1,5 @@
 from .base import lcdbcli
-from .admin import administration
+from .admin import admin
 from .apertures import add_aperture
 from .frames import add_frametype
 from .qlp_data_types import add_lightcurvetype
@@ -16,7 +16,7 @@ from .query import query
 
 __all__ = [
     "lcdbcli",
-    "administration",
+    "admin",
     "add_aperture",
     "add_lightcurvetype",
     "bls",

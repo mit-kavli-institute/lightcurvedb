@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 
 from lightcurvedb.core.admin import get_psql_catalog_tables
+from lightcurvedb.core.psql_tables import PGInherits, PGClass
 from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -34,11 +35,9 @@ class QLPModel(object):
 
     @oid.expression
     def oid(cls):
-        pg_class = get_psql_catalog_tables("pg_class")
-        print(cls.__tablename__)
         return (
-            select([pg_class.c.oid])
-            .where(pg_class.c.relname == cls.__tablename__)
+            select([PGClass.oid])
+            .where(PGClass.relname == cls.__tablename__)
             .label("oid")
         )
 
