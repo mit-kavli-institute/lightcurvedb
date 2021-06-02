@@ -68,7 +68,8 @@ class ORM_DB(object):
                 RuntimeWarning,
             )
         else:
-            self._session = self._sessionmaker()
+            if self._session is None:
+                self._session = self._sessionmaker()
             self._active = True
 
         return self
@@ -85,7 +86,6 @@ class ORM_DB(object):
         """
         if self._active:
             self._session.close()
-            self._session = None
             self._active = False
         else:
             warnings.warn(

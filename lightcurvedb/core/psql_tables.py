@@ -17,6 +17,10 @@ from sqlalchemy import (
     Float,
     ForeignKey,
 )
+<<<<<<< HEAD
+=======
+from sqlalchemy.types import CHAR
+>>>>>>> staging
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import relationship, backref
@@ -320,6 +324,18 @@ class PGInherits(PGCatalogModel):
         return cls.inhparent
 
 
+class PGIndex(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_indexes catalog.
+    """
+
+    __tablename__ = "pg_indexes"
+
+    schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
+    tablename = Column(NAME, ForeignKey("pg_class.relname"))
+    indexname = Column(NAME, ForeignKey("pg_class.relname"))
+
+
 class PGClass(PGCatalogModel):
     """
     Wraps behavior around postgresql's pg_class catalog.
@@ -333,6 +349,7 @@ class PGClass(PGCatalogModel):
     relowner = Column(ForeignKey(PGAuthID.__tablename__ + ".oid"))
     relpages = Column(Integer)
     reltuples = Column(Float)
+    relkind = Column(CHAR)
     relispartition = Column(Boolean)
     relpartbound = Column(Text)
 
@@ -345,6 +362,14 @@ class PGClass(PGCatalogModel):
         secondaryjoin=(oid == PGInherits.parent_oid),
         single_parent=True,
         backref=backref("children"),
+    )
+    index_parent = relationship(
+        "PGClass",
+        secondary=PGIndex.__table__,
+        primaryjoin=(relname == PGIndex.indexname),
+        secondaryjoin=(relname == PGIndex.tablename),
+        single_parent=True,
+        backref=backref("indexes")
     )
 
     @classmethod

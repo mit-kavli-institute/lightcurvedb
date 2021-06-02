@@ -245,7 +245,7 @@ def state(ctx):
     "columns",
     multiple=True,
     type=ModelField(PGStatActivity),
-    default=["pid", "state", "query"],
+    default=["pid", "state", "application_name", "query"],
 )
 def get_all_queries(ctx, columns):
     with ctx.obj["dbconf"] as db:
@@ -263,7 +263,7 @@ def get_all_queries(ctx, columns):
     "columns",
     multiple=True,
     type=ModelField(PGStatActivity),
-    default=["pid", "query", "blocked_by"],
+    default=["pid", "query", "application_name", "blocked_by"],
 )
 def get_blocked_queries(ctx, columns):
     with ctx.obj["dbconf"] as db:
@@ -283,7 +283,7 @@ def get_blocked_queries(ctx, columns):
     "columns",
     multiple=True,
     type=ModelField(PGStatActivity),
-    default=["pid", "state", "query"],
+    default=["pid", "state", "application_name", "query"],
 )
 def get_info(ctx, pids, columns):
     with ctx.obj["dbconf"] as db:

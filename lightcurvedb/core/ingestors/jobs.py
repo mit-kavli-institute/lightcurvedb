@@ -89,6 +89,7 @@ class IngestionPlan(object):
                 cache_filters,
                 FileObservation.ccd,
                 ccds
+<<<<<<< HEAD
             )
 
         if full_diff:
@@ -98,6 +99,17 @@ class IngestionPlan(object):
                 ),
             )
 
+=======
+            )
+
+        if full_diff:
+            cache_filters = (
+                FileObservation.tic_id.in_(
+                    cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
+                ),
+            )
+
+>>>>>>> staging
         echo("Querying file cache")
         if tic_mask and len(tic_mask) <= 999:
             cache_filters.append(
@@ -319,6 +331,9 @@ class IngestionPlan(object):
         )
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
+        if len(self._df) == 0:
+            # No duplicates, partition is empty
+            return []
         results = db.map_values_to_partitions(
             Lightpoint, self._df["lightcurve_id"]
         )
