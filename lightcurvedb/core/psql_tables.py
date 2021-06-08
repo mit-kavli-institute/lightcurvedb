@@ -19,6 +19,8 @@ from sqlalchemy import (
     ForeignKey,
     SmallInteger,
 )
+
+
 from sqlalchemy.types import CHAR
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
