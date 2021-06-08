@@ -9,6 +9,7 @@ is used.
 from sqlalchemy import (
     Column,
     Integer,
+    BigInteger,
     String,
     Text,
     DateTime,
@@ -16,11 +17,9 @@ from sqlalchemy import (
     Boolean,
     Float,
     ForeignKey,
+    SmallInteger,
 )
-<<<<<<< HEAD
-=======
 from sqlalchemy.types import CHAR
->>>>>>> staging
 from sqlalchemy.dialects.postgresql import OID, INET
 from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.orm import relationship, backref
@@ -33,9 +32,29 @@ from datetime import datetime
 XID = Integer
 NAME = String(64)
 
-
 @as_declarative()
-class PGStatModel(object):
+class PGInternalModel(object):
+    """
+    Core internal wrapper for all reflected postgres catalogs
+    """
+    __abstract__ = True
+
+    def __repr__(self):
+
+        return "<{0}: ({1})".format(
+            self.__tablename__,
+            inspect(self).identity
+        )
+
+
+class PGExtensionModel(PGInternalModel):
+    """
+    Wrapper for extended postgres modules.
+    """
+    __abstract__ = True
+
+
+class PGStatModel(PGInternalModel):
     """
     Wrapper for PG Statistical Catalogs
     """
@@ -43,8 +62,7 @@ class PGStatModel(object):
     __abstract__ = True
 
 
-@as_declarative()
-class PGCatalogModel(object):
+class PGCatalogModel(PGInternalModel):
     """
     Wrapper for PG Catalogs
     """
@@ -336,6 +354,22 @@ class PGIndex(PGCatalogModel):
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
 
 
+class PGDatabase(PGCatalogModel):
+    """
+    Wraps behavior around postgresql's pg_database catalog.
+    """
+
+    __tablename__ = "pg_database"
+
+    oid = Column(OID, primary_key=True)
+    datname = Column(NAME)
+    encoding = Column(SmallInteger)
+    datconnlimit = Column(SmallInteger)
+    datlastsysoid = Column(OID)
+
+    buffers = relationship("PGBuffer", back_populates="database")
+
+
 class PGClass(PGCatalogModel):
     """
     Wraps behavior around postgresql's pg_class catalog.
@@ -352,6 +386,7 @@ class PGClass(PGCatalogModel):
     relkind = Column(CHAR)
     relispartition = Column(Boolean)
     relpartbound = Column(Text)
+    relfilenode = Column(OID)
 
     type_ = relationship(PGType, backref="classes")
     owner = relationship(PGAuthID, backref="classes")
@@ -371,10 +406,30 @@ class PGClass(PGCatalogModel):
         single_parent=True,
         backref=backref("indexes")
     )
+    buffers = relationship(
+        "PGBuffer",
+        back_populates="pg_class"
+    )
 
     @classmethod
     def expression(cls):
         return func.pg_get_expr(cls.relpartbound, cls.oid).label("expression")
+
+
+class PGBuffer(PGExtensionModel):
+    __tablename__ = "pg_buffercache"
+
+    bufferid = Column(Integer, primary_key=True)
+    relblocknumber = Column(BigInteger)
+    isdirty = Column(Boolean)
+    usagecount = Column(SmallInteger)
+    pinning_backends = Column(Integer)
+
+    reldatabase = Column(ForeignKey(PGDatabase.oid))
+    relfilenode = Column(ForeignKey(PGClass.relfilenode))
+
+    database = relationship("PGDatabase", back_populates="buffers")
+    pg_class = relationship(PGClass, foreign_keys=[relfilenode], back_populates="buffers")
 
 
 class PGCatalogMixin(object):
