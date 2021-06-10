@@ -43,14 +43,14 @@ PHYSICAL_LIMIT = {1, 2, 3, 4}
 def apply_physical_filter(filters, attr, tokens):
     """
     For cameras and ccds, if all of them are listed, don't bother with
-    a query. Otherwise construct the filter object and apply it to the
+    a filter. Otherwise construct the filter object and apply it to the
     list of filters.
 
     Returns
     -------
     List of SQLAlchemy filters
     """
-    if all(token in PHYSICAL_LIMIT for token in tokens):
+    if set(tokens) == PHYSICAL_LIMIT:
         # No need to filter
         return filters
     return filters + [attr.in_(tokens)]
