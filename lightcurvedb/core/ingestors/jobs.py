@@ -156,7 +156,7 @@ class IngestionPlan(object):
                 Observation.lightcurve_id, func.array_agg(Observation.orbit_id)
             )
             .filter(
-                Observation.lightcurve_id.in_(id_map.values())
+                Observation.lightcurve_id.in_(db.query(Lightcurve.id).filter(Lightcurve.tic_id.in_(tic_ids)).subquery())
             )
             .group_by(Observation.lightcurve_id)
         )
