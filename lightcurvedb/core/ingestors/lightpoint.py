@@ -24,6 +24,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_tjd,
     get_components,
 )
+from lightcurvedb.core.psql_tables import PGClass, PGNamespace
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (
     Frame,
@@ -31,7 +32,7 @@ from lightcurvedb.models import (
     Observation,
     Orbit,
 )
-from lightcurvedb.util.logger import lcdb_logger as logger
+from lightcurvedb.util.logger import lcdb_logger as logger, get_lcdb_logging, add_tqdm_handler
 from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
@@ -91,8 +92,15 @@ def yield_lp_df_from_merge_jobs(
 
 
 class LightpointProcessor(Process):
+
+    def __init__(self, *args, **kwargs):
+        super(LightpointProcessor, self).__init__(**kwargs)
+        self.logger = kwargs.pop("logger", get_lcdb_logging())
+        self.prefix = "LP Processor"
+
+
     def log(self, msg, level="debug", exc_info=False):
-        getattr(logger, level)(
+        getattr(self.logger, level)(
             "{0}: {1}".format(self.name, msg), exc_info=exc_info
         )
 
@@ -199,6 +207,8 @@ class PartitionConsumer(LightpointProcessor):
 
     def ingest_data(self, partition_relname, lightpoints, observations):
         conn = psycopg_connection()
+        self.log("Pushing data to {0}".format(partition_relname))
+
         with conn.cursor() as cursor:
             cursor.execute("SET LOCAL work_mem TO '2GB'")
             cursor.execute("SET LOCAL synchronous_commit = OFF")
@@ -213,7 +223,7 @@ class PartitionConsumer(LightpointProcessor):
             Observation.__tablename__,
             ["lightcurve_id", "orbit_id", "camera", "ccd"],
         )
-
+        self.log("Pushing new observations")
         mgr.threading_copy(observations)
 
         copy_elapsed = time() - stamp
@@ -237,26 +247,9 @@ class PartitionConsumer(LightpointProcessor):
             key=lambda job: (job.lightcurve_id, job.orbit_number),
         )
         with db_from_config() as db:
-            q = text(
-                """
-                SELECT nsp.nspname, pgc.relname
-                FROM pg_class pgc
-                JOIN pg_namespace nsp
-                    ON pgc.relnamespace = nsp.oid
-                WHERE pgc.oid = {0}
-                """.format(
-                    partition_job.partition_oid
-                )
-            )
-            try:
-                results = list(db.execute(q))
-                namespace, tablename = results[0]
-            except IndexError:
-                raise RuntimeError(
-                    "Could not find table for partition oid {0}".format(
-                        partition_job.partition_oid
-                    )
-                )
+            table = db.query(PGClass).get(oid=partition_job.partition_oid)
+            namespace = table.namespace.nspname
+            tablename = table.relname
 
         target_table = "{0}.{1}".format(namespace, tablename)
 
@@ -264,6 +257,9 @@ class PartitionConsumer(LightpointProcessor):
             if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
                 continue
             try:
+                self.log(
+                    "Processing {0}".format(lc_job.file_path)
+                )
                 lp, timing = self.process_h5(
                     lc_job.lightcurve_id,
                     lc_job.aperture,
@@ -338,12 +334,12 @@ class PartitionConsumer(LightpointProcessor):
                 job = self.job_queue.get()
 
         self.job_queue.task_done()
-        self.log("Recieved end-of-work signal")
+        self.log("Received end-of-work signal")
 
 
-def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
+def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
     """
-    Group single
+    Process and ingest SingleMergeJob objects.
     """
     echo("Grabbing needed contexts from database")
     with db_from_config(config) as db:
@@ -391,6 +387,7 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
             p.start()
 
     with tqdm(total=total_single_jobs) as bar:
+        process_logger = add_tqdm_handler(get_lcdb_logging(), level_log)
         for _ in range(len(jobs)):
             timings = timing_queue.get()
             total_time = (
@@ -407,9 +404,9 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, tqdm_bar=True):
                 "QFlag Load: {quality_flag_assignment:3.2f}s | "
                 "BJD Load: {bjd_correction:3.2f}s | "
                 "COPY TIME: {copy_elapsed:3.2f}s | "
-                "# of Jobs: {n_jobs}s"
+                "# of Jobs: {n_jobs}"
             )
-            bar.write(msg.format(**timings))
+            process_logger.info(msg.format(**timings))
 
             timing_queue.task_done()
             bar.update(timings["n_jobs"])

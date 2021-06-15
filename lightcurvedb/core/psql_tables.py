@@ -381,6 +381,7 @@ class PGClass(PGCatalogModel):
 
     oid = Column(OID, primary_key=True)
     relname = Column(NAME)
+    relnamespace = Column(OID, ForeignKey(PGNamespace.__tablename__ + ".oid"))
     reltype = Column(OID, ForeignKey(PGType.__tablename__ + ".oid"))
     relowner = Column(ForeignKey(PGAuthID.__tablename__ + ".oid"))
     relpages = Column(Integer)
@@ -392,6 +393,10 @@ class PGClass(PGCatalogModel):
 
     type_ = relationship(PGType, backref="classes")
     owner = relationship(PGAuthID, backref="classes")
+    namespace = relationship(
+        "PGNamespace",
+        backref="pg_classes"
+    )
     parent = relationship(
         "PGClass",
         secondary=PGInherits.__table__,

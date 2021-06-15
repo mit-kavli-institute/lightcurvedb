@@ -1,10 +1,37 @@
 import logging as __logging
+import tqdm
 
 lcdb_logger = __logging.getLogger("lightcurvedb")
 __SET_STREAM_HANDLER = False
 __FILE_LOG_REGISTRY = {}
 
 DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+def get_lcdb_logging(name="lightcurvedb", handlers=None):
+    logger = __logging.getLogger(name)
+
+    if handlers:
+        for handle in handlers:
+            logger.addHandle(handle)
+
+
+class TQDMLoggingHandler(__logging.Handler):
+    """
+    Provide an easy handler that is compatible with tqdm
+    """
+    def __init__(self, level=__logging.NOTSET):
+        super().__init__(level)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.tqdm.write(msg)
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
 
 
 def add_stream_handler(level, fmt=DEFAULT_FORMAT):
@@ -42,6 +69,15 @@ def add_file_handler(level, filepath, fmt=DEFAULT_FORMAT):
     lcdb_logger.debug(
         "Initialized {0} output at level {1}".format(filepath, __level__)
     )
+
+
+def add_tqdm_handler(logger, level, fmt=DEFAULT_FORMAT):
+    handler = TQDMLoggingHandler(level=__level__)
+    logger.addHandler(handler)
+    logger.debug(
+        "Initialized TQDM compatible logging handler"
+    )
+    return logger
 
 
 def set_level(level):
