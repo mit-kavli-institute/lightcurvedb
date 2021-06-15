@@ -56,6 +56,34 @@ def apply_physical_filter(filters, attr, tokens):
     return filters + [attr.in_(tokens)]
 
 
+def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
+    """
+    SQLite has a max limit to how many scalar values can be present when
+    comparing a membership filter. Break apart the query using the max lengths
+    and accumulate the values in a list.
+
+    Parameters
+    ----------
+    scalars: iterable
+        An iterable of values to check against.
+    filter_col: SQLAlchemy column
+        The filter column to check membership with.
+    base_q: SQLAlchemy query
+        A base query to serve as a common entry point.
+    Returns
+    -------
+    list
+        A list of the specified results in ``base_q``.
+    """
+    chunks = list(chunkify(scalars, maxlen))
+    accumulator = []
+    echo("Chunkifying for {0}".format(base_q))
+    for chunk in tqdm(chunks):
+        q = base_q.filter(filter_col.in_(chunk))
+        accumulator.extend(q)
+    return accumulator
+
+
 class IngestionPlan(object):
     def __init__(
         self,
@@ -91,37 +119,22 @@ class IngestionPlan(object):
                 ccds
             )
 
-        if full_diff:
-            cache_filters = (
-                FileObservation.tic_id.in_(
-                    cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
-                ),
-            )
-
+        base_q = cache.query(FileObservation)
         echo("Querying file cache")
-        if tic_mask and len(tic_mask) <= 999:
-            cache_filters.append(
-                ~FileObservation.tic_id.in_(tic_mask)
-                if invert_mask
-                else FileObservation.tic_id.in_(tic_mask)
-            )
-            file_observations = (
-                cache
-                .query(FileObservation)
-                .filter(*cache_filters)
-            )
-        elif tic_mask and len(tic_mask) > 999:
-            echo("tic id mask is too large for single sqlite queries...")
-            file_observations = []
-            safe_for_sqlite = list(chunkify(tic_mask, 999))
-            for tic_chunk in tqdm(safe_for_sqlite):
-                file_obs_q = cache.query(FileObservation).filter(
-                    ~FileObservation.tic_id.in_(tic_chunk)
-                    if invert_mask
-                    else FileObservation.tic_id.in_(tic_chunk),
-                    *cache_filters
+        if full_diff:
+            if tic_mask:
+                file_observations = sqlite_accumulator(
+                    tic_mask,
+                    FileObservation.tic_id,
+                    base_q
                 )
-                file_observations.extend(file_obs_q.all())
+            else:
+                cache_filters = (
+                    FileObservation.tic_id.in_(
+                        cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
+                    ),
+                )
+                file_observations = base_q.filter(*cache_filters)
         else:
             file_observations = (
                 cache
