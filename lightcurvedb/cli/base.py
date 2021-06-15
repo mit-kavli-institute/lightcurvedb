@@ -22,16 +22,12 @@ from .types import Database
     default=False,
     help="If dryrun, no changes will be commited, recommended for first runs",
 )
-@click.option("--logging", default="info")
+@click.option("--logging", type=str, default="info")
 @click.option("--logfile", type=click.Path(dir_okay=False))
 def lcdbcli(ctx, dbconf, dryrun, logging, logfile):
     """Master command for all lightcurve database commandline interaction"""
-    add_stream_handler(logging)
-    set_level(logging)
-
-    if logfile:
-        add_file_handler(logging, logfile)
 
     ctx.ensure_object(dict)
+    ctx.obj["logging"] = logging
     ctx.obj["dryrun"] = dryrun
     ctx.obj["dbconf"] = dbconf
