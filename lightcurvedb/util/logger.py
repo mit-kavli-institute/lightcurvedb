@@ -20,7 +20,8 @@ class TQDMLoggingHandler(__logging.Handler):
     """
     Provide an easy handler that is compatible with tqdm
     """
-    def __init__(self, level=__logging.NOTSET):
+    def __init__(self, level="INFO"):
+        level = getattr(__logging, level)
         super().__init__(level)
 
     def emit(self, record):
@@ -72,7 +73,7 @@ def add_file_handler(level, filepath, fmt=DEFAULT_FORMAT):
 
 
 def add_tqdm_handler(logger, level, fmt=DEFAULT_FORMAT):
-    handler = TQDMLoggingHandler(level=__level__)
+    handler = TQDMLoggingHandler(level=level)
     logger.addHandler(handler)
     logger.debug(
         "Initialized TQDM compatible logging handler"

@@ -247,7 +247,7 @@ class PartitionConsumer(LightpointProcessor):
             key=lambda job: (job.lightcurve_id, job.orbit_number),
         )
         with db_from_config() as db:
-            table = db.query(PGClass).get(oid=partition_job.partition_oid)
+            table = db.query(PGClass).get(partition_job.partition_oid)
             namespace = table.namespace.nspname
             tablename = table.relname
 
