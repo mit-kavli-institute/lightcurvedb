@@ -1,7 +1,7 @@
-import logging as __logging
+import logging as logging
 import tqdm
 
-lcdb_logger = __logging.getLogger("lightcurvedb")
+lcdb_logger = logging.getLogger("lightcurvedb")
 __SET_STREAM_HANDLER = False
 __FILE_LOG_REGISTRY = {}
 
@@ -9,19 +9,21 @@ DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
 def get_lcdb_logging(name="lightcurvedb", handlers=None):
-    logger = __logging.getLogger(name)
+    logger = logging.getLogger(name)
 
     if handlers:
         for handle in handlers:
             logger.addHandle(handle)
 
+    return logger
 
-class TQDMLoggingHandler(__logging.Handler):
+
+class TQDMLoggingHandler(logging.Handler):
     """
     Provide an easy handler that is compatible with tqdm
     """
     def __init__(self, level="INFO"):
-        level = getattr(__logging, level)
+        level = getattr(logging, level)
         super().__init__(level)
 
     def emit(self, record):
@@ -36,16 +38,13 @@ class TQDMLoggingHandler(__logging.Handler):
 
 
 def add_stream_handler(level, fmt=DEFAULT_FORMAT):
-    global lcdb_logger
-    global __SET_STREAM_HANDLER
-
     if __SET_STREAM_HANDLER:
         # Softly ignore
         return
 
-    __level__ = getattr(__logging, level.upper())
-    formatter = __logging.Formatter(fmt)
-    ch = __logging.StreamHandler()
+    __level__ = getattr(logging, level.upper())
+    formatter = logging.Formatter(fmt)
+    ch = logging.StreamHandler()
     ch.setFormatter(formatter)
     ch.setLevel(__level__)
     lcdb_logger.addHandler(ch)
@@ -61,9 +60,9 @@ def add_file_handler(level, filepath, fmt=DEFAULT_FORMAT):
             "Ignoring duplicate {0} filestream set".format(filepath)
         )
 
-    __level__ = getattr(__logging, level.upper())
-    formatter = __logging.Formatter(fmt)
-    ch = __logging.FileHandler(filepath)
+    __level__ = getattr(logging, level.upper())
+    formatter = logging.Formatter(fmt)
+    ch = logging.FileHandler(filepath)
     ch.setFormatter(formatter)
     ch.setLevel(__level__)
     lcdb_logger.addHandler(ch)
@@ -82,6 +81,7 @@ def add_tqdm_handler(logger, level, fmt=DEFAULT_FORMAT):
 
 
 def set_level(level):
-    __level__ = getattr(__logging, level.upper())
+    __level__ = getattr(logging, level.upper())
+    global lcdb_logger
     lcdb_logger.setLevel(__level__)
     lcdb_logger.debug("Set logging level to {0}".format(__level__))

@@ -28,6 +28,6 @@ def lcdbcli(ctx, dbconf, dryrun, logging, logfile):
     """Master command for all lightcurve database commandline interaction"""
 
     ctx.ensure_object(dict)
-    ctx.obj["logging"] = logging
+    add_stream_handler(logging)
     ctx.obj["dryrun"] = dryrun
     ctx.obj["dbconf"] = dbconf

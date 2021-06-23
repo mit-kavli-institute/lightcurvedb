@@ -1,7 +1,9 @@
 import os
 import warnings
-from functools import lru_cache
+import tempfile
+from functools import lru_cache, partial
 from sqlalchemy import text
+from sqlalchemy.sql.expression import literal
 from multiprocessing import Manager, Process
 from time import time
 
@@ -9,12 +11,14 @@ import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
-from sqlalchemy import text
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from lightcurvedb import db_from_config
+from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5,
     get_h5_data,
@@ -121,6 +125,9 @@ class PartitionConsumer(LightpointProcessor):
         result_queue,
         **kwargs
     ):
+
+        temp_dir = kwargs.pop("temp_dir", os.path.join("/", "scratch", "tmp", "lcdb_ingestion"))
+
         super(PartitionConsumer, self).__init__(**kwargs)
 
         self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
@@ -129,6 +136,7 @@ class PartitionConsumer(LightpointProcessor):
         self.corrector = normalizer
         self.qflags = qflags
         self.mid_tjd = mid_tjd
+        self.temp_dir = temp_dir
 
         self.cached_get_qflags = None
         self.cached_get_correct_mid_tjd = None
@@ -216,7 +224,10 @@ class PartitionConsumer(LightpointProcessor):
         mgr = CopyManager(conn, partition_relname, Lightpoint.get_columns())
 
         stamp = time()
-        mgr.threading_copy(lightpoints.to_records())
+
+        # define temp file
+        tmp_file_factory = partial(tempfile.TemporaryFile, dir=self.temp_dir)
+        mgr.copy(lightpoints.to_records())
 
         mgr = CopyManager(
             conn,
@@ -224,7 +235,7 @@ class PartitionConsumer(LightpointProcessor):
             ["lightcurve_id", "orbit_id", "camera", "ccd"],
         )
         self.log("Pushing new observations")
-        mgr.threading_copy(observations)
+        mgr.copy(observations, tmp_file_factory)
 
         copy_elapsed = time() - stamp
 
@@ -247,11 +258,23 @@ class PartitionConsumer(LightpointProcessor):
             key=lambda job: (job.lightcurve_id, job.orbit_number),
         )
         with db_from_config() as db:
-            table = db.query(PGClass).get(partition_job.partition_oid)
-            namespace = table.namespace.nspname
-            tablename = table.relname
-
-        target_table = "{0}.{1}".format(namespace, tablename)
+            q = (
+                db
+                .query(PGNamespace.nspname, PGClass.relname)
+                .join(PGClass.namespace)
+                .join(RangedPartitionTrack, PGClass.oid == RangedPartitionTrack.oid)
+                .filter(
+                    literal(
+                        lightcurve_job.lightcurve_id
+                    )
+                    .between(
+                        RangedPartitionTrack.min_range,
+                        RangedPartitionTrack.max_range - 1,
+                    )
+                )
+            )
+            namespace, tablename = q.one()
+            target_table = "{0}.{1}".format(namespace, tablename)
 
         for lc_job in optimized_path:
             if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
@@ -317,12 +340,15 @@ class PartitionConsumer(LightpointProcessor):
 
     def run(self):
         self.set_name()
+        self.log("Initialized")
         self.cached_get_qflags = lru_cache(maxsize=16)(self.get_qflags)
         self.cached_get_correct_mid_tjd = lru_cache(maxsize=16)(
             self.get_correct_mid_tjd
         )
+        self.log("Initialized lru h5 readers")
 
         job = self.job_queue.get()
+        self.log("First job obtained")
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", r"All-NaN (slice|axis) encountered"
@@ -335,6 +361,104 @@ class PartitionConsumer(LightpointProcessor):
 
         self.job_queue.task_done()
         self.log("Received end-of-work signal")
+
+
+class LightcurveConsumer(PartitionConsumer):
+    def process_job(self, lightcurve_job):
+        lps = []
+        observations = []
+        timings = []
+        validation_time = 0
+        total_points = 0
+        copy_elapsed = 0
+
+        seen_cache = set()
+        optimized_path = sorted(
+            lightcurve_job.single_merge_jobs,
+            key=lambda job: (job.orbit_number)
+        )
+
+        with db_from_config() as db:
+            q = (
+                db
+                .query(PGNamespace.nspname, PGClass.relname)
+                .join(PGClass.namespace)
+                .join(RangedPartitionTrack, PGClass.oid == RangedPartitionTrack.oid)
+                .filter(
+                    literal(
+                        lightcurve_job.lightcurve_id
+                    )
+                    .between(
+                        RangedPartitionTrack.min_range,
+                        RangedPartitionTrack.max_range - 1,
+                    )
+                )
+            )
+            namespace, tablename = q.one()
+            target_table = "{0}.{1}".format(namespace, tablename)
+
+        for single_merge_job in optimized_path:
+            if (single_merge_job.lightcurve_id, single_merge_job.orbit_number) in seen_cache:
+                continue
+            try:
+                self.log(
+                    "Processing {0}".format(single_merge_job.file_path)
+                )
+                lp, timing = self.process_h5(
+                    single_merge_job.lightcurve_id,
+                    single_merge_job.aperture,
+                    single_merge_job.lightcurve_type,
+                    single_merge_job.file_path,
+                )
+            except OSError:
+                self.log(
+                    "Unable to read {0} for ingest".format(single_merge_job.file_path)
+                )
+                continue
+            timings.append(timing)
+            stamp = time()
+            lp.set_index(["lightcurve_id", "cadence"], inplace=True)
+            lp = lp[~lp.index.duplicated(keep="last")]
+            validation_time += time() - stamp
+            if not lp.empty:
+                orbit_id = self.orbit_map[single_merge_job.orbit_number]
+                observations.append(
+                    (
+                        single_merge_job.lightcurve_id,
+                        orbit_id,
+                        single_merge_job.camera,
+                        single_merge_job.ccd
+                    )
+                )
+                lps.append(lp)
+                seen_cache.add((
+                    single_merge_job.lightcurve_id,
+                    single_merge_job.orbit_number
+                ))
+        if not lps:
+            result = dict(pd.DataFrame(timings).sum())
+            result["relname"] = tablename
+            result["n_lightpoints"] = 0
+            result["validation"] = validation_time
+            result["copy_elapsed"] = copy_elapsed
+            result["n_jobs"] = len(partition_job.single_merge_jobs)
+            self.log(
+                "Was given an empty job..."
+            )
+            return result
+        copy_elapsed += self.ingest_data(
+            target_table, pd.concat(lps), observations
+        )
+
+        total_points = sum(len(lp) for lp in lps)
+        result = dict(pd.DataFrame(timings).sum())
+        result["relname"] = target_table
+        result["n_lightpoints"] = total_points
+        result["validation"] = validation_time
+        result["copy_elapsed"] = copy_elapsed
+        result["n_jobs"] = len(lightcurve_job.single_merge_jobs)
+
+        return result
 
 
 def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
@@ -367,7 +491,7 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
     timing_queue = manager.Queue()
     total_single_jobs = 0
 
-    for job in jobs:
+    for job in tqdm(jobs, unit=" jobs"):
         job_queue.put(job)
         total_single_jobs += len(job.single_merge_jobs)
 
@@ -386,30 +510,30 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
             job_queue.put(None)  # Kill sig
             p.start()
 
-    with tqdm(total=total_single_jobs) as bar:
-        process_logger = add_tqdm_handler(get_lcdb_logging(), level_log)
-        for _ in range(len(jobs)):
-            timings = timing_queue.get()
-            total_time = (
-                timings["file_load"]
-                + timings["bjd_correction"]
-                + timings["validation"]
-                + timings["copy_elapsed"]
-            )
-            timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
+    with logging_redirect_tqdm():
+        with tqdm(total=total_single_jobs) as bar:
+            for _ in range(len(jobs)):
+                timings = timing_queue.get()
+                total_time = (
+                    timings["file_load"]
+                    + timings["bjd_correction"]
+                    + timings["validation"]
+                    + timings["copy_elapsed"]
+                )
+                timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
 
-            msg = (
-                "{relname}: {lightpoint_rate:5.2f} lp/s | "
-                "File Load: {file_load:3.2f}s | "
-                "QFlag Load: {quality_flag_assignment:3.2f}s | "
-                "BJD Load: {bjd_correction:3.2f}s | "
-                "COPY TIME: {copy_elapsed:3.2f}s | "
-                "# of Jobs: {n_jobs}"
-            )
-            process_logger.info(msg.format(**timings))
+                msg = (
+                    "{relname}: {lightpoint_rate:5.2f} lp/s | "
+                    "File Load: {file_load:3.2f}s | "
+                    "QFlag Load: {quality_flag_assignment:3.2f}s | "
+                    "BJD Load: {bjd_correction:3.2f}s | "
+                    "COPY TIME: {copy_elapsed:3.2f}s | "
+                    "# of Jobs: {n_jobs}"
+                )
+                bar.write(msg.format(**timings))
 
-            timing_queue.task_done()
-            bar.update(timings["n_jobs"])
+                timing_queue.task_done()
+                bar.update(timings["n_jobs"])
 
     echo("Expected number of returns reached, joining processes...")
     for worker in workers:
