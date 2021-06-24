@@ -1,11 +1,6 @@
 import click
-
-from lightcurvedb.util.logger import (
-    add_file_handler,
-    add_stream_handler,
-    set_level,
-)
-
+import sys
+from loguru import logger
 from .types import Database
 
 
@@ -26,8 +21,11 @@ from .types import Database
 @click.option("--logfile", type=click.Path(dir_okay=False))
 def lcdbcli(ctx, dbconf, dryrun, logging, logfile):
     """Master command for all lightcurve database commandline interaction"""
-
     ctx.ensure_object(dict)
-    add_stream_handler(logging)
+    if logging:
+        logger.remove()
+        logger.add(sys.stdout, level=logging.upper())
+        logger.debug("Set logging to {0}".format(logging))
+
     ctx.obj["dryrun"] = dryrun
     ctx.obj["dbconf"] = dbconf

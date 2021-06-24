@@ -1,5 +1,5 @@
 from lightcurvedb.core.base_model import QLPMetric
-
+from tqdm import tqdm
 from sqlalchemy import (
     Integer,
     String,
@@ -81,10 +81,31 @@ class RangedPartitionTrack(PartitionTrack):
 
 
 def range_check(ranges, value):
-    for min_, max_, oid in ranges:
-        if min_ <= value < max_:
-            return value, oid
-    return None, oid
+    """
+    Search for which range the given value falls under. It is expected that
+    the range tuples provided are sorted by the min_value.
+    """
+    l = 0
+    r = len(ranges)
+    while l != r - 1:
+        pivot = l + (r - l) // 2
+        min_, max_, oid = ranges[pivot]
+        if value <= ranges[pivot - 1][1]:
+            r = pivot
+        elif value >= min_:
+            l = pivot
+        else:
+            raise ValueError(
+                "Value {0} falls between range gap!".format(value)
+            )
+
+    min_, max_, oid = ranges[l]
+    if min_ <= value <= max_:
+        return value, oid
+
+    raise ValueError(
+        "Could not match {0} to any partition".format(value)
+    )
 
 
 class TableTrackerAPIMixin(object):
@@ -137,9 +158,12 @@ class TableTrackerAPIMixin(object):
             self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))
         )
         if isinstance(partition_tracks[0], RangedPartitionTrack):
-            ranges = [
-                (t.min_range, t.max_range, t.oid) for t in partition_tracks
-            ]
+            ranges = sorted(
+                [
+                    (t.min_range, t.max_range, t.oid) for t in partition_tracks
+                ],
+                key=lambda t: t[0]
+            )
             func = partial(range_check, ranges)
         else:
             raise NotImplementedError(
@@ -149,5 +173,5 @@ class TableTrackerAPIMixin(object):
             )
 
         with Pool(processes=n_workers) as pool:
-            for value, oid in pool.imap_unordered(func, values, chunksize=100):
+            for value, oid in tqdm(pool.imap_unordered(func, values, chunksize=10000), total=len(values)):
                 yield value, oid

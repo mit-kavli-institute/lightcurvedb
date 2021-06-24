@@ -14,10 +14,12 @@ from lightcurvedb.models import (
 )
 from collections import namedtuple, defaultdict
 from sqlalchemy import distinct, text, func
+from loguru import logger
 from click import echo
 from tqdm import tqdm
 from itertools import product
 import pandas as pd
+from math import isnan
 
 
 SingleMergeJob = namedtuple(
@@ -352,10 +354,7 @@ class IngestionPlan(object):
         )
         return split_df
 
-    def get_jobs_by_partition(self, db):
-        self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_number"], inplace=True
-        )
+    def get_jobs_by_partition(self, db, max_length):
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
         if len(self._df) == 0:
@@ -367,16 +366,20 @@ class IngestionPlan(object):
         partition_oid_df = pd.DataFrame(
             results, columns=["lightcurve_id", "partition_oid"]
         )
-        self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
+        self._df = pd.merge(self._df, partition_oid_df, how="inner", on="lightcurve_id")
+
+        self._df.drop_duplicates(
+            subset=["lightcurve_id", "orbit_number"], inplace=True
+        )
 
         for row in tqdm(self._df.to_dict("records")):
-            oid = row.pop("partition_oid")
+            oid = int(row.pop("partition_oid"))
             buckets[oid].append(SingleMergeJob(**row))
 
         partition_jobs = []
-        with tqdm(total=len(buckets)):
+        with tqdm(total=len(buckets)) as bar:
             for partition_oid, jobs in buckets.items():
-                job_chunks = list(chunkify(jobs, 1000))
+                job_chunks = list(chunkify(jobs, max_length))
                 if len(job_chunks) > 1:
                     bar.write(
                         "Splitting work across partition OID {0} with {1} workloads".format(

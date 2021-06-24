@@ -1,18 +1,20 @@
 import os
 import warnings
 import tempfile
+import re
 from functools import lru_cache, partial
 from sqlalchemy import text
 from sqlalchemy.sql.expression import literal
 from multiprocessing import Manager, Process
 from time import time
+from loguru import logger
 
 import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
+from psycopg2.errors import UniqueViolation
 from tqdm import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 from lightcurvedb import db_from_config
 from lightcurvedb.models.table_track import RangedPartitionTrack
@@ -36,7 +38,6 @@ from lightcurvedb.models import (
     Observation,
     Orbit,
 )
-from lightcurvedb.util.logger import lcdb_logger as logger, get_lcdb_logging, add_tqdm_handler
 from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
@@ -99,12 +100,13 @@ class LightpointProcessor(Process):
 
     def __init__(self, *args, **kwargs):
         super(LightpointProcessor, self).__init__(**kwargs)
-        self.logger = kwargs.pop("logger", get_lcdb_logging())
+        self.logger_name = kwargs.pop("logger", "lightcurvedb")
+        self.logger = None
         self.prefix = "LP Processor"
 
 
     def log(self, msg, level="debug", exc_info=False):
-        getattr(self.logger, level)(
+        getattr(logger, level)(
             "{0}: {1}".format(self.name, msg), exc_info=exc_info
         )
 
@@ -214,33 +216,54 @@ class PartitionConsumer(LightpointProcessor):
         return lp, timings
 
     def ingest_data(self, partition_relname, lightpoints, observations):
-        conn = psycopg_connection()
-        self.log("Pushing data to {0}".format(partition_relname))
+        ingested = False
+        while not ingested:
+            try:
+                conn = psycopg_connection()
+                self.log("Pushing data to {0}".format(partition_relname))
+                mgr = CopyManager(conn, partition_relname, Lightpoint.get_columns())
 
-        with conn.cursor() as cursor:
-            cursor.execute("SET LOCAL work_mem TO '2GB'")
-            cursor.execute("SET LOCAL synchronous_commit = OFF")
+                stamp = time()
 
-        mgr = CopyManager(conn, partition_relname, Lightpoint.get_columns())
+                # define temp file
+                tmp_file_factory = partial(tempfile.TemporaryFile, dir=self.temp_dir)
+                mgr.copy(lightpoints.to_records())
 
-        stamp = time()
+                mgr = CopyManager(
+                    conn,
+                    Observation.__tablename__,
+                    ["lightcurve_id", "orbit_id", "camera", "ccd"],
+                )
+                self.log("Pushing new observations")
+                mgr.copy(observations, tmp_file_factory)
 
-        # define temp file
-        tmp_file_factory = partial(tempfile.TemporaryFile, dir=self.temp_dir)
-        mgr.copy(lightpoints.to_records())
-
-        mgr = CopyManager(
-            conn,
-            Observation.__tablename__,
-            ["lightcurve_id", "orbit_id", "camera", "ccd"],
-        )
-        self.log("Pushing new observations")
-        mgr.copy(observations, tmp_file_factory)
-
-        copy_elapsed = time() - stamp
-
-        conn.commit()
-        conn.close()
+                copy_elapsed = time() - stamp
+                conn.commit()
+                ingested = True
+            except UniqueViolation as e:
+                conn.rollback()
+                self.log("Needing to reduce ingestion due to {0}".format(e), level="error")
+                match = re.search("\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e))
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT MIN(cadence), MAX(cadence) FROM frames WHERE orbit_id = {0} AND frame_type_id = 'Raw FFI'".format(
+                            int(match["orbit_id"])
+                        )
+                    )
+                    min_cadence, max_cadence = cursor.fetchone()
+                observations = list(
+                    filter(
+                        lambda obs: not (obs[0] == int(match["lightcurve_id"]) and obs[1] == int(match["orbit_id"])),
+                        observations 
+                    )
+                )
+                lp = lightpoints.reset_index()
+                con = (lp.lightcurve_id == int(match["lightcurve_id"])) & (lp.cadence >= min_cadence) & (lp.cadence <= max_cadence)
+                lightpoints = lp[~con]
+                lightpoints.set_index(["lightcurve_id", "cadence"], inplace=True)
+                self.log("Reduced ingestion work", level="warning")
+            finally:
+                conn.close()
         return copy_elapsed
 
     def process_job(self, partition_job):
@@ -262,15 +285,8 @@ class PartitionConsumer(LightpointProcessor):
                 db
                 .query(PGNamespace.nspname, PGClass.relname)
                 .join(PGClass.namespace)
-                .join(RangedPartitionTrack, PGClass.oid == RangedPartitionTrack.oid)
                 .filter(
-                    literal(
-                        lightcurve_job.lightcurve_id
-                    )
-                    .between(
-                        RangedPartitionTrack.min_range,
-                        RangedPartitionTrack.max_range - 1,
-                    )
+                    PGClass.oid == partition_job.partition_oid
                 )
             )
             namespace, tablename = q.one()
@@ -510,30 +526,31 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
             job_queue.put(None)  # Kill sig
             p.start()
 
-    with logging_redirect_tqdm():
-        with tqdm(total=total_single_jobs) as bar:
-            for _ in range(len(jobs)):
-                timings = timing_queue.get()
-                total_time = (
-                    timings["file_load"]
-                    + timings["bjd_correction"]
-                    + timings["validation"]
-                    + timings["copy_elapsed"]
-                )
-                timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
+    logger.remove()
+    with tqdm(total=total_single_jobs) as bar:
+        logger.add(lambda msg: bar.write(msg, end=""), enqueue=True)
+        for _ in range(len(jobs)):
+            timings = timing_queue.get()
+            total_time = (
+                timings["file_load"]
+                + timings["bjd_correction"]
+                + timings["validation"]
+                + timings["copy_elapsed"]
+            )
+            timings["lightpoint_rate"] = timings["n_lightpoints"] / total_time
 
-                msg = (
-                    "{relname}: {lightpoint_rate:5.2f} lp/s | "
-                    "File Load: {file_load:3.2f}s | "
-                    "QFlag Load: {quality_flag_assignment:3.2f}s | "
-                    "BJD Load: {bjd_correction:3.2f}s | "
-                    "COPY TIME: {copy_elapsed:3.2f}s | "
-                    "# of Jobs: {n_jobs}"
-                )
-                bar.write(msg.format(**timings))
+            msg = (
+                "{relname}: {lightpoint_rate:5.2f} lp/s | "
+                "File Load: {file_load:3.2f}s | "
+                "QFlag Load: {quality_flag_assignment:3.2f}s | "
+                "BJD Load: {bjd_correction:3.2f}s | "
+                "COPY TIME: {copy_elapsed:3.2f}s | "
+                "# of Jobs: {n_jobs}"
+            )
+            logger.info(msg.format(**timings))
 
-                timing_queue.task_done()
-                bar.update(timings["n_jobs"])
+            timing_queue.task_done()
+            bar.update(timings["n_jobs"])
 
     echo("Expected number of returns reached, joining processes...")
     for worker in workers:

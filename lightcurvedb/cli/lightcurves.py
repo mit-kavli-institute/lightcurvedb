@@ -47,7 +47,8 @@ def lightcurve(ctx):
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 @click.option("--full-diff/--only-listed-orbits", is_flag=True, default=True)
-def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff):
+@click.option("--max-lob-len", type=click.IntRange(min=1), default=1000)
+def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_job_len):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
         plan = IngestionPlan(
@@ -61,7 +62,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff):
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db)
+        jobs = plan.get_jobs_by_partition(db, max_length=max_job_length)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]

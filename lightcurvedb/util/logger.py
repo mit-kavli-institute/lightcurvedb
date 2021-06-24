@@ -10,6 +10,7 @@ DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 def get_lcdb_logging(name="lightcurvedb", handlers=None):
     logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
 
     if handlers:
         for handle in handlers:
@@ -38,21 +39,22 @@ class TQDMLoggingHandler(logging.Handler):
 
 
 def add_stream_handler(level, fmt=DEFAULT_FORMAT):
+    logger = get_lcdb_logging()
     if __SET_STREAM_HANDLER:
         # Softly ignore
         return
-
     __level__ = getattr(logging, level.upper())
     formatter = logging.Formatter(fmt)
     ch = logging.StreamHandler()
     ch.setFormatter(formatter)
     ch.setLevel(__level__)
-    lcdb_logger.addHandler(ch)
-    lcdb_logger.debug("Set {0} level to {1}".format(ch, __level__))
+    logger.addHandler(ch)
+    logger.debug("Set {0} level to {1}".format(ch, __level__))
+    return logger
 
 
 def add_file_handler(level, filepath, fmt=DEFAULT_FORMAT):
-    global lcdb_logger
+    logger = get_lcdb_logging()
     global __FILE_LOG_REGISTRY
 
     if filepath in __FILE_LOG_REGISTRY:
@@ -65,8 +67,8 @@ def add_file_handler(level, filepath, fmt=DEFAULT_FORMAT):
     ch = logging.FileHandler(filepath)
     ch.setFormatter(formatter)
     ch.setLevel(__level__)
-    lcdb_logger.addHandler(ch)
-    lcdb_logger.debug(
+    logger.addHandler(ch)
+    logger.debug(
         "Initialized {0} output at level {1}".format(filepath, __level__)
     )
 
@@ -82,6 +84,6 @@ def add_tqdm_handler(logger, level, fmt=DEFAULT_FORMAT):
 
 def set_level(level):
     __level__ = getattr(logging, level.upper())
-    global lcdb_logger
-    lcdb_logger.setLevel(__level__)
-    lcdb_logger.debug("Set logging level to {0}".format(__level__))
+    logger = get_lcdb_logging()
+    logger.setLevel(__level__)
+    logger.debug("Set logging level to {0}".format(__level__))
