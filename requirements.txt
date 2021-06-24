@@ -12,3 +12,4 @@ scipy
 pgcopy
 pyquaternion
 tqdm
+loguru
