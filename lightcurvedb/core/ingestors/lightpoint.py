@@ -163,9 +163,9 @@ class PartitionConsumer(LightpointProcessor):
         return self.corrector.correct(tic_id, mid_tjd)
 
     def process_h5(self, id_, aperture, lightcurve_type, h5path):
+        self.log("Processing {0}".format(h5path), level="trace")
         timings = {}
         stamp = time()
-
         context = get_components(h5path)
         tmag = self.corrector.tic_parameters.loc[context["tic_id"]]["tmag"]
         h5in = get_h5(h5path)
@@ -296,9 +296,6 @@ class PartitionConsumer(LightpointProcessor):
             if (lc_job.lightcurve_id, lc_job.orbit_number) in seen_cache:
                 continue
             try:
-                self.log(
-                    "Processing {0}".format(lc_job.file_path)
-                )
                 lp, timing = self.process_h5(
                     lc_job.lightcurve_id,
                     lc_job.aperture,
@@ -418,7 +415,8 @@ class LightcurveConsumer(PartitionConsumer):
                 continue
             try:
                 self.log(
-                    "Processing {0}".format(single_merge_job.file_path)
+                    "Processing {0}".format(single_merge_job.file_path),
+                    level="trace"
                 )
                 lp, timing = self.process_h5(
                     single_merge_job.lightcurve_id,
