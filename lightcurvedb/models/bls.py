@@ -2,6 +2,7 @@ from lightcurvedb.core.base_model import QLPDataProduct
 from lightcurvedb.models.lightcurve import Lightcurve
 from sqlalchemy import (
     BigInteger,
+    SmallInteger,
     Boolean,
     Column,
     Float,
@@ -27,6 +28,8 @@ class BLS(QLPDataProduct):
         ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
         index=True,
     )
+    tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
+
     astronet_score = Column(Float, nullable=True, index=True)
     astronet_version = Column(String(256), nullable=True)
     runtime_parameters = Column(
@@ -65,7 +68,7 @@ class BLS(QLPDataProduct):
     # Constraints
     __table_args__ = (
         UniqueConstraint(
-            "lightcurve_id", "created_on", name="unique_bls_runtime"
+            "lightcurve_id", "sector", "tce_n", name="unique_bls_runtime"
         ),
     )
 

@@ -41,8 +41,8 @@ def process_summary(args):
 
     for result in results:
         # Assume that each additional BLS calculate
-        offset = int(result.pop("bls_no"))
-        result["created_on"] = date + timedelta(seconds=offset)
+        result["tce"] = int(result.pop("bls_no"))
+        result["created_on"] = date
         planet_radius = estimate_planet_radius(
             stellar_radius, float(result["transit_depth"])
         ).value
