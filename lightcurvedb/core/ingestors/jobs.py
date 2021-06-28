@@ -201,7 +201,7 @@ class IngestionPlan(object):
             echo("Grabbing full lightcurve observation baseline difference")
             ide_cte = (
                 db
-                .query(Observation.lightcurve_id.distinct())
+                .query(Observation.lightcurve_id.distinct().label("lightcurve_id"))
                 .filter(*current_obs_filters)
                 .cte(name="relevant_ids")
             )
