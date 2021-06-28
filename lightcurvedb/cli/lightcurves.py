@@ -47,7 +47,7 @@ def lightcurve(ctx):
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 @click.option("--full-diff/--only-listed-orbits", is_flag=True, default=True)
-@click.option("--max-lob-len", type=click.IntRange(min=1), default=1000)
+@click.option("--max-job-len", type=click.IntRange(min=1), default=1000)
 def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_job_len):
     cache = IngestionCache()
     with ctx.obj["dbconf"] as db:
