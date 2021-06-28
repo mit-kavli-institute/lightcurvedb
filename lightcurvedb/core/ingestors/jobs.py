@@ -199,11 +199,11 @@ class IngestionPlan(object):
 
         if full_diff:
             echo("Grabbing full lightcurve observation baseline difference")
-            sub_id_q = (
+            ide_cte = (
                 db
                 .query(Observation.lightcurve_id.distinct())
                 .filter(*current_obs_filters)
-                .subquery()
+                .cte(name="relevant_ids")
             )
             full_q = (
                 db
@@ -211,8 +211,9 @@ class IngestionPlan(object):
                     Observation.lightcurve_id,
                     func.array_agg(Observation.orbit_id)
                 )
-                .filter(
-                    Observation.lightcurve_id.in_(sub_id_q)
+                .join(
+                    ide_cte,
+                    ide_cte.c.lightcurve_id == Observation.lightcurve_id
                 )
                 .group_by(Observation.lightcurve_id)
             )
