@@ -106,7 +106,7 @@ def range_check(ranges, value):
     while left_idx != right_idx - 1:
         pivot = left_idx + (right_idx - left_idx) // 2
         min_, max_, oid = ranges[pivot]
-        if value <= ranges[pivot - 1][1]:
+        if value < ranges[pivot - 1][1]:
             right_idx = pivot
         elif value >= min_:
             left_idx = pivot
