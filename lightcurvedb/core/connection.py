@@ -17,6 +17,7 @@ from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
+from lightcurvedb.models.frame import FrameAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
 
 
@@ -256,7 +257,8 @@ class ORM_DB(object):
         """
         return self._active
 
-class DB(ORM_DB, TableTrackerAPIMixin, PGCatalogMixin):
+
+class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
