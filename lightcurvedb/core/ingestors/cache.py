@@ -113,6 +113,39 @@ class IngestionCache(object):
         ).sort_index()
 
     @property
+    def quality_flag_map(self):
+        cams_and_ccds = (
+            self
+            .query(
+                QualityFlags.camera,
+                QualityFlags.ccd
+            )
+            .distinct()
+            .all()
+        )
+        mapping = {}
+        for cam, ccd in cams_and_ccds:
+            q = (
+                self
+                .query(
+                    QualityFlags.cadence,
+                    QualityFlags.quality_flag
+                )
+                .filter_by(camera=cam, ccd=ccd)
+            )
+            df = (
+                pd
+                .read_sql(
+                    q.statement,
+                    self.session.bind,
+                    index_col="cadence"
+                )
+                .sort_index()
+            )
+            mapping[(cam, ccd)] = df
+        return mapping
+
+    @property
     def tic_parameter_df(self):
         q = self.session.query(
             TIC8Parameters.tic_id,

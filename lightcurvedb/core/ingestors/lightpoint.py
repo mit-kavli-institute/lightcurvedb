@@ -6,14 +6,14 @@ from functools import lru_cache, partial
 from sqlalchemy import text
 from sqlalchemy.sql.expression import literal
 from multiprocessing import Manager, Process
-from time import time
+from time import time, sleep
 from loguru import logger
 
 import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
-from psycopg2.errors import UniqueViolation
+from psycopg2.errors import UniqueViolation, OperationalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -29,6 +29,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_lightcurve_median,
     get_tjd,
     get_components,
+    h5_to_numpy
 )
 from lightcurvedb.core.psql_tables import PGClass, PGNamespace
 from lightcurvedb.legacy.timecorrect import TimeCorrector
@@ -106,11 +107,13 @@ class LightpointProcessor(Process):
 
 
     def log(self, msg, level="debug", exc_info=False):
-        getattr(logger, level)(
+        getattr(self.logger, level)(
             "{0}: {1}".format(self.name, msg), exc_info=exc_info
         )
 
     def set_name(self):
+        self.logger = logger
+        self.logger.remove()
         self.name = "{0}-{1}".format(self.prefix, os.getpid())
 
 
@@ -120,7 +123,7 @@ class PartitionConsumer(LightpointProcessor):
     def __init__(
         self,
         db,
-        qflags,
+        qflag_map,
         mid_tjd,
         normalizer,
         job_queue,
@@ -136,8 +139,8 @@ class PartitionConsumer(LightpointProcessor):
         self.job_queue = job_queue
         self.result_queue = result_queue
         self.corrector = normalizer
-        self.qflags = qflags
-        self.mid_tjd = mid_tjd
+        self.qflag_map = qflag_map
+        self.mid_tjd_map = mid_tjd
         self.temp_dir = temp_dir
 
         self.cached_get_qflags = None
@@ -147,9 +150,9 @@ class PartitionConsumer(LightpointProcessor):
         cadences = get_h5(h5path)["LightCurve"]["Cadence"][()].astype(int)
         context = get_components(h5path)
         camera, ccd = context["camera"], context["ccd"]
-        sqflag = self.qflags.loc[(camera, ccd)].loc[cadences]
+        qflag_df = self.qflag_map[(camera, ccd)].loc[cadences]
 
-        return sqflag.quality_flag.to_numpy()
+        return qflag_df.quality_flag.to_numpy()
 
     def get_correct_mid_tjd(self, h5path):
         cadences = get_h5(h5path)["LightCurve"]["Cadence"][()].astype(int)
@@ -158,7 +161,7 @@ class PartitionConsumer(LightpointProcessor):
             context["tic_id"],
             context["camera"],
         )
-        mid_tjd = self.mid_tjd.loc[camera].loc[cadences].mid_tjd.to_numpy()
+        mid_tjd = self.mid_tjd_map[camera].loc[cadences]["mid_tjd"].to_numpy()
 
         return self.corrector.correct(tic_id, mid_tjd)
 
@@ -167,56 +170,34 @@ class PartitionConsumer(LightpointProcessor):
         timings = {}
         stamp = time()
         context = get_components(h5path)
-        tmag = self.corrector.tic_parameters.loc[context["tic_id"]]["tmag"]
-        h5in = get_h5(h5path)
-        h5_lc = h5in["LightCurve"]
-        cadences = h5_lc["Cadence"][()].astype(int)
-
-        h5_lc = h5_lc["AperturePhotometry"][aperture]
-        x_centroids = h5_lc["X"][()]
-        y_centroids = h5_lc["Y"][()]
-        data = h5_lc[lightcurve_type][()]
-
-        errors = (
-            h5_lc["{0}Error".format(lightcurve_type)][()]
-            if lightcurve_type in LC_ERROR_TYPES
-            else np.full_like(cadences, np.nan, dtype=np.double)
+        tic_id, camera, ccd = (
+            int(context["tic_id"]),
+            int(context["camera"]),
+            int(context["ccd"])
         )
-
+        tmag = self.corrector.tic_parameters.loc[context["tic_id"]]["tmag"]
+        lightcurve = h5_to_numpy(id_, aperture, lightcurve_type, h5path)
         timings["file_load"] = time() - stamp
 
         stamp = time()
-        qflags = self.cached_get_qflags(h5path)
+        lightcurve["quality_flag"] = self.cached_get_qflags(h5path)
         timings["quality_flag_assignment"] = time() - stamp
         stamp = time()
-
-        correct_mid_tjd = self.cached_get_correct_mid_tjd(h5path)
+        lightcurve["barycentric_julian_date"] = self.cached_get_correct_mid_tjd(h5path)
         timings["bjd_correction"] = time() - stamp
 
-        lp = pd.DataFrame(
-            data={
-                "cadence": cadences,
-                "barycentric_julian_date": correct_mid_tjd,
-                "data": data,
-                "error": errors,
-                "x_centroid": x_centroids,
-                "y_centroid": y_centroids,
-                "quality_flag": qflags,
-            }
-        )
-        lp["lightcurve_id"] = id_
-
         stamp = time()
-        mask = lp.quality_flag == 0
-        good_values = lp[mask].data.to_numpy()
+        mask = lightcurve["quality_flag"] == 0
+        good_values = lightcurve[mask]["data"]
         offset = np.nanmedian(good_values) - tmag
-        lp.data = lp.data - offset
+        lightcurve["data"] = lightcurve["data"] - offset
         timings["alignment"] = time() - stamp
 
-        return lp, timings
+        return lightcurve, timings
 
     def ingest_data(self, partition_relname, lightpoints, observations):
         ingested = False
+        backoff = 1
         while not ingested:
             try:
                 conn = psycopg_connection()
@@ -226,8 +207,7 @@ class PartitionConsumer(LightpointProcessor):
                 stamp = time()
 
                 # define temp file
-                tmp_file_factory = partial(tempfile.TemporaryFile, dir=self.temp_dir)
-                mgr.copy(lightpoints.to_records())
+                mgr.threading_copy(lightpoints)
 
                 mgr = CopyManager(
                     conn,
@@ -235,7 +215,7 @@ class PartitionConsumer(LightpointProcessor):
                     ["lightcurve_id", "orbit_id", "camera", "ccd"],
                 )
                 self.log("Pushing new observations")
-                mgr.copy(observations, tmp_file_factory)
+                mgr.threading_copy(observations)
 
                 copy_elapsed = time() - stamp
                 conn.commit()
@@ -257,11 +237,17 @@ class PartitionConsumer(LightpointProcessor):
                         observations 
                     )
                 )
-                lp = lightpoints.reset_index()
-                con = (lp.lightcurve_id == int(match["lightcurve_id"])) & (lp.cadence >= min_cadence) & (lp.cadence <= max_cadence)
-                lightpoints = lp[~con]
-                lightpoints.set_index(["lightcurve_id", "cadence"], inplace=True)
+                id_mask = (lightpoints["lightcurve_id"] == int(match["lightcurve_id"]))
+                cadence_mask = (min_cadence <= lightpoints["cadence"]) & (lightpoints["cadence"] <= max_cadence)
+                lightpoints = lightpoints[~(id_mask & cadence_mask)]
                 self.log("Reduced ingestion work", level="warning")
+            except OperationalError as e:
+                self.log(
+                    "Encountered {0}, performing backoff with wait of {1}s".format(e, backoff),
+                    level="error"
+                )
+                sleep(backoff)
+                backoff *= 2
             finally:
                 conn.close()
         return copy_elapsed
@@ -311,11 +297,18 @@ class PartitionConsumer(LightpointProcessor):
             timings.append(timing)
 
             stamp = time()
-            lp.set_index(["lightcurve_id", "cadence"], inplace=True)
-            lp = lp[~lp.index.duplicated(keep="last")]
+            # remove duplicates
+            path = np.argsort(lp, order=["lightcurve_id", "cadence"])
+            val_diff = np.insert(
+                np.diff(lp["cadence"][path]),
+                0,
+                1
+            )
+            # Traverse path where there are no duplicates
+            lp = lp[path[val_diff != 0]]
             validation_time += time() - stamp
 
-            if not lp.empty:
+            if len(lp) > 0:
                 orbit_id = self.orbit_map[lc_job.orbit_number]
                 observations.append(
                     (
@@ -338,7 +331,7 @@ class PartitionConsumer(LightpointProcessor):
             return result
 
         copy_elapsed += self.ingest_data(
-            target_table, pd.concat(lps), observations
+            target_table, np.concatenate(lps), observations
         )
 
         total_points = sum(len(lp) for lp in lps)
@@ -485,17 +478,8 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
         echo("Loading spacecraft ephemeris")
         normalizer = TimeCorrector(db, cache)
         echo("Reading assigned quality flags")
-        quality_flags = cache.quality_flag_df
-        mid_tjd_q = db.query(
-            Frame.camera,
-            Frame.cadence,
-            Frame.mid_tjd,
-        ).filter(Frame.frame_type_id == "Raw FFI")
-        echo("Getting Raw FFI Mid TJD arrays")
-        mid_tjd = pd.read_sql(
-            mid_tjd_q.statement, db.bind, index_col=["camera", "cadence"]
-        ).sort_index()
-
+        quality_flags = cache.quality_flag_map
+        mid_tjd = db.get_mid_tjd_mapping()
         cache.session.close()
 
     echo("Building multiprocessing environment")
@@ -526,7 +510,7 @@ def ingest_merge_jobs(config, jobs, n_processes, commit, level_log="info"):
 
     logger.remove()
     with tqdm(total=total_single_jobs) as bar:
-        logger.add(lambda msg: bar.write(msg, end=""), enqueue=True)
+        logger.add(lambda msg: tqdm.write(msg, end=""), enqueue=True)
         for _ in range(len(jobs)):
             timings = timing_queue.get()
             total_time = (
