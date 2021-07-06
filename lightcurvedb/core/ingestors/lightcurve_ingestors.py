@@ -47,6 +47,9 @@ def get_components(path):
     }
 
 
+
+
+
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
     cache = IngestionCache()
@@ -101,6 +104,49 @@ def get_h5_data(merge_job):
         "x_centroid": x_centroids,
         "y_centroid": y_centroids,
     }
+
+
+def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
+    lp_dtype = np.dtype(
+        [
+            ("lightcurve_id", np.dtype("u8")),
+            ("cadence", np.dtype("u4")),
+            ("barycentric_julian_date", np.dtype("f8")),
+            ("data", np.dtype("f8")),
+            ("error", np.dtype("f8")),
+            ("x_centroid", np.dtype("f8")),
+            ("y_centroid", np.dtype("f8")),
+            ("quality_flag", np.dtype("u4")),
+        ]
+    )
+    lc = get_h5(filepath)["LightCurve"]
+    cadences = lc["Cadence"][()].astype(int)
+
+    arr = np.empty(len(cadences), dtype=lp_dtype)
+    arr["lightcurve_id"] = np.full_like(cadences, lightcurve_id, dtype=np.dtype("u8"))
+    arr["cadence"] = cadences
+    arr["barycentric_julian_date"] = lc["BJD"][()]
+
+    lc = lc["AperturePhotometry"][aperture]
+    arr["x_centroid"] = lc["X"][()]
+    arr["y_centroid"] = lc["Y"][()]
+    arr["data"] = lc[type_][()]
+    arr["error"] = (
+        lc["{0}Error".format(type_)][()]
+        if type_ in LC_ERROR_TYPES
+        else np.full_like(cadences, np.nan, dtype=np.double)
+    )
+    return arr
+
+
+def job_to_numpy(single_merge_job):
+    return h5_to_numpy(
+        single_merge_job.lightcurve_id,
+        single_merge_job.aperture,
+        single_merge_job.lightcurve_type,
+        single_merge_job.file_path
+
+    )
 
 
 @track_runtime

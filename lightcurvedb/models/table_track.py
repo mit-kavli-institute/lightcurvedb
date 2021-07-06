@@ -1,5 +1,5 @@
 from lightcurvedb.core.base_model import QLPMetric
-
+from tqdm import tqdm
 from sqlalchemy import (
     Integer,
     String,
@@ -81,10 +81,49 @@ class RangedPartitionTrack(PartitionTrack):
 
 
 def range_check(ranges, value):
-    for min_, max_, oid in ranges:
-        if min_ <= value < max_:
-            return value, oid
-    return None, oid
+    """
+    Search for which range the given value falls under. It is expected that
+    the range tuples provided are sorted by the min_value.
+
+    Parameters
+    ----------
+    ranges: list of sorted tuples of ``(min, max, oid)``
+        The ranges to find membership of ``value``.
+    value: int
+        The ``value`` to find membership for
+    Returns
+    -------
+    (int, int)
+        A tuple with element 0 being ``value`` and element 1 being the mapped
+        table ``oid``.
+    Raises
+    ------
+    ValueError:
+        If the given ``value`` could not be properly mapped.
+    """
+    left_idx = 0
+    right_idx = len(ranges)
+    while left_idx != right_idx - 1:
+        pivot = left_idx + (right_idx - left_idx) // 2
+        min_, max_, oid = ranges[pivot]
+        if value < ranges[pivot - 1][1]:
+            right_idx = pivot
+        elif value >= min_:
+            left_idx = pivot
+        else:
+            raise ValueError(
+                "Value {0} falls between range gap!".format(value)
+            )
+    # Left idx and right idx should be pointing at the same range
+    # check if range is valid
+    min_, max_, oid = ranges[left_idx]
+    if min_ <= value <= max_:
+        return value, oid
+
+    # Left and right indexes point to a range which does not match
+    raise ValueError(
+        "Could not match {0} to any partition".format(value)
+    )
 
 
 class TableTrackerAPIMixin(object):
@@ -137,9 +176,12 @@ class TableTrackerAPIMixin(object):
             self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))
         )
         if isinstance(partition_tracks[0], RangedPartitionTrack):
-            ranges = [
-                (t.min_range, t.max_range, t.oid) for t in partition_tracks
-            ]
+            ranges = sorted(
+                [
+                    (t.min_range, t.max_range, t.oid) for t in partition_tracks
+                ],
+                key=lambda t: t[0]
+            )
             func = partial(range_check, ranges)
         else:
             raise NotImplementedError(
@@ -149,5 +191,5 @@ class TableTrackerAPIMixin(object):
             )
 
         with Pool(processes=n_workers) as pool:
-            for value, oid in pool.imap_unordered(func, values, chunksize=100):
+            for value, oid in tqdm(pool.imap_unordered(func, values, chunksize=10000), total=len(values)):
                 yield value, oid

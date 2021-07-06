@@ -14,10 +14,12 @@ from lightcurvedb.models import (
 )
 from collections import namedtuple, defaultdict
 from sqlalchemy import distinct, text, func
+from loguru import logger
 from click import echo
 from tqdm import tqdm
 from itertools import product
 import pandas as pd
+from math import isnan
 
 
 SingleMergeJob = namedtuple(
@@ -36,6 +38,9 @@ SingleMergeJob = namedtuple(
 
 PartitionJob = namedtuple(
     "PartitionJob", ("partition_oid", "single_merge_jobs")
+)
+LightcurveJob = namedtuple(
+    "LightcurveJob", ("lightcurve_id", "single_merge_jobs")
 )
 PHYSICAL_LIMIT = {1, 2, 3, 4}
 
@@ -56,6 +61,34 @@ def apply_physical_filter(filters, attr, tokens):
     return filters + [attr.in_(tokens)]
 
 
+def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
+    """
+    SQLite has a max limit to how many scalar values can be present when
+    comparing a membership filter. Break apart the query using the max lengths
+    and accumulate the values in a list.
+
+    Parameters
+    ----------
+    scalars: iterable
+        An iterable of values to check against.
+    filter_col: SQLAlchemy column
+        The filter column to check membership with.
+    base_q: SQLAlchemy query
+        A base query to serve as a common entry point.
+    Returns
+    -------
+    list
+        A list of the specified results in ``base_q``.
+    """
+    chunks = list(chunkify(scalars, maxlen))
+    accumulator = []
+    echo("Chunkifying for {0}".format(base_q))
+    for chunk in tqdm(chunks):
+        q = base_q.filter(filter_col.in_(chunk))
+        accumulator.extend(q)
+    return accumulator
+
+
 class IngestionPlan(object):
     def __init__(
         self,
@@ -72,15 +105,27 @@ class IngestionPlan(object):
 
         # Construct relevant TIC ID query from file observations in cache
         cache_filters = []
+        current_obs_filters = []
         if orbits:
             cache_filters.append(
                 FileObservation.orbit_number.in_(orbits)
             )
+            o_ids = [id_ for id_, in db.query(Orbit.id).filter(Orbit.orbit_number.in_(orbits))]
+            current_obs_filters.append(
+                Observation.orbit_id.in_(o_ids)
+            )
+        else:
+            o_ids = []
 
         if cameras:
             cache_filters = apply_physical_filter(
                 cache_filters,
                 FileObservation.camera,
+                cameras
+            )
+            current_obs_filters = apply_physical_filter(
+                current_obs_filters,
+                Observation.camera,
                 cameras
             )
 
@@ -90,37 +135,28 @@ class IngestionPlan(object):
                 FileObservation.ccd,
                 ccds
             )
+            current_obs_filters = apply_physical_filter(
+                current_obs_filters,
+                Observation.ccd,
+                ccds
+            )
 
-        if full_diff:
-            cache_filters = (
-                FileObservation.tic_id.in_(
-                    cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
-                ),
-            )
+        base_q = cache.query(FileObservation)
         echo("Querying file cache")
-        if tic_mask and len(tic_mask) <= 999:
-            cache_filters.append(
-                ~FileObservation.tic_id.in_(tic_mask)
-                if invert_mask
-                else FileObservation.tic_id.in_(tic_mask)
-            )
-            file_observations = (
-                cache
-                .query(FileObservation)
-                .filter(*cache_filters)
-            )
-        elif tic_mask and len(tic_mask) > 999:
-            echo("tic id mask is too large for single sqlite queries...")
-            file_observations = []
-            safe_for_sqlite = list(chunkify(tic_mask, 999))
-            for tic_chunk in tqdm(safe_for_sqlite):
-                file_obs_q = cache.query(FileObservation).filter(
-                    ~FileObservation.tic_id.in_(tic_chunk)
-                    if invert_mask
-                    else FileObservation.tic_id.in_(tic_chunk),
-                    *cache_filters
+        if full_diff:
+            if tic_mask:
+                file_observations = sqlite_accumulator(
+                    tic_mask,
+                    FileObservation.tic_id,
+                    base_q
                 )
-                file_observations.extend(file_obs_q.all())
+            else:
+                cache_filters = (
+                    FileObservation.tic_id.in_(
+                        cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
+                    ),
+                )
+                file_observations = base_q.filter(*cache_filters)
         else:
             file_observations = (
                 cache
@@ -148,34 +184,44 @@ class IngestionPlan(object):
 
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-
-        current_obs_q = (
+        seen_cache = set()
+        tic_chunks = list(chunkify(tic_ids, 1000))
+        q = (
             db
             .query(
-                Lightcurve.id, func.array_agg(Observation.orbit_id)
-            ).join(
-                Observation.lightcurve
+                Observation.lightcurve_id,
+                Observation.orbit_id
             )
-            .filter(
-                Lightcurve.tic_id.in_(tic_ids)
-            )
-            .group_by(Lightcurve.id)
+            .filter(*current_obs_filters)
         )
+        for lightcurve_id, orbit_id in tqdm(q, unit=" observations"):
+            seen_cache.add((lightcurve_id, orbit_id))
 
-        if not full_diff and orbits:
-            orbit_ids = set(orbit_map[number] for number in orbits)
-            current_obs_q = (
-                current_obs_q
-                .filter(Observation.orbit_id.in_(orbit_ids))
+        if full_diff:
+            echo("Grabbing full lightcurve observation baseline difference")
+            ide_cte = (
+                db
+                .query(Observation.lightcurve_id.distinct().label("lightcurve_id"))
+                .filter(*current_obs_filters)
+                .cte(name="relevant_ids")
             )
-
-        seen_cache = set()
-
-        for lc_id, orbit_array in tqdm(
-            current_obs_q, unit=" observations", total=len(id_map)
-        ):
-            for orbit_id in orbit_array:
-                seen_cache.add((lc_id, orbit_id))
+            full_q = (
+                db
+                .query(
+                    Observation.lightcurve_id,
+                    func.array_agg(Observation.orbit_id)
+                )
+                .join(
+                    ide_cte,
+                    ide_cte.c.lightcurve_id == Observation.lightcurve_id
+                )
+                .group_by(Observation.lightcurve_id)
+            )
+            if o_ids:
+                full_q.filter(~Observation.orbit_id.in_(o_ids))
+            for lightcurve_id, o_id_arr in tqdm(full_q.all(), unit=" lightcurves"):
+                for orbit_id in o_id_arr:
+                    seen_cache.add((lightcurve_id, orbit_id))
 
         plan = []
         cur_tmp_id = -1
@@ -183,7 +229,7 @@ class IngestionPlan(object):
         self.ignored_jobs = 0
 
         echo("Building job list")
-        for file_obs in tqdm(file_observations):
+        for file_obs in tqdm(file_observations, unit=" file observations"):
             orbit_id = orbit_map[file_obs.orbit_number]
             for ap, lc_t in product(apertures, lightcurve_types):
                 lc_key = (file_obs.tic_id, ap, lc_t)
@@ -223,8 +269,6 @@ class IngestionPlan(object):
         Total existing lightcurves =     {3}
         Total new lightcurves =          {4}
         Total Ignored Jobs (Duplicate) = {5}
-        ===========================================
-        # TICs split across cameras = {6}
         """
         if len(self._df) == 0:
             return "No Ingestion Plan. Everything looks to be in order."
@@ -237,8 +281,7 @@ class IngestionPlan(object):
             len(partitions),
             len(set(self._df[self._df.lightcurve_id > 0].lightcurve_id)),
             len(set(self._df[self._df.lightcurve_id < 0].lightcurve_id)),
-            self.ignored_jobs,
-            len(self.targets_across_many_cameras),
+            self.ignored_jobs
         )
 
     def assign_new_lightcurves(self, db, fill_id_gaps=False):
@@ -312,10 +355,7 @@ class IngestionPlan(object):
         )
         return split_df
 
-    def get_jobs_by_partition(self, db):
-        self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_number"], inplace=True
-        )
+    def get_jobs_by_partition(self, db, max_length):
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
         if len(self._df) == 0:
@@ -327,17 +367,53 @@ class IngestionPlan(object):
         partition_oid_df = pd.DataFrame(
             results, columns=["lightcurve_id", "partition_oid"]
         )
-        self._df = pd.merge(self._df, partition_oid_df, on="lightcurve_id")
+        self._df = pd.merge(self._df, partition_oid_df, how="inner", on="lightcurve_id")
 
-        for _, row in self._df.iterrows():
-            oid = row.pop("partition_oid")
+        self._df.drop_duplicates(
+            subset=["lightcurve_id", "orbit_number"], inplace=True
+        )
+
+        for row in tqdm(self._df.to_dict("records")):
+            oid = int(row.pop("partition_oid"))
             buckets[oid].append(SingleMergeJob(**row))
 
         partition_jobs = []
-        for partition_oid, jobs in buckets.items():
-            partition_jobs.append(
-                PartitionJob(
-                    partition_oid=partition_oid, single_merge_jobs=jobs
+        with tqdm(total=len(buckets)) as bar:
+            for partition_oid, jobs in buckets.items():
+                job_chunks = list(chunkify(jobs, max_length))
+                if len(job_chunks) > 1:
+                    bar.write(
+                        "Splitting work across partition OID {0} with {1} workloads".format(
+                            partition_oid,
+                            len(job_chunks)
+                        )
+                    )
+                for chunk in job_chunks:
+                    partition_jobs.append(
+                        PartitionJob(
+                            partition_oid=partition_oid, single_merge_jobs=chunk
+                        )
+                    )
+            bar.update(1)
+        return partition_jobs
+
+    def get_jobs_by_lightcurve(self, db):
+        if len(self._df) == 0:
+            return []
+        self._df.drop_duplicates(
+            subset=["lightcurve_id", "orbit_number"], inplace=True
+        )
+        bucket = defaultdict(list)
+        echo("Grouping by lightcurve id")
+        jobs = []
+        for job in tqdm(self._df.to_dict("records")):
+            bucket[job["lightcurve_id"]].append(SingleMergeJob(**job))
+
+        lightcurve_jobs = []
+        for id_, jobs in bucket.items():
+            lightcurve_jobs.append(
+                LightcurveJob(
+                    lightcurve_id=id_, single_merge_jobs=jobs
                 )
             )
-        return partition_jobs
+        return lightcurve_jobs
