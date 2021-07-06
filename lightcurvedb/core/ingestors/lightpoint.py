@@ -198,6 +198,7 @@ class PartitionConsumer(LightpointProcessor):
     def ingest_data(self, partition_relname, lightpoints, observations):
         ingested = False
         backoff = 1
+        conn = None
         while not ingested:
             try:
                 conn = psycopg_connection()
@@ -249,7 +250,8 @@ class PartitionConsumer(LightpointProcessor):
                 sleep(backoff)
                 backoff *= 2
             finally:
-                conn.close()
+                if conn:
+                    conn.close()
         return copy_elapsed
 
     def process_job(self, partition_job):
