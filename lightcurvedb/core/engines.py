@@ -120,7 +120,9 @@ def engine_from_config(config_path, config_group="Credentials", **engine_overrid
         kwargs[kwarg] = section.get(config_path, OPT_DEFAULTS[kwarg])
 
     if "poolclass" not in kwargs:
-        kwargs["poolclass"] = NullPool
+        engine_overrides["poolclass"] = NullPool
+    else:
+        engine_overrides["poolclass"] = kwargs.pop("poolclass")
 
 
     url = (
