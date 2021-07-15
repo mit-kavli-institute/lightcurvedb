@@ -64,7 +64,7 @@ class LightcurveFeeder(Process):
                 except PrimaryIdentNotFound:
                     result = {
                         "error": "No lightcurve found for identifier {0}".format(id_),
-                        "identity": id_
+                        "id": id_
                     }
                 except Exception as e:
                     # Catch all, clean queues and exit
