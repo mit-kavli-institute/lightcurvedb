@@ -17,7 +17,7 @@ class PrimaryIdentNotFound(LightcurveDBException):
     """
     pass
 
-class EmptyLightcurveException(LightcurveDBException):
+class EmptyLightcurve(LightcurveDBException):
     """
     Raised when a given lightcurve has a definition but no timeseries data.
     """
