@@ -8,7 +8,7 @@ from lightcurvedb.io.procedures.procedure import (
     get_bestaperture_data,
     get_lightcurve_data,
 )
-from lightcruvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
+from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
 from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from multiprocessing import Process, Manager
 from sqlalchemy.exc import InternalError
