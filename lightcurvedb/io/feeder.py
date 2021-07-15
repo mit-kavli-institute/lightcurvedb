@@ -176,10 +176,17 @@ def yield_best_aperture_data(
         either provided in the columns argument or any Lightpoint column
         name.
     """
+    # Convert tic_ids to list of lightcurve ids
+    ids = []
+    with db_from_config(db_config_override) as db:
+        q = db.lightcurves_from_best_aperture(resolve=False).filter(Lightcurve.tic_id.in_(tic_ids), Lightcurve.lightcurve_type_id == "KSPMagnitude")
+        for lc in q.all():
+            ids.append(lc.id)
+
     for data in _yield_data(
-        get_bestaperture_data,
+        get_lightcurve_data,
         columns,
-        tic_ids,
+        ids,
         db_config_override=db_config_override,
         n_threads=n_threads,
     ):
