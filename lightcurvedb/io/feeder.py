@@ -56,7 +56,11 @@ class LightcurveFeeder(Process):
                             for column in self.columns
                         ],
                     )
+                    if len(data) == 0:
+                        raise EmptyLightcurve
                     result["data"] = data
+                except EmptyLightcurve:
+                    result["error"] = "No lightpoints found, empty lightcurve"
                 except InternalError:
                     # No data found!
                     db.rollback()
