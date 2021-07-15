@@ -40,7 +40,7 @@ class LightcurveFeeder(Process):
                 # Grab lightcurve data
                 stmt = self.stmt_func(id_, *self.columns)
                 try:
-                    lc = db.lightcurves.get(id)
+                    lc = db.lightcurves.get(id_)
                     if lc is None:
                         raise PrimaryIdentNotFound
                     result = {
