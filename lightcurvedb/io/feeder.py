@@ -63,7 +63,7 @@ class LightcurveFeeder(Process):
                     result["error"] = "No lightpoints found, empty lightcurve"
                 except PrimaryIdentNotFound:
                     result = {
-                        "error": "No lightcurve found for identifier {0}.".format(id_),
+                        "error": "No lightcurve found for identifier {0}".format(id_),
                         "identity": id_
                     }
                 except Exception as e:
