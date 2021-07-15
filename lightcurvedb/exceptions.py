@@ -9,3 +9,16 @@ class LightcurveDBException(Exception):
     """
 
     pass
+
+class PrimaryIdentNotFound(LightcurveDBException):
+    """
+    Raised when attempting to resolve a single model instance but the
+    given identity does not match to any record
+    """
+    pass
+
+class EmptyLightcurveException(LightcurveDBException):
+    """
+    Raised when a given lightcurve has a definition but no timeseries data.
+    """
+    pass

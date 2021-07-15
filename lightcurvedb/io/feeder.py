@@ -3,11 +3,12 @@ This module describes multiprocessing queues in order to quickly feed
 IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
-from lightcurvedb import db_from_config
+from lightcurvedb import db_from_config, Lightcurve
 from lightcurvedb.io.procedures.procedure import (
     get_bestaperture_data,
     get_lightcurve_data,
 )
+from lightcruvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
 from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from multiprocessing import Process, Manager
 from sqlalchemy.exc import InternalError
@@ -36,8 +37,18 @@ class LightcurveFeeder(Process):
         id_ = self.id_queue.get()
         with db_from_config(self.config) as db:
             while id_ is not None:
+                # Grab lightcurve data
                 stmt = self.stmt_func(id_, *self.columns)
                 try:
+                    lc = db.lightcurves.get(id)
+                    if lc is None:
+                        raise PrimaryIdentNotFound
+                    result = {
+                        "id": lc.id,
+                        "tic_id": lc.tic_id,
+                        "aperture": lc.aperture_id,
+                        "lightcurve_type": lc.lightcurve_type_id,
+                    }
                     data = np.array(
                         list(map(tuple, db.execute(stmt))),
                         dtype=[
@@ -45,16 +56,23 @@ class LightcurveFeeder(Process):
                             for column in self.columns
                         ],
                     )
+                    result["data"] = data
                 except InternalError:
                     # No data found!
                     db.rollback()
-                    data = None
-                except Exception:
+                    result["error"] = "No lightpoints found, empty lightcurve"
+                except PrimaryIdentNotFound:
+                    result = {
+                        "error": "No lightcurve found for id {0}.".format(id_)
+                    }
+                except Exception as e:
                     # Catch all, clean queues and exit
-                    data = None
+                    result = {
+                        "error": "Encountered terminating error: {0}".format(e)
+                    }
                     break
                 finally:
-                    self.result_queue.put(data)
+                    self.result_queue.put(result)
                     self.id_queue.task_done()
                     id_ = self.id_queue.get()
 
