@@ -738,7 +738,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             self.query(col)
             .join(models.Lightcurve.observations)
             .join(models.Observation.orbit)
-            .filter(models.Orbit.orbit_numbers.in_(orbit_numbers))
+            .filter(models.Orbit.orbit_number.in_(orbit_numbers))
         )
 
         if cameras:
