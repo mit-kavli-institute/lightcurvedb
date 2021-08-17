@@ -221,7 +221,7 @@ class ORM_DB(object):
         """
         self._session.update(*args, **kwargs)
 
-    def delete(self, model_inst, synchronize_session="evaluate"):
+    def delete(self, model_inst):
         """
         A helper method to ``db.session.delete()``.
 
@@ -229,13 +229,9 @@ class ORM_DB(object):
         ----------
         model_inst : QLPModel
             The model to delete from the database.
-        synchronize_session : str, optional
-            How the session should change it's internal records to
-            reflect changes made to the database. See SQLAlchemy
-            docs for details.
         """
         self._session.delete(
-            model_inst, synchronize_session=synchronize_session
+            model_inst
         )
 
     def execute(self, *args, **kwargs):
