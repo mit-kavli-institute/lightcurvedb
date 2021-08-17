@@ -304,6 +304,14 @@ class PGNamespace(PGCatalogModel):
 
     owner = relationship(PGAuthID, backref="namespaces")
 
+    @hybrid_property
+    def name(self):
+        return self.nspname
+
+    @name.expression
+    def name(cls):
+        return cls.nspname
+
 
 class PGType(PGCatalogModel):
     """
@@ -315,6 +323,14 @@ class PGType(PGCatalogModel):
     oid = Column(OID, primary_key=True)
     typname = Column(NAME)
     typnamespace = Column(OID, ForeignKey(PGNamespace.__tablename__ + ".oid"))
+
+    @hybrid_property
+    def name(self):
+        return self.typname
+
+    @name.expression
+    def name(cls):
+        return cls.typname
 
 
 class PGInherits(PGCatalogModel):
@@ -355,6 +371,14 @@ class PGIndex(PGCatalogModel):
     tablename = Column(NAME, ForeignKey("pg_class.relname"))
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
 
+    @hybrid_property
+    def name(self):
+        return self.indexname
+
+    @name.expression
+    def name(cls):
+        return cls.indexname
+
 
 class PGDatabase(PGCatalogModel):
     """
@@ -370,6 +394,14 @@ class PGDatabase(PGCatalogModel):
     datlastsysoid = Column(OID)
 
     buffers = relationship("PGBuffer", back_populates="database")
+
+    @hybrid_property
+    def name(self):
+        return self.datname
+
+    @name.expression
+    def name(cls):
+        return cls.datname
 
 
 class PGClass(PGCatalogModel):
@@ -421,6 +453,14 @@ class PGClass(PGCatalogModel):
     @classmethod
     def expression(cls):
         return func.pg_get_expr(cls.relpartbound, cls.oid).label("expression")
+
+    @hybrid_property
+    def name(self):
+        return self.relname
+
+    @name.expression
+    def name(cls):
+        return cls.relname
 
 
 class PGBuffer(PGExtensionModel):

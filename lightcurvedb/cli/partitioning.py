@@ -9,7 +9,14 @@ import lightcurvedb.models as defined_models
 from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
+from lightcurvedb.core.psql_tables import PGClass
+from lightcurvedb.models.table_track import RangedPartitionTrack
+from lightcurvedb.cli.types import QLPModelType
+from lightcurvedb.util.iter import chunkify
+from lightcurvedb.util import merging
+from loguru import logger
 from sqlalchemy import text
+from multiprocessing import Pool
 
 
 @lcdbcli.group()
@@ -216,3 +223,46 @@ def delete_partitions(ctx, model, pattern):
                 db.commit()
                 click.echo("\tDeleted {0}".format(name))
 
+
+@partitioning.command()
+@click.pass_context
+@click.argument("model", type=QLPModelType())
+@click.argument("minimum_length", type=int)
+@click.option("--n-threads", "-n", type=int, default=0)
+def merge_partitions(ctx, model, minimum_length, n_threads):
+    with ctx.obj["dbconf"] as db:
+        working_group = (
+            db
+            .query(
+                RangedPartitionTrack
+            )
+            .filter(
+                RangedPartitionTrack.length < minimum_length,
+                RangedPartitionTrack.same_model(model)
+            )
+            .order_by(
+                RangedPartitionTrack.min_range
+            )
+        )
+
+        pairs = []
+        for left, *remainder in chunkify(working_group, 2):
+            if remainder:
+                pairs.append(
+                    merging.WorkingPair(
+                        left.oid, remainder[0].oid
+                    )
+                )
+            else:
+                click.echo(
+                    f"{left.pgclass.name} is a child node"
+                )
+
+    click.echo(f"Will process {len(pairs)} pairs")
+    with Pool(n_threads) as pool:
+        results = pool.imap_unordered(merging.merge_working_pair, pairs)
+        for oid in results:
+            if oid is not None and isinstance(oid, int):
+                with ctx.obj["dbconf"] as db:
+                    relname = db.query(PGClass).get(oid).relname
+                    logger.success(relname)
