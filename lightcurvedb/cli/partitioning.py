@@ -266,3 +266,38 @@ def merge_partitions(ctx, model, minimum_length, n_threads):
                 with ctx.obj["dbconf"] as db:
                     relname = db.query(PGClass).get(oid).relname
                     logger.success(relname)
+
+
+@partitioning.command()
+@click.pass_context
+@click.argument("model", type=QLPModelType())
+def attach_orphaned_partitions(ctx, model):
+    with ctx.obj["dbconf"] as db:
+        working_group = (
+            db
+            .query(
+                RangedPartitionTrack
+            )
+            .filter(
+                RangedPartitionTrack.same_model(model)
+            )
+            .all()
+        )
+        orphans = []
+        for track in tqdm(working_group):
+            if track.pgclass is None:
+                logger.error(f"BAD TRACK {track.min_range} to {track.max_range}")
+                continue
+            if len(track.pgclass.parent) == 0:
+                logger.warning(f"{track.pgclass.relname} is orphaned!")
+                orphans.append(track)
+
+        parent = model.__tablename__
+        if not orphans:
+            logger.success("No orphaned tables.")
+            return 0
+        for orphan in tqdm(orphans, unit="orphans"):
+            merging.attach(db, parent, orphan.pgclass, orphan)
+            logger.info(f"Attached {orphan.pgclass.name}")
+        db.commit()
+        logger.success(f"Attached {len(orphans)} orphaned tables")
