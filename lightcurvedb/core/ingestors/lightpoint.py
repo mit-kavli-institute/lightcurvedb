@@ -295,8 +295,15 @@ class PartitionConsumer(LightpointProcessor):
                     "Unable to open {0}".format(lc_job.file_path),
                     level="error",
                 )
+                timing = {
+                    "file_load": 0,
+                    "quality_flag_assignment": 0,
+                    "bjd_correction": 0,
+                    "alignment": 0,
+                }
                 continue
-            timings.append(timing)
+            finally:
+                timings.append(timing)
 
             stamp = time()
             # remove duplicates
