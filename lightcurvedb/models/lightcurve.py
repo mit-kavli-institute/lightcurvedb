@@ -23,6 +23,7 @@ from sqlalchemy import (
     SmallInteger,
     func,
     select,
+    inspect,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -203,16 +204,12 @@ class Lightcurve(QLPDataProduct):
         index=True,
     )
 
+    _lightpoint_cache = None
+
     # Relationships
     lightcurve_type = relationship(
         "LightcurveType", back_populates="lightcurves"
     )
-    lightpoints = relationship(
-        "Lightpoint",
-        backref="lightcurve",
-        collection_class=CadenceTracked,
-    )
-
     lightpoint_q = relationship(
         "Lightpoint", collection_class=CadenceTracked, lazy="dynamic"
     )
@@ -387,6 +384,33 @@ class Lightcurve(QLPDataProduct):
     @quality_flags.setter
     def quality_flags(self, values):
         self.lightpoints["quality_flag"] = values
+
+    @property
+    def lightpoints(self):
+        """
+        To improve query performance while serverside statistics are being
+        re-evaluated an extra -1 id query is emitted in order to force the
+        query planner to use the correct index.
+        """
+        if self._lightpoint_cache is None:
+            session = inspect(self).session
+            q = (
+                session
+                .query(
+                    Lightpoint
+                )
+                .filter(
+                    Lightpoint.lightcurve_id.in_(
+                        (
+                            self.id,
+                            -1
+                        )
+                    )
+                )
+            )
+            self._lightpoint_cache = CadenceTracked()
+            self._lightpoint_cache.extend(q)
+        return self._lightpoint_cache
 
     def lightpoints_by_cadence_q(self, cadence_q):
         q = cadence_q.subquery()
