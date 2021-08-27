@@ -13,7 +13,8 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 from lightcurvedb.core.collection import CadenceTracked
-from lightcurvedb.models import Frame, Lightpoint, Orbit, Observation
+from lightcurvedb.models import Frame, Orbit, Observation
+from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -29,7 +30,7 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
-
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
@@ -42,6 +43,26 @@ adapt_as_is_type(np.int64)
 adapt_as_is_type(np.int32)
 adapt_as_is_type(np.float32)
 adapt_as_is_type(np.float64)
+
+
+def lp_ordered_array(table, spec):
+    col = getattr(table, spec)
+    return func.array_agg(
+        aggregate_order_by(
+            col,
+            getattr(table, "cadence")
+        )
+    )
+
+def lp_structured_array(q, columns):
+    dtypes = [
+        (col, LIGHTPOINT_NP_DTYPES[col])
+        for col in columns
+    ]
+    return np.array(
+        q.all(),
+        dtype=dtypes
+    )
 
 
 class LightcurveType(QLPDataSubType):
@@ -326,40 +347,40 @@ class Lightcurve(QLPDataProduct):
     # Define lightpoint hybrid properties
     @hybrid_property
     def cadences(self):
-        return self.lightpoints.cadences
+        return self.lightpoints["cadence"]
 
     @hybrid_property
     def bjd(self):
-        return self.lightpoints.bjd
+        return self.lightpoints["barycentric_julian_date"]
 
     @hybrid_property
     def barycentric_julian_date(self):
-        return self.lightpoints.bjd
+        return self.lightpoints["barycentric_julian_date"]
 
     @hybrid_property
     def values(self):
-        return self.lightpoints.data
+        return self.lightpoints["data"]
 
     @hybrid_property
     def errors(self):
-        return self.lightpoints.error
+        return self.lightpoints["error"]
 
     @hybrid_property
     def x_centroids(self):
-        return self.lightpoints.x_centroid
+        return self.lightpoints["x_centroid"]
 
     @hybrid_property
     def y_centroids(self):
-        return self.lightpoints.y_centroid
+        return self.lightpoints["y_centroid"]
 
     @hybrid_property
     def quality_flags(self):
-        return self.lightpoints.quality_flag
+        return self.lightpoints["quality_flag"]
 
     # Lightcurve instance setters
     @bjd.setter
     def bjd(self, values):
-        self.lightpoints["bjd"] = values
+        self.lightpoints["barycentric_julian_date"] = values
 
     @barycentric_julian_date.setter
     def barycentric_julian_date(self, values):
@@ -392,24 +413,32 @@ class Lightcurve(QLPDataProduct):
         re-evaluated an extra -1 id query is emitted in order to force the
         query planner to use the correct index.
         """
+
+        cols = (
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag"
+        )
+
         if self._lightpoint_cache is None:
             session = inspect(self).session
             q = (
                 session
                 .query(
-                    Lightpoint
+                    *(getattr(Lightpoint, col) for col in cols)
                 )
                 .filter(
-                    Lightpoint.lightcurve_id.in_(
-                        (
-                            self.id,
-                            -1
-                        )
-                    )
+                    Lightpoint.lightcurve_id.in_((self.id, -1))
                 )
+                .distinct(Lightpoint.lightcurve_id, Lightpoint.cadence)
+                .order_by(Lightpoint.cadence)
             )
-            self._lightpoint_cache = CadenceTracked()
-            self._lightpoint_cache.extend(q)
+            self._lightpoint_cache = lp_structured_array(q, cols)
+
         return self._lightpoint_cache
 
     def lightpoints_by_cadence_q(self, cadence_q):
