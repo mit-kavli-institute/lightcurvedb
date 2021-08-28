@@ -268,6 +268,15 @@ class PGStatActivity(PGStatModel):
         return func.cardinality(cls.blocked_by) > 0
 
 
+    @hybrid_property
+    def terminate(self):
+        raise NotImplementedError
+
+    @terminate.expression
+    def terminate(cls):
+        return func.pg_terminate_backend(cls.pid)
+
+
 """
 ##############
 Begin PGCatalog Model definitions
