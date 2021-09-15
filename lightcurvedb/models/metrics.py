@@ -1,7 +1,4 @@
-from importlib import import_module  # Say that 5 times
-
-from packaging.version import Version, parse
-
+from lightcurvedb import __version__
 from lightcurvedb.core.base_model import QLPMetric
 from sqlalchemy import (
     BigInteger,
@@ -15,25 +12,27 @@ from sqlalchemy import (
     String,
     Text,
     between,
+    func
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query
+from datetime import datetime
 
-SUPPORTED_VERSION_ARGS = (
-    "public",
-    "base_version",
-    "epoch",
-    "release",
-    "major",
-    "minor",
-    "micro",
-    "local",
-    "is_prerelease",
-    "is_devrelease",
-    "is_postrelease",
-)
+
+class QLPStage(QLPMetric):
+    """
+    This model encompasses a stage of the QLP pipeline that we wish to
+    record for analysis later.
+    """
+    __tablename__ = "qlpstages"
+    id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
+    name = Column(String(64), unique=True)
+    slug = Column(String(64), unique=True)
+    description = Column(Text)
+
+    processes = relationship("QLPProcess", backref="stage")
 
 
 class QLPProcess(QLPMetric):
@@ -70,242 +69,51 @@ class QLPProcess(QLPMetric):
     """
 
     __tablename__ = "qlpprocesses"
-    id = Column(Integer, Sequence("qlpprocess_id_seq"), primary_key=True)
-    job_type = Column(String(255), index=True)
-    job_version_major = Column(SmallInteger, index=True, nullable=False)
-    job_version_minor = Column(SmallInteger, index=True, nullable=False)
-    job_version_revision = Column(Integer, index=True, nullable=False)
 
-    additional_version_info = Column(
-        postgresql.JSONB, index=True, nullable=True
-    )
+    id = Column(Integer, Sequence("qlpalertation_id_seq"))
+    stage_id = Column(Integer, ForeignKey(QLPState.id), nullable=False)
 
-    job_description = Text()
+    lcdb_version = Column(String(32), index=True, default=__VERSION__)
+    process_start = Column(DateTime, index=True, nullable=False, server_default=func.now())
+    process_completion = Column(DateTime, index=True, nullable=True)
 
-    alterations = relationship("QLPAlteration", back_populates="process")
+    state = Column(String(64), index=True, default="initialized")
+    runtime_parameters = Column(postgresql.JSONB, index=True)
+    host = Column(String(64), index=True)
+    user = Column(String(64), index=True)
 
-    @property
-    def to_dict(self):
-        """
-        Convert to python dictionary
-        """
-        return {
-            "id": id,
-            "job_type": self.job_type,
-            "version": str(self.version),
-            "version_info": self.additional_version_info,
-            "description": self.job_description,
-        }
+    operations = relationship("QLPOperations", backref="process")
 
-    @hybrid_property
-    def version(self):
-        try:
-            return parse(self.additional_version_info["base_version"])
-        except KeyError:
-            return parse(
-                ".".join(
-                    (
-                        str(self.job_version_major),
-                        str(self.job_version_minor),
-                        str(self.job_version_revision),
-                    )
-                )
-            )
-
-    @version.setter
-    def version(self, value):
-        if isinstance(value, Version):
-            self.version = value
-        else:
-            v = parse(value)
-
-            self.job_version_major = v.major
-            self.job_version_minor = v.minor
-            self.job_version_revision = v.micro
-
-            self.additional_version_info = {
-                k: getattr(v, k) for k in SUPPORTED_VERSION_ARGS
-            }
-
-    @classmethod
-    def make_from_module(cls, module, job_type, description=None):
-        """
-        Attempt to create a QLPProcess using an imported module. A string
-        may also be passed to be interpreted as an import.
-
-        Arguments
-        ---------
-        module : obj or str
-            The module object or string import path to be used as context.
-            The specified module must have a ``__version__`` or ``version``
-            attribute.
-        job_type : str
-            The name of the job.
-        description : str, optional
-            The description of the job
-        Raises
-        ------
-        AttributeError:
-            Raised if no ``__version__`` or ``version`` attributes could be
-            found on the module.
-        """
-        if isinstance(module, str):
-            __module = import_module(module)
-        else:
-            __module = module
-
-        try:
-            version = __module.version
-        except AttributeError:
-            # Attempt to fallback
-            version = __module.__version__
-
-        inst = cls(job_type=job_type, job_description=description)
-        inst.version = version
-
-        return inst
-
-    @classmethod
-    def lightcurvedb_process(cls, job_type, description=None):
-        """
-        Factory method of creating a QLPProcess instance using the current
-        defined lightcurvedb version number.
-
-        Arguments
-        ---------
-        job_tpye : str
-            The name of the job.
-        description : str, optional
-            The description of this process.
-        """
-        return cls.make_from_module(
-            "lightcurvedb", job_type, description=description
+    def finish(self):
+        if self.process_completion is None:
+            self.process_completion = datetime.now()
+            self.state = "finished"
+        raise RuntimeError(
+            f"Cannot assign completion date as it already exists for {self}"
         )
 
 
-class QLPAlteration(QLPMetric):
+class QLPOperations(QLPMetric):
     """
     This model is used to describe various alterations performed on. This
     is best used to describe atomic operations, like single insert,
     update, delete commands. But QLPAlteration may also be used to define
     other non-database operations. The parameters set are up to the user/
     developer to interperet and keep consistent.
-
-    Attributes
-    ----------
-    id : int
-        The primary key of the model. Do not edit unless you are confident
-        in the repercussions.
-    process_id : int
-        The foreign key to the QLPProcess this model belongs to. Do not
-        edit manually unless you are confident in the repercussions. You
-        should instead assign by ``qlpalteration_instance.process = x``.
-    target_model : str
-        The full module path to the Model this alteration is on. For example
-        a QLPAlteration on Lightcurves will have
-        ``lightcurvedb.models.Lightcurve``.
-    alteration_type : str
-        The alteration type of the alteration. Generally should be `insert` or
-        `update`. On python-side this is enforced to be lower case and not
-        have any leading formatting characters or whitespace.
-    n_altered_items : int
-        The number of items being altered. If using ``update`` this metric
-        should be an estimation. PostgreSQL's update commands will return
-        the number of rows filtered by a WHERE clause. But this might not
-        reflect the true number of items actually affected during the update.
-        As always this might not be a SQL operation and instead might be a
-        purely pythonic or mixed environment.
-    est_item_size : int
-        The general `size` of each item. The interpretation is up to the user
-        to define. It might be the number of columns affected but with
-        models containing ARRAYs it might be the total number of elements.
-    time_start : datetime
-        The UTC start date of the job. Must be earlier than the time end
-        date. This is enforced on a PSQL level.
-    time_end : datetime
-        The UTC end date of the job.
-    query : str
-        The query executed by this job. It may not be assigned due to size
-        constraints or context.
-    model : obj
-        This property attempts to import the python model associated with
-        this aleration.
     """
 
-    __tablename__ = "qlpalterations"
+    __tablename__ = "qlpoperations"
     id = Column(
         BigInteger,
-        Sequence("qlpalteration_id_seq", cache=1000),
+        Sequence("qlpwork_id_seq"),
         primary_key=True,
     )
-    process_id = Column(
-        ForeignKey(QLPProcess.id, onupdate="CASCADE", ondelete="CASCADE"),
-        nullable=False,
-    )
+    process_id = Column(Integer, ForeignKey(QLPProcess.id), nullable=False)
 
-    target_model = Column(
-        String(255),
-        index=Index(
-            "alteration_model", "target_model", postgresql_using="gin"
-        ),
-        nullable=False,
-    )
-
-    _alteration_type = Column(String(255), index=True, nullable=False)
-    n_altered_items = Column(BigInteger, index=True, nullable=False)
-    est_item_size = Column(BigInteger, index=True, nullable=False)
-    time_start = Column(DateTime(timezone=False), nullable=False, index=True)
-    time_end = Column(DateTime(timezone=False), nullable=False, index=True)
-
-    _query = Column(
-        Text,
-        nullable=True,
-        index=Index("alertation_query", "query", postgresql_using="gin"),
-    )
-
-    process = relationship("QLPProcess", back_populates="alterations")
-
-    @property
-    def to_dict(self):
-        """
-        Convert the instance to a python dictionary
-        """
-        return {
-            "target_model": self.target_model,
-            "alteration_type": self.alteration_type,
-            "n_altered_items": self.n_altered_items,
-            "est_time_size": self.est_item_size,
-            "elapsed": self.time_end - self.time_start,
-            "time_start": self.time_start,
-            "time_end": self.time_end,
-        }
-
-    @hybrid_property
-    def query(self):
-        return self._query
-
-    @query.expression
-    def query(cls):
-        return cls._query
-
-    @query.setter
-    def query(self, value):
-        if isinstance(value, Query):
-            self._query = value.compile(dialect=postgresql.dialect())
-        else:
-            self._query = str(value)
-
-    @hybrid_property
-    def alteration_type(self):
-        return self._alteration_type
-
-    @alteration_type.expression
-    def alteration_type(cls):
-        return cls._alteration_type
-
-    @alteration_type.setter
-    def alteration_type(self, value):
-        self._alteration_type = value.strip().lower()
+    job_size = Column(BigInteger, nullable=False)
+    unit = Column(String(32), nullable=False, default="unit")
+    time_start = Column(DateTime(), nullable=False, index=True)
+    time_end = Column(DateTime(), nullable=False, index=True)
 
     @hybrid_method
     def date_during_job(self, target_date):
@@ -314,11 +122,3 @@ class QLPAlteration(QLPMetric):
     @date_during_job.expression
     def date_during_job(cls, target_date):
         return between(target_date, cls.time_start, cls.time_end)
-
-    @property
-    def model(self):
-        """
-        Attempt to import the target model
-        """
-        classpath = self.target_model.split(".")
-        return getattr(import_module(".".join(classpath[:-1])), classpath[-1])
