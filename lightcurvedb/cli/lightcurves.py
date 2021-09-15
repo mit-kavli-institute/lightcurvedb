@@ -14,6 +14,7 @@ from lightcurvedb.core.datastructures.data_packers import (
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.jobs import IngestionPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
+from lightcurvedb.core.ingestors.consumer import FullPartitionConsumer
 
 
 def gaps_in_ids(id_array):
@@ -65,7 +66,8 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
         jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"],
+        worker_class=FullPartitionConsumer
     )
     click.echo("Done!")
 

@@ -19,6 +19,7 @@ from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from tabulate import tabulate
+from tqdm import tqdm
 
 
 def catalog_df(*catalog_files):
@@ -325,3 +326,60 @@ def list_files_for(ctx, tic):
     click.echo(
         tabulate(q, headers=["camera", "ccd", "orbit_number", "file_path"])
     )
+
+@cache.command()
+@click.pass_context
+@click.argument("orbit_number", type=int)
+@click.argument("camera", type=int)
+@click.argument("ccd", type=int)
+@click.argument("lc_path", type=click.Path(exists=True, file_okay=False))
+def refresh_file_cache(ctx, orbit_number, camera, ccd, lc_path):
+    cache = IngestionCache()
+
+    q = (
+        cache
+        .session
+        .query(
+            FileObservation
+        )
+        .filter(
+            FileObservation.orbit_number == orbit_number,
+            FileObservation.camera == camera,
+            FileObservation.ccd == ccd
+        )
+    )
+
+    context = extract_pdo_path_context(lc_path)
+    if orbit_number != int(context["orbit_number"]):
+        click.echo(
+            click.style("Orbit numbers in path and in arguments do not match!", fg="red")
+        )
+        return 1
+    if camera != int(context["camera"]):
+        click.echo(
+            click.style("Camera in path and in arguments do not match!", fg="red")
+        )
+        return 1
+    if ccd != int(context["ccd"]):
+        click.echo(
+            click.style("ccd in path and in arguments do not match!", fg="red")
+        )
+        return 1
+
+    h5s = glob(os.path.join(lc_path, "*.h5"))
+    all_obs = []
+    for h5 in tqdm(h5s, unit=" files"):
+        tic_id = int(os.path.basename(h5).split(".")[0])
+        key = (
+            tic_id,
+            int(context["camera"]),
+            int(context["ccd"]),
+            int(context["orbit_number"]),
+        )
+        obs = FileObservation(tic_id=tic_id, file_path=h5, **context)   
+        all_obs.append(obs)
+    click.echo(f"Deleting {q.count()} file observations from cache")
+    q.delete(synchronize_session=False)
+    click.echo(f"Adding {len(all_obs)} file observations as replacement")
+    cache.session.add_all(all_obs)
+    cache.commit()

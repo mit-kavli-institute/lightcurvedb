@@ -379,6 +379,17 @@ class PGIndex(PGCatalogModel):
     schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
     tablename = Column(NAME, ForeignKey("pg_class.relname"))
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
+    indexdef = Column(Text)
+
+    index_on = relationship(
+        "PGClass",
+        foreign_keys=[tablename],
+        backref="index_definitions"
+    )
+    index_class = relationship(
+        "PGClass",
+        foreign_keys=[indexname],
+    )
 
     @hybrid_property
     def name(self):

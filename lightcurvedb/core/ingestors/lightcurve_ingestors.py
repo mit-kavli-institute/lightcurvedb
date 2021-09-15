@@ -47,9 +47,6 @@ def get_components(path):
     }
 
 
-
-
-
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
     cache = IngestionCache()
@@ -149,7 +146,6 @@ def job_to_numpy(single_merge_job):
     )
 
 
-@track_runtime
 def get_correct_qflags(merge_job, cadences):
     """
     Grab the user-assigned quality flags from cache usiing a single merge job
@@ -166,7 +162,6 @@ def get_correct_qflags(merge_job, cadences):
     return qflag_df.loc[list(cadences)]["quality_flag"].to_numpy()
 
 
-@track_runtime
 def get_tjd(merge_job, cadences, config_override=None):
     min_c, max_c = min(cadences), max(cadences)
     tjd_df = get_mid_tjd(
@@ -175,8 +170,7 @@ def get_tjd(merge_job, cadences, config_override=None):
     return tjd_df.reindex(cadences)["mid_tjd"].to_numpy()
 
 
-@track_runtime
-def get_lightcurve_median(data, quality_flags, tmag):
+def get_aligned_magnitudes(data, quality_flags, tmag):
     mask = quality_flags == 0
     offset = np.nanmedian(data[mask]) - tmag
     return data - offset
