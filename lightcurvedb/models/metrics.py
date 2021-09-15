@@ -70,7 +70,7 @@ class QLPProcess(QLPMetric):
 
     __tablename__ = "qlpprocesses"
 
-    id = Column(Integer, Sequence("qlpalertation_id_seq"))
+    id = Column(Integer, Sequence("qlpalertation_id_seq"), primary_key=True)
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
