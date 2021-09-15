@@ -93,7 +93,7 @@ class QLPProcess(QLPMetric):
         )
 
 
-class QLPOperations(QLPMetric):
+class QLPOperation(QLPMetric):
     """
     This model is used to describe various alterations performed on. This
     is best used to describe atomic operations, like single insert,
