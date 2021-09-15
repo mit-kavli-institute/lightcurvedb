@@ -73,7 +73,7 @@ class QLPProcess(QLPMetric):
     id = Column(Integer, Sequence("qlpalertation_id_seq"))
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
-    lcdb_version = Column(String(32), index=True, default=__VERSION__)
+    lcdb_version = Column(String(32), index=True, default=__version__)
     process_start = Column(DateTime, index=True, nullable=False, server_default=func.now())
     process_completion = Column(DateTime, index=True, nullable=True)
 
