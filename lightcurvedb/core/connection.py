@@ -541,11 +541,11 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             A query of lightcurves that match the given parameters.
         """
         q = self.lightcurves
-        if apertures:
+        if apertures is not None:
             q = q.filter(models.Lightcurve.aperture_id.in_(apertures))
-        if types:
+        if types is not None:
             q = q.filter(models.Lightcurve.lightcurve_type_id.in_(types))
-        if tics:
+        if tics is not None:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
