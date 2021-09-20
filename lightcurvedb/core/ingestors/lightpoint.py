@@ -3,6 +3,7 @@ import warnings
 import tempfile
 import re
 import random
+import sys
 from functools import lru_cache, partial
 from sqlalchemy import text
 from sqlalchemy.sql.expression import literal
@@ -127,6 +128,68 @@ def push_observations(conn, observations):
     return timing
 
 
+def acquire_partition(db, oid):
+    track = (
+        db
+        .query(RangedPartitionTrack)
+        .filter_by(oid=oid)
+        .one()
+    )
+    indices_q = text(
+        f"""
+        SELECT pi.schemaname, pi.tablename, pi.indexname, pi.indexdef
+        FROM pg_indexes pi
+        JOIN pg_class pc ON pc.relname = pi.tablename
+        WHERE pc.oid = {oid}
+        """
+    )
+    indices = db.execute(indices_q).fetchall()
+
+    work = []
+
+    for schema, tablename, indexname, indexdf in indices:
+        drop_q = text(f"DROP INDEX {schema}.{indexname}")
+        work.append(drop_q)
+
+    return work
+
+
+def release_partition(db, oid):
+    track = (
+        db
+        .query(RangedPartitionTrack)
+        .filter_by(oid=oid)
+        .one()
+    )
+
+    work = []
+
+    gin_index_name = f"ix_lightpoints_{track.min_range}_{track.max_range}_gin"
+    brin_index_name = f"ix_lightpoints_{track.min_range}_{track.max_range}_cadence"
+
+    work.append(
+        text(
+            f"""
+            CREATE INDEX {gin_index_name}
+            ON {track.pgclass.namespace.name}.{track.pgclass.name}
+            USING gin (lightcurve_id)
+            WITH (fastupdate = off)
+            """
+        )
+    )
+    work.append(
+        text(
+            f"""
+            CREATE INDEX {brin_index_name}
+            ON {track.pgclass.namespace.name}.{track.pgclass.name}
+            USING brin (cadence)
+            WITH (pages_per_range = 1)
+            """
+        )
+    )
+    return work
+
+
 class BaseLightpointIngestor(Process):
     normalizer = None
     quality_flag_map = None
@@ -154,6 +217,7 @@ class BaseLightpointIngestor(Process):
         getattr(logger, level, logger.debug)(full_msg)
 
     def _load_contexts(self):
+        logger.remove()
         self.db = db_from_config(self.db_config)
         with self.db as db:
             cache = IngestionCache()
@@ -241,54 +305,57 @@ class BaseLightpointIngestor(Process):
 
         with self.db as db:
             oid = job.partition_oid
-            pgclass = db.query(PGClass).get(oid)
-            self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
+            acquire_req = acquire_partition(db, oid)
+            release_req = release_partitions(db, oid)
+            with scoped_block(db, oid, acquire_req, release_req):
+                pgclass = db.query(PGClass).get(oid)
+                self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
 
-        for single_merge_job in job.single_merge_jobs:
-            self.process_single_merge_job(single_merge_job)
-            if self.should_flush:
-                self.flush()
-        self.job_queue.task_done()
+                for single_merge_job in job.single_merge_jobs:
+                    self.process_single_merge_job(single_merge_job)
+                    if self.should_flush:
+                        self.flush()
+                self.job_queue.task_done()
 
     def flush(self):
         ingested = False
         self.log("Flushing to database")
         while not ingested:
-            with self.db as db:
-                try:
-                    lp_flush_stats = self.flush_lightpoints(db)
-                    obs_flush_stats = self.flush_observations(db)
-                    db.commit()
-                    ingested = True
-                except UniqueViolation as e:
-                    db.rollback()
-                    self.log("Needing to reduce ingestion due to {0}".format(e), level="error")
-                    match = re.search("\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e))
-                    orbit_id, lightcurve_id = int(match["orbit_id"]), int(match["lightcurve_id"])
-                    q = (
-                        db
-                        .query(
-                            func.min(Frame.cadence),
-                            func.max(Frame.cadence)
-                        )
-                        .filter(
-                            Frame.orbit_id == orbit_id,
-                            Frame.frame_type_id == "Raw FFI"
-                        )
-                        .group_by(Frame.orbit_id)
+            db = self.db
+            try:
+                lp_flush_stats = self.flush_lightpoints(db)
+                obs_flush_stats = self.flush_observations(db)
+                db.commit()
+                ingested = True
+            except UniqueViolation as e:
+                db.rollback()
+                self.log("Needing to reduce ingestion due to {0}".format(e), level="error")
+                match = re.search("\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e))
+                orbit_id, lightcurve_id = int(match["orbit_id"]), int(match["lightcurve_id"])
+                q = (
+                    db
+                    .query(
+                        func.min(Frame.cadence),
+                        func.max(Frame.cadence)
                     )
-                    min_cadence, max_cadence = q.one()
-                    self.buffers["observations"] = list(
-                        filter(
-                            lambda obs: not (obs[0] == lightcurve_id and obs[1] == orbit_id),
-                            self.buffers["observations"]
-                        )
+                    .filter(
+                        Frame.orbit_id == orbit_id,
+                        Frame.frame_type_id == "Raw FFI"
                     )
-                    for lp_buffer in self.buffers["lightpoints"]:
-                        id_mask = (lp_buffer["lightcurve_id"] == lightcurve_id)
-                        cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (lp_buffer["cadence"] <= max_cadence)
-                        lp_buffer = lp_buffer[~(id_mask & cadence_mask)]
-                    self.log("Reduced ingestion work due to observation collision", level="warning")
+                    .group_by(Frame.orbit_id)
+                )
+                min_cadence, max_cadence = q.one()
+                self.buffers["observations"] = list(
+                    filter(
+                        lambda obs: not (obs[0] == lightcurve_id and obs[1] == orbit_id),
+                        self.buffers["observations"]
+                    )
+                )
+                for lp_buffer in self.buffers["lightpoints"]:
+                    id_mask = (lp_buffer["lightcurve_id"] == lightcurve_id)
+                    cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (lp_buffer["cadence"] <= max_cadence)
+                    lp_buffer = lp_buffer[~(id_mask & cadence_mask)]
+                self.log("Reduced ingestion work due to observation collision", level="warning")
 
         self.n_samples += 1
 
@@ -389,11 +456,22 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
         }
 
 
+class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
+    max_exponent = 24
+    min_exponent = 3
+
+    def determine_process_parameters(self):
+        exp = np.random.randint(self.max_exponent, high=self.min_exponent)
+        return {
+            "lp_buffer_threshold": 2 ** exp
+        }
+
+
 def ingest_merge_jobs(db, jobs, n_processes, commit, level_log="info", worker_class=None):
     """
     Process and ingest SingleMergeJob objects.
     """
-    echo("Building multiprocessing environment")
+    logger.debug("Building multiprocessing environment")
     workers = []
     manager = Manager()
     job_queue = manager.Queue()
@@ -405,10 +483,10 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, level_log="info", worker_cl
 
     n_todo = len(jobs)
 
-    echo("Initializing workers, beginning processing...")
+    logger.debug("Initializing workers, beginning processing...")
     stage = db.get_qlp_stage("lightpoint-ingestion")
     for n in range(n_processes):
-        p = SamplingLightpointIngestor(
+        p = ExponentialSamplingLightpointIngestor(
             db._config,
             f"worker-{n}",
             job_queue,
@@ -417,9 +495,8 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, level_log="info", worker_cl
         p.start()
 
     logger.remove()
+    logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True, level=log_level, enqueue=True)
     with tqdm(total=len(jobs)) as bar:
-        logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True, level="DEBUG", enqueue=True)
-
         # Wait until all jobs have been pulled off queue
         while not job_queue.empty():
             queue_size = job_queue.qsize()
@@ -428,10 +505,12 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, level_log="info", worker_cl
             n_todo = queue_size
             sleep(5)
 
+    logger.remove()
+    logger.add(sys.stderr, level=log_level)
 
-    echo("Job queue empty, waiting for worker exits")
+    logger.debug("Job queue empty, waiting for worker exits")
     for worker in workers:
         worker.join()
 
-    echo("Joining work queues")
+    logger.debug("Joining work queues")
     job_queue.join()
