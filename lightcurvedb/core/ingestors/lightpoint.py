@@ -467,7 +467,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
         }
 
 
-def ingest_merge_jobs(db, jobs, n_processes, commit, level_log="info", worker_class=None):
+def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_class=None):
     """
     Process and ingest SingleMergeJob objects.
     """

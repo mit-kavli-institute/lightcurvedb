@@ -64,7 +64,10 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
         jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"],
+        jobs,
+        n_processes, not ctx.obj["dryrun"],
+        log_level=ctx.obj["log_level"]
     )
     click.echo("Done!")
 
