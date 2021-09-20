@@ -461,7 +461,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
     min_exponent = 3
 
     def determine_process_parameters(self):
-        exp = np.random.randint(self.max_exponent, high=self.min_exponent)
+        exp = np.random.randint(self.min_exponent, high=self.max_exponent)
         return {
             "lp_buffer_threshold": 2 ** exp
         }
