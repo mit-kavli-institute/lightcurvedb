@@ -19,6 +19,7 @@ from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.frame import FrameAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
+from lightcurvedb.models.metrics import QLPMetricAPIMixin
 
 
 # Bring legacy capability
@@ -254,7 +255,7 @@ class ORM_DB(object):
         return self._active
 
 
-class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
+class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricAPIMixin):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 

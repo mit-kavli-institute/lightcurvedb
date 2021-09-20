@@ -7,7 +7,6 @@ from .new_orbit import ingest_frames
 from .orbit import orbit
 from .lightcurves import ingest_h5
 from .spacecraft import spacecraft
-from .metrics import metrics
 from .ingestion_cache import cache
 from .bls import bls
 from .partitioning import partitioning
@@ -24,7 +23,6 @@ __all__ = [
     "orbit",
     "ingest_h5",
     "spacecraft",
-    "metrics",
     "cache",
     "partitioning",
     "query",

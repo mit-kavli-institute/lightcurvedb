@@ -20,6 +20,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query
 from datetime import datetime
 
+import getpass
+import os
+
 
 class QLPStage(QLPMetric):
     """
@@ -70,7 +73,7 @@ class QLPProcess(QLPMetric):
 
     __tablename__ = "qlpprocesses"
 
-    id = Column(Integer, Sequence("qlpalertation_id_seq"), primary_key=True)
+    id = Column(Integer, Sequence("qlpprocess_id_seq"), primary_key=True)
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
@@ -79,10 +82,10 @@ class QLPProcess(QLPMetric):
 
     state = Column(String(64), index=True, default="initialized")
     runtime_parameters = Column(postgresql.JSONB, index=True)
-    host = Column(String(64), index=True)
-    user = Column(String(64), index=True)
+    host = Column(String(64), index=True, default=os.uname().nodename)
+    user = Column(String(64), index=True, default=getpass.getuser)
 
-    operations = relationship("QLPOperations", backref="process")
+    operations = relationship("QLPOperation", backref="process")
 
     def finish(self):
         if self.process_completion is None:
@@ -105,7 +108,7 @@ class QLPOperation(QLPMetric):
     __tablename__ = "qlpoperations"
     id = Column(
         BigInteger,
-        Sequence("qlpwork_id_seq"),
+        Sequence("qlpoperation_id_seq"),
         primary_key=True,
     )
     process_id = Column(Integer, ForeignKey(QLPProcess.id), nullable=False)
@@ -122,3 +125,14 @@ class QLPOperation(QLPMetric):
     @date_during_job.expression
     def date_during_job(cls, target_date):
         return between(target_date, cls.time_start, cls.time_end)
+
+
+class QLPMetricAPIMixin:
+    """
+    Provide interaction with the previously defined models here to avoid
+    making the database connection object too large.
+    """
+
+    def get_qlp_stage(self, slug):
+        stage = self.query(QLPStage).filter_by(slug=slug).one()
+        return stage
