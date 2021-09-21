@@ -186,43 +186,22 @@ class IngestionPlan(object):
         echo("Getting current observations from database")
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         seen_cache = set()
-        tic_chunks = list(chunkify(tic_ids, 1000))
         q = (
             db
             .query(
                 Observation.lightcurve_id,
                 Observation.orbit_id
             )
-            .filter(*current_obs_filters)
+            .join(Observation.lightcurve)
+            .filter(
+                Lightcurve.tic_id.in_(tic_ids)
+            )
         )
+        if not full_diff:
+            q = q.filter(*current_obs_filters)
+
         for lightcurve_id, orbit_id in tqdm(q, unit=" observations"):
             seen_cache.add((lightcurve_id, orbit_id))
-
-        if full_diff:
-            echo("Grabbing full lightcurve observation baseline difference")
-            ide_cte = (
-                db
-                .query(Observation.lightcurve_id.distinct().label("lightcurve_id"))
-                .filter(*current_obs_filters)
-                .cte(name="relevant_ids")
-            )
-            full_q = (
-                db
-                .query(
-                    Observation.lightcurve_id,
-                    func.array_agg(Observation.orbit_id)
-                )
-                .join(
-                    ide_cte,
-                    ide_cte.c.lightcurve_id == Observation.lightcurve_id
-                )
-                .group_by(Observation.lightcurve_id)
-            )
-            if o_ids:
-                full_q.filter(~Observation.orbit_id.in_(o_ids))
-            for lightcurve_id, o_id_arr in tqdm(full_q.all(), unit=" lightcurves"):
-                for orbit_id in o_id_arr:
-                    seen_cache.add((lightcurve_id, orbit_id))
 
         plan = []
         cur_tmp_id = -1

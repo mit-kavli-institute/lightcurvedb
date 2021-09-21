@@ -221,7 +221,7 @@ class ORM_DB(object):
         """
         self._session.update(*args, **kwargs)
 
-    def delete(self, model_inst, synchronize_session="evaluate"):
+    def delete(self, model_inst):
         """
         A helper method to ``db.session.delete()``.
 
@@ -229,13 +229,9 @@ class ORM_DB(object):
         ----------
         model_inst : QLPModel
             The model to delete from the database.
-        synchronize_session : str, optional
-            How the session should change it's internal records to
-            reflect changes made to the database. See SQLAlchemy
-            docs for details.
         """
         self._session.delete(
-            model_inst, synchronize_session=synchronize_session
+            model_inst
         )
 
     def execute(self, *args, **kwargs):
@@ -545,11 +541,11 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             A query of lightcurves that match the given parameters.
         """
         q = self.lightcurves
-        if apertures:
+        if apertures is not None:
             q = q.filter(models.Lightcurve.aperture_id.in_(apertures))
-        if types:
+        if types is not None:
             q = q.filter(models.Lightcurve.lightcurve_type_id.in_(types))
-        if tics:
+        if tics is not None:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
@@ -738,7 +734,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             self.query(col)
             .join(models.Lightcurve.observations)
             .join(models.Observation.orbit)
-            .filter(models.Orbit.orbit_numbers.in_(orbit_numbers))
+            .filter(models.Orbit.orbit_number.in_(orbit_numbers))
         )
 
         if cameras:
