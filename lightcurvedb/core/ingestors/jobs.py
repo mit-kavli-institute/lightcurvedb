@@ -172,7 +172,8 @@ class IngestionPlan(object):
                 .filter(*cache_filters)
             )
 
-        tic_ids = {row.c.tic_id for row in file_observations}
+        tic_ids = {file_obs.tic_id for file_obs in file_observations}
+        self.tics = tic_ids
         db.execute(text("SET LOCAL work_mem TO '2GB'"))
 
         echo("Performing lightcurve query")
@@ -306,7 +307,7 @@ class IngestionPlan(object):
         update_map = dict(zip(new_ids, usable_ids))
 
         echo("Updating ingestion plan temporary IDs")
-        self._df["lightcurve_id"] = self._df["lightcurve_id"].map(update_map)
+        self._df["lightcurve_id"] = self._df["lightcurve_id"].map(lambda id_: update_map.get(id_, id_))
 
         echo("Submitting new lightcurve definitions to database")
         param_df = self._df[self._df.lightcurve_id.isin(usable_ids)]
