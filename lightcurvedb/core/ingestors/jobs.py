@@ -172,7 +172,7 @@ class IngestionPlan(object):
                 .filter(*cache_filters)
             )
 
-        tic_ids = {file_obs.tic_id for file_obs in file_observations}
+        tic_ids = {file_obs.c.tic_id for file_obs in file_observations}
         self.tics = tic_ids
         db.execute(text("SET LOCAL work_mem TO '2GB'"))
 

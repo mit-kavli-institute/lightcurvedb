@@ -35,6 +35,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_components,
     h5_to_numpy
 )
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.core.psql_tables import PGClass, PGNamespace
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import (
@@ -191,6 +192,19 @@ def release_partition(db, oid):
     return work
 
 
+@lru_cache(maxsize=16)
+def query_tic(tic, *fields):
+    logger.warning(f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}")
+    tic8 = TIC8_DB()
+    ticentries = tic8.ticentries
+    columns = tuple(getattr(ticentries.c, field) for field in fields)
+
+    q = tic8.query(*columns).filter_by(id=tic)
+    results = q.one()
+    tic8.close()
+    return dict(zip(fields, results))
+
+
 class BaseLightpointIngestor(Process):
     normalizer = None
     quality_flag_map = None
@@ -252,7 +266,14 @@ class BaseLightpointIngestor(Process):
             int(context["camera"]),
             int(context["ccd"])
         )
-        tmag = self.normalizer.tic_parameters.loc[tic_id]["tmag"]
+        try:
+            tmag = self.normalizer.tic_parameters.loc[tic_id]["tmag"]
+        except KeyError:
+            row = query_tic(tic_id, "ra", "dec", "tmag")
+            row["tic_id"] = tic_id
+            self.normalizer.tic_parameters.append(row)
+            tmag = row["tmag"]
+
         cadences = lightcurve["cadence"]
         data = lightcurve["data"]
 
@@ -306,8 +327,8 @@ class BaseLightpointIngestor(Process):
 
         with self.db as db:
             oid = job.partition_oid
-            acquire_req = acquire_partition(db, oid)
-            release_req = release_partition(db, oid)
+            acquire_req = [] #acquire_partition(db, oid)
+            release_req = [] #release_partition(db, oid)
             with scoped_block(db, oid, acquire_req, release_req):
                 pgclass = db.query(PGClass).get(oid)
                 self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
@@ -315,14 +336,13 @@ class BaseLightpointIngestor(Process):
                 for single_merge_job in job.single_merge_jobs:
                     self.process_single_merge_job(single_merge_job)
                     if self.should_flush:
-                        self.flush()
+                        self.flush(db)
                 self.job_queue.task_done()
 
-    def flush(self):
+    def flush(self, db):
         ingested = False
         self.log("Flushing to database")
         while not ingested:
-            db = self.db
             try:
                 lp_flush_stats = self.flush_lightpoints(db)
                 obs_flush_stats = self.flush_observations(db)
@@ -440,7 +460,8 @@ class BaseLightpointIngestor(Process):
                 self.set_new_parameters()
         self.log("Finished job queue, flushing remaining data")
         # Clear any remaining data
-        self.flush()
+        with self.db as db:
+            self.flush(db)
 
 
 class SamplingLightpointIngestor(BaseLightpointIngestor):

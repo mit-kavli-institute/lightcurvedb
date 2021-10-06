@@ -5,6 +5,7 @@ from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.exc import DisconnectionError, SAWarning
 from sqlalchemy.event import listens_for
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy import create_engine, Table
 
 CONFIG_PATH = os.path.expanduser(
@@ -48,7 +49,8 @@ class TIC8_DB(object):
 
                 TIC8_ENGINE = create_engine(
                     "postgresql://{dbuser}:{dbpass}@{dbhost}:{dbport}/{dbname}".format(
-                        **TIC8_CONFIGURATION
+                        **TIC8_CONFIGURATION,
+                        poolclass=NullPool
                     )
                 )
 
