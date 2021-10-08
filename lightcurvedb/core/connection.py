@@ -3,6 +3,7 @@ from __future__ import division, print_function
 import os
 import warnings
 import numpy as np
+import contextlib
 from pandas import read_sql as pd_read_sql
 
 from sqlalchemy import and_, func
@@ -28,18 +29,18 @@ LEGACY_FRAME_TYPE_ID = "Raw FFI"
 FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
 
-class ORM_DB(object):
+class ORM_DB(contextlib.AbstractContextManager):
     """
     Base Wrapper for all SQLAlchemy Session objects
     """
     def __init__(self, SessionMaker):
         self._sessionmaker = SessionMaker
-        self._session = None
-        self._active = False
+        self._session_stack = []
         self._config = None
+        self._max_depth = 10
 
     def __repr__(self):
-        if self._active:
+        if self.is_active:
             return "<DB status=open>"
         else:
             return "<DB status=closed>"
@@ -64,15 +65,14 @@ class ORM_DB(object):
         ORM_DB
             Returns itself in an open state.
         """
-        if self._active:
-            warnings.warn(
-                "DB session is already scoped. Ignoring duplicate open call",
-                RuntimeWarning,
-            )
+        if self.depth == 0:
+            session = self._sessionmaker()
+            self._session_stack.append(session)
+        elif self.depth < self._max_depth:
+            nested_session = self.session.begin_nested()
+            self._session_stack.append(nested_session)
         else:
-            if self._session is None:
-                self._session = self._sessionmaker()
-            self._active = True
+            raise RuntimeError("Database nested too far! Cowardly refusing")
 
         return self
  
@@ -86,13 +86,18 @@ class ORM_DB(object):
         ORM_DB
             Returns itself in a closed state.
         """
-        if self._active:
-            self._session.close()
-            self._active = False
-        else:
+        try:
+            if self.depth > 1:
+                self.session.rollback()
+                self._session_stack.pop()
+            else:
+                self._session_stack[0].close()
+                self._session_stack.pop()
+        except IndexError:
             warnings.warn(
                 "DB session is not active. Ignoring duplicate close call"
             )
+
         return self
 
     @property
@@ -112,12 +117,13 @@ class ORM_DB(object):
             Attempting to access this property without first calling
             ``open()``.
         """
-        if not self._active:
+        try:
+            return self._session_stack[0]
+        except IndexError:
             raise RuntimeError(
                 "Session is not open. Please call `db_inst.open()`"
                 "or use `with db_inst as opendb:`"
             )
-        return self._session
 
     @property
     def bind(self):
@@ -140,7 +146,26 @@ class ORM_DB(object):
                 "Session is not open. Please call `db_inst.open()`"
                 "or use `with db_inst as opendb:`"
             )
-        return self._session.bind
+        return self.session.bind
+
+    @property
+    def depth(self):
+        """
+        What is the current transaction depth. For initially opened
+        connections this will be 1. You can continue calling nested
+        transactions until the max_depth amount is reached.
+
+        Nested transaction scope and rules will follow PostgreSQL's
+        implementation of SAVEPOINTS.
+
+        Returns
+        -------
+        int
+            The depth of transaction levels. 0 for closed transactions,
+            1 for initially opened connections, and n < max_depth for
+            nested transactions.
+        """
+        return len(self._session_stack)
 
     def query(self, *args):
         """
@@ -181,20 +206,20 @@ class ORM_DB(object):
             Returns the Query object.
 
         """
-        return self._session.query(*args)
+        return self.session.query(*args)
 
     def commit(self):
         """
         Commit the executed queries in the database to make any
         changes permanent.
         """
-        self._session.commit()
+        self.session.commit()
 
     def rollback(self):
         """
         Rollback all changes to the previous commit.
         """
-        self._session.rollback()
+        self.session.rollback()
 
     def add(self, model_inst):
         """
@@ -210,7 +235,7 @@ class ORM_DB(object):
         sqlalchemy.IntegrityError
             Raised if the given instance violates given SQL constraints.
         """
-        self._session.add(model_inst)
+        self.session.add(model_inst)
 
     def update(self, *args, **kwargs):
         """
@@ -220,7 +245,7 @@ class ORM_DB(object):
         -------
         sqlalchemy.Query
         """
-        self._session.update(*args, **kwargs)
+        self.session.update(*args, **kwargs)
 
     def delete(self, model_inst):
         """
@@ -231,7 +256,7 @@ class ORM_DB(object):
         model_inst : QLPModel
             The model to delete from the database.
         """
-        self._session.delete(
+        self.session.delete(
             model_inst
         )
 
@@ -240,7 +265,7 @@ class ORM_DB(object):
         Alias for db session execution. See sqlalchemy.Session.execute for
         more information.
         """
-        return self._session.execute(*args, **kwargs)
+        return self.session.execute(*args, **kwargs)
 
     @property
     def is_active(self):
@@ -252,7 +277,7 @@ class ORM_DB(object):
         -------
         bool
         """
-        return self._active
+        return self.depth > 0
 
 
 class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricAPIMixin):
