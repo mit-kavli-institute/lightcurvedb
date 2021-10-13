@@ -68,7 +68,7 @@ class ORM_DB(contextlib.AbstractContextManager):
         if self.depth == 0:
             session = self._sessionmaker()
             self._session_stack.append(session)
-        elif self.depth < self._max_depth:
+        elif 0 < self.depth < self._max_depth:
             nested_session = self.session.begin_nested()
             self._session_stack.append(nested_session)
         else:
@@ -141,7 +141,7 @@ class ORM_DB(contextlib.AbstractContextManager):
         RuntimeError
             Attempted to access this propery without first calling ``open()``.
         """
-        if not self._active:
+        if not self.is_active:
             raise RuntimeError(
                 "Session is not open. Please call `db_inst.open()`"
                 "or use `with db_inst as opendb:`"

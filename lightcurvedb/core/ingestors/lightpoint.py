@@ -196,10 +196,11 @@ def release_partition(db, oid):
 def query_tic(tic, *fields):
     logger.warning(f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}")
     tic8 = TIC8_DB()
+    tic8.open()
     ticentries = tic8.ticentries
     columns = tuple(getattr(ticentries.c, field) for field in fields)
 
-    q = tic8.query(*columns).filter_by(id=tic)
+    q = tic8.query(*columns).filter(ticentries.c.id == tic)
     results = q.one()
     tic8.close()
     return dict(zip(fields, results))
@@ -506,7 +507,10 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
     n_todo = len(jobs)
 
     logger.debug("Initializing workers, beginning processing...")
-    stage = db.get_qlp_stage("lightpoint-ingestion")
+
+    with db:
+        stage = db.get_qlp_stage("lightpoint-ingestion")
+
     for n in range(n_processes):
         p = ExponentialSamplingLightpointIngestor(
             db._config,
@@ -518,6 +522,7 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
 
     logger.remove()
     logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True, level=log_level, enqueue=True)
+
     with tqdm(total=len(jobs)) as bar:
         # Wait until all jobs have been pulled off queue
         while not job_queue.empty():
