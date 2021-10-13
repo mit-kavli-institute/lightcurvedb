@@ -272,7 +272,7 @@ class BaseLightpointIngestor(Process):
         except KeyError:
             row = query_tic(tic_id, "ra", "dec", "tmag")
             row["tic_id"] = tic_id
-            self.normalizer.tic_parameters.append(row)
+            self.normalizer.tic_parameters.append(row, ignore_index=True)
             tmag = row["tmag"]
 
         cadences = lightcurve["cadence"]
