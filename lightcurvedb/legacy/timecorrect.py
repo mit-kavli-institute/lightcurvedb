@@ -3,6 +3,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from astropy import time, constants as const
 from lightcurvedb.models import Frame, SpacecraftEphemris
+from loguru import logger
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
@@ -87,23 +88,21 @@ class TimeCorrector:
             [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
         )
 
-        # Calculate light time arrival to Earth
-        light_time = time.TimeDelta(
-            np.dot(orbit_vector, star_vector) / LIGHTSPEED_AU_DAY,
-            format="jd",
-            scale="tdb",
-        )
-
         try:
+            # Calculate light time arrival to Earth
+            light_time = time.TimeDelta(
+                np.dot(orbit_vector, star_vector) / LIGHTSPEED_AU_DAY,
+                format="jd",
+                scale="tdb",
+            )
             bjd = tjd_time + light_time - BJD_EPOC
-        except ValueError:
-            print("Something went wrong")
-            print(
+        except (TypeError, ValueError):
+            logger.error(
+                "Bad Star Vector!\n"
                 "Star Vector: {0}\n"
                 "Orbit Vector: {1}\n"
-                "tjd: {2}\n"
-                "light_time: {3}".format(
-                    star_vector, orbit_vector, tjd_time, light_time
+                "tjd: {2}\n".format(
+                    star_vector, orbit_vector, tjd_time
                 )
             )
             raise
@@ -166,23 +165,20 @@ class StaticTimeCorrector(TimeCorrector):
             [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
         )
 
-        # Calculate light time arrival to Earth
-        light_time = time.TimeDelta(
-            np.dot(orbit_vector, star_vector) / LIGHTSPEED_AU_DAY,
-            format="jd",
-            scale="tdb",
-        )
-
         try:
+            # Calculate light time arrival to Earth
+            light_time = time.TimeDelta(
+                np.dot(orbit_vector, star_vector) / LIGHTSPEED_AU_DAY,
+                format="jd",
+                scale="tdb",
+            )
             bjd = tjd_time + light_time - BJD_EPOC
         except ValueError:
-            print("Something went wrong")
-            print(
+            logger.error(
                 "Star Vector: {0}\n"
                 "Orbit Vector: {1}\n"
-                "tjd: {2}\n"
-                "light_time: {3}".format(
-                    star_vector, orbit_vector, tjd_time, light_time
+                "tjd: {2}\n".format(
+                    star_vector, orbit_vector, tjd_time
                 )
             )
             raise

@@ -195,14 +195,12 @@ def release_partition(db, oid):
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
     logger.warning(f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}")
-    tic8 = TIC8_DB()
-    tic8.open()
-    ticentries = tic8.ticentries
-    columns = tuple(getattr(ticentries.c, field) for field in fields)
+    with TIC8_DB() as tic8:
+        ticentries = tic8.ticentries
+        columns = tuple(getattr(ticentries.c, field) for field in fields)
 
-    q = tic8.query(*columns).filter(ticentries.c.id == tic)
-    results = q.one()
-    tic8.close()
+        q = tic8.query(*columns).filter(ticentries.c.id == tic)
+        results = q.one()
     return dict(zip(fields, results))
 
 
@@ -233,7 +231,6 @@ class BaseLightpointIngestor(Process):
         getattr(logger, level, logger.debug)(full_msg)
 
     def _load_contexts(self):
-        logger.remove()
         self.db = db_from_config(self.db_config)
         with self.db as db:
             cache = IngestionCache()
@@ -268,12 +265,21 @@ class BaseLightpointIngestor(Process):
             int(context["ccd"])
         )
         try:
-            tmag = self.normalizer.tic_parameters.loc[tic_id]["tmag"]
+            row = self.normalizer.tic_parameters.loc[tic_id]
+            tmag = row["tmag"]
+            ra, dec = row["ra"], row["dec"]
         except KeyError:
             row = query_tic(tic_id, "ra", "dec", "tmag")
-            row["tic_id"] = tic_id
-            self.normalizer.tic_parameters.append(row, ignore_index=True)
             tmag = row["tmag"]
+            ra, dec = row["ra"], row["dec"]
+
+            # Update original dataframe to hold new data
+            _df = pd.DataFrame(row, index=[tic_id])
+            self.normalizer.tic_parameters = pd.concat([self.normalizer.tic_parameters, _df])
+
+        if np.isnan(ra) or np.isnan(dec):
+            self.log(f"Star coordinates undefined for {tic_id} ({ra}, {dec})", level="error")
+            raise ValueError
 
         cadences = lightcurve["cadence"]
         data = lightcurve["data"]
@@ -319,6 +325,8 @@ class BaseLightpointIngestor(Process):
                 f"Unable to open {smj.file_path}",
                 level="error"
             )
+        except ValueError:
+            self.log(f"Unable to process {smj.file_path}", level="error")
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
 
@@ -511,19 +519,18 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
     with db:
         stage = db.get_qlp_stage("lightpoint-ingestion")
 
-    for n in range(n_processes):
-        p = ExponentialSamplingLightpointIngestor(
-            db._config,
-            f"worker-{n}",
-            job_queue,
-            stage.id
-        )
-        p.start()
-
-    logger.remove()
-    logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True, level=log_level, enqueue=True)
-
     with tqdm(total=len(jobs)) as bar:
+        logger.remove()
+        logger.add(lambda msg: tqdm.write(msg, end=""), colorize=False, level=log_level.upper(), enqueue=True)
+        for n in range(n_processes):
+            p = ExponentialSamplingLightpointIngestor(
+                db._config,
+                f"worker-{n}",
+                job_queue,
+                stage.id
+            )
+            p.start()
+
         # Wait until all jobs have been pulled off queue
         while not job_queue.empty():
             queue_size = job_queue.qsize()
