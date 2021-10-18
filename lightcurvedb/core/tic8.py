@@ -3,6 +3,7 @@ import sys
 import warnings
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SAWarning
 from sqlalchemy import create_engine, Table
 from lightcurvedb.core.engines import engine_from_config
 from lightcurvedb.core.connection import ORM_DB
