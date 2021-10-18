@@ -90,6 +90,28 @@ def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
     return accumulator
 
 
+def yield_lightcurve_fields(db, background_name_template="%background%"):
+    """
+    Yield lightcurve apertures and types 
+    """
+    bg_aperture_filter = Aperture.name.ilike(background_name_template)
+    bg_type_filter = LightcurveType.name.ilike(background_name_template)
+
+    fg_apertures = db.query(Aperture).filter(~bg_aperture_filter)
+    fg_types = db.query(LightcurveType).filter(~bg_type_filter)
+
+    bg_apertures = db.query(Aperture).filter(bg_aperture_filter)
+    bg_types = db.query(LightcurveType).filter(bg_type_filter)
+
+    _iter = product(fg_apertures, fg_types)
+    for fg_aperture, fg_lightcurve_type in _iter:
+        yield fg_aperture.name, fg_lightcurve_type.name
+
+    _iter = product(bg_apertures, bg_types)
+    for bg_aperture, bg_lightcurve_type in _iter:
+        yield bg_aperture.name, bg_lightcurve_type.name
+
+
 class IngestionPlan(object):
     def __init__(
         self,

@@ -263,7 +263,7 @@ class BaseLightpointIngestor(Process):
             int(context["ccd"])
         )
         try:
-            row = self.normalizer.tic_parameters.loc[tic_id]
+            row = self.normalizer.tic_parameters[tic_id]
             tmag = row["tmag"]
             ra, dec = row["ra"], row["dec"]
         except KeyError:
@@ -272,8 +272,7 @@ class BaseLightpointIngestor(Process):
             ra, dec = row["ra"], row["dec"]
 
             # Update original dataframe to hold new data
-            _df = pd.DataFrame(row, index=[tic_id])
-            self.normalizer.tic_parameters = pd.concat([self.normalizer.tic_parameters, _df])
+            self.normalizer.tic_parameters[tic_id] = row
 
         if np.isnan(ra) or np.isnan(dec):
             self.log(f"Star coordinates undefined for {tic_id} ({ra}, {dec})", level="error")

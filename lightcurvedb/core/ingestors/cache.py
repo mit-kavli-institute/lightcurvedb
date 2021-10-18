@@ -162,6 +162,23 @@ class IngestionCache(ORM_DB):
         return tic_parameters.sort_index()
 
     @property
+    def tic_parameter_map(self):
+        q = self.session.query(
+            TIC8Parameters.tic_id,
+            TIC8Parameters.tmag,
+            TIC8Parameters.right_ascension,
+            TIC8Parameters.declination,
+        )
+        result = {}
+        for tic_id, tmag, right_ascension, declination in q:
+            result[tic_id] = {
+                "tmag": tmag,
+                "ra": right_ascension,
+                "dec": declination
+            }
+        return result
+
+    @property
     def file_observation_df(self):
         q = self.session.query(
             FileObservation.tic_id,

@@ -56,7 +56,7 @@ class TimeCorrector:
             SpacecraftEphemris.z,
         )
         self.ephemris = pd.read_sql(q.statement, session.bind)
-        self.tic_parameters = cache.tic_parameter_df
+        self.tic_parameters = cache.tic_parameter_map
 
         self.tess_x_interpolator = interp1d(
             self.ephemris.barycentric_dynamical_time,
@@ -81,9 +81,9 @@ class TimeCorrector:
         orbit_vector = np.c_[orbit_x, orbit_y, orbit_z]
 
         # Radian conversion
-        row = self.tic_parameters.loc[tic]
-        ra = np.radians(row["right_ascension"])
-        dec = np.radians(row["declination"])
+        row = self.tic_parameters[tic]
+        ra = np.radians(row["ra"])
+        dec = np.radians(row["dec"])
         star_vector = np.array(
             [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
         )

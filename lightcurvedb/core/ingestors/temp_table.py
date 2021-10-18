@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import Column, BigInteger, Integer, SmallInteger, Float, String
 from sqlalchemy.ext.declarative import declarative_base
-
+from h5py import File as H5File
 
 TemporaryQLPModel = declarative_base()
 
@@ -41,6 +41,9 @@ class FileObservation(TemporaryQLPModel):
             "ccd": self.ccd,
             "file_path": self.file_path,
         }
+
+    def open(self):
+        return H5File(self.file_path, "r")
 
 
 class TempObservation(TemporaryQLPModel):
