@@ -49,13 +49,13 @@ def get_components(path):
 
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
-    cache = IngestionCache()
-    q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
-        QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
-        QualityFlags.camera == camera,
-        QualityFlags.ccd == ccd,
-    )
-    return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
+    with IngestionCache() as cache:
+        q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
+            QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
+            QualityFlags.camera == camera,
+            QualityFlags.ccd == ccd,
+        )
+        return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
 
 
 @lru_cache(maxsize=32)

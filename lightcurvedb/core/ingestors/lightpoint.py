@@ -232,8 +232,7 @@ class BaseLightpointIngestor(Process):
 
     def _load_contexts(self):
         self.db = db_from_config(self.db_config)
-        with self.db as db:
-            cache = IngestionCache()
+        with self.db as db, IngestionCache() as cache:
             self.normalizer = TimeCorrector(db, cache)
             self.log("Instantiated bjd normalizer")
             self.quality_flag_map = cache.quality_flag_map
@@ -242,7 +241,6 @@ class BaseLightpointIngestor(Process):
             self.log("Instantiated mid-tjd cadence map")
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
-            cache.session.close()
 
     def get_quality_flags(self, camera, ccd, cadences):
         qflag_df = self.quality_flag_map[(camera, ccd)].loc[cadences]
