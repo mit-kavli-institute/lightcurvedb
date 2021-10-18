@@ -539,12 +539,9 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
             n_todo = queue_size
             sleep(5)
 
-    logger.remove()
-    logger.add(sys.stderr, level=log_level)
+        logger.debug("Job queue empty, waiting for worker exits")
+        for worker in workers:
+            worker.join()
 
-    logger.debug("Job queue empty, waiting for worker exits")
-    for worker in workers:
-        worker.join()
-
-    logger.debug("Joining work queues")
-    job_queue.join()
+        logger.debug("Joining work queues")
+        job_queue.join()
