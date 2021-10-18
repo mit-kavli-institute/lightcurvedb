@@ -102,7 +102,11 @@ OPT_DEFAULTS = {
     "port": 5432
 }
 
-def engine_from_config(config_path, config_group="Credentials", **engine_overrides):
+def engine_from_config(
+        config_path,
+        config_group="Credentials",
+        uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
+        **engine_overrides):
     """
     Create an SQLAlchemy engine from the configuration path.
     """
@@ -123,7 +127,7 @@ def engine_from_config(config_path, config_group="Credentials", **engine_overrid
         engine_overrides["poolclass"] = getattr(pool, kwargs.pop("poolclass", "NullPool"))
 
     url = (
-        "{dialect}://{username}:{password}@{host}:{port}/{database}".format(**kwargs)
+        uri_template.format(**kwargs)
     )
     engine = __init_engine__(url, **engine_overrides)
     return __register_process_guards__(engine)
