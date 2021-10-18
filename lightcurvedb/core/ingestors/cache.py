@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.sql.expression import bindparam
-
+from lightcurvedb.core.connection import ORM_DB
 from lightcurvedb.core.ingestors.temp_table import (
     TemporaryQLPModel,
     LightcurveIDMapper,
@@ -30,20 +30,22 @@ DEFAULT_SCRATCH = os.path.join("/", "scratch", "tmp", "lcdb_ingestion")
 DEFAULT_CACHENAME = "INGESTIONCACHE.db"
 
 
-class IngestionCache(object):
+class IngestionCache(ORM_DB):
     def __init__(self, scratch_dir=DEFAULT_SCRATCH, name=DEFAULT_CACHENAME):
         if not os.path.exists(scratch_dir):
             os.makedirs(scratch_dir)
 
         path = os.path.join(scratch_dir, name)
-        self._ENGINE = create_engine(
+        self.engine = create_engine(
             "sqlite:///{0}".format(path),
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
-        TemporaryQLPModel.metadata.create_all(self._ENGINE)
-        self._SESSIONFACTORY = sessionmaker(bind=self._ENGINE)
-        self.session = scoped_session(self._SESSIONFACTORY)
+        TemporaryQLPModel.metadata.create_all(self.engine)
+        self._sessionmaker = sessionmaker(bind=self.engine)
+        self._session_stack = []
+        self._max_depth = 1
+        self._config = path
 
     def clear_all_jobs(self):
         """
@@ -170,10 +172,6 @@ class IngestionCache(object):
         )
 
         return pd.read_sql(q.statement, self.session.bind)
-
-    @property
-    def query(self):
-        return self.session.query
 
     def load_observations(self, observation_df):
         """
@@ -347,6 +345,3 @@ class IngestionCache(object):
                 insert_q, to_insert.reset_index().to_dict("records")
             )
         return len(to_update), len(to_insert)
-
-    def commit(self):
-        self.session.commit()
