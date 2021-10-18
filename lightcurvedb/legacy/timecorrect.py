@@ -98,11 +98,8 @@ class TimeCorrector:
             bjd = tjd_time + light_time - BJD_EPOC
         except (TypeError, ValueError):
             logger.error(
-                "Bad Star Vector!\n"
-                "Star Vector: {0}\n"
-                "Orbit Vector: {1}\n"
-                "tjd: {2}\n".format(
-                    star_vector, orbit_vector, tjd_time
+                "Bad Star Vector: {0} for TIC ID {1}\n".format(
+                    star_vector, tic
                 )
             )
             raise
