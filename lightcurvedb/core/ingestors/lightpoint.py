@@ -209,6 +209,7 @@ class BaseLightpointIngestor(Process):
     quality_flag_map = None
     mid_tjd_map = None
     job_queue = None
+    orbit_map = None
     name = "Worker"
     stage_id = None
     process_id = None
@@ -225,6 +226,7 @@ class BaseLightpointIngestor(Process):
         self.db_config = config
         self.job_queue = job_queue
         self.stage_id = stage_id
+        self.log("Initialized")
 
     def log(self, msg, level="debug"):
         full_msg = f"{self.name} {msg}"
@@ -262,17 +264,9 @@ class BaseLightpointIngestor(Process):
             int(context["camera"]),
             int(context["ccd"])
         )
-        try:
-            row = self.normalizer.tic_parameters[tic_id]
-            tmag = row["tmag"]
-            ra, dec = row["ra"], row["dec"]
-        except KeyError:
-            row = query_tic(tic_id, "ra", "dec", "tmag")
-            tmag = row["tmag"]
-            ra, dec = row["ra"], row["dec"]
-
-            # Update original dataframe to hold new data
-            self.normalizer.tic_parameters[tic_id] = row
+        row = self.normalizer.get_tic_params(tic_id)
+        tmag = row["tmag"]
+        ra, dec = row["ra"], row["dec"]
 
         if np.isnan(ra) or np.isnan(dec):
             self.log(f"Star coordinates undefined for {tic_id} ({ra}, {dec})", level="error")
@@ -297,11 +291,8 @@ class BaseLightpointIngestor(Process):
         lightcurve_id = smj.lightcurve_id
 
         if (lightcurve_id, orbit_number) in self.seen_cache:
-            self.log(
-                f"Already seen {lightcurve_id} for orbit {orbit_number}, ignoring {smj}",
-                level="warning"
-            )
             return None
+
         try:
             lightpoint_array = self.process_h5(
                 smj.lightcurve_id,
@@ -327,6 +318,26 @@ class BaseLightpointIngestor(Process):
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
 
+    def get_seen(self, db, job):
+        track = db.query(RangedPartitionTrack).filter_by(oid=job.partition_oid).one()
+        orbit_number_map = dict(db.query(Orbit.id, Orbit.orbit_number))
+        current_obs_q = (
+            db
+            .query(Observation.lightcurve_id, Observation.orbit_id)
+            .filter(Observation.lightcurve_id.between(track.min_range, track.max_range - 1))
+        )
+        self.seen_cache = set()
+        cur_size = len(self.seen_cache)
+        self.log(
+            "Querying for observations for lightcurves in range "
+            f"[{track.min_range}, {track.max_range})",
+            level="debug"
+        )
+        for lightcurve_id, orbit_id in current_obs_q:
+            orbit_number = orbit_number_map[orbit_id]
+            key = (lightcurve_id, orbit_number)
+            self.seen_cache.add(key)
+
     def process_job(self, job):
         if self.buffers["lightpoints"] or self.buffers["observations"]:
             self.flush()
@@ -338,12 +349,21 @@ class BaseLightpointIngestor(Process):
             with scoped_block(db, oid, acquire_req, release_req):
                 pgclass = db.query(PGClass).get(oid)
                 self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
+                self.get_seen(db, job)
 
-                for single_merge_job in job.single_merge_jobs:
+                single_merge_jobs = sorted(
+                    filter(
+                        lambda job: (job.lightcurve_id, job.orbit_number) not in self.seen_cache,
+                        job.single_merge_jobs,
+                    ),
+                    key=lambda job: (job.lightcurve_id, job.orbit_number)
+                )
+
+                for single_merge_job in single_merge_jobs:
                     self.process_single_merge_job(single_merge_job)
                     if self.should_flush:
                         self.flush(db)
-                self.job_queue.task_done()
+        self.job_queue.task_done()
 
     def flush(self, db):
         ingested = False
@@ -485,7 +505,7 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
 
 
 class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
-    max_exponent = 24
+    max_exponent = 20
     min_exponent = 3
 
     def determine_process_parameters(self):
@@ -499,23 +519,23 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
     """
     Process and ingest SingleMergeJob objects.
     """
-    logger.debug("Building multiprocessing environment")
     workers = []
     manager = Manager()
     job_queue = manager.Queue()
     total_single_jobs = 0
 
-    for job in tqdm(jobs, unit=" jobs"):
+    echo("Enqueing multiprocessing work")
+    with tqdm(total=len(jobs), unit=" jobs") as bar:
+        job = jobs.pop()
         job_queue.put(job)
         total_single_jobs += len(job.single_merge_jobs)
 
     n_todo = len(jobs)
-
-    logger.debug("Initializing workers, beginning processing...")
-
     with db:
+        echo("Grabbing introspective processing tracker")
         stage = db.get_qlp_stage("lightpoint-ingestion")
 
+    echo("Initializing workers, beginning processing...")
     with tqdm(total=len(jobs)) as bar:
         logger.remove()
         logger.add(lambda msg: tqdm.write(msg, end=""), colorize=False, level=log_level.upper(), enqueue=True)

@@ -221,31 +221,11 @@ class IngestionPlan(object):
         for lc in tqdm(lightcurves, unit=" lightcurves"):
             id_map[(lc.c.tic_id, lc.c.aperture_id, lc.c.lightcurve_type_id)] = lc.c.id
 
-        echo("Getting current observations from database")
-        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-        seen_cache = set()
-        q = (
-            db
-            .query(
-                Observation.lightcurve_id,
-                Observation.orbit_id
-            )
-            .join(Observation.lightcurve)
-            .filter(
-                Lightcurve.tic_id.in_(tic_ids)
-            )
-        )
-        # if not full_diff:
-        #     q = q.filter(*current_obs_filters)
-
-        for lightcurve_id, orbit_id in tqdm(q, unit=" observations"):
-            seen_cache.add((lightcurve_id, orbit_id))
-
         plan = []
         cur_tmp_id = -1
 
         self.ignored_jobs = 0
-
+        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         echo("Building job list")
         for file_obs in tqdm(file_observations, unit=" file observations"):
             orbit_id = orbit_map[file_obs.c.orbit_number]
@@ -258,10 +238,6 @@ class IngestionPlan(object):
                     id_map[lc_key] = id_
                     cur_tmp_id -= 1
 
-                if (id_, orbit_id) in seen_cache:
-                    self.ignored_jobs += 1
-                    continue
-
                 ingest_job = {
                     "lightcurve_id": id_,
                     "tic_id": file_obs.c.tic_id,
@@ -272,9 +248,9 @@ class IngestionPlan(object):
                     "ccd": file_obs.c.ccd,
                     "file_path": file_obs.c.file_path,
                 }
-                seen_cache.add((id_, orbit_id))
 
                 plan.append(ingest_job)
+        echo("Converting plan to dataframe")
         self._df = pd.DataFrame(plan)
 
     def __repr__(self):
@@ -384,21 +360,20 @@ class IngestionPlan(object):
             Lightpoint, self._df["lightcurve_id"]
         ))
 
-        self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_number"], inplace=True
-        )
+        echo("Assigning lightcurve id -> table oids")
+        tqdm.pandas()
+        self._df["oid"] = self._df["lightcurve_id"].progress_apply(lambda id_: int(id_oid_map[id_]))
 
-        for row in tqdm(self._df.to_dict("records")):
-            oid = int(id_oid_map[row["lightcurve_id"]])
+        for row in tqdm(self._df.to_dict("records"), unit=" id rows"):
+            oid = row.pop("oid")
             buckets[oid].append(SingleMergeJob(**row))
 
         partition_jobs = []
-        with tqdm(total=len(buckets)) as bar:
+        with tqdm(total=len(buckets), unit=" partition jobs") as bar:
             for partition_oid, jobs in buckets.items():
-                sorted_jobs = sorted(jobs, key=lambda job: (job.orbit_number, job.lightcurve_id))
                 partition_jobs.append(
                     PartitionJob(
-                        partition_oid=partition_oid, single_merge_jobs=sorted_jobs
+                        partition_oid=partition_oid, single_merge_jobs=jobs
                     )
                 )
             bar.update(1)

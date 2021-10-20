@@ -2,11 +2,24 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import interp1d
 from astropy import time, constants as const
+from functools import lru_cache
 from lightcurvedb.models import Frame, SpacecraftEphemris
+from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.temp_table import TIC8Parameters
 from loguru import logger
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
+
+
+@lru_cache(maxsize=1024)
+def get_tic_parameters(tic_id, *parameters):
+    with IngestionCache() as cache:
+        cols = tuple(getattr(TIC8Parameters, parameter) for parameter in parameters)
+        result = cache.query(*cols).filter(TIC8Parameters.tic_id == tic_id).one_or_none()
+        if result is None:
+            result = tuple(None for _ in parameters)
+    return result
 
 
 def timecorrect(ephemris_data, mid_tjd, ra, dec, bjd_offset=2457000):
@@ -56,7 +69,6 @@ class TimeCorrector:
             SpacecraftEphemris.z,
         )
         self.ephemris = pd.read_sql(q.statement, session.bind)
-        self.tic_parameters = cache.tic_parameter_map
 
         self.tess_x_interpolator = interp1d(
             self.ephemris.barycentric_dynamical_time,
@@ -71,6 +83,14 @@ class TimeCorrector:
             self.ephemris.z_coordinate,
         )
 
+    def get_tic_params(self, tic):
+        ra, dec, tmag = get_tic_parameters(tic, "right_ascension", "declination", "tmag")
+        return {
+            "ra": ra,
+            "dec": dec,
+            "tmag": tmag,
+        }
+
     def correct(self, tic, mid_tjd_array):
         tjd_delta = time.TimeDelta(mid_tjd_array, format="jd", scale="tdb")
         tjd_time = tjd_delta + BJD_EPOC
@@ -81,7 +101,7 @@ class TimeCorrector:
         orbit_vector = np.c_[orbit_x, orbit_y, orbit_z]
 
         # Radian conversion
-        row = self.tic_parameters[tic]
+        row = self.get_tic_params(tic)
         ra = np.radians(row["ra"])
         dec = np.radians(row["dec"])
         star_vector = np.array(
