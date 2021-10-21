@@ -70,6 +70,7 @@ class LightcurveType(QLPDataSubType):
 
     __tablename__ = "lightcurvetypes"
 
+    id = Column(SmallInteger)
     lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):

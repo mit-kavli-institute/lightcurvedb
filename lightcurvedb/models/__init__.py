@@ -7,6 +7,7 @@ from .lightpoint import Lightpoint
 from .lightcurve import Lightcurve, LightcurveType
 from .spacecraft import SpacecraftEphemris
 from .bls import BLS
+from .best_lightcurve import BestOrbitLightcurve
 from .metrics import QLPStage, QLPProcess, QLPOperation
 
 

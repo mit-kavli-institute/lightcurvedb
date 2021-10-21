@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, BigInteger, ForeignKey
+from sqlalchemy import Column, String, Numeric, BigInteger, ForeignKey, SmallInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import insert
@@ -39,6 +39,7 @@ class Aperture(QLPReference):
     )
 
     # Model Attributes
+    id = Column(SmallInteger)
     name = Column(String(64), primary_key=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)

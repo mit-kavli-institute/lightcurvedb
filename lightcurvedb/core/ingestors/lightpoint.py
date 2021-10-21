@@ -526,9 +526,11 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
 
     echo("Enqueing multiprocessing work")
     with tqdm(total=len(jobs), unit=" jobs") as bar:
-        job = jobs.pop()
-        job_queue.put(job)
-        total_single_jobs += len(job.single_merge_jobs)
+        while len(jobs) > 0:
+            job = jobs.pop()
+            job_queue.put(job)
+            total_single_jobs += len(job.single_merge_jobs)
+            bar.update(1)
 
     n_todo = len(jobs)
     with db:
