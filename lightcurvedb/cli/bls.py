@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from itertools import product
+from glob import glob
 from multiprocessing import Pool
 
 import click
@@ -16,7 +17,10 @@ from lightcurvedb.core.ingestors.bls import (
     normalize,
 )
 from lightcurvedb.core.tic8 import TIC8_DB
-from lightcurvedb.models import BLS, Lightcurve, Orbit
+from lightcurvedb.models import Lightcurve, Orbit
+from lightcurvedb.models.best_lightcurve import BestOrbitLightcurve
+from lightcurvedb.models.bls import BLS, BLSResultLookup
+from lightcurvedb.util.contexts import extract_pdo_path_context
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -59,6 +63,36 @@ def process_summary(args):
     return True, results
 
 
+def determine_bls_context(db, filepath, context):
+    basename = os.path.basename(filepath)
+    tic_id = int(basename.split(".")[0])
+    sector = int(context["sector"])
+
+    lightcurve_composition_q = (
+        db
+        .query(
+            BestOrbitLightcurve.id
+        )
+        .join(
+            BestOrbitLightcurve.orbit
+        )
+        .join(
+            BestOrbitLightcurve.lightcurve
+        )
+        .join(
+            BestApertureMap,
+            and_(
+                BestApertureMap.tic_id == Lightcurve.tic_id,
+                BestApertureMap.aperture_id == Lightcurve.aperture_id
+            )
+        )
+        .filter(
+            Orbit.sector <= sector,
+            Lightcurve.tic_id == tic_id
+        )
+    )
+
+
 def get_tic(bls_summary):
     return int(os.path.basename(bls_summary).split(".")[0])
 
@@ -74,11 +108,26 @@ def bls(ctx):
 
 @bls.command()
 @click.pass_context
-@click.argument("sectors", type=int, nargs=-1)
-@click.option("--cameras", type=CommaList(int), default="1,2,3,4")
-@click.option("--ccds", type=CommaList(int), default="1,2,3,4")
+@click.argument("paths", type=click.Path(file_okay=False, exists=True), nargs=-1)
 @click.option("--n-processes", type=click.IntRange(0), default=32)
-def legacy_ingest(ctx, sectors, cameras, ccds, n_processes):
+def legacy_ingest(ctx, paths, n_processes):
+    req_contexts = ("sector",)
+    path_context_map = {}
+    path_files_map = {}
+
+    for path in paths:
+        context = extract_pdo_path(path)
+        if not all(req_context in context for req_context in req_contexts):
+            click.echo(f"Path {path} does not contain sector context!")
+            click.abort()
+        path_context_map[path] = context
+
+    for path in paths:
+        pattern = os.path.join(path, "*.blsanal")
+        files = glob(pattern)
+        path_files_map[path] = files
+        click.echo(f"Found {len(files)} bls summary files at {path}")
+
     for sector in sectors:
         tic8 = TIC8_DB().open()
         with ctx.obj["dbconf"] as db:

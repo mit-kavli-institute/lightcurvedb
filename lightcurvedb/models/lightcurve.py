@@ -237,9 +237,6 @@ class Lightcurve(QLPDataProduct):
     )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
-    bls_results = relationship(
-        "BLS", back_populates="lightcurve", order_by="BLS.created_on"
-    )
     observations = relationship(Observation, back_populates="lightcurve")
 
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
