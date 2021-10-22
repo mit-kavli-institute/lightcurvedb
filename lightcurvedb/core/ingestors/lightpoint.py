@@ -505,7 +505,7 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
 
 
 class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
-    max_exponent = 20
+    max_exponent = 24
     min_exponent = 3
 
     def determine_process_parameters(self):
