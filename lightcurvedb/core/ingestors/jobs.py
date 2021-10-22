@@ -365,11 +365,13 @@ class IngestionPlan(object):
         tqdm.pandas()
         self._df["oid"] = self._df["lightcurve_id"].progress_apply(lambda id_: int(id_oid_map[id_]))
 
+        echo("Grouping by table oid")
         for row in tqdm(self._df.to_dict("records"), unit=" id rows"):
             oid = row.pop("oid")
             buckets[oid].append(SingleMergeJob(**row))
 
         partition_jobs = []
+        echo("Constructing multiprocessing work")
         with tqdm(total=len(buckets), unit=" partition jobs") as bar:
             for partition_oid, jobs in buckets.items():
                 partition_jobs.append(
