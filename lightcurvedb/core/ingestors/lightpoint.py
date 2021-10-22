@@ -367,7 +367,6 @@ class BaseLightpointIngestor(Process):
 
     def flush(self, db):
         ingested = False
-        self.log("Flushing to database")
         while not ingested:
             try:
                 lp_flush_stats = self.flush_lightpoints(db)
@@ -413,6 +412,7 @@ class BaseLightpointIngestor(Process):
 
         conn = db.session.connection().connection
         lp_chunk = np.concatenate(lps)
+        self.log("Flushing {len(lp_chunk)} to remote")
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
@@ -433,7 +433,7 @@ class BaseLightpointIngestor(Process):
         obs = self.buffers.get("observations", [])
         if len(obs) < 1:
             return
-
+        self.log("Flushing {len(obs)} observations to remote")
         conn = db.session.connection().connection
         mgr = CopyManager(
             conn,
@@ -525,6 +525,7 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
     total_single_jobs = 0
 
     echo("Enqueing multiprocessing work")
+    n_todo = len(jobs)
     with tqdm(total=len(jobs), unit=" jobs") as bar:
         while len(jobs) > 0:
             job = jobs.pop()
@@ -532,7 +533,6 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
             total_single_jobs += len(job.single_merge_jobs)
             bar.update(1)
 
-    n_todo = len(jobs)
     with db:
         echo("Grabbing introspective processing tracker")
         stage = db.get_qlp_stage("lightpoint-ingestion")
