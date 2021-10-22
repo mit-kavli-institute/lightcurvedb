@@ -24,7 +24,6 @@ def gaps_in_ids(id_array):
 
     start = min(check_ids)
     end = max(check_ids)
-
     ref = set(range(start, end + 1))
 
     return ref - check_ids
@@ -47,10 +46,9 @@ def lightcurve(ctx):
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 @click.option("--full-diff/--only-listed-orbits", is_flag=True, default=True)
-@click.option("--max-lob-len", type=click.IntRange(min=1), default=1000)
+@click.option("--max-job-len", type=click.IntRange(min=1), default=1000)
 def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_job_len):
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(
             db,
             cache,
@@ -62,10 +60,13 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db, max_length=max_job_length)
+        jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"],
+        jobs,
+        n_processes, not ctx.obj["dryrun"],
+        log_level=ctx.obj["log_level"]
     )
     click.echo("Done!")
 
@@ -76,8 +77,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
 @click.option("--n-processes", default=1, type=click.IntRange(min=1))
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 def ingest_tic(ctx, tics, n_processes, fillgaps):
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(db, cache, tic_mask=tics)
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
@@ -109,8 +109,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
             click.style(str(len(tic_ids)), bold=True)
         )
     )
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(db, cache, tic_mask=tic_ids)
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
@@ -128,8 +127,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
 @click.option("--cameras", type=CommaList(int), default="1,2,3,4")
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(
             db,
             cache,
@@ -146,8 +144,7 @@ def view_orbit_ingestion_plan(ctx, orbits, cameras, ccds):
 @click.option("--cameras", type=CommaList(int), default="1,2,3,4")
 @click.option("--ccds", type=CommaList(int), default="1,2,3,4")
 def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(
             db, cache, cameras=cameras, ccds=ccds, tic_mask=tic_ids
         )
@@ -158,8 +155,7 @@ def view_tic_ingestion_plan(ctx, tic_ids, cameras, ccds):
 @click.pass_context
 @click.argument("lightcurve_ids", type=int, nargs=-1)
 def view_lightcurve_id_ingestion_plan(ctx, lightcurve_ids):
-    cache = IngestionCache()
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         tics = db.query(Lightcurve.tic_id).filter(
             Lightcurve.id.in_(lightcurve_ids)
         )

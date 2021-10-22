@@ -1,4 +1,4 @@
-from lightcurvedb.core.base_model import QLPDataProduct
+from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
 from lightcurvedb.models.lightcurve import Lightcurve
 from sqlalchemy import (
     BigInteger,
@@ -18,18 +18,32 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
 
 
+class BLSResultLookup(QLPReference):
+    """
+    """
+    __tablename__ = "bls_result_lookups"
+    __table_args__ = (
+        UniqueConstraint(
+            "bls_id",
+            "best_detrending_method_id"
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    bls_id = Column(ForeignKey("bls.id"))
+    best_detrending_method_id = Column(
+        ForeignKey(
+            "best_orbit_lightcurves.id"
+        )
+    )
+
+
 class BLS(QLPDataProduct):
 
     __tablename__ = "bls"
 
     id = Column(BigInteger, primary_key=True)
-    sector = Column(Integer, index=True, nullable=False)
-    lightcurve_id = Column(
-        ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
-        index=True,
-    )
     tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
-
     astronet_score = Column(Float, nullable=True, index=True)
     astronet_version = Column(String(256), nullable=True)
     runtime_parameters = Column(
@@ -64,16 +78,6 @@ class BLS(QLPDataProduct):
     sde = Column(DOUBLE_PRECISION, nullable=False)
     sr = Column(DOUBLE_PRECISION, nullable=False)
     period_inv_transit = Column(DOUBLE_PRECISION, nullable=False)
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint(
-            "lightcurve_id", "sector", "tce_n", name="unique_bls_runtime"
-        ),
-    )
-
-    # Begin relationship logic
-    lightcurve = relationship("Lightcurve", back_populates="bls_results")
 
     # Click queryable parameters
     click_parameters = Choice(

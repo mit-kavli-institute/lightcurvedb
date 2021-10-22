@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import DisconnectionError
-from sqlalchemy.pool import NullPool
+from sqlalchemy import pool
 from psycopg2 import connect
 
 
@@ -102,7 +102,11 @@ OPT_DEFAULTS = {
     "port": 5432
 }
 
-def engine_from_config(config_path, config_group="Credentials", **engine_overrides):
+def engine_from_config(
+        config_path,
+        config_group="Credentials",
+        uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
+        **engine_overrides):
     """
     Create an SQLAlchemy engine from the configuration path.
     """
@@ -119,12 +123,11 @@ def engine_from_config(config_path, config_group="Credentials", **engine_overrid
     for kwarg, config_path in ENGINE_CONF_OPT_ARGS.items():
         kwargs[kwarg] = section.get(config_path, OPT_DEFAULTS[kwarg])
 
-    if "poolclass" not in kwargs:
-        kwargs["poolclass"] = NullPool
-
+    if "poolclass" not in engine_overrides:
+        engine_overrides["poolclass"] = getattr(pool, kwargs.pop("poolclass", "NullPool"))
 
     url = (
-        "{dialect}://{username}:{password}@{host}:{port}/{database}".format(**kwargs)
+        uri_template.format(**kwargs)
     )
     engine = __init_engine__(url, **engine_overrides)
     return __register_process_guards__(engine)
