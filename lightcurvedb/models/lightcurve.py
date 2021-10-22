@@ -26,6 +26,7 @@ from sqlalchemy import (
     select,
     inspect,
 )
+from sqlalchemy import inspect
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -479,3 +480,28 @@ class Lightcurve(QLPDataProduct):
         )
 
         return self.lightpoints_by_cadence_q(q)
+
+    def update(self):
+        session = inspect(self).session
+        (
+            session
+            .query(Lightpoint)
+            .filter_by(lightcurve_id=self.id)
+            .delete(synchronize_session=False)
+        )
+        cols = (
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag"
+        )
+
+        data = []
+        for row in self.lightpoints:
+            result = dict(zip(cols, row))
+            data.append(row)
+
+        session.bulk_insert_mappings(Lightpoint, data)
