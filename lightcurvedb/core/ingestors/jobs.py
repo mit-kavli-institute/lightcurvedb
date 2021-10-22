@@ -227,9 +227,10 @@ class IngestionPlan(object):
         self.ignored_jobs = 0
         orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         echo("Building job list")
+        pairs = list(yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
             orbit_id = orbit_map[file_obs.c.orbit_number]
-            for ap, lc_t in product(apertures, lightcurve_types):
+            for ap, lc_t in pairs:
                 lc_key = (file_obs.c.tic_id, ap, lc_t)
                 try:
                     id_ = id_map[lc_key]
