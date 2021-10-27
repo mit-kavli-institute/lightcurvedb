@@ -437,7 +437,7 @@ class BaseLightpointIngestor(Process):
         obs = self.buffers.get("observations", [])
         if len(obs) < 1:
             return
-        self.log("Flushing {len(obs)} observations to remote")
+        self.log(f"Flushing {len(obs)} observations to remote")
         conn = db.session.connection().connection
         mgr = CopyManager(
             conn,
