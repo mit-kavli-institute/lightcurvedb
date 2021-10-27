@@ -413,7 +413,7 @@ class BaseLightpointIngestor(Process):
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
-        self.log(f"Flushing {lp_size} to remote")
+        self.log(f"Flushing {lp_size} lightpoints to remote")
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
