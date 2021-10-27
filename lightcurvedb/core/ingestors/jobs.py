@@ -366,9 +366,13 @@ class IngestionPlan(object):
         self._df["oid"] = self._df["lightcurve_id"].progress_apply(lambda id_: int(id_oid_map[id_]))
 
         echo("Grouping by table oid")
-        for row in tqdm(self._df.to_dict("records"), unit=" id rows"):
-            oid = row.pop("oid")
-            buckets[oid].append(SingleMergeJob(**row))
+        tqdm.pandas()
+        for oid, group in self._df.groupby("oid"):
+            jobs = []
+            for row in group.to_dict("records"):
+                row.pop("oid")
+                jobs.append(SingleMergeJob(**row))
+            buckets[oid] = jobs
 
         partition_jobs = []
         echo("Constructing multiprocessing work")
@@ -379,7 +383,7 @@ class IngestionPlan(object):
                         partition_oid=partition_oid, single_merge_jobs=jobs
                     )
                 )
-            bar.update(1)
+                bar.update(1)
         return partition_jobs
 
     def get_jobs_by_lightcurve(self, db):

@@ -363,6 +363,7 @@ class BaseLightpointIngestor(Process):
                     self.process_single_merge_job(single_merge_job)
                     if self.should_flush:
                         self.flush(db)
+        self.log(f"Finished pushing to {self.target_table}", level="success")
         self.job_queue.task_done()
 
     def flush(self, db):
@@ -411,19 +412,22 @@ class BaseLightpointIngestor(Process):
             return
 
         conn = db.session.connection().connection
-        lp_chunk = np.concatenate(lps)
-        self.log("Flushing {len(lp_chunk)} to remote")
+        lp_size = sum(len(chunk) for chunk in lps)
+        self.log(f"Flushing {lp_size} to remote")
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
-        mgr.threading_copy(lp_chunk)
+        while len(lps) > 0:
+            chunk = lps.pop()
+            mgr.threading_copy(chunk)
+
         end = datetime.now()
 
         metric = QLPOperation(
             process_id=self.process_id,
             time_start=start,
             time_end=end,
-            job_size=len(lp_chunk),
+            job_size=lp_size,
             unit="lightpoint"
         )
         db.add(metric)
