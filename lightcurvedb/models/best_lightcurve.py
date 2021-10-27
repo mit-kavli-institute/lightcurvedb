@@ -35,6 +35,14 @@ class BestOrbitLightcurve(QLPReference):
         nullable=False
     )
 
+    lightcurve = relationship(
+        "Lightcurve"
+    )
+
+    orbit = relationship(
+        "Orbit"
+    )
+
     @hybrid_method
     def max_cadence(self, frame_type="Raw FFI"):
         return self.orbit.max_cadence()

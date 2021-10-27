@@ -43,9 +43,10 @@ class BLS(QLPDataProduct):
     __tablename__ = "bls"
 
     id = Column(BigInteger, primary_key=True)
+    sector = Column(SmallInteger, index=True)
+    tic_id = Column(BigInteger, index=True)
+
     tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
-    astronet_score = Column(Float, nullable=True, index=True)
-    astronet_version = Column(String(256), nullable=True)
     runtime_parameters = Column(
         JSONB,
         nullable=False,
@@ -157,48 +158,3 @@ class BLS(QLPDataProduct):
         return (
             cls.runtime_parameters["legacy"].cast(Boolean).label("is_legacy")
         )
-
-    @hybrid_property
-    def tic_id(self):
-        return self.lightcurve.tic_id
-
-    @tic_id.expression
-    def tic_id(cls):
-        return Lightcurve.tic_id
-
-    @classmethod
-    def upsert_q(cls):
-        update_params = [
-            "astronet_score",
-            "astronet_version",
-            "runtime_parameters",
-            "period",
-            "transit_depth",
-            "planet_radius",
-            "planet_radius_error",
-            "points_pre_transit",
-            "points_in_transit",
-            "points_post_transit",
-            "transits",
-            "transit_shape",
-            "transit_center",
-            "duration_rel_period",
-            "rednoise",
-            "whitenoise",
-            "signal_to_noise",
-            "signal_to_pinknoise",
-            "sde",
-            "sr",
-            "period_inv_transit",
-            "sector",
-        ]
-
-        q = insert(cls.__table__)
-        q = q.on_conflict_do_update(
-            constraint="unique_bls_runtime",
-            set_={
-                param: getattr(q.excluded, param, None)
-                for param in update_params
-            },
-        )
-        return q

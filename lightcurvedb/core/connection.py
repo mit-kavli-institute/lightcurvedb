@@ -267,6 +267,12 @@ class ORM_DB(contextlib.AbstractContextManager):
         """
         return self.session.execute(*args, **kwargs)
 
+    def flush(self):
+        """
+        Flush any pending queries to the remote database.
+        """
+        return self.session.flush()
+
     @property
     def is_active(self):
         """
