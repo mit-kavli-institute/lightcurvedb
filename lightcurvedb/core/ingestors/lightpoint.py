@@ -8,6 +8,7 @@ from functools import lru_cache, partial
 from sqlalchemy import text
 from sqlalchemy.sql.expression import literal
 from multiprocessing import Manager, Process
+from queue import Empty
 from time import time, sleep
 from loguru import logger
 from datetime import datetime
@@ -485,10 +486,15 @@ class BaseLightpointIngestor(Process):
         job = self.job_queue.get()
         self.process_job(job)
         while not self.job_queue.empty():
-            job = self.job_queue.get()
-            self.process_job(job)
-            if self.should_refresh_parameters:
-                self.set_new_parameters()
+            try:
+                job = self.job_queue.get(timeout=10)
+                self.process_job(job)
+                if self.should_refresh_parameters:
+                    self.set_new_parameters()
+            except Empty:
+                self.log("Timed out")
+                break
+        self.log("Finished, exiting main runtime")
 
 
 class SamplingLightpointIngestor(BaseLightpointIngestor):

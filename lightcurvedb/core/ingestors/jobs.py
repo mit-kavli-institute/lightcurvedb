@@ -378,11 +378,12 @@ class IngestionPlan(object):
         echo("Constructing multiprocessing work")
         with tqdm(total=len(buckets), unit=" partition jobs") as bar:
             for partition_oid, jobs in buckets.items():
-                partition_jobs.append(
-                    PartitionJob(
-                        partition_oid=partition_oid, single_merge_jobs=jobs
+                for job_chunk in chunkify(jobs, max_length):
+                    partition_jobs.append(
+                        PartitionJob(
+                            partition_oid=partition_oid, single_merge_jobs=job_chunk
+                        )
                     )
-                )
                 bar.update(1)
         return partition_jobs
 
