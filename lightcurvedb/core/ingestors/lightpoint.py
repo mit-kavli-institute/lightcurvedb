@@ -363,6 +363,7 @@ class BaseLightpointIngestor(Process):
                     self.process_single_merge_job(single_merge_job)
                     if self.should_flush:
                         self.flush(db)
+            self.flush(db)
         self.log(f"Finished pushing to {self.target_table}", level="success")
         self.job_queue.task_done()
 
@@ -413,7 +414,7 @@ class BaseLightpointIngestor(Process):
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
-        self.log(f"Flushing {lp_size} lightpoints to remote")
+        self.log(f"Flushing {lp_size} lightpoints to remote", level="trace")
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
@@ -437,7 +438,7 @@ class BaseLightpointIngestor(Process):
         obs = self.buffers.get("observations", [])
         if len(obs) < 1:
             return
-        self.log(f"Flushing {len(obs)} observations to remote")
+        self.log(f"Flushing {len(obs)} observations to remote", level="trace")
         conn = db.session.connection().connection
         mgr = CopyManager(
             conn,
@@ -488,10 +489,6 @@ class BaseLightpointIngestor(Process):
             self.process_job(job)
             if self.should_refresh_parameters:
                 self.set_new_parameters()
-        self.log("Finished job queue, flushing remaining data")
-        # Clear any remaining data
-        with self.db as db:
-            self.flush(db)
 
 
 class SamplingLightpointIngestor(BaseLightpointIngestor):
