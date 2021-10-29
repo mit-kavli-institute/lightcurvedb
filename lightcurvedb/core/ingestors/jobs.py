@@ -164,7 +164,7 @@ class IngestionPlan(object):
                 ccds
             )
 
-        file_obs_bn = Bundle(
+        file_obs_columns = Bundle(
             "c",
             FileObservation.tic_id,
             FileObservation.orbit_number,
@@ -172,7 +172,7 @@ class IngestionPlan(object):
             FileObservation.ccd,
             FileObservation.file_path
         )
-        base_q = cache.query(file_obs_bn)
+        base_q = cache.query(file_obs_columns)
         echo("Querying file cache")
         if full_diff:
             if tic_mask:
