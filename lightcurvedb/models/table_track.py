@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     Sequence,
     ForeignKey,
+    text,
 )
 from sqlalchemy.orm import relationship
 from multiprocessing import Pool
@@ -60,6 +61,21 @@ class PartitionTrack(QLPMetric):
         return lambda value: value == self.model
 
 
+    def generate_detachment_q(self):
+        parent = self.pgclass.parent[0]
+        target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
+        q = text(
+            """
+            ALTER TABLE {parent.name}
+            DETACH PARTITION {target}
+            """
+        )
+        return q
+
+    def generate_attachment_q(self):
+        raise NotImplementedError
+
+
 class RangedPartitionTrack(PartitionTrack):
     __tablename__ = "ranged_partition_tracks"
     id = Column(Integer, ForeignKey(PartitionTrack.id), primary_key=True)
@@ -90,6 +106,19 @@ class RangedPartitionTrack(PartitionTrack):
     @length.expression
     def length(cls):
         return cls.max_range - cls.min_range
+
+    def generate_attachment_q(self):
+        parent = self.pgclass.parent[0]
+        target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
+        q = text(
+            """
+            ALTER TABLE {parent.name} 
+            ATTACH PARTITION {target}
+            FOR VALUES ({self.min_range}) TO ({self.max_range})
+            """
+        )
+
+        return q
 
 
 def range_check(ranges, value):

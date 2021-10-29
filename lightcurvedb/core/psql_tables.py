@@ -268,6 +268,15 @@ class PGStatActivity(PGStatModel):
         return func.cardinality(cls.blocked_by) > 0
 
 
+    @hybrid_property
+    def terminate(self):
+        raise NotImplementedError
+
+    @terminate.expression
+    def terminate(cls):
+        return func.pg_terminate_backend(cls.pid)
+
+
 """
 ##############
 Begin PGCatalog Model definitions
@@ -370,6 +379,17 @@ class PGIndex(PGCatalogModel):
     schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
     tablename = Column(NAME, ForeignKey("pg_class.relname"))
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
+    indexdef = Column(Text)
+
+    index_on = relationship(
+        "PGClass",
+        foreign_keys=[tablename],
+        backref="index_definitions"
+    )
+    index_class = relationship(
+        "PGClass",
+        foreign_keys=[indexname],
+    )
 
     @hybrid_property
     def name(self):

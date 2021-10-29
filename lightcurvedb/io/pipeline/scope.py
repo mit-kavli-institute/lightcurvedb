@@ -6,7 +6,9 @@ encouraging developers to better encapsulate processing vs IO.
 
 from functools import wraps
 from lightcurvedb import db_from_config
-from lightcurvedb.util.logger import lcdb_logger
+from loguru import logger
+from contextlib import contextmanager
+from sqlalchemy.exc import InternalError
 
 
 def db_scope(application_name=None, config_override=None, **connection_kwargs):
@@ -60,3 +62,20 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
         return wrapper
 
     return _internal
+
+
+@contextmanager
+def scoped_block(db, resource, acquire_actions=[], release_actions=[]):
+    try:
+        for action in acquire_actions:
+            logger.debug(action)
+            db.execute(action)
+        db.commit()
+        yield resource
+    except InternalError:
+        db.rollback()
+    finally:
+        for action in release_actions:
+            logger.debug(action)
+            db.execute(action)
+        db.commit()

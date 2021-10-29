@@ -7,7 +7,8 @@ from .lightpoint import Lightpoint
 from .lightcurve import Lightcurve, LightcurveType
 from .spacecraft import SpacecraftEphemris
 from .bls import BLS
-from .metrics import QLPProcess, QLPAlteration
+from .best_lightcurve import BestOrbitLightcurve
+from .metrics import QLPStage, QLPProcess, QLPOperation
 
 
 __all__ = [
@@ -23,8 +24,9 @@ __all__ = [
     "Lightpoint",
     "Observation",
     "SpacecraftEphemris",
+    "QLPStage",
     "QLPProcess",
-    "QLPAlteration",
+    "QLPOperation",
 ]
 
 DEFINED_MODELS = __all__

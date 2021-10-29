@@ -289,3 +289,41 @@ def get_info(ctx, pids, columns):
     with ctx.obj["dbconf"] as db:
         q = db.query(*columns).filter(PGStatActivity.pid.in_(pids))
         click.echo(tabulate_query(q))
+
+
+@state.command()
+@click.pass_context
+@click.argument("pids", type=int, nargs=-1)
+def terminate(ctx, pids):
+    with ctx.obj["dbconf"] as db:
+        queries = db.query(PGStatActivity.query).filter(PGStatActivity.pid.in_(pids))
+
+        if queries.count() == 0:
+            click.echo(
+                "No queries with pids {pids} exist"
+            )
+            return 0
+
+        click.echo(
+            click.style(
+                "Will terminate..."
+            )
+        )
+        for query, in queries:
+            click.echo(
+                f"\t{query}"
+            )
+        prompt_msg = click.style(
+            "TERMINATE THESE QUERIES?",
+            bg="red",
+            blink=True
+        )
+
+        click.confirm(
+            prompt_msg,
+            abort=True,
+            default=False
+        )
+
+        db.query(PGStatActivity.terminate).filter(PGStatActivity.pid.in_(pids)).all()
+        click.echo("Terminated")

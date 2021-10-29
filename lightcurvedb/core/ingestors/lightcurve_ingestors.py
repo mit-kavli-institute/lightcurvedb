@@ -12,6 +12,7 @@ from lightcurvedb.core.ingestors.temp_table import QualityFlags
 from functools import lru_cache
 from lightcurvedb.util.decorators import track_runtime
 
+
 LC_ERROR_TYPES = {"RawMagnitude"}
 
 with warnings.catch_warnings():
@@ -47,18 +48,15 @@ def get_components(path):
     }
 
 
-
-
-
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
-    cache = IngestionCache()
-    q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
-        QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
-        QualityFlags.camera == camera,
-        QualityFlags.ccd == ccd,
-    )
-    return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
+    with IngestionCache() as cache:
+        q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
+            QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
+            QualityFlags.camera == camera,
+            QualityFlags.ccd == ccd,
+        )
+        return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
 
 
 @lru_cache(maxsize=32)
@@ -88,15 +86,21 @@ def get_h5_data(merge_job):
     lc = lc["LightCurve"]
     cadences = lc["Cadence"][()].astype(int)
 
-    lc = lc["AperturePhotometry"][merge_job.aperture]
-    x_centroids = lc["X"][()]
-    y_centroids = lc["Y"][()]
-    data = lc[merge_job.lightcurve_type][()]
-    errors = (
-        lc["{0}Error".format(merge_job.lightcurve_type)][()]
-        if merge_job.lightcurve_type in LC_ERROR_TYPES
-        else np.full_like(cadences, np.nan, dtype=np.double)
-    )
+    if merge_job.lightcurve_type == "Background":
+        data = lc["Background"]["Value"][()]
+        errors = lc["Background"]["Error"][()]
+        x_centroids = lc["X"][()]
+        y_centroids = lc["Y"][()]
+    else:
+        lc = lc["AperturePhotometry"][merge_job.aperture]
+        x_centroids = lc["X"][()]
+        y_centroids = lc["Y"][()]
+        data = lc[merge_job.lightcurve_type][()]
+        errors = (
+            lc["{0}Error".format(merge_job.lightcurve_type)][()]
+            if merge_job.lightcurve_type in LC_ERROR_TYPES
+            else np.full_like(cadences, np.nan, dtype=np.double)
+        )
     return {
         "cadence": cadences,
         "data": data,
@@ -127,15 +131,22 @@ def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
     arr["cadence"] = cadences
     arr["barycentric_julian_date"] = lc["BJD"][()]
 
-    lc = lc["AperturePhotometry"][aperture]
-    arr["x_centroid"] = lc["X"][()]
-    arr["y_centroid"] = lc["Y"][()]
-    arr["data"] = lc[type_][()]
-    arr["error"] = (
-        lc["{0}Error".format(type_)][()]
-        if type_ in LC_ERROR_TYPES
-        else np.full_like(cadences, np.nan, dtype=np.double)
-    )
+    if type_ == "Background":
+        arr["x_centroid"] = lc["X"][()]
+        arr["y_centroid"] = lc["Y"][()]
+        lc = lc["Background"]
+        arr["data"] = lc["Value"][()]
+        arr["error"] = lc["Error"][()]
+    else:
+        lc = lc["AperturePhotometry"][aperture]
+        arr["x_centroid"] = lc["X"][()]
+        arr["y_centroid"] = lc["Y"][()]
+        arr["data"] = lc[type_][()]
+        arr["error"] = (
+            lc["{0}Error".format(type_)][()]
+            if type_ in LC_ERROR_TYPES
+            else np.full_like(cadences, np.nan, dtype=np.double)
+        )
     return arr
 
 
@@ -149,7 +160,6 @@ def job_to_numpy(single_merge_job):
     )
 
 
-@track_runtime
 def get_correct_qflags(merge_job, cadences):
     """
     Grab the user-assigned quality flags from cache usiing a single merge job
@@ -166,7 +176,6 @@ def get_correct_qflags(merge_job, cadences):
     return qflag_df.loc[list(cadences)]["quality_flag"].to_numpy()
 
 
-@track_runtime
 def get_tjd(merge_job, cadences, config_override=None):
     min_c, max_c = min(cadences), max(cadences)
     tjd_df = get_mid_tjd(
@@ -175,8 +184,7 @@ def get_tjd(merge_job, cadences, config_override=None):
     return tjd_df.reindex(cadences)["mid_tjd"].to_numpy()
 
 
-@track_runtime
-def get_lightcurve_median(data, quality_flags, tmag):
+def get_aligned_magnitudes(data, quality_flags, tmag):
     mask = quality_flags == 0
     offset = np.nanmedian(data[mask]) - tmag
     return data - offset

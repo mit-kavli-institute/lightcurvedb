@@ -8,6 +8,7 @@ from math import ceil
 from time import time
 import re
 from pandas import to_numeric, read_sql as pd_read_sql
+from contextlib import contextmanager
 from lightcurvedb.core.admin import get_psql_catalog_tables
 from lightcurvedb.core.psql_tables import PGClass, PGInherits
 

@@ -1,7 +1,8 @@
-from lightcurvedb.core.base_model import QLPDataProduct
+from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
 from lightcurvedb.models.lightcurve import Lightcurve
 from sqlalchemy import (
     BigInteger,
+    SmallInteger,
     Boolean,
     Column,
     Float,
@@ -17,18 +18,35 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
 
 
+class BLSResultLookup(QLPReference):
+    """
+    """
+    __tablename__ = "bls_result_lookups"
+    __table_args__ = (
+        UniqueConstraint(
+            "bls_id",
+            "best_detrending_method_id"
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    bls_id = Column(ForeignKey("bls.id"))
+    best_detrending_method_id = Column(
+        ForeignKey(
+            "best_orbit_lightcurves.id"
+        )
+    )
+
+
 class BLS(QLPDataProduct):
 
     __tablename__ = "bls"
 
     id = Column(BigInteger, primary_key=True)
-    sector = Column(Integer, index=True, nullable=False)
-    lightcurve_id = Column(
-        ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
-        index=True,
-    )
-    astronet_score = Column(Float, nullable=True, index=True)
-    astronet_version = Column(String(256), nullable=True)
+    sector = Column(SmallInteger, index=True)
+    tic_id = Column(BigInteger, index=True)
+
+    tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
     runtime_parameters = Column(
         JSONB,
         nullable=False,
@@ -61,16 +79,6 @@ class BLS(QLPDataProduct):
     sde = Column(DOUBLE_PRECISION, nullable=False)
     sr = Column(DOUBLE_PRECISION, nullable=False)
     period_inv_transit = Column(DOUBLE_PRECISION, nullable=False)
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint(
-            "lightcurve_id", "created_on", name="unique_bls_runtime"
-        ),
-    )
-
-    # Begin relationship logic
-    lightcurve = relationship("Lightcurve", back_populates="bls_results")
 
     # Click queryable parameters
     click_parameters = Choice(
@@ -150,48 +158,3 @@ class BLS(QLPDataProduct):
         return (
             cls.runtime_parameters["legacy"].cast(Boolean).label("is_legacy")
         )
-
-    @hybrid_property
-    def tic_id(self):
-        return self.lightcurve.tic_id
-
-    @tic_id.expression
-    def tic_id(cls):
-        return Lightcurve.tic_id
-
-    @classmethod
-    def upsert_q(cls):
-        update_params = [
-            "astronet_score",
-            "astronet_version",
-            "runtime_parameters",
-            "period",
-            "transit_depth",
-            "planet_radius",
-            "planet_radius_error",
-            "points_pre_transit",
-            "points_in_transit",
-            "points_post_transit",
-            "transits",
-            "transit_shape",
-            "transit_center",
-            "duration_rel_period",
-            "rednoise",
-            "whitenoise",
-            "signal_to_noise",
-            "signal_to_pinknoise",
-            "sde",
-            "sr",
-            "period_inv_transit",
-            "sector",
-        ]
-
-        q = insert(cls.__table__)
-        q = q.on_conflict_do_update(
-            constraint="unique_bls_runtime",
-            set_={
-                param: getattr(q.excluded, param, None)
-                for param in update_params
-            },
-        )
-        return q

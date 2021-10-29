@@ -26,6 +26,7 @@ from sqlalchemy import (
     select,
     inspect,
 )
+from sqlalchemy import inspect
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
@@ -70,6 +71,7 @@ class LightcurveType(QLPDataSubType):
 
     __tablename__ = "lightcurvetypes"
 
+    id = Column(SmallInteger)
     lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):
@@ -236,9 +238,6 @@ class Lightcurve(QLPDataProduct):
     )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
-    bls_results = relationship(
-        "BLS", back_populates="lightcurve", order_by="BLS.created_on"
-    )
     observations = relationship(Observation, back_populates="lightcurve")
 
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
@@ -481,3 +480,28 @@ class Lightcurve(QLPDataProduct):
         )
 
         return self.lightpoints_by_cadence_q(q)
+
+    def update(self):
+        session = inspect(self).session
+        (
+            session
+            .query(Lightpoint)
+            .filter_by(lightcurve_id=self.id)
+            .delete(synchronize_session=False)
+        )
+        cols = (
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag"
+        )
+
+        data = []
+        for row in self.lightpoints:
+            result = dict(zip(cols, row))
+            data.append(row)
+
+        session.bulk_insert_mappings(Lightpoint, data)
