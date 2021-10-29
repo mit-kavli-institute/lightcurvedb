@@ -345,8 +345,8 @@ class BaseLightpointIngestor(Process):
 
         with self.db as db:
             oid = job.partition_oid
-            acquire_req = [] #acquire_partition(db, oid)
-            release_req = [] #release_partition(db, oid)
+            acquire_req = []
+            release_req = []
             with scoped_block(db, oid, acquire_req, release_req):
                 pgclass = db.query(PGClass).get(oid)
                 self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
