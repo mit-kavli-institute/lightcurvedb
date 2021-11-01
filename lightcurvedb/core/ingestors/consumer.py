@@ -1,6 +1,7 @@
 from collections import defaultdict
 from queue import Empty
 from loguru import logger
+from multiprocessing import Process
 
 
 class BufferedDatabaseIngestor(Process):
