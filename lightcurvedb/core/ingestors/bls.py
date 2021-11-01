@@ -49,17 +49,20 @@ LEGACY_MAPPER = {
 def get_stellar_radius(tic_id):
     with TIC8_DB() as tic8:
         ticentries = tic8.ticentries
-        radius = (
+        radius, radius_error = (
             tic8
-            .query(ticentries.c.rad)
+            .query(ticentries.c.rad, ticentries.c.e_rad)
             .filter(
                 ticentries.c.id == tic_id
             )
-            .one()[0]
+            .one()
         )
         if radius is None:
             radius = float("nan")
-        return radius * u.solRad
+        if radius_error is None:
+            radius_error = float("nan")
+
+        return radius * u.solRad, radius_error * u.solRad
 
 
 @suppress_warnings
@@ -82,7 +85,6 @@ def estimate_planet_radius(stellar_radius, transit_depth):
     """
     radius = np.sqrt(transit_depth) * stellar_radius
     return radius.to(u.earthRad)
-
 
 @suppress_warnings
 def estimate_transit_duration(period, duration_rel_period):
@@ -166,7 +168,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         headers = tuple(map(lambda l: l.lower(), headers.split()))
         lines = lines[1:]
         results = list(normalize(headers, lines))
-        stellar_radius = get_stellar_radius(tic_id)
+        stellar_radius, stellar_radius_error = get_stellar_radius(tic_id)
         accepted = []
         for result in results:
             # Assume that each additional BLS calculate
@@ -175,14 +177,16 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
             planet_radius = estimate_planet_radius(
                 stellar_radius, float(result["transit_depth"])
             ).value
+            planet_radius_error = estimate_planet_radius(
+                stellar_radius_error, float(result["transit_depth"])
+            ).value
             result["transit_duration"] = estimate_transit_duration(
                 result["period"], result["duration_rel_period"]
             )
             result["planet_radius"] = planet_radius if not np.isnan(planet_radius) else float("nan")
-            result["planet_radius_error"] = float("nan")
+            result["planet_radius_error"] = planet_radius_error if not np.isnan(planet_radius_error) else float("nan")
             result["tic_id"] = int(tic_id)
             result["sector"] = int(sector)
-
 
             if "period_inv_transit" not in result:
                 result["period_inv_transit"] = float("nan")
