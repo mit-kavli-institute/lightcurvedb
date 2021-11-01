@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
-from psycopg2.errors import UniqueViolation, OperationalError
+from psycopg2.errors import UniqueViolation, OperationalError, InFailedSqlTransaction
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -376,7 +376,7 @@ class BaseLightpointIngestor(Process):
                 obs_flush_stats = self.flush_observations(db)
                 db.commit()
                 ingested = True
-            except UniqueViolation as e:
+            except (InFailedSqlTransaction, UniqueViolation) as e:
                 db.rollback()
                 self.log("Needing to reduce ingestion due to {0}".format(e), level="error")
                 match = re.search("\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e))
