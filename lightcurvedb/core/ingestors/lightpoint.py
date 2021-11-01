@@ -7,8 +7,7 @@ import sys
 from functools import lru_cache, partial
 from sqlalchemy import text
 from sqlalchemy.sql.expression import literal
-from multiprocessing import Manager, Process
-from queue import Empty
+from multiprocessing import Manager
 from time import time, sleep
 from loguru import logger
 from datetime import datetime
@@ -27,6 +26,7 @@ from lightcurvedb.models.metrics import QLPStage, QLPProcess, QLPOperation
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters
+from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5,
     get_h5_data,
@@ -205,33 +205,24 @@ def query_tic(tic, *fields):
     return dict(zip(fields, results))
 
 
-class BaseLightpointIngestor(Process):
+class BaseLightpointIngestor(BufferedDatabaseIngestor):
     normalizer = None
     quality_flag_map = None
     mid_tjd_map = None
-    job_queue = None
     orbit_map = None
-    name = "Worker"
     stage_id = None
     process_id = None
     current_sample = 0
     seen_cache = set()
     db = None
-    buffers = defaultdict(list)
     runtime_parameters = {}
     target_table = None
+    buffer_order = ["lightpoints", "observations"]
 
     def __init__(self, config, name, job_queue, stage_id):
-        super().__init__(daemon=True, name=name)
-        self.name = name
-        self.db_config = config
-        self.job_queue = job_queue
+        super().__init__(config, name, job_queue)
         self.stage_id = stage_id
         self.log("Initialized")
-
-    def log(self, msg, level="debug"):
-        full_msg = f"{self.name} {msg}"
-        getattr(logger, level, logger.debug)(full_msg)
 
     def _load_contexts(self):
         self.db = db_from_config(self.db_config)
@@ -372,9 +363,7 @@ class BaseLightpointIngestor(Process):
         ingested = False
         while not ingested:
             try:
-                lp_flush_stats = self.flush_lightpoints(db)
-                obs_flush_stats = self.flush_observations(db)
-                db.commit()
+                super().flush(db)
                 ingested = True
             except (InFailedSqlTransaction, UniqueViolation) as e:
                 db.rollback()
@@ -408,6 +397,9 @@ class BaseLightpointIngestor(Process):
 
         self.n_samples += 1
 
+        if self.should_refresh_parameters:
+            self.set_new_parameters()
+
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints", [])
         if len(lps) < 1:
@@ -433,7 +425,6 @@ class BaseLightpointIngestor(Process):
             unit="lightpoint"
         )
         db.add(metric)
-        self.buffers["lightpoints"] = []
 
     def flush_observations(self, db):
         obs = self.buffers.get("observations", [])
@@ -447,7 +438,6 @@ class BaseLightpointIngestor(Process):
             ["lightcurve_id", "orbit_id", "camera", "ccd"],
         )
         mgr.threading_copy(obs)
-        self.buffers["observations"] = []
 
     def determine_process_parameters(self):
         raise NotImplementedError
@@ -478,26 +468,6 @@ class BaseLightpointIngestor(Process):
     @property
     def should_refresh_parameters(self):
         return self.n_samples >= 3
-
-    def run(self):
-        self.log("Entering main runtime")
-        self._load_contexts()
-        self.set_new_parameters()
-        job = self.job_queue.get()
-        self.process_job(job)
-        while not self.job_queue.empty():
-            try:
-                job = self.job_queue.get(timeout=10)
-                self.process_job(job)
-                if self.should_refresh_parameters:
-                    self.set_new_parameters()
-            except Empty:
-                self.log("Timed out")
-                break
-            except KeyboardInterrupt:
-                self.log("Terminating...")
-                break
-        self.log("Finished, exiting main runtime")
 
 
 class SamplingLightpointIngestor(BaseLightpointIngestor):

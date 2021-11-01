@@ -141,20 +141,13 @@ def normalize(headers, lines):
         yield result
 
 
-class BaseBLSIngestor(Process):
+class BaseBLSIngestor(BufferedDatabaseIngestor):
     job_queue = None
     buffers = defaultdict(list)
+    seen_cache = set()
 
     def __init__(self, config, name, job_queue):
-        self.name = name
-        self.config = config
-        self.job_queue = job_queue
-        self.log("Initialized")
-        super().__init__(daemon=True)
-
-    def log(self, msg, level="debug"):
-        full_msg = f"{self.name} {msg}"
-        getattr(logger, level, logger.debug)(full_msg)
+        super().__init__(config, name, job_queue)
 
     def load_summary_file(self, tic_id, sector, path):
         # Get inode date change
@@ -175,104 +168,54 @@ class BaseBLSIngestor(Process):
         results = list(normalize(headers, lines))
         stellar_radius = get_stellar_radius(tic_id)
         accepted = []
-        with db_from_config(self.config) as db:
-            for result in results:
-                # Assume that each additional BLS calculate
-                result["tce_n"] = int(result.pop("bls_no"))
-                result["created_on"] = date
-                planet_radius = estimate_planet_radius(
-                    stellar_radius, float(result["transit_depth"])
-                ).value
-                result["transit_duration"] = estimate_transit_duration(
-                    result["period"], result["duration_rel_period"]
-                )
-                result["planet_radius"] = planet_radius
-                result["planet_radius_error"] = float("nan")
-                result["tic_id"] = int(tic_id)
-                result["sector"] = int(sector)
+        for result in results:
+            # Assume that each additional BLS calculate
+            result["tce_n"] = int(result.pop("bls_no"))
+            result["created_on"] = date
+            planet_radius = estimate_planet_radius(
+                stellar_radius, float(result["transit_depth"])
+            ).value
+            result["transit_duration"] = estimate_transit_duration(
+                result["period"], result["duration_rel_period"]
+            )
+            result["planet_radius"] = planet_radius if not np.isnan(planet_radius) else float("nan")
+            result["planet_radius_error"] = float("nan")
+            result["tic_id"] = int(tic_id)
+            result["sector"] = int(sector)
 
 
-                if "period_inv_transit" not in result:
-                    result["period_inv_transit"] = float("nan")
-                # Check if bls result already exists
-                bls_count = (
-                    db
-                    .query(
-                        BLS
-                    )
-                    .filter(
-                        BLS.tic_id == tic_id,
-                        BLS.sector == sector,
-                        BLS.tce_n == result["tce_n"]
-                    )
-                    .count()
-                )
-                if bls_count > 0:
-                    # Ignore
-                    self.log(
-                        f"Ignoring {path}, currently exists in db",
-                        level="warning"
-                    )
-                    continue
-                accepted.append(result)
+            if "period_inv_transit" not in result:
+                result["period_inv_transit"] = float("nan")
+            accepted.append(result)
         return accepted
 
-    def get_best_lightcurve_composition(self, tic_id, sector):
-        with db_from_config(self.config) as db:
-            composition = (
-                db
-                .query(
-                    BestOrbitLightcurve.id
-                )
-                .join(
-                    BestOrbitLightcurve.orbit
-                )
-                .join(
-                    BestOrbitLightcurve.lightcurve
-                )
-                .filter(
-                    Orbit.sector <= sector,
-                    Lightcurve.tic_id == tic_id
-                )
-                .order_by(
-                    Orbit.orbit_number
-                )
+    def flush_bls(self, db):
+        self.log("Flushing bls entries")
+        tic_ids = {param["tic_id"] for param in self.buffers["bls"]}
+        keys = ("sector", "tic_id", "tce_n")
+        cache = set(
+            db
+            .query(
+                *[getattr(BLS, key) for key in keys]
             )
+            .filter(
+                BLS.tic_id.in_(tic_ids)
+            )
+        )
+        self.log(
+            f"Filtering {len(self.buffers['bls'])} bls results against {len(cache)} relevant entries in db"
+        )
 
-        return [best_orbit_lc_id for best_orbit_lc_id, in composition]
-
-    def flush(self):
-        with db_from_config(self.config) as db:
-            while len(self.buffers["bls"]) > 0:
-                parameters = self.buffers["bls"].pop()
-
-                tic_id, sector = parameters["tic_id"], parameters["sector"]
-                bls = parameters["model"]
-
-                try:
-                    db.add(bls)
-                    db.flush()
-                except ProgrammingError:
-                    self.log(f"Could not process {tic_id}", level="warning")
-                    db.rollback()
-                    continue
-
-                # Build relationships
-                many_to_many = []
-                for id_ in self.get_best_lightcurve_composition(tic_id, sector):
-                    many_to_many.append({
-                        "best_detrending_method_id": id_,
-                        "bls_id": bls.id,
-                    })
-                db.session.bulk_insert_mappings(
-                    BLSResultLookup,
-                    many_to_many
-                )
-                # Submit new parameters
-
-                db.commit()
-
-
+        db.session.bulk_insert_mappings(
+            BLS,
+            filter(
+                lambda param: tuple(getattr(param, key) for key in keys) not in cache
+                self.buffers["bls"]
+            )
+        )
+        self.log(
+            "Submitted bls entries"
+        )
 
     def process_job(self, job):
         path = job["path"]
@@ -285,21 +228,10 @@ class BaseBLSIngestor(Process):
         all_bls_parameters = self.load_summary_file(tic_id, sector, path)
         for bls_parameters in all_bls_parameters:
             bls_parameters["runtime_parameters"] = config_parameters
-            bls_parameters.pop("nan", "")
-            bls = BLS(**bls_parameters)
             self.buffers["bls"].append({
-                "model": bls,
-                "tic_id": tic_id,
-                "sector": sector,
+                bls_parameters
             })
-        self.log(f"Processed {tic_id}")
-        self.flush()
-        self.log(f"Submitted {tic_id}", level="success")
 
-    def run(self):
-        self.log("Entered main runtime")
-        job = self.job_queue.get()
-        self.process_job(job)
-        while not self.job_queue.empty():
-            job = self.job_queue.get()
-            self.process_job(job)
+    @property
+    def should_flush(self):
+        return len(self.buffers["bls"]) >= 10000
