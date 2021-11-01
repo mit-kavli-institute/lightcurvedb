@@ -233,9 +233,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         all_bls_parameters = self.load_summary_file(tic_id, sector, path)
         for bls_parameters in all_bls_parameters:
             bls_parameters["runtime_parameters"] = config_parameters
-            self.buffers["bls"].append({
-                bls_parameters
-            })
+            self.buffers["bls"].append(bls_parameters)
 
     @property
     def should_flush(self):
