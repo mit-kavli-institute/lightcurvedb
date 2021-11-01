@@ -2,6 +2,7 @@ from collections import defaultdict
 from queue import Empty
 from loguru import logger
 from multiprocessing import Process
+from lightcurvedb import db_from_config
 
 
 class BufferedDatabaseIngestor(Process):
@@ -13,7 +14,7 @@ class BufferedDatabaseIngestor(Process):
 
     def __init__(self, config, name, job_queue):
         super().__init__(daemon=True, name=name)
-        self.db_config = config,
+        self.db_config = config
         self.name = name
         self.job_queue = job_queue
         self.log("Initialized")
