@@ -16,6 +16,7 @@ from lightcurvedb.models.lightcurve import Lightcurve
 from lightcurvedb.models.orbit import Orbit
 from lightcurvedb.util.decorators import suppress_warnings
 from lightcurvedb.core.tic8 import TIC8_DB
+from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from multiprocessing import Process
 
 
