@@ -148,6 +148,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
     job_queue = None
     buffers = defaultdict(list)
     seen_cache = set()
+    buffer_order = ["bls"]
 
     def __init__(self, config, name, job_queue):
         super().__init__(config, name, job_queue)
@@ -214,7 +215,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         db.session.bulk_insert_mappings(
             BLS,
             filter(
-                lambda param: tuple(getattr(param, key) for key in keys) not in cache,
+                lambda param: tuple(param[key] for key in keys) not in cache,
                 self.buffers["bls"]
             )
         )
@@ -234,6 +235,8 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         for bls_parameters in all_bls_parameters:
             bls_parameters["runtime_parameters"] = config_parameters
             self.buffers["bls"].append(bls_parameters)
+
+        self.log(f"Processed {path}")
 
     @property
     def should_flush(self):
