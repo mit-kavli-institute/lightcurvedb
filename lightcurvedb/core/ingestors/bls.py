@@ -213,7 +213,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         db.session.bulk_insert_mappings(
             BLS,
             filter(
-                lambda param: tuple(getattr(param, key) for key in keys) not in cache
+                lambda param: tuple(getattr(param, key) for key in keys) not in cache,
                 self.buffers["bls"]
             )
         )
