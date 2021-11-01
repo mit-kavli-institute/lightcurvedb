@@ -332,7 +332,7 @@ class BaseLightpointIngestor(Process):
         self.log(
             "Querying for observations for lightcurves in range "
             f"[{track.min_range}, {track.max_range})",
-            level="debug"
+            level="trace"
         )
         for lightcurve_id, orbit_id in current_obs_q:
             orbit_number = orbit_number_map[orbit_id]
@@ -493,6 +493,9 @@ class BaseLightpointIngestor(Process):
                     self.set_new_parameters()
             except Empty:
                 self.log("Timed out")
+                break
+            except KeyboardInterrupt:
+                self.log("Terminating...")
                 break
         self.log("Finished, exiting main runtime")
 
