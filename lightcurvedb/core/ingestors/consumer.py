@@ -1,4 +1,4 @@
-from collections import defaultlist
+from collections import defaultdict
 from queue import Empty
 from loguru import logger
 
@@ -7,7 +7,7 @@ class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
     db_config = None
-    buffers = defaultlist(list)
+    buffers = defaultdict(list)
     buffer_order = []
 
     def __init__(self, config, name, job_queue):
