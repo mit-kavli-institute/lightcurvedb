@@ -3,16 +3,18 @@ This module describes multiprocessing queues in order to quickly feed
 IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
-from lightcurvedb import db_from_config, Lightcurve
+from multiprocessing import Manager, Process
+
+import numpy as np
+from sqlalchemy.exc import InternalError
+
+from lightcurvedb import Lightcurve, db_from_config
+from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
 from lightcurvedb.io.procedures.procedure import (
     get_bestaperture_data,
     get_lightcurve_data,
 )
-from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
-from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
-from multiprocessing import Process, Manager
-from sqlalchemy.exc import InternalError
-import numpy as np
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
 class LightcurveFeeder(Process):

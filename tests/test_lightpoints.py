@@ -1,9 +1,11 @@
-from lightcurvedb.models import Lightpoint
-from hypothesis import strategies as st, given, settings
-from .fixtures import db_conn, clear_all
-from .factories import lightcurve as lc_st
-from .constants import PSQL_INT_MAX
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
+from lightcurvedb.models import Lightpoint
+
+from .constants import PSQL_INT_MAX
+from .factories import lightcurve as lc_st
+from .fixtures import clear_all, db_conn
 
 # Expensive test, uncomment when need to run _full_ test.
 # @settings(deadline=None)

@@ -1,10 +1,11 @@
-import click
 import os
-from lightcurvedb.core.connection import db_from_config
+
+import click
+
 from lightcurvedb import models as Models
 from lightcurvedb.cli.utils import resolve_filter_column
+from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.util.sql import get_operator_f
-
 
 MODEL_LOOKUP = {
     name.lower().replace("_", ""): getattr(Models, name)

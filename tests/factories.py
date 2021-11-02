@@ -1,23 +1,25 @@
+import sys
+
 import numpy as np
 from hypothesis import assume
 from hypothesis.extra import numpy as np_st
 from hypothesis.strategies import (
-    floats,
-    text,
-    composite,
-    characters,
-    integers,
     booleans,
-    one_of,
-    none,
+    builds,
+    characters,
+    composite,
+    floats,
     from_regex,
+    integers,
     just,
     lists,
-    tuples,
+    none,
+    one_of,
     sampled_from,
-    builds,
+    text,
+    tuples,
 )
-import sys
+
 from lightcurvedb import models
 
 from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX

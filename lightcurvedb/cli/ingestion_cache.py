@@ -6,6 +6,8 @@ from itertools import product
 
 import click
 import pandas as pd
+from tabulate import tabulate
+from tqdm import tqdm
 
 from lightcurvedb import db
 from lightcurvedb.cli.base import lcdbcli
@@ -18,8 +20,6 @@ from lightcurvedb.core.ingestors.temp_table import (
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
-from tabulate import tabulate
-from tqdm import tqdm
 
 
 def catalog_df(*catalog_files):

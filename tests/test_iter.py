@@ -1,6 +1,9 @@
-from hypothesis import strategies as st, given
-from lightcurvedb.util.iter import eq_partitions, chunkify
 from itertools import chain
+
+from hypothesis import given
+from hypothesis import strategies as st
+
+from lightcurvedb.util.iter import chunkify, eq_partitions
 
 
 @given(st.iterables(st.integers()), st.integers(min_value=1))

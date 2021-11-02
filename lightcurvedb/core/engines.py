@@ -8,15 +8,13 @@ except ImportError:
     # Python 2?
     from ConfigParser import ConfigParser, NoSectionError
 
+from psycopg2 import connect
+from sqlalchemy import create_engine, pool
+from sqlalchemy.engine.url import URL
+from sqlalchemy.event import listens_for
+from sqlalchemy.exc import DisconnectionError
 
 from lightcurvedb.util.constants import __DEFAULT_PATH__
-
-from sqlalchemy import create_engine
-from sqlalchemy.event import listens_for
-from sqlalchemy.engine.url import URL
-from sqlalchemy.exc import DisconnectionError
-from sqlalchemy import pool
-from psycopg2 import connect
 
 
 def __config_to_kwargs__(path):

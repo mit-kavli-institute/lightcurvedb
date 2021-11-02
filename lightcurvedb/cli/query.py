@@ -1,15 +1,16 @@
+from itertools import chain
+
 import click
+import pandas as pd
+from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import (
-    QLPModelType,
     ClickSQLParameter,
     FilterParameter,
     OrderParameter,
+    QLPModelType,
 )
-from itertools import chain
-from tabulate import tabulate
-import pandas as pd
 
 try:
     from io import StringIO

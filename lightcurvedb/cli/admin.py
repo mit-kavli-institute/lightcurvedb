@@ -1,25 +1,26 @@
-import click
 import os
 from collections import defaultdict
-from tqdm import tqdm
-from glob import glob
 from functools import partial
-from sqlalchemy import text, and_, func
-from tabulate import tabulate
+from glob import glob
 from multiprocessing import Pool
 
+import click
+from sqlalchemy import and_, func, text
+from tabulate import tabulate
+from tqdm import tqdm
+
 from lightcurvedb import db
-from lightcurvedb.models import (
-    Observation,
-    Orbit,
-    Frame,
-    Lightpoint,
-    Lightcurve,
-)
 from lightcurvedb.cli.types import CommaList, ModelField
 from lightcurvedb.cli.utils import tabulate_query
 from lightcurvedb.core import admin as psql_admin
 from lightcurvedb.core.psql_tables import PGStatActivity
+from lightcurvedb.models import (
+    Frame,
+    Lightcurve,
+    Lightpoint,
+    Observation,
+    Orbit,
+)
 from lightcurvedb.util.iter import chunkify
 
 from . import lcdbcli

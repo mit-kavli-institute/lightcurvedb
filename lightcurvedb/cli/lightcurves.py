@@ -1,19 +1,20 @@
 from __future__ import division, print_function
 
-import click
 import re
+
+import click
 from tabulate import tabulate
 from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
-from lightcurvedb.models import Lightcurve
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.jobs import IngestionPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
+from lightcurvedb.models import Lightcurve
 
 
 def gaps_in_ids(id_array):

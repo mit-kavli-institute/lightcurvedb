@@ -1,9 +1,11 @@
-from hypothesis import strategies as st, given
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, rule, consumes
-from lightcurvedb.models import Lightcurve
-from .factories import lightpoint, lightcurve
 import numpy as np
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, consumes, rule
 
+from lightcurvedb.models import Lightcurve
+
+from .factories import lightcurve, lightpoint
 
 ASSIGNABLE_ATTRS = {
     "barycentric_julian_date",

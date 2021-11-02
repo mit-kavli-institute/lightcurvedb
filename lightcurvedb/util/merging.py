@@ -1,10 +1,12 @@
-from sqlalchemy import text
 import os
 from time import time
-from lightcurvedb.io.pipeline import db_scope
-from lightcurvedb.core.psql_tables import PGClass
-from lightcurvedb.models.table_track import RangedPartitionTrack
+
 from loguru import logger
+from sqlalchemy import text
+
+from lightcurvedb.core.psql_tables import PGClass
+from lightcurvedb.io.pipeline import db_scope
+from lightcurvedb.models.table_track import RangedPartitionTrack
 
 
 # Begin merging definitions

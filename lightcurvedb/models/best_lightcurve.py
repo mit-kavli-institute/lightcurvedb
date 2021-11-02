@@ -1,10 +1,11 @@
+from sqlalchemy import BigInteger, Column, ForeignKey, and_, func, select
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
+from sqlalchemy.schema import UniqueConstraint
+
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.models.frame import Frame
 from lightcurvedb.models.lightpoint import Lightpoint
-from sqlalchemy import Column, ForeignKey, select, func, and_, BigInteger
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.schema import UniqueConstraint
 
 
 class BestOrbitLightcurve(QLPReference):

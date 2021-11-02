@@ -1,13 +1,14 @@
 from __future__ import division, print_function
 
-from lightcurvedb.core.admin import get_psql_catalog_tables
-from lightcurvedb.core.psql_tables import PGInherits, PGClass
 from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.ext.declarative import as_declarative
-from sqlalchemy.sql import func
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import ColumnProperty, RelationshipProperty
+from sqlalchemy.sql import func
+
+from lightcurvedb.core.admin import get_psql_catalog_tables
+from lightcurvedb.core.psql_tables import PGClass, PGInherits
 
 
 @as_declarative()

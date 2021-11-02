@@ -1,9 +1,10 @@
-from __future__ import print_function, division
+from __future__ import division, print_function
+
 import sys
 
-
 if sys.version_info.major < 3:
-    from abc import abstractmethod, ABCMeta
+    from abc import ABCMeta, abstractmethod
+
     from six import add_metaclass
 
     @add_metaclass(ABCMeta)
@@ -34,7 +35,7 @@ if sys.version_info.major < 3:
 
 
 else:
-    from abc import abstractmethod, ABC
+    from abc import ABC, abstractmethod
 
     class Ingestor(ABC):
 

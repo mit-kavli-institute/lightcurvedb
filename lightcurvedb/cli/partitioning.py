@@ -1,22 +1,21 @@
 from __future__ import division, print_function
 
+from multiprocessing import Pool
 from sys import exit
-from tqdm import tqdm
 
 import click
+from loguru import logger
+from sqlalchemy import text
+from tqdm import tqdm
 
 import lightcurvedb.models as defined_models
-from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.cli.types import QLPModelType
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
 from lightcurvedb.core.psql_tables import PGClass
 from lightcurvedb.models.table_track import RangedPartitionTrack
-from lightcurvedb.cli.types import QLPModelType
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util import merging
-from loguru import logger
-from sqlalchemy import text
-from multiprocessing import Pool
+from lightcurvedb.util.iter import chunkify
 
 
 @lcdbcli.group()

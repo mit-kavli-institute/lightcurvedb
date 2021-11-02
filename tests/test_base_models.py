@@ -1,7 +1,9 @@
+from sqlalchemy import text
+
 from lightcurvedb.core.admin import psql_tables
 from lightcurvedb.models import Lightcurve, Orbit
-from sqlalchemy import text
-from .fixtures import db_conn, clear_all
+
+from .fixtures import clear_all, db_conn
 
 
 def test_get_oid(db_conn):

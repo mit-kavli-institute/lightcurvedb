@@ -1,24 +1,25 @@
 import os
-import pandas as pd
 import re
 from glob import glob
-from sqlalchemy import create_engine, and_
-from sqlalchemy.orm import sessionmaker, scoped_session
+
+import pandas as pd
+from sqlalchemy import and_, create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.sql.expression import bindparam
+
 from lightcurvedb.core.connection import ORM_DB
 from lightcurvedb.core.ingestors.temp_table import (
-    TemporaryQLPModel,
-    LightcurveIDMapper,
-    TempObservation,
-    IngestionJob,
-    TIC8Parameters,
-    QualityFlags,
     FileObservation,
+    IngestionJob,
+    LightcurveIDMapper,
+    QualityFlags,
+    TempObservation,
+    TemporaryQLPModel,
+    TIC8Parameters,
 )
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Lightcurve
-
 
 PATHSEARCH = re.compile(
     r"orbit-(?P<orbit_number>[1-9][0-9]*)"

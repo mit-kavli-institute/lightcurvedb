@@ -1,27 +1,25 @@
 import os
 from datetime import datetime, timedelta
-from itertools import product
-from loguru import logger
 from glob import glob
+from itertools import product
+from multiprocessing import Manager, Pool
 from time import sleep
-from multiprocessing import Pool, Manager
 
 import click
 import pandas as pd
 from astropy import units as u
+from loguru import logger
+from tabulate import tabulate
+from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
-from lightcurvedb.core.ingestors.bls import (
-    BaseBLSIngestor,
-)
+from lightcurvedb.core.ingestors.bls import BaseBLSIngestor
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Lightcurve, Orbit
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurve
 from lightcurvedb.models.bls import BLS, BLSResultLookup
 from lightcurvedb.util.contexts import extract_pdo_path_context
-from tabulate import tabulate
-from tqdm import tqdm
 
 
 def process_summary(args):

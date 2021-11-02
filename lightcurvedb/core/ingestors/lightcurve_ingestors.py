@@ -1,17 +1,17 @@
 import os
 import re
 import warnings
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from lightcurvedb.models import Lightcurve, Frame
+
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import QualityFlags
-from functools import lru_cache
+from lightcurvedb.models import Frame, Lightcurve
 from lightcurvedb.util.decorators import track_runtime
-
 
 LC_ERROR_TYPES = {"RawMagnitude"}
 

@@ -1,6 +1,7 @@
 from click.testing import CliRunner
 
 from lightcurvedb.experimental.io.procedures.procedure import PROCEDURE_FILES
+
 from .constants import CONFIG_PATH
 from .fixtures import db_conn
 

@@ -2,10 +2,7 @@ import os
 
 import numpy as np
 import pandas as pd
-
 from astropy.io import fits
-from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
-from lightcurvedb.core.fields import high_precision_column
 from sqlalchemy import (
     Boolean,
     Column,
@@ -18,6 +15,9 @@ from sqlalchemy import (
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+
+from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
+from lightcurvedb.core.fields import high_precision_column
 
 FRAME_DTYPE = [
     ("cadence", np.int64),

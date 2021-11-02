@@ -1,27 +1,25 @@
 from __future__ import division, print_function
 
+import contextlib
 import os
 import warnings
-import numpy as np
-import contextlib
-from pandas import read_sql as pd_read_sql
 
+import numpy as np
+from pandas import read_sql as pd_read_sql
 from sqlalchemy import and_, func
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core.engines import engine_from_config
-from lightcurvedb.models.orbit import ORBIT_DTYPE
-from lightcurvedb.models.frame import FRAME_DTYPE
-from lightcurvedb.util.type_check import isiterable
-from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
-from lightcurvedb.models.frame import FrameAPIMixin
-from lightcurvedb.models.table_track import TableTrackerAPIMixin
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
-
+from lightcurvedb.models.orbit import ORBIT_DTYPE
+from lightcurvedb.models.table_track import TableTrackerAPIMixin
+from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.type_check import isiterable
 
 # Bring legacy capability
 # TODO Encapsulate so it doesn't pollute this namespace

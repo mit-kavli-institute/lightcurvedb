@@ -1,19 +1,21 @@
-from lightcurvedb.core.base_model import QLPMetric
-from lightcurvedb.core.psql_tables import PGClass
-from tqdm import tqdm
+from functools import partial
+from multiprocessing import Pool
+
 from sqlalchemy import (
-    Integer,
-    String,
     CheckConstraint,
     Column,
-    Sequence,
     ForeignKey,
+    Integer,
+    Sequence,
+    String,
     text,
 )
-from sqlalchemy.orm import relationship
-from multiprocessing import Pool
-from functools import partial
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
+from tqdm import tqdm
+
+from lightcurvedb.core.base_model import QLPMetric
+from lightcurvedb.core.psql_tables import PGClass
 
 
 class PartitionTrack(QLPMetric):

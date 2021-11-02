@@ -1,59 +1,54 @@
 import os
-import warnings
-import tempfile
-import re
 import random
+import re
 import sys
-from functools import lru_cache, partial
-from sqlalchemy import text
-from sqlalchemy.sql.expression import literal
-from multiprocessing import Manager
-from time import time, sleep
-from loguru import logger
-from datetime import datetime
+import tempfile
+import warnings
 from collections import defaultdict
+from datetime import datetime
+from functools import lru_cache, partial
+from multiprocessing import Manager
+from time import sleep, time
 
 import numpy as np
 import pandas as pd
 from click import echo
+from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import (
-    UniqueViolation,
-    OperationalError,
     InFailedSqlTransaction,
+    OperationalError,
+    UniqueViolation,
 )
+from sqlalchemy import text
+from sqlalchemy.sql.expression import literal
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
-from lightcurvedb.models.table_track import RangedPartitionTrack
-from lightcurvedb.models.metrics import QLPStage, QLPProcess, QLPOperation
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
+from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
+from lightcurvedb.core.ingestors.lightcurve_ingestors import (
+    get_aligned_magnitudes,
+    get_components,
+    get_correct_qflags,
+    get_h5,
+    get_h5_data,
+    get_tjd,
+    h5_to_numpy,
+)
 from lightcurvedb.core.ingestors.temp_table import (
     FileObservation,
     TIC8Parameters,
 )
-from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
-from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    get_h5,
-    get_h5_data,
-    get_correct_qflags,
-    get_aligned_magnitudes,
-    get_tjd,
-    get_components,
-    h5_to_numpy,
-)
-from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.core.psql_tables import PGClass, PGNamespace
-from lightcurvedb.legacy.timecorrect import TimeCorrector
-from lightcurvedb.models import (
-    Frame,
-    Lightpoint,
-    Observation,
-    Orbit,
-)
-from lightcurvedb.util.decorators import track_runtime
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.io.pipeline.scope import scoped_block
+from lightcurvedb.legacy.timecorrect import TimeCorrector
+from lightcurvedb.models import Frame, Lightpoint, Observation, Orbit
+from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
+from lightcurvedb.models.table_track import RangedPartitionTrack
+from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
 

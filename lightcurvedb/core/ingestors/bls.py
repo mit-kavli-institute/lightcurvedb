@@ -1,24 +1,25 @@
 import os
-import numpy as np
-from datetime import datetime
 from collections import defaultdict
-from astropy import units as u
-from functools import lru_cache
 from configparser import ConfigParser
+from datetime import datetime
+from functools import lru_cache
+from multiprocessing import Process
+
+import numpy as np
+from astropy import units as u
 from loguru import logger
 from sqlalchemy import and_
 from sqlalchemy.exc import ProgrammingError
+
 from lightcurvedb import db_from_config
+from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models.aperture import BestApertureMap
-from lightcurvedb.models.bls import BLSResultLookup, BLS
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurve
+from lightcurvedb.models.bls import BLS, BLSResultLookup
 from lightcurvedb.models.lightcurve import Lightcurve
 from lightcurvedb.models.orbit import Orbit
 from lightcurvedb.util.decorators import suppress_warnings
-from lightcurvedb.core.tic8 import TIC8_DB
-from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
-from multiprocessing import Process
-
 
 LEGACY_MAPPER = {
     "bls_npointsaftertransit_1_0": (

@@ -1,12 +1,13 @@
 import os
 
+from sqlalchemy import Column, ForeignKey, SmallInteger, bindparam
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import relationship
+
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import QLP_ORBITS
 from lightcurvedb.core.datastructures.blob import Blobable
 from lightcurvedb.core.partitioning import Partitionable
-from sqlalchemy import Column, ForeignKey, SmallInteger, bindparam
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import relationship
 
 
 class Observation(QLPReference, Blobable, Partitionable("hash", "orbit_id")):

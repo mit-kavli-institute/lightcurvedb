@@ -1,7 +1,10 @@
-from astropy.io import fits
 import os
-from .base import MultiIngestor
+
+from astropy.io import fits
+
 from lightcurvedb.models.frame import Frame
+
+from .base import MultiIngestor
 
 
 class FrameIngestor(MultiIngestor):

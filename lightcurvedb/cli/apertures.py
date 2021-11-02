@@ -1,5 +1,7 @@
 import click
+
 from lightcurvedb.models import Aperture
+
 from . import lcdbcli
 
 

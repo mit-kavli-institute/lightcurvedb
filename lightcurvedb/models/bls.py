@@ -1,21 +1,22 @@
-from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
-from lightcurvedb.models.lightcurve import Lightcurve
+from click import Choice
 from sqlalchemy import (
     BigInteger,
-    SmallInteger,
     Boolean,
     Column,
     Float,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     UniqueConstraint,
 )
-from click import Choice
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
+
+from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
+from lightcurvedb.models.lightcurve import Lightcurve
 
 
 class BLSResultLookup(QLPReference):

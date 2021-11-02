@@ -1,7 +1,9 @@
 from collections import defaultdict
-from queue import Empty
-from loguru import logger
 from multiprocessing import Process
+from queue import Empty
+
+from loguru import logger
+
 from lightcurvedb import db_from_config
 
 

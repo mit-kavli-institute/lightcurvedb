@@ -6,29 +6,27 @@ This table should be modified depending on which version of PostgreSQL
 is used.
 """
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    BigInteger,
-    String,
-    Text,
-    DateTime,
-    inspect,
-    Boolean,
-    Float,
-    ForeignKey,
-    SmallInteger,
-)
-
-
-from sqlalchemy.types import CHAR
-from sqlalchemy.dialects.postgresql import OID, INET
-from sqlalchemy.ext.declarative import as_declarative
-from sqlalchemy.orm import relationship, backref
-from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.sql import func
 from datetime import datetime
 
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    inspect,
+)
+from sqlalchemy.dialects.postgresql import INET, OID
+from sqlalchemy.ext.declarative import as_declarative
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import backref, relationship
+from sqlalchemy.sql import func
+from sqlalchemy.types import CHAR
 
 # Alias referenced datatypes to better match internal datatypes
 XID = Integer

@@ -6,15 +6,6 @@ and directly related models
 """
 
 import numpy as np
-
-from lightcurvedb.core.base_model import (
-    QLPDataProduct,
-    QLPDataSubType,
-    QLPModel,
-)
-from lightcurvedb.core.collection import CadenceTracked
-from lightcurvedb.models import Frame, Orbit, Observation
-from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -23,15 +14,23 @@ from sqlalchemy import (
     Sequence,
     SmallInteger,
     func,
-    select,
     inspect,
+    select,
 )
-from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+
+from lightcurvedb.core.base_model import (
+    QLPDataProduct,
+    QLPDataSubType,
+    QLPModel,
+)
+from lightcurvedb.core.collection import CadenceTracked
+from lightcurvedb.models import Frame, Observation, Orbit
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
 def adapt_as_is_type(type_class):

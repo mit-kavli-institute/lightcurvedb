@@ -1,15 +1,16 @@
 from sqlalchemy import (
-    Column,
-    String,
-    Numeric,
     BigInteger,
+    Column,
     ForeignKey,
+    Numeric,
     SmallInteger,
+    String,
 )
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.schema import UniqueConstraint, CheckConstraint
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
+from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+
 from lightcurvedb.core.base_model import QLPReference
 
 

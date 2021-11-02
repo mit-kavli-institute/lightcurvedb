@@ -1,6 +1,7 @@
-import setuptools
 import codecs
 import os.path
+
+import setuptools
 
 
 # See https://packaging.python.org/guides/single-sourcing-package-version/

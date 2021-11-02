@@ -1,6 +1,8 @@
-import click
 import sys
+
+import click
 from loguru import logger
+
 from .types import Database
 
 

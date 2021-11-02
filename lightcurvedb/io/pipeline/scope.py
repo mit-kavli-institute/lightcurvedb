@@ -4,11 +4,13 @@ of scoped functions to reduce the amount of boilerplate needed as well as
 encouraging developers to better encapsulate processing vs IO.
 """
 
-from functools import wraps
-from lightcurvedb import db_from_config
-from loguru import logger
 from contextlib import contextmanager
+from functools import wraps
+
+from loguru import logger
 from sqlalchemy.exc import InternalError
+
+from lightcurvedb import db_from_config
 
 
 def db_scope(application_name=None, config_override=None, **connection_kwargs):

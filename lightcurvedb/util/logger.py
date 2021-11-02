@@ -1,4 +1,5 @@
 import logging as logging
+
 import tqdm
 
 lcdb_logger = logging.getLogger("lightcurvedb")

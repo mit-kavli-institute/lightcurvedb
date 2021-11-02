@@ -1,4 +1,4 @@
-from lightcurvedb.core.admin import psql_tables, get_psql_catalog_tables
+from lightcurvedb.core.admin import get_psql_catalog_tables, psql_tables
 
 from .fixtures import db_conn
 

@@ -4,21 +4,22 @@ try:
 except ImportError:
     import Queue as queue
 
+import os
 from collections import deque
-from multiprocessing import Process
-from sqlalchemy.sql.expression import bindparam
 from datetime import datetime
+from multiprocessing import Process
+from random import random
+from time import sleep
+
+import numpy as np
+import pandas as pd
 from psycopg2.errors import DeadlockDetected
 from sqlalchemy.exc import OperationalError
-from time import sleep
-from random import random
-import pandas as pd
-import numpy as np
-import os
+from sqlalchemy.sql.expression import bindparam
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import Lightcurve, Observation
 from lightcurvedb.util.logger import lcdb_logger as logger
-from lightcurvedb import db_from_config
 
 
 class TransactionTime(object):

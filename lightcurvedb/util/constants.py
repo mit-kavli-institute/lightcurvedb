@@ -1,5 +1,5 @@
-from datetime import datetime
 import os
+from datetime import datetime
 
 TESS_FIRST_LIGHT = datetime(2018, 8, 7)
 GPS_LEAP_SECONDS = 18

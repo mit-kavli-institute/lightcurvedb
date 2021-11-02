@@ -1,5 +1,7 @@
-from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPMetric
+import getpass
+import os
+from datetime import datetime
+
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -18,10 +20,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.query import Query
-from datetime import datetime
 
-import getpass
-import os
+from lightcurvedb import __version__
+from lightcurvedb.core.base_model import QLPMetric
 
 
 class QLPStage(QLPMetric):

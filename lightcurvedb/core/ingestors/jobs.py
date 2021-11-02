@@ -1,27 +1,28 @@
+from collections import defaultdict, namedtuple
+from itertools import product
+from math import isnan
+
+import pandas as pd
+from click import echo
+from loguru import logger
+from sqlalchemy import distinct, func, text
+from sqlalchemy.orm import Bundle
+from tqdm import tqdm
+
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     allocate_lightcurve_ids,
     get_missing_ids,
 )
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
-    Observation,
-    Lightcurve,
-    Lightpoint,
-    Orbit,
     Aperture,
+    Lightcurve,
     LightcurveType,
+    Lightpoint,
+    Observation,
+    Orbit,
 )
-from collections import namedtuple, defaultdict
-from sqlalchemy import distinct, text, func
-from sqlalchemy.orm import Bundle
-from loguru import logger
-from click import echo
-from tqdm import tqdm
-from itertools import product
-import pandas as pd
-from math import isnan
-
+from lightcurvedb.util.iter import chunkify
 
 SingleMergeJob = namedtuple(
     "SingleMergeJob",

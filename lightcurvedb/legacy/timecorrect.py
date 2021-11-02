@@ -1,12 +1,15 @@
-import pandas as pd
-import numpy as np
-from scipy.interpolate import interp1d
-from astropy import time, constants as const
 from functools import lru_cache
-from lightcurvedb.models import Frame, SpacecraftEphemris
+
+import numpy as np
+import pandas as pd
+from astropy import constants as const
+from astropy import time
+from loguru import logger
+from scipy.interpolate import interp1d
+
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import TIC8Parameters
-from loguru import logger
+from lightcurvedb.models import Frame, SpacecraftEphemris
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")

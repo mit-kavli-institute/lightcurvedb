@@ -1,7 +1,10 @@
-from hypothesis import strategies as st, given, settings, note
+from hypothesis import given, note, settings
+from hypothesis import strategies as st
+
 from lightcurvedb.models import Orbit
-from .strategies import frame_types, orbits, frames, orbit_frames
-from .fixtures import db_conn, clear_all
+
+from .fixtures import clear_all, db_conn
+from .strategies import frame_types, frames, orbit_frames, orbits
 
 
 @settings(deadline=None, max_samples=10)
