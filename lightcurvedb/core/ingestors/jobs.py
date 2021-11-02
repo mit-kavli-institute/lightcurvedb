@@ -1,6 +1,5 @@
 from collections import defaultdict, namedtuple
 from itertools import product
-from math import isnan
 
 import pandas as pd
 from click import echo

@@ -1,12 +1,6 @@
-import os
-import random
 import re
-import sys
-import tempfile
-import warnings
-from collections import defaultdict
 from datetime import datetime
-from functools import lru_cache, partial
+from functools import lru_cache
 from multiprocessing import Manager
 from time import sleep, time
 

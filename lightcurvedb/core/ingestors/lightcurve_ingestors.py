@@ -1,4 +1,3 @@
-import os
 import re
 import warnings
 from functools import lru_cache

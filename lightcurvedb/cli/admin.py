@@ -1,5 +1,4 @@
 import os
-from collections import defaultdict
 from functools import partial
 from glob import glob
 from multiprocessing import Pool
@@ -108,7 +107,6 @@ def procedures(ctx):
     """
     Base SQL Procedure Commands
     """
-    pass
 
 
 @procedures.command()

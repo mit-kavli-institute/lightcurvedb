@@ -2,9 +2,7 @@
 This module describes partitioning of the lightcurve database.
 """
 import re
-from contextlib import contextmanager
 from math import ceil
-from time import time
 
 from pandas import read_sql as pd_read_sql
 from pandas import to_numeric

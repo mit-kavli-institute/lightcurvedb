@@ -1,8 +1,8 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from glob import glob
 from itertools import product
-from multiprocessing import Manager, Pool
+from multiprocessing import Manager
 from time import sleep
 
 import click
@@ -93,7 +93,6 @@ def bls(ctx):
     """
     BLS Result Commands
     """
-    pass
 
 
 @bls.command()

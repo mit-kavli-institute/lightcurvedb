@@ -1,5 +1,3 @@
-import traceback
-
 from click.testing import CliRunner
 from hypothesis import given, note, settings
 from hypothesis import strategies as st

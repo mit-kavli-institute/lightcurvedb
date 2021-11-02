@@ -3,7 +3,6 @@ from collections import defaultdict
 from configparser import ConfigParser
 from datetime import datetime
 from functools import lru_cache
-from multiprocessing import Process
 
 import numpy as np
 from astropy import units as u
