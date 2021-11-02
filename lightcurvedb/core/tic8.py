@@ -2,14 +2,14 @@ import os
 import sys
 import warnings
 
-from sqlalchemy import Table, create_engine
+from sqlalchemy import Table
 from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb.core.connection import ORM_DB
 from lightcurvedb.core.engines import engine_from_config
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import __DEFAULT_PATH__, TIC8_TEMPLATE
 
 
 class TIC8_DB(ORM_DB):
@@ -42,7 +42,7 @@ class TIC8_DB(ORM_DB):
                 engine = engine_from_config(
                     path,
                     config_group=section,
-                    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
+                    uri_template=TIC8_TEMPLATE,
                 )
                 self.engine = engine
                 self._sessionmaker = sessionmaker(autoflush=True)
@@ -58,7 +58,7 @@ class TIC8_DB(ORM_DB):
                 (
                     "{0} was not found, "
                     "please check your configuration environment\n".format(
-                        CONFIG_PATH
+                        config_path
                     )
                 )
             )
