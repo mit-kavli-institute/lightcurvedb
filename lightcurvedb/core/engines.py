@@ -3,14 +3,13 @@ from __future__ import division, print_function
 import os
 
 try:
-    from configparser import ConfigParser, NoSectionError
+    from configparser import ConfigParser
 except ImportError:
     # Python 2?
-    from ConfigParser import ConfigParser, NoSectionError
+    from ConfigParser import ConfigParser
 
 from psycopg2 import connect
 from sqlalchemy import create_engine, pool
-from sqlalchemy.engine.url import URL
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
 

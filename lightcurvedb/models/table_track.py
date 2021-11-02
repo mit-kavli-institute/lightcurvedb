@@ -66,7 +66,7 @@ class PartitionTrack(QLPMetric):
         parent = self.pgclass.parent[0]
         target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
         q = text(
-            """
+            f"""
             ALTER TABLE {parent.name}
             DETACH PARTITION {target}
             """
@@ -112,7 +112,7 @@ class RangedPartitionTrack(PartitionTrack):
         parent = self.pgclass.parent[0]
         target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
         q = text(
-            """
+            f"""
             ALTER TABLE {parent.name}
             ATTACH PARTITION {target}
             FOR VALUES ({self.min_range}) TO ({self.max_range})
@@ -210,7 +210,8 @@ class TableTrackerAPIMixin(object):
         Raises
         ------
         NotImplementedError:
-            Raised if the given Model is not supported for multiprocess mapping.
+            Raised if the given Model is not supported for multiprocess
+            mapping.
         """
         partition_tracks = list(
             self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))

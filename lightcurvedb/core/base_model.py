@@ -8,7 +8,7 @@ from sqlalchemy.orm import ColumnProperty, RelationshipProperty
 from sqlalchemy.sql import func
 
 from lightcurvedb.core.admin import get_psql_catalog_tables
-from lightcurvedb.core.psql_tables import PGClass, PGInherits
+from lightcurvedb.core.psql_tables import PGClass
 
 
 @as_declarative()

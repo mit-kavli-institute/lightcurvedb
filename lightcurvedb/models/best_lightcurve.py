@@ -1,5 +1,5 @@
 from sqlalchemy import BigInteger, Column, ForeignKey, and_, func, select
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 

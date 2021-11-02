@@ -6,18 +6,10 @@ from functools import lru_cache
 
 import numpy as np
 from astropy import units as u
-from loguru import logger
-from sqlalchemy import and_
-from sqlalchemy.exc import ProgrammingError
 
-from lightcurvedb import db_from_config
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.tic8 import TIC8_DB
-from lightcurvedb.models.aperture import BestApertureMap
-from lightcurvedb.models.best_lightcurve import BestOrbitLightcurve
-from lightcurvedb.models.bls import BLS, BLSResultLookup
-from lightcurvedb.models.lightcurve import Lightcurve
-from lightcurvedb.models.orbit import Orbit
+from lightcurvedb.models.bls import BLS
 from lightcurvedb.util.decorators import suppress_warnings
 
 LEGACY_MAPPER = {
@@ -206,7 +198,8 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
             )
         )
         self.log(
-            f"Filtering {len(self.buffers['bls'])} bls results against {len(cache)} relevant entries in db"
+            f"Filtering {len(self.buffers['bls'])} bls results against "
+            f"{len(cache)} relevant entries in db"
         )
 
         db.session.bulk_insert_mappings(

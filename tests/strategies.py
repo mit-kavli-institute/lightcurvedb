@@ -4,7 +4,7 @@ from hypothesis import strategies as st
 
 from lightcurvedb import models
 
-from .constants import PSQL_INT_MAX, TIC_ID_MAX
+from .constants import PSQL_INT_MAX
 
 PSQL_INT = st.integers(min_value=-1 * PSQL_INT_MAX, max_value=PSQL_INT_MAX)
 

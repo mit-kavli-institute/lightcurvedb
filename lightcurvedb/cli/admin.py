@@ -11,7 +11,6 @@ from tqdm import tqdm
 from lightcurvedb import db
 from lightcurvedb.cli.types import CommaList, ModelField
 from lightcurvedb.cli.utils import tabulate_query
-from lightcurvedb.core import admin as psql_admin
 from lightcurvedb.core.psql_tables import PGStatActivity
 from lightcurvedb.models import (
     Frame,
@@ -42,7 +41,6 @@ def recover(maximum_missing, lightcurve_ids):
     to_ingest = []
     fine = []
     with db:
-        orbit_map = dict(db.query(Orbit.id, Orbit.orbit_number))
         for id_ in sorted(lightcurve_ids):
             existing_cadence_q = (
                 db.query(Lightpoint.cadence).filter_by(lightcurve_id=id_)

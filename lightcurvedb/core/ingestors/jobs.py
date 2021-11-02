@@ -3,8 +3,7 @@ from itertools import product
 
 import pandas as pd
 from click import echo
-from loguru import logger
-from sqlalchemy import distinct, func, text
+from sqlalchemy import text
 from sqlalchemy.orm import Bundle
 from tqdm import tqdm
 
@@ -189,8 +188,6 @@ class IngestionPlan(object):
         db.execute(text("SET LOCAL work_mem TO '2GB'"))
 
         echo("Performing lightcurve query")
-        apertures = [ap.name for ap in db.query(Aperture)]
-        lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
 
         lc_bn = Bundle(
             "c",
@@ -213,11 +210,9 @@ class IngestionPlan(object):
         cur_tmp_id = -1
 
         self.ignored_jobs = 0
-        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
         echo("Building job list")
         pairs = list(yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
-            orbit_id = orbit_map[file_obs.c.orbit_number]
             for ap, lc_t in pairs:
                 lc_key = (file_obs.c.tic_id, ap, lc_t)
                 try:

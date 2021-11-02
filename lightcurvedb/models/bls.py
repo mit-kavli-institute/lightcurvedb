@@ -3,20 +3,16 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
-    Float,
     ForeignKey,
     Integer,
     SmallInteger,
-    String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, insert
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
 
 from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
-from lightcurvedb.models.lightcurve import Lightcurve
 
 
 class BLSResultLookup(QLPReference):

@@ -12,7 +12,7 @@ from lightcurvedb.models import Lightpoint
 from lightcurvedb.models.lightpoint import LIGHTPOINT_PARTITION_RANGE
 
 from .constants import CONFIG_PATH
-from .fixtures import clear_all, db_conn
+from .fixtures import clear_all, db_conn  # noqa F401
 
 
 @given(
@@ -49,7 +49,7 @@ def test_ranged_partition_calculation(
 
 
 @given(st.just(1))
-def test_cli_creation_of_partition(db_conn, n_partitions):
+def test_cli_creation_of_partition(db_conn, n_partitions):  # noqa F401
     with db_conn as db:
         orig_n_partitions = len(db.get_partitions_df(Lightpoint))
         runner = CliRunner(
@@ -82,7 +82,7 @@ def test_cli_creation_of_partition(db_conn, n_partitions):
         assert new_len - orig_n_partitions == 1
 
 
-def test_partitioning_classes(db_conn):
+def test_partitioning_classes(db_conn):  # noqa F401
     with db_conn as db:
         db.commit()
         psql_tables(db)
