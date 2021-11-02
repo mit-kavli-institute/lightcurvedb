@@ -486,6 +486,6 @@ class Lightcurve(QLPDataProduct):
         data = []
         for row in self.lightpoints:
             result = dict(zip(cols, row))
-            data.append(row)
+            data.append(result)
 
         session.bulk_insert_mappings(Lightpoint, data)
