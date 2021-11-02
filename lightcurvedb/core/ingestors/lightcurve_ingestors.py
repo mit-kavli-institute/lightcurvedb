@@ -51,12 +51,16 @@ def get_components(path):
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
     with IngestionCache() as cache:
-        q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
+        q = cache.query(
+            QualityFlags.cadence, QualityFlags.quality_flag
+        ).filter(
             QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
             QualityFlags.camera == camera,
             QualityFlags.ccd == ccd,
         )
-        return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
+        return pd.read_sql(
+            q.statement, cache.session.bind, index_col=["cadence"]
+        )
 
 
 @lru_cache(maxsize=32)
@@ -127,7 +131,9 @@ def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
     cadences = lc["Cadence"][()].astype(int)
 
     arr = np.empty(len(cadences), dtype=lp_dtype)
-    arr["lightcurve_id"] = np.full_like(cadences, lightcurve_id, dtype=np.dtype("u8"))
+    arr["lightcurve_id"] = np.full_like(
+        cadences, lightcurve_id, dtype=np.dtype("u8")
+    )
     arr["cadence"] = cadences
     arr["barycentric_julian_date"] = lc["BJD"][()]
 
@@ -155,8 +161,7 @@ def job_to_numpy(single_merge_job):
         single_merge_job.lightcurve_id,
         single_merge_job.aperture,
         single_merge_job.lightcurve_type,
-        single_merge_job.file_path
-
+        single_merge_job.file_path,
     )
 
 

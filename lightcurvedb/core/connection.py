@@ -33,6 +33,7 @@ class ORM_DB(contextlib.AbstractContextManager):
     """
     Base Wrapper for all SQLAlchemy Session objects
     """
+
     def __init__(self, SessionMaker):
         self._sessionmaker = SessionMaker
         self._session_stack = []
@@ -75,7 +76,7 @@ class ORM_DB(contextlib.AbstractContextManager):
             raise RuntimeError("Database nested too far! Cowardly refusing")
 
         return self
- 
+
     def close(self):
         """
         Closes the database connection. If this session has not been opened
@@ -256,9 +257,7 @@ class ORM_DB(contextlib.AbstractContextManager):
         model_inst : QLPModel
             The model to delete from the database.
         """
-        self.session.delete(
-            model_inst
-        )
+        self.session.delete(model_inst)
 
     def execute(self, *args, **kwargs):
         """
@@ -286,7 +285,13 @@ class ORM_DB(contextlib.AbstractContextManager):
         return self.depth > 0
 
 
-class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricAPIMixin):
+class DB(
+    ORM_DB,
+    FrameAPIMixin,
+    TableTrackerAPIMixin,
+    PGCatalogMixin,
+    QLPMetricAPIMixin,
+):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
@@ -304,6 +309,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricA
         db = db_from_config('path_to_config')
 
     """
+
     @property
     def orbits(self):
         """
@@ -1063,7 +1069,6 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricA
         if check:
             check.delete()
 
-
     # Begin helper methods to quickly grab reference maps
     @property
     def observation_df(self):
@@ -1199,7 +1204,7 @@ def db_from_config(config_path=None, **engine_kwargs):
     )
 
     factory = sessionmaker(bind=engine)
-    
+
     new_db = DB(factory)
     new_db._config = config_path
     return new_db

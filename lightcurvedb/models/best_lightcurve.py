@@ -22,26 +22,17 @@ class BestOrbitLightcurve(QLPReference):
         ),
     )
 
-    id = Column(
-        BigInteger,
-        primary_key=True
-    )
+    id = Column(BigInteger, primary_key=True)
     lightcurve_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"),
-        nullable=False
+        ForeignKey("lightcurves.id", ondelete="CASCADE"), nullable=False
     )
     orbit_id = Column(
-        ForeignKey("orbits.id", ondelete="RESTRICT"),
-        nullable=False
+        ForeignKey("orbits.id", ondelete="RESTRICT"), nullable=False
     )
 
-    lightcurve = relationship(
-        "Lightcurve"
-    )
+    lightcurve = relationship("Lightcurve")
 
-    orbit = relationship(
-        "Orbit"
-    )
+    orbit = relationship("Orbit")
 
     @hybrid_method
     def max_cadence(self, frame_type="Raw FFI"):
@@ -82,12 +73,14 @@ class BestOrbitLightcurve(QLPReference):
                 Lightpoint.error,
                 Lightpoint.x_centroid,
                 Lightpoint.y_centroid,
-                Lightpoint.quality_flag
+                Lightpoint.quality_flag,
             )
             .where(
                 and_(
                     Lightpoint.lightcurve_id == cls.lightcurve_id,
-                    Lightpoint.cadence.between(cls.min_cadence, cls.max_cadence)
+                    Lightpoint.cadence.between(
+                        cls.min_cadence, cls.max_cadence
+                    ),
                 )
             )
             .label("lightpoints")

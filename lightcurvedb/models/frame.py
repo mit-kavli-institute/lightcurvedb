@@ -175,18 +175,12 @@ class FrameAPIMixin(object):
     def get_mid_tjd_mapping(self, frame_type="Raw FFI"):
         cameras = self.query(Frame.camera).distinct().all()
         mapping = {}
-        for camera, in cameras:
-            q = (
-                self
-                .query(
-                    Frame.cadence,
-                    Frame.mid_tjd
-                )
-                .filter(
-                    Frame.camera == camera,
-                    Frame.frame_type_id == frame_type
-                )
+        for (camera,) in cameras:
+            q = self.query(Frame.cadence, Frame.mid_tjd).filter(
+                Frame.camera == camera, Frame.frame_type_id == frame_type
             )
-            df = pd.read_sql(q.statement, self.bind, index_col=["cadence"]).sort_index()
+            df = pd.read_sql(
+                q.statement, self.bind, index_col=["cadence"]
+            ).sort_index()
             mapping[camera] = df
         return mapping

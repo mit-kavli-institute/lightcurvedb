@@ -51,11 +51,8 @@ def get_stellar_radius(tic_id):
     with TIC8_DB() as tic8:
         ticentries = tic8.ticentries
         radius, radius_error = (
-            tic8
-            .query(ticentries.c.rad, ticentries.c.e_rad)
-            .filter(
-                ticentries.c.id == tic_id
-            )
+            tic8.query(ticentries.c.rad, ticentries.c.e_rad)
+            .filter(ticentries.c.id == tic_id)
             .one()
         )
         if radius is None:
@@ -86,6 +83,7 @@ def estimate_planet_radius(stellar_radius, transit_depth):
     """
     radius = np.sqrt(transit_depth) * stellar_radius
     return radius.to(u.earthRad)
+
 
 @suppress_warnings
 def estimate_transit_duration(period, duration_rel_period):
@@ -160,10 +158,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
 
         if len(lines) < 2:
             # No data/malformed bls summary files
-            self.log(
-                "Unable to parse file {path}",
-                level="error"
-            )
+            self.log("Unable to parse file {path}", level="error")
             raise RuntimeError
 
         headers = lines[0][2:]
@@ -185,8 +180,14 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
             result["transit_duration"] = estimate_transit_duration(
                 result["period"], result["duration_rel_period"]
             )
-            result["planet_radius"] = planet_radius if not np.isnan(planet_radius) else float("nan")
-            result["planet_radius_error"] = planet_radius_error if not np.isnan(planet_radius_error) else float("nan")
+            result["planet_radius"] = (
+                planet_radius if not np.isnan(planet_radius) else float("nan")
+            )
+            result["planet_radius_error"] = (
+                planet_radius_error
+                if not np.isnan(planet_radius_error)
+                else float("nan")
+            )
             result["tic_id"] = int(tic_id)
             result["sector"] = int(sector)
 
@@ -200,11 +201,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         tic_ids = {param["tic_id"] for param in self.buffers["bls"]}
         keys = ("sector", "tic_id", "tce_n")
         cache = set(
-            db
-            .query(
-                *[getattr(BLS, key) for key in keys]
-            )
-            .filter(
+            db.query(*[getattr(BLS, key) for key in keys]).filter(
                 BLS.tic_id.in_(tic_ids)
             )
         )
@@ -216,20 +213,17 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
             BLS,
             filter(
                 lambda param: tuple(param[key] for key in keys) not in cache,
-                self.buffers["bls"]
-            )
+                self.buffers["bls"],
+            ),
         )
-        self.log(
-            "Submitted bls entries"
-        )
+        self.log("Submitted bls entries")
 
     def process_job(self, job):
         path = job["path"]
         tic_id = job["tic_id"]
         sector = job["sector"]
         config_parameters = get_bls_run_parameters(
-            job["sector_run_directory"],
-            job["camera"]
+            job["sector_run_directory"], job["camera"]
         )
         all_bls_parameters = self.load_summary_file(tic_id, sector, path)
         for bls_parameters in all_bls_parameters:

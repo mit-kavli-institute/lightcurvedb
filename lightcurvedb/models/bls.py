@@ -19,23 +19,14 @@ from sqlalchemy.schema import Index
 
 
 class BLSResultLookup(QLPReference):
-    """
-    """
+    """ """
+
     __tablename__ = "bls_result_lookups"
-    __table_args__ = (
-        UniqueConstraint(
-            "bls_id",
-            "best_detrending_method_id"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("bls_id", "best_detrending_method_id"),)
 
     id = Column(BigInteger, primary_key=True)
     bls_id = Column(ForeignKey("bls.id"))
-    best_detrending_method_id = Column(
-        ForeignKey(
-            "best_orbit_lightcurves.id"
-        )
-    )
+    best_detrending_method_id = Column(ForeignKey("best_orbit_lightcurves.id"))
 
 
 class BLS(QLPDataProduct):
@@ -46,7 +37,11 @@ class BLS(QLPDataProduct):
     sector = Column(SmallInteger, index=True)
     tic_id = Column(BigInteger, index=True)
 
-    tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
+    tce_n = Column(
+        SmallInteger,
+        index=Index(name="tce_n_gin", postgresql_using="gin"),
+        nullable=False,
+    )
     runtime_parameters = Column(
         JSONB,
         nullable=False,

@@ -15,9 +15,10 @@ from .fixtures import clear_all, db_conn
 @settings(deadline=None, max_examples=10)
 @given(
     st.lists(
-        orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
+        orbit(),
+        unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
         min_size=1,
-        max_size=3
+        max_size=3,
     )
 )
 def test_query_on_orbits(db_conn, orbits):
@@ -53,9 +54,10 @@ def test_query_on_orbits(db_conn, orbits):
 @settings(deadline=None, max_examples=10)
 @given(
     st.lists(
-        orbit(), unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
+        orbit(),
+        unique_by=(lambda o: o.orbit_number, lambda o: o.basename),
         min_size=1,
-        max_size=3
+        max_size=3,
     )
 )
 def test_query_on_orbits_w_filter(db_conn, orbits):
@@ -77,8 +79,10 @@ def test_query_on_orbits_w_filter(db_conn, orbits):
                     "query",
                     "Orbit",
                     "print-table",
-                    "-p", "orbit_number",
-                    "-f", "id = {0}".format(orbits[0].id)
+                    "-p",
+                    "orbit_number",
+                    "-f",
+                    "id = {0}".format(orbits[0].id),
                 ],
                 catch_exceptions=False,
             )

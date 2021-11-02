@@ -12,7 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     between,
-    func
+    func,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -29,6 +29,7 @@ class QLPStage(QLPMetric):
     This model encompasses a stage of the QLP pipeline that we wish to
     record for analysis later.
     """
+
     __tablename__ = "qlpstages"
     id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
     name = Column(String(64), unique=True)
@@ -77,7 +78,9 @@ class QLPProcess(QLPMetric):
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
-    process_start = Column(DateTime, index=True, nullable=False, server_default=func.now())
+    process_start = Column(
+        DateTime, index=True, nullable=False, server_default=func.now()
+    )
     process_completion = Column(DateTime, index=True, nullable=True)
 
     state = Column(String(64), index=True, default="initialized")

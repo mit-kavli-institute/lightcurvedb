@@ -1,4 +1,11 @@
-from sqlalchemy import Column, String, Numeric, BigInteger, ForeignKey, SmallInteger
+from sqlalchemy import (
+    Column,
+    String,
+    Numeric,
+    BigInteger,
+    ForeignKey,
+    SmallInteger,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import insert

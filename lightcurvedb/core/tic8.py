@@ -10,9 +10,10 @@ from lightcurvedb.core.connection import ORM_DB
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 
 
-
 class TIC8_DB(ORM_DB):
-    def __init__(self, config_path=None, config_section=None, greedy_reflect=True):
+    def __init__(
+        self, config_path=None, config_section=None, greedy_reflect=True
+    ):
         """
         Initializes a connection to the TIC8 Database.
 
@@ -28,7 +29,9 @@ class TIC8_DB(ORM_DB):
             the remote schemas to construct Python-side objects. If false
             this will occur with the first query.
         """
-        path = os.path.expanduser(config_path if config_path else __DEFAULT_PATH__)
+        path = os.path.expanduser(
+            config_path if config_path else __DEFAULT_PATH__
+        )
         section = config_section if config_section else "TIC8 Credentials"
         try:
             with warnings.catch_warnings():
@@ -37,7 +40,7 @@ class TIC8_DB(ORM_DB):
                 engine = engine_from_config(
                     path,
                     config_group=section,
-                    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}"
+                    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
                 )
                 self.engine = engine
                 self._sessionmaker = sessionmaker(autoflush=True)
@@ -66,7 +69,10 @@ class TIC8_DB(ORM_DB):
         BASE.prepare(self.engine, reflect=True)
         self.TIC8_Base = BASE
         self.data_class = Table(
-            "ticentries", BASE.metadata, autoload=True, autoload_with=self.engine
+            "ticentries",
+            BASE.metadata,
+            autoload=True,
+            autoload_with=self.engine,
         )
 
     @property

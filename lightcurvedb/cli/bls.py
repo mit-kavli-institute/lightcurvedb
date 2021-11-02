@@ -68,30 +68,18 @@ def determine_bls_context(db, filepath, context):
     sector = int(context["sector"])
 
     lightcurve_composition = (
-        db
-        .query(
-            BestOrbitLightcurve.id
-        )
-        .join(
-            BestOrbitLightcurve.orbit
-        )
-        .join(
-            BestOrbitLightcurve.lightcurve
-        )
+        db.query(BestOrbitLightcurve.id)
+        .join(BestOrbitLightcurve.orbit)
+        .join(BestOrbitLightcurve.lightcurve)
         .join(
             BestApertureMap,
             and_(
                 BestApertureMap.tic_id == Lightcurve.tic_id,
-                BestApertureMap.aperture_id == Lightcurve.aperture_id
-            )
+                BestApertureMap.aperture_id == Lightcurve.aperture_id,
+            ),
         )
-        .filter(
-            Orbit.sector <= sector,
-            Lightcurve.tic_id == tic_id
-        )
-        .order_by(
-            Orbit.orbit_number
-        )
+        .filter(Orbit.sector <= sector, Lightcurve.tic_id == tic_id)
+        .order_by(Orbit.orbit_number)
     )
 
     return [best_orbit_lc_id for best_orbit_lc_id, in lightcurve_composition]
@@ -112,9 +100,15 @@ def bls(ctx):
 
 @bls.command()
 @click.pass_context
-@click.argument("paths", type=click.Path(file_okay=False, exists=True), nargs=-1)
+@click.argument(
+    "paths", type=click.Path(file_okay=False, exists=True), nargs=-1
+)
 @click.option("--n-processes", type=click.IntRange(0), default=32)
-@click.option("--qlp-data-path", type=click.Path(file_okay=False, exists=True), default="/pdo/qlp-data")
+@click.option(
+    "--qlp-data-path",
+    type=click.Path(file_okay=False, exists=True),
+    default="/pdo/qlp-data",
+)
 def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
     req_contexts = ("sector", "camera", "ccd")
     path_context_map = {}
@@ -123,7 +117,9 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
     for path in paths:
         context = extract_pdo_path_context(path)
         if not all(req_context in context for req_context in req_contexts):
-            click.echo(f"Path {path} does not contain needed contexts (sector, camera, ccd)!")
+            click.echo(
+                f"Path {path} does not contain needed contexts (sector, camera, ccd)!"
+            )
             click.abort()
         path_context_map[path] = context
 
@@ -145,9 +141,11 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
                 qlp_data_path,
                 "sector-{sector}".format(**context),
                 "ffi",
-                "run"
+                "run",
             )
-            logger.debug(f"Setting {path} runtime parameters at {sector_run_directory}")
+            logger.debug(
+                f"Setting {path} runtime parameters at {sector_run_directory}"
+            )
             for summary in tqdm(files, unit=" files"):
                 try:
                     job = {
@@ -164,9 +162,7 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
 
     for i in range(n_processes):
         worker = BaseBLSIngestor(
-            ctx.obj["dbconf"]._config,
-            f"Worker-{i}",
-            job_queue
+            ctx.obj["dbconf"]._config, f"Worker-{i}", job_queue
         )
         worker.start()
         workers.append(worker)

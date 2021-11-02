@@ -31,6 +31,7 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
     config_override: str or pathlike, optional
         Specify a configuration path that is not the default provided.
     """
+
     def _internal(func):
         app_name = application_name if application_name else func.__name__
         connect_args = connection_kwargs.pop("connect_args", {})
@@ -39,19 +40,15 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
         @wraps(func)
         def wrapper(*args, **kwargs):
             func_results = None
-            configured_db = (
-                db_from_config(
-                    config_path=config_override,
-                    connect_args=connect_args,
-                    **connection_kwargs
-                )
+            configured_db = db_from_config(
+                config_path=config_override,
+                connect_args=connect_args,
+                **connection_kwargs
             )
             with configured_db as db_object:
                 lcdb_logger.debug(
                     "Entering db context for {0} with {1} and {2}".format(
-                        func,
-                        args,
-                        kwargs
+                        func, args, kwargs
                     )
                 )
                 func_results = func(db_object, *args, **kwargs)

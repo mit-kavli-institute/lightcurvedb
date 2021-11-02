@@ -52,16 +52,12 @@ def pull_over_to(db, dest, src):
         f"INSERT INTO {src.namespace.name}.{src.name} "
         f"(SELECT * FROM {dest.namespace.name}.{dest.name} ORDER BY lightcurve_id, cadence)"
     )
-    logger.info(
-        f"Pulling data from {src.name} to {dest.name}"
-    )
+    logger.info(f"Pulling data from {src.name} to {dest.name}")
     t0 = time()
     db.execute(q)
     elapsed = time() - t0
 
-    logger.debug(
-        f"Pulled {src.name} which took {elapsed} seconds"
-    )
+    logger.debug(f"Pulled {src.name} which took {elapsed} seconds")
 
 
 def update_tracks(db, dest, source):
@@ -78,29 +74,21 @@ def update_pgclass(db, parent, class_, track):
 
     new_name = f"{parent}_{track.min_range}_{track.max_range}"
 
-    q = text(
-        f"ALTER TABLE {namespace}.{tablename} RENAME TO {new_name}"
-    )
+    q = text(f"ALTER TABLE {namespace}.{tablename} RENAME TO {new_name}")
     db.execute(q)
 
-    logger.info(
-        f"Renamed {tablename} to {new_name}"
-    )
+    logger.info(f"Renamed {tablename} to {new_name}")
 
 
 def remove_old_tracks(db, class_, track):
     namespace = class_.namespace.name
     tablename = class_.name
 
-    q = text(
-        f"DROP TABLE {namespace}.{tablename}"
-    )
+    q = text(f"DROP TABLE {namespace}.{tablename}")
     db.delete(track)
     db.execute(q)
 
-    logger.info(
-        f"Removed {tablename} and it's track"
-    )
+    logger.info(f"Removed {tablename} and it's track")
 
 
 def attach(db, parent, class_, track):
@@ -156,7 +144,9 @@ def merge_working_pair(db, working_pair):
         logger.info(f"Finished {left_class.name}")
         return left_track.oid
     except:
-        logger.exception(f"Could not process {left_class.name} and {right_class.name}")
+        logger.exception(
+            f"Could not process {left_class.name} and {right_class.name}"
+        )
         logger.error(
             f"OIDS NOT PROPERLY ATTACHED: {left_track.oid}, {right_track.oid}"
         )

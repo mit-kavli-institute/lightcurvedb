@@ -60,7 +60,6 @@ class PartitionTrack(QLPMetric):
     def get_check_func(self):
         return lambda value: value == self.model
 
-
     def generate_detachment_q(self):
         parent = self.pgclass.parent[0]
         target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
@@ -112,7 +111,7 @@ class RangedPartitionTrack(PartitionTrack):
         target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
         q = text(
             """
-            ALTER TABLE {parent.name} 
+            ALTER TABLE {parent.name}
             ATTACH PARTITION {target}
             FOR VALUES ({self.min_range}) TO ({self.max_range})
             """
@@ -162,9 +161,7 @@ def range_check(ranges, value):
         return value, oid
 
     # Left and right indexes point to a range which does not match
-    raise ValueError(
-        "Could not match {0} to any partition".format(value)
-    )
+    raise ValueError("Could not match {0} to any partition".format(value))
 
 
 class TableTrackerAPIMixin(object):
@@ -218,10 +215,8 @@ class TableTrackerAPIMixin(object):
         )
         if isinstance(partition_tracks[0], RangedPartitionTrack):
             ranges = sorted(
-                [
-                    (t.min_range, t.max_range, t.oid) for t in partition_tracks
-                ],
-                key=lambda t: t[0]
+                [(t.min_range, t.max_range, t.oid) for t in partition_tracks],
+                key=lambda t: t[0],
             )
             func = partial(range_check, ranges)
         else:
@@ -232,5 +227,8 @@ class TableTrackerAPIMixin(object):
             )
 
         with Pool(processes=n_workers) as pool:
-            for value, oid in tqdm(pool.imap_unordered(func, values, chunksize=10000), total=len(values)):
+            for value, oid in tqdm(
+                pool.imap_unordered(func, values, chunksize=10000),
+                total=len(values),
+            ):
                 yield value, oid

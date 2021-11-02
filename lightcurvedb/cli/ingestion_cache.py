@@ -134,14 +134,19 @@ def get_missing_stellar_param(ctx):
     with IngestionCache() as cache, TIC8_DB() as tic8:
         # grab observed tics
         click.echo("querying cache for TIC definitions")
-        obs_tics = {tic for tic, in cache.session.query(FileObservation.tic_id)}
-        tics_w_param = {tic for tic, in cache.session.query(TIC8Parameters.tic_id)}
+        obs_tics = {
+            tic for tic, in cache.session.query(FileObservation.tic_id)
+        }
+        tics_w_param = {
+            tic for tic, in cache.session.query(TIC8Parameters.tic_id)
+        }
 
         missing = obs_tics - tics_w_param
         if len(missing) == 0:
             click.echo(
                 click.style(
-                    "No TICs in the cache are without TIC8 parameters", fg="green"
+                    "No TICs in the cache are without TIC8 parameters",
+                    fg="green",
                 )
             )
             return 0
@@ -178,7 +183,8 @@ def stellar_params_from_file(ctx, param_csv):
     file_tics = set(file_params.tic_id)
     with IngestionCache() as cache:
         cache_tics = {
-            tic for tic, in cache.session.query(TIC8Parameters.tic_id).distinct()
+            tic
+            for tic, in cache.session.query(TIC8Parameters.tic_id).distinct()
         }
 
         missing = file_tics - cache_tics
@@ -245,7 +251,9 @@ def update_file_cache(ctx, lc_paths):
                 )
                 check = existing_file_map.get(key, None)
                 if not check:
-                    check = FileObservation(tic_id=tic_id, file_path=h5, **context)
+                    check = FileObservation(
+                        tic_id=tic_id, file_path=h5, **context
+                    )
                     to_add.append(check)
             cache.session.add_all(to_add)
             click.echo("Added {0} new FileObservations".format(len(to_add)))
@@ -319,6 +327,7 @@ def list_files_for(ctx, tic):
             tabulate(q, headers=["camera", "ccd", "orbit_number", "file_path"])
         )
 
+
 @cache.command()
 @click.pass_context
 @click.argument("orbit_number", type=int)
@@ -327,33 +336,33 @@ def list_files_for(ctx, tic):
 @click.argument("lc_path", type=click.Path(exists=True, file_okay=False))
 def refresh_file_cache(ctx, orbit_number, camera, ccd, lc_path):
     with IngestionCache() as cache:
-        q = (
-            cache
-            .session
-            .query(
-                FileObservation
-            )
-            .filter(
-                FileObservation.orbit_number == orbit_number,
-                FileObservation.camera == camera,
-                FileObservation.ccd == ccd
-            )
+        q = cache.session.query(FileObservation).filter(
+            FileObservation.orbit_number == orbit_number,
+            FileObservation.camera == camera,
+            FileObservation.ccd == ccd,
         )
 
         context = extract_pdo_path_context(lc_path)
         if orbit_number != int(context["orbit_number"]):
             click.echo(
-                click.style("Orbit numbers in path and in arguments do not match!", fg="red")
+                click.style(
+                    "Orbit numbers in path and in arguments do not match!",
+                    fg="red",
+                )
             )
             return 1
         if camera != int(context["camera"]):
             click.echo(
-                click.style("Camera in path and in arguments do not match!", fg="red")
+                click.style(
+                    "Camera in path and in arguments do not match!", fg="red"
+                )
             )
             return 1
         if ccd != int(context["ccd"]):
             click.echo(
-                click.style("ccd in path and in arguments do not match!", fg="red")
+                click.style(
+                    "ccd in path and in arguments do not match!", fg="red"
+                )
             )
             return 1
 
@@ -367,7 +376,7 @@ def refresh_file_cache(ctx, orbit_number, camera, ccd, lc_path):
                 int(context["ccd"]),
                 int(context["orbit_number"]),
             )
-            obs = FileObservation(tic_id=tic_id, file_path=h5, **context)   
+            obs = FileObservation(tic_id=tic_id, file_path=h5, **context)
             all_obs.append(obs)
         click.echo(f"Deleting {q.count()} file observations from cache")
         q.delete(synchronize_session=False)

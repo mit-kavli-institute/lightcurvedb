@@ -17,22 +17,16 @@ def test_procedure_definition(db_conn):
             "admin",
             "procedures",
             "reload",
-        ]
+        ],
     )
 
     assert "Success" in result
 
     result = runner.invoke(
         lcdbcli,
-        [
-            "--dbconf",
-            CONFIG_PATH,
-            "admin",
-            "procedures",
-            "list-defined"
-        ]
+        ["--dbconf", CONFIG_PATH, "admin", "procedures", "list-defined"],
     )
 
     rows = result.split("\n")
 
-    assert len(rows) >= (len(PROCEDURE_FILES) + 1
+    assert len(rows) >= (len(PROCEDURE_FILES) + 1)

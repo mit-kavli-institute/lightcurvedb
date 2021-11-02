@@ -20,5 +20,5 @@ __all__ = [
     "Observation",
     "Orbit",
     "db_from_config",
-    "db"
+    "db",
 ]

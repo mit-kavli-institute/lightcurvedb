@@ -17,7 +17,7 @@ Clone the repository into the desired location. Grab pipenv from ``PyPi``
 using ``pip install pipenv``. Although it is most desirable to install this
 package from your machine's package manager.
 
-Create and enter a virtual environment for development by executing 
+Create and enter a virtual environment for development by executing
 ``pipenv shell``. All the dependencies will be installed.
 
 To add a dependency run ``pipenv install [PACKAGE]``.

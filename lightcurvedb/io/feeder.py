@@ -67,8 +67,10 @@ class LightcurveFeeder(Process):
                     result["error"] = "No lightpoints found, empty lightcurve"
                 except PrimaryIdentNotFound:
                     result = {
-                        "error": "No lightcurve found for identifier {0}".format(id_),
-                        "id": id_
+                        "error": "No lightcurve found for identifier {0}".format(
+                            id_
+                        ),
+                        "id": id_,
                     }
                 except Exception as e:
                     # Catch all, clean queues and exit
@@ -183,7 +185,10 @@ def yield_best_aperture_data(
     # Convert tic_ids to list of lightcurve ids
     ids = []
     with db_from_config(db_config_override) as db:
-        q = db.lightcurves_from_best_aperture(resolve=False).filter(Lightcurve.tic_id.in_(tic_ids), Lightcurve.lightcurve_type_id == "KSPMagnitude")
+        q = db.lightcurves_from_best_aperture(resolve=False).filter(
+            Lightcurve.tic_id.in_(tic_ids),
+            Lightcurve.lightcurve_type_id == "KSPMagnitude",
+        )
         for lc in q.all():
             ids.append(lc.id)
 

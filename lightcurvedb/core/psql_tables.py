@@ -34,25 +34,25 @@ from datetime import datetime
 XID = Integer
 NAME = String(64)
 
+
 @as_declarative()
 class PGInternalModel(object):
     """
     Core internal wrapper for all reflected postgres catalogs
     """
+
     __abstract__ = True
 
     def __repr__(self):
 
-        return "<{0}: ({1})".format(
-            self.__tablename__,
-            inspect(self).identity
-        )
+        return "<{0}: ({1})".format(self.__tablename__, inspect(self).identity)
 
 
 class PGExtensionModel(PGInternalModel):
     """
     Wrapper for extended postgres modules.
     """
+
     __abstract__ = True
 
 
@@ -267,7 +267,6 @@ class PGStatActivity(PGStatModel):
         """
         return func.cardinality(cls.blocked_by) > 0
 
-
     @hybrid_property
     def terminate(self):
         raise NotImplementedError
@@ -376,15 +375,15 @@ class PGIndex(PGCatalogModel):
 
     __tablename__ = "pg_indexes"
 
-    schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
+    schemaname = Column(
+        NAME, ForeignKey(PGNamespace.nspname), primary_key=True
+    )
     tablename = Column(NAME, ForeignKey("pg_class.relname"))
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
     indexdef = Column(Text)
 
     index_on = relationship(
-        "PGClass",
-        foreign_keys=[tablename],
-        backref="index_definitions"
+        "PGClass", foreign_keys=[tablename], backref="index_definitions"
     )
     index_class = relationship(
         "PGClass",
@@ -445,10 +444,7 @@ class PGClass(PGCatalogModel):
 
     type_ = relationship(PGType, backref="classes")
     owner = relationship(PGAuthID, backref="classes")
-    namespace = relationship(
-        "PGNamespace",
-        backref="pg_classes"
-    )
+    namespace = relationship("PGNamespace", backref="pg_classes")
     parent = relationship(
         "PGClass",
         secondary=PGInherits.__table__,
@@ -463,12 +459,9 @@ class PGClass(PGCatalogModel):
         primaryjoin=(relname == PGIndex.indexname),
         secondaryjoin=(relname == PGIndex.tablename),
         single_parent=True,
-        backref=backref("indexes")
+        backref=backref("indexes"),
     )
-    buffers = relationship(
-        "PGBuffer",
-        back_populates="pg_class"
-    )
+    buffers = relationship("PGBuffer", back_populates="pg_class")
 
     @classmethod
     def expression(cls):
@@ -496,7 +489,9 @@ class PGBuffer(PGExtensionModel):
     relfilenode = Column(ForeignKey(PGClass.relfilenode))
 
     database = relationship("PGDatabase", back_populates="buffers")
-    pg_class = relationship(PGClass, foreign_keys=[relfilenode], back_populates="buffers")
+    pg_class = relationship(
+        PGClass, foreign_keys=[relfilenode], back_populates="buffers"
+    )
 
 
 class PGCatalogMixin(object):

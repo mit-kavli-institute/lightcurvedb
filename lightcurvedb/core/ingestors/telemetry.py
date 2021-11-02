@@ -1,5 +1,4 @@
 class IngestionTelemetry:
-
     def __init__(self, amount, seconds, unit="unit"):
         self.amount = amount
         self.seconds = seconds
@@ -16,5 +15,3 @@ class IngestionTelemetry:
 class LightpointIngestionParameters:
     def __init__(self):
         raise NotImplementedError
-
-

@@ -33,6 +33,7 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
+
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
         return AsIs(type_instance)
@@ -48,22 +49,12 @@ adapt_as_is_type(np.float64)
 
 def lp_ordered_array(table, spec):
     col = getattr(table, spec)
-    return func.array_agg(
-        aggregate_order_by(
-            col,
-            getattr(table, "cadence")
-        )
-    )
+    return func.array_agg(aggregate_order_by(col, getattr(table, "cadence")))
+
 
 def lp_structured_array(q, columns):
-    dtypes = [
-        (col, LIGHTPOINT_NP_DTYPES[col])
-        for col in columns
-    ]
-    return np.array(
-        q.all(),
-        dtype=dtypes
-    )
+    dtypes = [(col, LIGHTPOINT_NP_DTYPES[col]) for col in columns]
+    return np.array(q.all(), dtype=dtypes)
 
 
 class LightcurveType(QLPDataSubType):
@@ -420,19 +411,14 @@ class Lightcurve(QLPDataProduct):
             "error",
             "x_centroid",
             "y_centroid",
-            "quality_flag"
+            "quality_flag",
         )
 
         if self._lightpoint_cache is None:
             session = inspect(self).session
             q = (
-                session
-                .query(
-                    *(getattr(Lightpoint, col) for col in cols)
-                )
-                .filter(
-                    Lightpoint.lightcurve_id.in_((self.id, -1))
-                )
+                session.query(*(getattr(Lightpoint, col) for col in cols))
+                .filter(Lightpoint.lightcurve_id.in_((self.id, -1)))
                 .distinct(Lightpoint.lightcurve_id, Lightpoint.cadence)
                 .order_by(Lightpoint.cadence)
             )
@@ -484,8 +470,7 @@ class Lightcurve(QLPDataProduct):
     def update(self):
         session = inspect(self).session
         (
-            session
-            .query(Lightpoint)
+            session.query(Lightpoint)
             .filter_by(lightcurve_id=self.id)
             .delete(synchronize_session=False)
         )
@@ -496,7 +481,7 @@ class Lightcurve(QLPDataProduct):
             "error",
             "x_centroid",
             "y_centroid",
-            "quality_flag"
+            "quality_flag",
         )
 
         data = []

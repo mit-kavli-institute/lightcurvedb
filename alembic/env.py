@@ -19,6 +19,7 @@ fileConfig(config.config_file_name)
 # target_metadata = mymodel.Base.metadata
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb import models as m
+
 target_metadata = QLPModel.metadata
 
 # other values from the config, defined by the needs of env.py,

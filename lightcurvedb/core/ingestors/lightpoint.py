@@ -17,7 +17,11 @@ import numpy as np
 import pandas as pd
 from click import echo
 from pgcopy import CopyManager
-from psycopg2.errors import UniqueViolation, OperationalError, InFailedSqlTransaction
+from psycopg2.errors import (
+    UniqueViolation,
+    OperationalError,
+    InFailedSqlTransaction,
+)
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -25,7 +29,10 @@ from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.models.metrics import QLPStage, QLPProcess, QLPOperation
 from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.temp_table import FileObservation, TIC8Parameters
+from lightcurvedb.core.ingestors.temp_table import (
+    FileObservation,
+    TIC8Parameters,
+)
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_h5,
@@ -34,7 +41,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_aligned_magnitudes,
     get_tjd,
     get_components,
-    h5_to_numpy
+    h5_to_numpy,
 )
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.core.psql_tables import PGClass, PGNamespace
@@ -118,7 +125,7 @@ def push_observations(conn, observations):
     with conn.cursor() as cur:
         values_iter = map(
             lambda row: f"({row[0]}, {row[1]}, {row[2]}, {row[3]})",
-            observations
+            observations,
         )
         value_str = ", ".join(values_iter)
         stamp = time()
@@ -132,12 +139,7 @@ def push_observations(conn, observations):
 
 
 def acquire_partition(db, oid):
-    track = (
-        db
-        .query(RangedPartitionTrack)
-        .filter_by(oid=oid)
-        .one()
-    )
+    track = db.query(RangedPartitionTrack).filter_by(oid=oid).one()
     indices_q = text(
         f"""
         SELECT pi.schemaname, pi.tablename, pi.indexname, pi.indexdef
@@ -158,17 +160,14 @@ def acquire_partition(db, oid):
 
 
 def release_partition(db, oid):
-    track = (
-        db
-        .query(RangedPartitionTrack)
-        .filter_by(oid=oid)
-        .one()
-    )
+    track = db.query(RangedPartitionTrack).filter_by(oid=oid).one()
 
     work = []
 
     gin_index_name = f"ix_lightpoints_{track.min_range}_{track.max_range}_gin"
-    brin_index_name = f"ix_lightpoints_{track.min_range}_{track.max_range}_cadence"
+    brin_index_name = (
+        f"ix_lightpoints_{track.min_range}_{track.max_range}_cadence"
+    )
 
     work.append(
         text(
@@ -195,7 +194,9 @@ def release_partition(db, oid):
 
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
-    logger.warning(f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}")
+    logger.warning(
+        f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}"
+    )
     with TIC8_DB() as tic8:
         ticentries = tic8.ticentries
         columns = tuple(getattr(ticentries.c, field) for field in fields)
@@ -254,14 +255,17 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         tic_id, camera, ccd = (
             int(context["tic_id"]),
             int(context["camera"]),
-            int(context["ccd"])
+            int(context["ccd"]),
         )
         row = self.normalizer.get_tic_params(tic_id)
         tmag = row["tmag"]
         ra, dec = row["ra"], row["dec"]
 
         if np.isnan(ra) or np.isnan(dec):
-            self.log(f"Star coordinates undefined for {tic_id} ({ra}, {dec})", level="error")
+            self.log(
+                f"Star coordinates undefined for {tic_id} ({ra}, {dec})",
+                level="error",
+            )
             raise ValueError
 
         cadences = lightcurve["cadence"]
@@ -290,40 +294,43 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 smj.lightcurve_id,
                 smj.aperture,
                 smj.lightcurve_type,
-                smj.file_path
+                smj.file_path,
             )
             observation = (
                 smj.lightcurve_id,
                 self.orbit_map[smj.orbit_number],
                 smj.camera,
-                smj.ccd
+                smj.ccd,
             )
             self.buffers["lightpoints"].append(lightpoint_array)
             self.buffers["observations"].append(observation)
         except OSError:
-            self.log(
-                f"Unable to open {smj.file_path}",
-                level="error"
-            )
+            self.log(f"Unable to open {smj.file_path}", level="error")
         except ValueError:
             self.log(f"Unable to process {smj.file_path}", level="error")
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
 
     def get_seen(self, db, job):
-        track = db.query(RangedPartitionTrack).filter_by(oid=job.partition_oid).one()
+        track = (
+            db.query(RangedPartitionTrack)
+            .filter_by(oid=job.partition_oid)
+            .one()
+        )
         orbit_number_map = dict(db.query(Orbit.id, Orbit.orbit_number))
-        current_obs_q = (
-            db
-            .query(Observation.lightcurve_id, Observation.orbit_id)
-            .filter(Observation.lightcurve_id.between(track.min_range, track.max_range - 1))
+        current_obs_q = db.query(
+            Observation.lightcurve_id, Observation.orbit_id
+        ).filter(
+            Observation.lightcurve_id.between(
+                track.min_range, track.max_range - 1
+            )
         )
         self.seen_cache = set()
         cur_size = len(self.seen_cache)
         self.log(
             "Querying for observations for lightcurves in range "
             f"[{track.min_range}, {track.max_range})",
-            level="trace"
+            level="trace",
         )
         for lightcurve_id, orbit_id in current_obs_q:
             orbit_number = orbit_number_map[orbit_id]
@@ -345,10 +352,11 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
                 single_merge_jobs = sorted(
                     filter(
-                        lambda job: (job.lightcurve_id, job.orbit_number) not in self.seen_cache,
+                        lambda job: (job.lightcurve_id, job.orbit_number)
+                        not in self.seen_cache,
                         job.single_merge_jobs,
                     ),
-                    key=lambda job: (job.lightcurve_id, job.orbit_number)
+                    key=lambda job: (job.lightcurve_id, job.orbit_number),
                 )
 
                 for single_merge_job in single_merge_jobs:
@@ -367,33 +375,43 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 ingested = True
             except (InFailedSqlTransaction, UniqueViolation) as e:
                 db.rollback()
-                self.log("Needing to reduce ingestion due to {0}".format(e), level="error")
-                match = re.search("\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e))
-                orbit_id, lightcurve_id = int(match["orbit_id"]), int(match["lightcurve_id"])
+                self.log(
+                    "Needing to reduce ingestion due to {0}".format(e),
+                    level="error",
+                )
+                match = re.search(
+                    "\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
+                )
+                orbit_id, lightcurve_id = int(match["orbit_id"]), int(
+                    match["lightcurve_id"]
+                )
                 q = (
-                    db
-                    .query(
-                        func.min(Frame.cadence),
-                        func.max(Frame.cadence)
-                    )
+                    db.query(func.min(Frame.cadence), func.max(Frame.cadence))
                     .filter(
                         Frame.orbit_id == orbit_id,
-                        Frame.frame_type_id == "Raw FFI"
+                        Frame.frame_type_id == "Raw FFI",
                     )
                     .group_by(Frame.orbit_id)
                 )
                 min_cadence, max_cadence = q.one()
                 self.buffers["observations"] = list(
                     filter(
-                        lambda obs: not (obs[0] == lightcurve_id and obs[1] == orbit_id),
-                        self.buffers["observations"]
+                        lambda obs: not (
+                            obs[0] == lightcurve_id and obs[1] == orbit_id
+                        ),
+                        self.buffers["observations"],
                     )
                 )
                 for lp_buffer in self.buffers["lightpoints"]:
-                    id_mask = (lp_buffer["lightcurve_id"] == lightcurve_id)
-                    cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (lp_buffer["cadence"] <= max_cadence)
+                    id_mask = lp_buffer["lightcurve_id"] == lightcurve_id
+                    cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (
+                        lp_buffer["cadence"] <= max_cadence
+                    )
                     lp_buffer = lp_buffer[~(id_mask & cadence_mask)]
-                self.log("Reduced ingestion work due to observation collision", level="warning")
+                self.log(
+                    "Reduced ingestion work due to observation collision",
+                    level="warning",
+                )
 
         self.n_samples += 1
 
@@ -422,7 +440,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             time_start=start,
             time_end=end,
             job_size=lp_size,
-            unit="lightpoint"
+            unit="lightpoint",
         )
         db.add(metric)
 
@@ -446,9 +464,11 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         process = QLPProcess(
             stage_id=self.stage_id,
             state="running",
-            runtime_parameters = self.determine_process_parameters()
+            runtime_parameters=self.determine_process_parameters(),
         )
-        self.log(f"Updating runtime parameters to {process.runtime_parameters}")
+        self.log(
+            f"Updating runtime parameters to {process.runtime_parameters}"
+        )
         with self.db as db:
             if self.process_id is not None:
                 old_process = db.query(QLPProcess).get(self.process_id)
@@ -463,7 +483,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     @property
     def should_flush(self):
-        return len(self.buffers["lightpoints"]) >= self.runtime_parameters["lp_buffer_threshold"]
+        return (
+            len(self.buffers["lightpoints"])
+            >= self.runtime_parameters["lp_buffer_threshold"]
+        )
 
     @property
     def should_refresh_parameters(self):
@@ -476,8 +499,7 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
 
     def determine_process_parameters(self):
         lp_buffersize = np.random.randint(
-            self.min_lp_buffersize,
-            high=self.max_lp_buffersize+1
+            self.min_lp_buffersize, high=self.max_lp_buffersize + 1
         )
         return {
             "lp_buffer_threshold": lp_buffersize,
@@ -490,12 +512,12 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
     def determine_process_parameters(self):
         exp = np.random.randint(self.min_exponent, high=self.max_exponent)
-        return {
-            "lp_buffer_threshold": 2 ** exp
-        }
+        return {"lp_buffer_threshold": 2 ** exp}
 
 
-def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_class=None):
+def ingest_merge_jobs(
+    db, jobs, n_processes, commit, log_level="info", worker_class=None
+):
     """
     Process and ingest SingleMergeJob objects.
     """
@@ -520,13 +542,15 @@ def ingest_merge_jobs(db, jobs, n_processes, commit, log_level="info", worker_cl
     echo("Initializing workers, beginning processing...")
     with tqdm(total=len(jobs)) as bar:
         logger.remove()
-        logger.add(lambda msg: tqdm.write(msg, end=""), colorize=False, level=log_level.upper(), enqueue=True)
+        logger.add(
+            lambda msg: tqdm.write(msg, end=""),
+            colorize=False,
+            level=log_level.upper(),
+            enqueue=True,
+        )
         for n in range(n_processes):
             p = ExponentialSamplingLightpointIngestor(
-                db._config,
-                f"worker-{n}",
-                job_queue,
-                stage.id
+                db._config, f"worker-{n}", job_queue, stage.id
             )
             p.start()
 

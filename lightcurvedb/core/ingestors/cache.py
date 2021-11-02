@@ -117,33 +117,16 @@ class IngestionCache(ORM_DB):
     @property
     def quality_flag_map(self):
         cams_and_ccds = (
-            self
-            .query(
-                QualityFlags.camera,
-                QualityFlags.ccd
-            )
-            .distinct()
-            .all()
+            self.query(QualityFlags.camera, QualityFlags.ccd).distinct().all()
         )
         mapping = {}
         for cam, ccd in cams_and_ccds:
-            q = (
-                self
-                .query(
-                    QualityFlags.cadence,
-                    QualityFlags.quality_flag
-                )
-                .filter_by(camera=cam, ccd=ccd)
-            )
-            df = (
-                pd
-                .read_sql(
-                    q.statement,
-                    self.session.bind,
-                    index_col="cadence"
-                )
-                .sort_index()
-            )
+            q = self.query(
+                QualityFlags.cadence, QualityFlags.quality_flag
+            ).filter_by(camera=cam, ccd=ccd)
+            df = pd.read_sql(
+                q.statement, self.session.bind, index_col="cadence"
+            ).sort_index()
             mapping[(cam, ccd)] = df
         return mapping
 
@@ -174,7 +157,7 @@ class IngestionCache(ORM_DB):
             result[tic_id] = {
                 "tmag": tmag,
                 "ra": right_ascension,
-                "dec": declination
+                "dec": declination,
             }
         return result
 

@@ -15,8 +15,14 @@ BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
 @lru_cache(maxsize=1024)
 def get_tic_parameters(tic_id, *parameters):
     with IngestionCache() as cache:
-        cols = tuple(getattr(TIC8Parameters, parameter) for parameter in parameters)
-        result = cache.query(*cols).filter(TIC8Parameters.tic_id == tic_id).one_or_none()
+        cols = tuple(
+            getattr(TIC8Parameters, parameter) for parameter in parameters
+        )
+        result = (
+            cache.query(*cols)
+            .filter(TIC8Parameters.tic_id == tic_id)
+            .one_or_none()
+        )
         if result is None:
             result = tuple(None for _ in parameters)
     return result
@@ -84,7 +90,9 @@ class TimeCorrector:
         )
 
     def get_tic_params(self, tic):
-        ra, dec, tmag = get_tic_parameters(tic, "right_ascension", "declination", "tmag")
+        ra, dec, tmag = get_tic_parameters(
+            tic, "right_ascension", "declination", "tmag"
+        )
         return {
             "ra": ra,
             "dec": dec,
@@ -194,9 +202,7 @@ class StaticTimeCorrector(TimeCorrector):
             logger.error(
                 "Star Vector: {0}\n"
                 "Orbit Vector: {1}\n"
-                "tjd: {2}\n".format(
-                    star_vector, orbit_vector, tjd_time
-                )
+                "tjd: {2}\n".format(star_vector, orbit_vector, tjd_time)
             )
             raise
         return bjd.jd
