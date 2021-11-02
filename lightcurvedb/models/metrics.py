@@ -7,19 +7,16 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     Sequence,
-    SmallInteger,
     String,
     Text,
     between,
     func,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
-from sqlalchemy.orm.query import Query
 
 from lightcurvedb import __version__
 from lightcurvedb.core.base_model import QLPMetric

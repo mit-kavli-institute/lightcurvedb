@@ -2,12 +2,11 @@ from click.testing import CliRunner
 from hypothesis import given, note, settings
 from hypothesis import strategies as st
 
-from lightcurvedb import Orbit
 from lightcurvedb.cli.base import lcdbcli
 
 from .constants import CONFIG_PATH
 from .factories import orbit
-from .fixtures import clear_all, db_conn
+from .fixtures import clear_all, db_conn  # noqa F401
 
 
 @settings(deadline=None, max_examples=10)
@@ -19,10 +18,10 @@ from .fixtures import clear_all, db_conn
         max_size=3,
     )
 )
-def test_query_on_orbits(db_conn, orbits):
+def test_query_on_orbits(db_conn, orbits):  # noqa F401
     runner = CliRunner()
 
-    for ith, orbit in enumerate(orbits):
+    for ith, orbit_obj in enumerate(orbits):
         orbit.id = ith
 
     with db_conn as db:
@@ -58,11 +57,11 @@ def test_query_on_orbits(db_conn, orbits):
         max_size=3,
     )
 )
-def test_query_on_orbits_w_filter(db_conn, orbits):
+def test_query_on_orbits_w_filter(db_conn, orbits):  # noqa F401
     runner = CliRunner()
 
-    for ith, orbit in enumerate(orbits):
-        orbit.id = ith
+    for ith, orbit_obj in enumerate(orbits):
+        orbit_obj.id = ith
 
     with db_conn as db:
         try:
@@ -88,8 +87,8 @@ def test_query_on_orbits_w_filter(db_conn, orbits):
 
             assert str(orbits[0].orbit_number) in result.output
 
-            for orbit in orbits[1:]:
-                check = " {0} ".format(orbit.orbit_number)
+            for orbit_obj in orbits[1:]:
+                check = " {0} ".format(orbit_obj.orbit_number)
                 assert check not in result.output
 
         finally:

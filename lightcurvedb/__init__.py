@@ -1,6 +1,6 @@
 __version__ = "0.11.3"
 
-from lightcurvedb.core.connection import DB, db, db_from_config
+from lightcurvedb.core.connection import db, db_from_config
 from lightcurvedb.managers import LightcurveManager
 from lightcurvedb.models import (
     Aperture,

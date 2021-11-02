@@ -10,10 +10,7 @@ from sqlalchemy.exc import InternalError
 
 from lightcurvedb import Lightcurve, db_from_config
 from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
-from lightcurvedb.io.procedures.procedure import (
-    get_bestaperture_data,
-    get_lightcurve_data,
-)
+from lightcurvedb.io.procedures.procedure import get_lightcurve_data
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
@@ -69,16 +66,12 @@ class LightcurveFeeder(Process):
                     result["error"] = "No lightpoints found, empty lightcurve"
                 except PrimaryIdentNotFound:
                     result = {
-                        "error": "No lightcurve found for identifier {0}".format(
-                            id_
-                        ),
+                        "error": f"No lightcurve found for identifier {id_}",
                         "id": id_,
                     }
                 except Exception as e:
                     # Catch all, clean queues and exit
-                    result = {
-                        "error": "Encountered terminating error: {0}".format(e)
-                    }
+                    result = {"error": f"Encountered terminating error: {e}"}
                     break
                 finally:
                     self.result_queue.put(result)

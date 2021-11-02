@@ -4,7 +4,6 @@ import re
 
 import click
 from tabulate import tabulate
-from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList

@@ -1,9 +1,6 @@
-import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, consumes, rule
-
-from lightcurvedb.models import Lightcurve
 
 from .factories import lightcurve, lightpoint
 
@@ -18,7 +15,8 @@ ASSIGNABLE_ATTRS = {
 }
 
 
-assignable_attr = lambda: st.one_of(st.just(col) for col in ASSIGNABLE_ATTRS)
+def assignable_attr():
+    return st.one_of(st.just(col) for col in ASSIGNABLE_ATTRS)
 
 
 class CollectionComparison(RuleBasedStateMachine):

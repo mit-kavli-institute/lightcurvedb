@@ -52,7 +52,8 @@ def detach(db, class_):
 def pull_over_to(db, dest, src):
     q = text(
         f"INSERT INTO {src.namespace.name}.{src.name} "
-        f"(SELECT * FROM {dest.namespace.name}.{dest.name} ORDER BY lightcurve_id, cadence)"
+        f"(SELECT * FROM {dest.namespace.name}.{dest.name} "
+        "ORDER BY lightcurve_id, cadence)"
     )
     logger.info(f"Pulling data from {src.name} to {dest.name}")
     t0 = time()
@@ -128,8 +129,8 @@ def merge_working_pair(db, working_pair):
             parent = right_class.parent[0].name
             detach(db, right_class)
             db.commit()
-    except:
-        logger.exception(f"Cowardly not committing detachment!")
+    except Exception:
+        logger.exception("Cowardly not committing detachment!")
         db.rollback()
         return None
 
@@ -145,7 +146,7 @@ def merge_working_pair(db, working_pair):
 
         logger.info(f"Finished {left_class.name}")
         return left_track.oid
-    except:
+    except Exception:
         logger.exception(
             f"Could not process {left_class.name} and {right_class.name}"
         )

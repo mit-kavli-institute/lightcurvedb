@@ -24,10 +24,10 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 with open("requirements.txt", "rt") as f:
-    requirements = [l.strip() for l in f.readlines()]
+    requirements = [line.strip() for line in f.readlines()]
 
 with open("./docs/requirements.txt", "rt") as f:
-    doc_requirements = [l.strip() for l in f.readlines()]
+    doc_requirements = [line.strip() for line in f.readlines()]
 
 setuptools.setup(
     name="lightcurvedb",

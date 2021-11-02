@@ -1,15 +1,11 @@
 import sys
 
-import numpy as np
-from hypothesis import assume
-from hypothesis.extra import numpy as np_st
 from hypothesis.strategies import (
     booleans,
     builds,
     characters,
     composite,
     floats,
-    from_regex,
     integers,
     just,
     lists,
@@ -22,7 +18,7 @@ from hypothesis.strategies import (
 
 from lightcurvedb import models
 
-from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
+from .constants import PSQL_INT_MAX, TIC_ID_MAX
 
 ABC = "abcdefghijklmnopqrstuvwxyz"
 
@@ -32,7 +28,8 @@ else:
     alphabet = sampled_from(ABC + ABC.upper())
 
 
-define_strategy = lambda f: f
+def define_strategy(f):
+    return f
 
 
 @define_strategy

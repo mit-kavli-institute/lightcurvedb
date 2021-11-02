@@ -370,12 +370,6 @@ def refresh_file_cache(ctx, orbit_number, camera, ccd, lc_path):
         all_obs = []
         for h5 in tqdm(h5s, unit=" files"):
             tic_id = int(os.path.basename(h5).split(".")[0])
-            key = (
-                tic_id,
-                int(context["camera"]),
-                int(context["ccd"]),
-                int(context["orbit_number"]),
-            )
             obs = FileObservation(tic_id=tic_id, file_path=h5, **context)
             all_obs.append(obs)
         click.echo(f"Deleting {q.count()} file observations from cache")

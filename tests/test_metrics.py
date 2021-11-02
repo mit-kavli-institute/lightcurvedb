@@ -1,6 +1,6 @@
 from hypothesis import given, note
 from hypothesis import strategies as st
-from packaging.version import Version, parse
+from packaging.version import parse
 
 from lightcurvedb import Lightcurve, __version__
 from lightcurvedb.models.metrics import QLPAlteration, QLPProcess

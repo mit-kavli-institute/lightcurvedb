@@ -48,13 +48,13 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
                 **connection_kwargs
             )
             with configured_db as db_object:
-                lcdb_logger.debug(
+                logger.debug(
                     "Entering db context for {0} with {1} and {2}".format(
                         func, args, kwargs
                     )
                 )
                 func_results = func(db_object, *args, **kwargs)
-                lcdb_logger.debug("Exited db context for {0}".format(func))
+                logger.debug("Exited db context for {0}".format(func))
                 db_object.rollback()
             return func_results
 

@@ -1,86 +1,18 @@
 import os
-from datetime import datetime
 from glob import glob
-from itertools import product
 from multiprocessing import Manager
 from time import sleep
 
 import click
-import pandas as pd
-from astropy import units as u
 from loguru import logger
 from tabulate import tabulate
 from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
-from lightcurvedb.cli.types import CommaList
 from lightcurvedb.core.ingestors.bls import BaseBLSIngestor
-from lightcurvedb.core.tic8 import TIC8_DB
-from lightcurvedb.models import Lightcurve, Orbit
-from lightcurvedb.models.best_lightcurve import BestOrbitLightcurve
-from lightcurvedb.models.bls import BLS, BLSResultLookup
+from lightcurvedb.models import Lightcurve
+from lightcurvedb.models.bls import BLS
 from lightcurvedb.util.contexts import extract_pdo_path_context
-
-
-def process_summary(args):
-    path = args[0]
-    stellar_radius = args[1]
-    # Get inode date change
-    date = datetime.fromtimestamp(os.path.getctime(path))
-    lines = list(map(lambda l: l.strip(), open(path, "rt").readlines()))
-
-    tic_id = os.path.basename(path).split(".")[0]
-
-    if len(lines) < 2:
-        # No data/malformed bls summary files
-        return False, []
-
-    headers = lines[0][2:]
-    headers = tuple(map(lambda l: l.lower(), headers.split()))
-    lines = lines[1:]
-    results = list(normalize(headers, lines))
-
-    for result in results:
-        # Assume that each additional BLS calculate
-        result["tce"] = int(result.pop("bls_no"))
-        result["created_on"] = date
-        planet_radius = estimate_planet_radius(
-            stellar_radius, float(result["transit_depth"])
-        ).value
-        result["transit_duration"] = estimate_transit_duration(
-            result["period"], result["duration_rel_period"]
-        )
-        result["planet_radius"] = planet_radius
-        result["planet_radius_error"] = float("nan")
-        result["tic_id"] = int(tic_id)
-
-        if "period_inv_transit" not in result:
-            result["period_inv_transit"] = float("nan")
-
-    return True, results
-
-
-def determine_bls_context(db, filepath, context):
-    basename = os.path.basename(filepath)
-    tic_id = int(basename.split(".")[0])
-    sector = int(context["sector"])
-
-    lightcurve_composition = (
-        db.query(BestOrbitLightcurve.id)
-        .join(BestOrbitLightcurve.orbit)
-        .join(BestOrbitLightcurve.lightcurve)
-        .join(
-            BestApertureMap,
-            and_(
-                BestApertureMap.tic_id == Lightcurve.tic_id,
-                BestApertureMap.aperture_id == Lightcurve.aperture_id,
-            ),
-        )
-        .filter(Orbit.sector <= sector, Lightcurve.tic_id == tic_id)
-        .order_by(Orbit.orbit_number)
-    )
-
-    return [best_orbit_lc_id for best_orbit_lc_id, in lightcurve_composition]
 
 
 def get_tic(bls_summary):
@@ -115,7 +47,8 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
         context = extract_pdo_path_context(path)
         if not all(req_context in context for req_context in req_contexts):
             click.echo(
-                f"Path {path} does not contain needed contexts (sector, camera, ccd)!"
+                f"Path {path} does not contain needed contexts "
+                "(sector, camera, ccd)!"
             )
             click.abort()
         path_context_map[path] = context
@@ -133,29 +66,28 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
     for path in paths:
         files = path_files_map[path]
         context = path_context_map[path]
-        with ctx.obj["dbconf"] as db, TIC8_DB() as tic8:
-            sector_run_directory = os.path.join(
-                qlp_data_path,
-                "sector-{sector}".format(**context),
-                "ffi",
-                "run",
-            )
-            logger.debug(
-                f"Setting {path} runtime parameters at {sector_run_directory}"
-            )
-            for summary in tqdm(files, unit=" files"):
-                try:
-                    job = {
-                        "path": summary,
-                        "sector": int(context["sector"]),
-                        "camera": int(context["camera"]),
-                        "sector_run_directory": sector_run_directory,
-                        "tic_id": int(os.path.basename(summary).split(".")[0]),
-                    }
-                except (ValueError, IndexError):
-                    logger.warning(f"Unable to parse path {summary}")
-                    continue
-                job_queue.put(job)
+        sector_run_directory = os.path.join(
+            qlp_data_path,
+            "sector-{sector}".format(**context),
+            "ffi",
+            "run",
+        )
+        logger.debug(
+            f"Setting {path} runtime parameters at {sector_run_directory}"
+        )
+        for summary in tqdm(files, unit=" files"):
+            try:
+                job = {
+                    "path": summary,
+                    "sector": int(context["sector"]),
+                    "camera": int(context["camera"]),
+                    "sector_run_directory": sector_run_directory,
+                    "tic_id": int(os.path.basename(summary).split(".")[0]),
+                }
+            except (ValueError, IndexError):
+                logger.warning(f"Unable to parse path {summary}")
+                continue
+            job_queue.put(job)
 
     for i in range(n_processes):
         worker = BaseBLSIngestor(

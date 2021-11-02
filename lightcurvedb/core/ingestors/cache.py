@@ -4,7 +4,7 @@ from glob import glob
 
 import pandas as pd
 from sqlalchemy import and_, create_engine
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.sql.expression import bindparam
 

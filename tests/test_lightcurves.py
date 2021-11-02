@@ -1,15 +1,12 @@
-from itertools import combinations
-
 import numpy as np
-from hypothesis import given, note, settings
+from hypothesis import given, note
 from hypothesis import strategies as st
-from hypothesis.extra.numpy import arrays
 
 from lightcurvedb.models import Lightcurve, Lightpoint
 
 from .constants import PSQL_INT_MAX
 from .factories import aperture, lightcurve, lightcurve_type, lightpoint
-from .fixtures import clear_all, db_conn
+from .fixtures import clear_all  # noqa F401
 
 NP_ATTRS = {
     "cadences",

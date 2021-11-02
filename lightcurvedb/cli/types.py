@@ -61,9 +61,7 @@ class ModelField(click.ParamType):
             field = getattr(self.Model, value)
             return field
         except AttributeError:
-            self.fail(
-                "{0} does not have the attribute {1}".format(Model, value)
-            )
+            self.fail(f"{self.Model} does not have the attribute {value}")
 
 
 class QLPModelType(click.ParamType):

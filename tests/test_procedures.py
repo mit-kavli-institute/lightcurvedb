@@ -1,12 +1,13 @@
 from click.testing import CliRunner
 
+from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.experimental.io.procedures.procedure import PROCEDURE_FILES
 
 from .constants import CONFIG_PATH
-from .fixtures import db_conn
+from .fixtures import db_conn  # noqa F401
 
 
-def test_procedure_definition(db_conn):
+def test_procedure_definition(db_conn):  # noqa F401
 
     runner = CliRunner()
 

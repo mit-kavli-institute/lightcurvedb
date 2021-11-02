@@ -1,5 +1,4 @@
 from datetime import datetime
-from itertools import combinations
 
 import numpy as np
 from hypothesis import assume, given, note, settings
@@ -10,7 +9,7 @@ from lightcurvedb.util.constants import TESS_FIRST_LIGHT
 from lightcurvedb.util.decorators import suppress_warnings
 
 from .factories import quaternion
-from .fixtures import clear_all, db_conn
+from .fixtures import clear_all, db_conn  # noqa F401
 
 GPS_EPOCH = (datetime.now() - datetime(1980, 1, 6)).total_seconds()
 
@@ -63,7 +62,7 @@ def test_datetime_equivalency(date):
     st.integers(min_value=1, max_value=4),
     st.datetimes(min_value=TESS_FIRST_LIGHT, max_value=datetime.now()),
 )
-def test_psql_gps(db_conn, q, camera, date):
+def test_psql_gps(db_conn, q, camera, date):  # noqa F401
     q1, q2, q3, q4 = q
 
     camera_quat = CameraQuaternion(

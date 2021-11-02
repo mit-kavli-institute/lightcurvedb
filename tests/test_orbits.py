@@ -3,13 +3,13 @@ from hypothesis import strategies as st
 
 from lightcurvedb.models import Orbit
 
-from .fixtures import clear_all, db_conn
-from .strategies import frame_types, frames, orbit_frames, orbits
+from .fixtures import clear_all, db_conn  # noqa F401
+from .strategies import frame_types, orbit_frames, orbits
 
 
 @settings(deadline=None, max_samples=10)
 @given(st.data())
-def test_min_max_cadence_retrieval(db_conn, data):
+def test_min_max_cadence_retrieval(db_conn, data):  # noqa F401
     with db_conn as db:
 
         try:
@@ -43,7 +43,7 @@ def test_min_max_cadence_retrieval(db_conn, data):
 
 @settings(deadline=None, max_samples=10)
 @given(st.data())
-def test_min_max_gps_time_retrieval(db_conn, data):
+def test_min_max_gps_time_retrieval(db_conn, data):  # noqa F401
     with db_conn as db:
         try:
             frame_type = data.draw(frame_types())

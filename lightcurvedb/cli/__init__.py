@@ -16,6 +16,7 @@ __all__ = [
     "lcdbcli",
     "admin",
     "add_aperture",
+    "add_frametype",
     "add_lightcurvetype",
     "bls",
     "ingest_frames",

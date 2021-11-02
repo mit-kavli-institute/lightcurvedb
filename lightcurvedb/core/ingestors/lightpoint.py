@@ -5,99 +5,29 @@ from multiprocessing import Manager
 from time import sleep, time
 
 import numpy as np
-import pandas as pd
 from click import echo
 from loguru import logger
 from pgcopy import CopyManager
-from psycopg2.errors import (
-    InFailedSqlTransaction,
-    OperationalError,
-    UniqueViolation,
-)
-from sqlalchemy import text
-from sqlalchemy.sql.expression import literal
+from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
+from sqlalchemy import func, text
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
-from lightcurvedb.core.engines import psycopg_connection
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    get_aligned_magnitudes,
     get_components,
-    get_correct_qflags,
-    get_h5,
-    get_h5_data,
-    get_tjd,
     h5_to_numpy,
 )
-from lightcurvedb.core.ingestors.temp_table import (
-    FileObservation,
-    TIC8Parameters,
-)
-from lightcurvedb.core.psql_tables import PGClass, PGNamespace
+from lightcurvedb.core.psql_tables import PGClass
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.io.pipeline.scope import scoped_block
 from lightcurvedb.legacy.timecorrect import TimeCorrector
 from lightcurvedb.models import Frame, Lightpoint, Observation, Orbit
-from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
+from lightcurvedb.models.metrics import QLPOperation, QLPProcess
 from lightcurvedb.models.table_track import RangedPartitionTrack
-from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
-
-
-def yield_lp_kwarg_from_merge_jobs(
-    normalizer, stellar_params, merge_job, config_override=None
-):
-    tmag = stellar_params.loc[merge_job.tic_id]["tmag"]
-    # Load in h5 data
-    lp_raw_kwargs, file_time = get_h5_data(merge_job)
-
-    # Load in manual quality flags
-    qflags, qflag_time = get_correct_qflags(
-        merge_job, lp_raw_kwargs["cadence"]
-    )
-
-    # Align orbit data to tmag median
-    aligned_data, align_time = get_lightcurve_median(
-        lp_raw_kwargs["data"], qflags, tmag
-    )
-
-    # Pull tjd data from Frame table and correct for earth time
-    tjd, tjd_pull_time = get_tjd(
-        merge_job, lp_raw_kwargs["cadence"], config_override=config_override
-    )
-    correct_bjd = normalizer.correct(merge_job.tic_id, tjd)
-
-    lp_raw_kwargs["data"] = aligned_data
-    lp_raw_kwargs["barycentric_julian_date"] = correct_bjd
-    lp_raw_kwargs["quality_flag"] = qflags
-    lp_raw_kwargs["lightcurve_id"] = np.full_like(
-        lp_raw_kwargs["cadence"], merge_job.lightcurve_id, dtype=int
-    )
-
-    timings = {
-        "file_load": file_time,
-        "quality_flag_assignment": qflag_time,
-        "bjd_correction": tjd_pull_time,
-        "alignment": align_time,
-    }
-
-    return lp_raw_kwargs, timings
-
-
-def yield_lp_df_from_merge_jobs(
-    normalizer, stellar_params, single_merge_jobs, config_override=None
-):
-    for job in single_merge_jobs:
-        lp_raw_kwargs, timings = yield_lp_kwarg_from_merge_jobs(
-            normalizer, stellar_params, job, config_override=config_override
-        )
-
-        lp = pd.DataFrame(data=lp_raw_kwargs)
-
-        yield lp, timings
 
 
 def push_lightpoints(mgr, lp_arr):
@@ -128,7 +58,6 @@ def push_observations(conn, observations):
 
 
 def acquire_partition(db, oid):
-    track = db.query(RangedPartitionTrack).filter_by(oid=oid).one()
     indices_q = text(
         f"""
         SELECT pi.schemaname, pi.tablename, pi.indexname, pi.indexdef
@@ -184,7 +113,8 @@ def release_partition(db, oid):
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
     logger.warning(
-        f"Could not find TIC {tic} in cache. Querying remote db for fields {fields}"
+        f"Could not find TIC {tic} in cache. "
+        f"Querying remote db for fields {fields}"
     )
     with TIC8_DB() as tic8:
         ticentries = tic8.ticentries
@@ -315,7 +245,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             )
         )
         self.seen_cache = set()
-        cur_size = len(self.seen_cache)
         self.log(
             "Querying for observations for lightcurves in range "
             f"[{track.min_range}, {track.max_range})",
@@ -369,7 +298,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                     level="error",
                 )
                 match = re.search(
-                    "\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
+                    r"\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
                 )
                 orbit_id, lightcurve_id = int(match["orbit_id"]), int(
                     match["lightcurve_id"]
