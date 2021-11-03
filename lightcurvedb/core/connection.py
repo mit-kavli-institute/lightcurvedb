@@ -1129,6 +1129,32 @@ class DB(
         )
         return [r for r, in q.all()]
 
+    def cadences_in_sectors(self, sectors, frame_type="Raw FFI", resolve=True):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.sector.in_(sectors),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
+
+    def cadences_in_orbit(
+        self, orbit_numbers, frame_type="Raw FFI", resolve=True
+    ):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.orbit_number.in_(orbit_numbers),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
+
     def get_baked_lcs(self, ids):
         return (
             self.query(

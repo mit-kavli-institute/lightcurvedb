@@ -15,7 +15,6 @@ from sqlalchemy import (
     SmallInteger,
     func,
     inspect,
-    select,
 )
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -29,7 +28,6 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 from lightcurvedb.core.collection import CadenceTracked
-from lightcurvedb.models import Frame, Observation, Orbit
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
@@ -228,7 +226,7 @@ class Lightcurve(QLPDataProduct):
     )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
-    observations = relationship(Observation, back_populates="lightcurve")
+    observations = relationship("Observation", back_populates="lightcurve")
 
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
@@ -431,40 +429,6 @@ class Lightcurve(QLPDataProduct):
         return self.lightpoint_q.filter(
             Lightpoint.cadence.between(q.c.min_cadence, q.c.max_cadence)
         )
-
-    def lightpoints_by_orbit(self, orbits, *frame_filters):
-        if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
-        q = (
-            select(
-                [
-                    func.min(Frame.cadence).label("min_cadence"),
-                    func.max(Frame.cadence).label("max_cadence"),
-                ]
-            )
-            .join(Frame.orbit)
-            .where(Orbit.orbit_number.in_(orbits), *frame_filters)
-            .select_from(Frame)
-        )
-
-        return self.lightpoints_by_cadence_q(q)
-
-    def lightpoints_by_sector(self, sectors, *frame_filters):
-        if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
-        q = (
-            select(
-                [
-                    func.min(Frame.cadence).label("min_cadence"),
-                    func.max(Frame.cadence).label("max_cadence"),
-                ]
-            )
-            .join(Frame.orbit)
-            .where(Orbit.sector.in_(sectors), *frame_filters)
-            .select_from(Frame)
-        )
-
-        return self.lightpoints_by_cadence_q(q)
 
     def update(self):
         session = inspect(self).session
