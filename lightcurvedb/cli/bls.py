@@ -4,15 +4,18 @@ from multiprocessing import Manager
 from time import sleep
 
 import click
+from astropy import units as u
 from loguru import logger
 from tabulate import tabulate
 from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors.bls import BaseBLSIngestor
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Lightcurve
 from lightcurvedb.models.bls import BLS
 from lightcurvedb.util.contexts import extract_pdo_path_context
+from lightcurvedb.util.iter import chunkify
 
 
 def get_tic(bls_summary):
@@ -62,6 +65,7 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
     workers = []
     manager = Manager()
     job_queue = manager.Queue()
+    tics = set()
 
     for path in paths:
         files = path_files_map[path]
@@ -87,11 +91,33 @@ def legacy_ingest(ctx, paths, n_processes, qlp_data_path):
             except (ValueError, IndexError):
                 logger.warning(f"Unable to parse path {summary}")
                 continue
+            tics.add(job["tic_id"])
             job_queue.put(job)
+
+    tic_params = {}
+    with TIC8_DB() as db:
+        ticentries = db.ticentries
+        for tic_id_chunk in chunkify(tics, 10000):
+            logger.debug(
+                f"Grabbing tic parameters for {len(tic_id_chunk)} tics"
+            )
+            q = db.query(
+                ticentries.c.id, ticentries.c.rad, ticentries.c.e_rad
+            ).filter(ticentries.c.id.in_(tic_id_chunk))
+            for tic_id, sol_rad, sol_rad_error in q.yield_per(1000):
+                if sol_rad is None:
+                    sol_rad = float("nan")
+                if sol_rad_error is None:
+                    sol_rad_error = float("nan")
+
+                tic_params[tic_id] = (
+                    sol_rad * u.solRad,
+                    sol_rad_error * u.solRad,
+                )
 
     for i in range(n_processes):
         worker = BaseBLSIngestor(
-            ctx.obj["dbconf"]._config, f"Worker-{i}", job_queue
+            ctx.obj["dbconf"]._config, f"Worker-{i}", job_queue, tic_params
         )
         worker.start()
         workers.append(worker)

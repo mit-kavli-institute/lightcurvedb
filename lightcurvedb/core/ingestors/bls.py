@@ -140,8 +140,17 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
     seen_cache = set()
     buffer_order = ["bls"]
 
-    def __init__(self, config, name, job_queue):
+    def __init__(self, config, name, job_queue, tic_parameters):
         super().__init__(config, name, job_queue)
+        self.tic_parameters = tic_parameters
+
+    def _get_tic_parameters(self, tic_id):
+        try:
+            rad, error = self.tic_parameters[tic_id]
+        except KeyError:
+            rad, error = get_stellar_radius(tic_id)
+            self.tic_parameters[tic_id] = rad, error
+        return rad, error
 
     def load_summary_file(self, tic_id, sector, path):
         # Get inode date change
@@ -157,7 +166,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
         headers = tuple(map(lambda l: l.lower(), headers.split()))
         lines = lines[1:]
         results = list(normalize(headers, lines))
-        stellar_radius, stellar_radius_error = get_stellar_radius(tic_id)
+        stellar_radius, stellar_radius_error = self._get_tic_parameters(tic_id)
         accepted = []
         for result in results:
             # Assume that each additional BLS calculate
@@ -223,7 +232,7 @@ class BaseBLSIngestor(BufferedDatabaseIngestor):
             bls_parameters["runtime_parameters"] = config_parameters
             self.buffers["bls"].append(bls_parameters)
 
-        self.log(f"Processed {path}")
+        self.log(f"Processed {path}", level="trace")
 
     @property
     def should_flush(self):
