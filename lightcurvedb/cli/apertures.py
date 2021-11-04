@@ -1,8 +1,7 @@
 import click
 
+from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.models import Aperture
-
-from . import lcdbcli
 
 
 @lcdbcli.command()

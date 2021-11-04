@@ -9,6 +9,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from lightcurvedb import db
+from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList, ModelField
 from lightcurvedb.cli.utils import tabulate_query
 from lightcurvedb.core.psql_tables import PGStatActivity
@@ -20,8 +21,6 @@ from lightcurvedb.models import (
     Orbit,
 )
 from lightcurvedb.util.iter import chunkify
-
-from . import lcdbcli
 
 
 def get_mask(scratch_dir="/scratch/tmp/lcdb_ingestion"):
