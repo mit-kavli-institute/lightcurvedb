@@ -76,13 +76,14 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
 @click.argument("tics", type=int, nargs=-1)
 @click.option("--n-processes", default=1, type=click.IntRange(min=1))
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
-def ingest_tic(ctx, tics, n_processes, fillgaps):
+@click.option("--max-job-len", type=click.IntRange(min=1), default=1000)
+def ingest_tic(ctx, tics, n_processes, fillgaps, max_job_len):
     with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(db, cache, tic_mask=tics)
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db)
+        jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
@@ -95,7 +96,8 @@ def ingest_tic(ctx, tics, n_processes, fillgaps):
 @click.argument("tic-list-file", type=click.File("rt"))
 @click.option("--n-processes", default=1, type=click.IntRange(min=1))
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
-def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
+@click.option("--max-job-len", type=click.IntRange(min=1), default=1000)
+def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps, max_job_len):
     extr = re.compile(r"(?P<tic_id>\d+)")
     data_buffer = tic_list_file.read()
     tic_ids = set()
@@ -114,7 +116,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db)
+        jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
