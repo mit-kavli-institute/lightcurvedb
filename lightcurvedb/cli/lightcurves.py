@@ -85,7 +85,7 @@ def ingest_tic(ctx, tics, n_processes, fillgaps):
         jobs = plan.get_jobs_by_partition(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
     )
     click.echo("Done!")
 
@@ -117,7 +117,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps):
         jobs = plan.get_jobs_by_lightcurve(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"]._config, jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
     )
 
 
