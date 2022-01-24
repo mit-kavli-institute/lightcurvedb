@@ -134,6 +134,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     process_id = None
     current_sample = 0
     seen_cache = set()
+    seen_oids = set()
     db = None
     runtime_parameters = {}
     target_table = None
@@ -231,29 +232,31 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.seen_cache.add((lightcurve_id, orbit_number))
 
     def get_seen(self, db, job):
-        track = (
-            db.query(RangedPartitionTrack)
-            .filter_by(oid=job.partition_oid)
-            .one()
-        )
-        orbit_number_map = dict(db.query(Orbit.id, Orbit.orbit_number))
-        current_obs_q = db.query(
-            Observation.lightcurve_id, Observation.orbit_id
-        ).filter(
-            Observation.lightcurve_id.between(
-                track.min_range, track.max_range - 1
+        if job.partition_oid not in self.seen_oids:
+            track = (
+                db.query(RangedPartitionTrack)
+                .filter_by(oid=job.partition_oid)
+                .one()
             )
-        )
-        self.seen_cache = set()
-        self.log(
-            "Querying for observations for lightcurves in range "
-            f"[{track.min_range}, {track.max_range})",
-            level="trace",
-        )
-        for lightcurve_id, orbit_id in current_obs_q:
-            orbit_number = orbit_number_map[orbit_id]
-            key = (lightcurve_id, orbit_number)
-            self.seen_cache.add(key)
+            orbit_number_map = dict(db.query(Orbit.id, Orbit.orbit_number))
+            current_obs_q = db.query(
+                Observation.lightcurve_id, Observation.orbit_id
+            ).filter(
+                Observation.lightcurve_id.between(
+                    track.min_range, track.max_range - 1
+                )
+            )
+            self.seen_cache = set()
+            self.log(
+                "Querying for observations for lightcurves in range "
+                f"[{track.min_range}, {track.max_range})",
+                level="trace",
+            )
+            for lightcurve_id, orbit_id in current_obs_q:
+                orbit_number = orbit_number_map[orbit_id]
+                key = (lightcurve_id, orbit_number)
+                self.seen_cache.add(key)
+            self.seen_oids.add(job.partition_oid)
 
     def process_job(self, job):
         if self.buffers["lightpoints"] or self.buffers["observations"]:
