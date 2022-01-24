@@ -1042,7 +1042,7 @@ class DB(
         permanent.
         """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
-        self._session.execute(upsert)
+        self.session.execute(upsert)
 
     def unset_best_aperture(self, tic_id):
         """
@@ -1060,7 +1060,7 @@ class DB(
         to be made permanent.
         """
         check = (
-            self._session.query(models.BestApertureMap)
+            self.session.query(models.BestApertureMap)
             .filter(models.BestApertureMap.tic_id == tic_id)
             .one_or_none()
         )

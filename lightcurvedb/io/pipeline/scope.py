@@ -49,12 +49,10 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
             )
             with configured_db as db_object:
                 logger.debug(
-                    "Entering db context for {0} with {1} and {2}".format(
-                        func, args, kwargs
-                    )
+                    f"Entering db context for {func} with {args} and {kwargs}"
                 )
                 func_results = func(db_object, *args, **kwargs)
-                logger.debug("Exited db context for {0}".format(func))
+                logger.debug(f"Exited db context for {func}")
                 db_object.rollback()
             return func_results
 
