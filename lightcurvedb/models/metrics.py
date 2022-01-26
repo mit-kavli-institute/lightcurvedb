@@ -88,6 +88,9 @@ class QLPProcess(QLPMetric):
 
     operations = relationship("QLPOperation", backref="process")
 
+    def __repr__(self):
+        return f"QLPProcess: {self.id} {self.lcdb_version} {self.state}"
+
     def finish(self):
         if self.process_completion is None:
             self.process_completion = datetime.now()

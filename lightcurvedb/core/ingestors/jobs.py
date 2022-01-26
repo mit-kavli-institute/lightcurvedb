@@ -127,6 +127,12 @@ class IngestionPlan(object):
 
         # Construct relevant TIC ID query from file observations in cache
         cache_filters = []
+        obs_subquery = (
+            db
+            .query(
+                Observation.lightcurve_id,
+            )
+        )
         current_obs_filters = []
         if orbits:
             cache_filters.append(FileObservation.orbit_number.in_(orbits))
@@ -136,7 +142,10 @@ class IngestionPlan(object):
                     Orbit.orbit_number.in_(orbits)
                 )
             ]
-            current_obs_filters.append(Observation.orbit_id.in_(o_ids))
+            obs_subquery = (
+                obs_subquery
+                .filter(Observation.orbit_id.in_(o_ids))
+            )
         else:
             o_ids = []
 
@@ -144,16 +153,18 @@ class IngestionPlan(object):
             cache_filters = apply_physical_filter(
                 cache_filters, FileObservation.camera, cameras
             )
-            current_obs_filters = apply_physical_filter(
-                current_obs_filters, Observation.camera, cameras
+            obs_subquery = (
+                obs_subquery
+                .filter(Observation.camera.in_(cameras))
             )
 
         if ccds:
             cache_filters = apply_physical_filter(
                 cache_filters, FileObservation.ccd, ccds
             )
-            current_obs_filters = apply_physical_filter(
-                current_obs_filters, Observation.ccd, ccds
+            obs_subquery = (
+                obs_subquery
+                .filter(Observation.camera.in_(ccds))
             )
 
         file_obs_columns = Bundle(
@@ -210,9 +221,23 @@ class IngestionPlan(object):
         cur_tmp_id = -1
 
         self.ignored_jobs = 0
+        echo("Reading current observations")
+        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+        obs_q = (
+            db
+            .query(
+                Observation.lightcurve_id,
+                Observation.orbit_id
+            )
+            .filter(
+                Observation.lightcurve_id.in_(obs_subquery.subquery())
+            )
+        )
+        seen_obs = set(obs_q.all())
         echo("Building job list")
         pairs = list(yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
+            orbit_id = orbit_map[file_obs.c.orbit_number]
             for ap, lc_t in pairs:
                 lc_key = (file_obs.c.tic_id, ap, lc_t)
                 try:
@@ -221,6 +246,9 @@ class IngestionPlan(object):
                     id_ = cur_tmp_id
                     id_map[lc_key] = id_
                     cur_tmp_id -= 1
+
+                if (id_, orbit_id) in seen_obs:
+                    continue
 
                 ingest_job = {
                     "lightcurve_id": id_,

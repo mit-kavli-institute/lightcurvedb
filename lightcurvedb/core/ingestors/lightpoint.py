@@ -133,6 +133,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     stage_id = None
     process_id = None
     current_sample = 0
+    n_samples = 0
     seen_cache = set()
     seen_oids = set()
     db = None
@@ -156,6 +157,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log("Instantiated mid-tjd cadence map")
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
+            self.set_new_parameters()
+            self.log("Determined initial parameters")
 
     def get_quality_flags(self, camera, ccd, cadences):
         qflag_df = self.quality_flag_map[(camera, ccd)].loc[cadences]
@@ -231,37 +234,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
 
-    def get_seen(self, db, job):
-        if job.partition_oid not in self.seen_oids:
-            track = (
-                db.query(RangedPartitionTrack)
-                .filter_by(oid=job.partition_oid)
-                .one()
-            )
-            orbit_number_map = dict(db.query(Orbit.id, Orbit.orbit_number))
-            current_obs_q = db.query(
-                Observation.lightcurve_id, Observation.orbit_id
-            ).filter(
-                Observation.lightcurve_id.between(
-                    track.min_range, track.max_range - 1
-                )
-            )
-            self.seen_cache = set()
-            self.log(
-                "Querying for observations for lightcurves in range "
-                f"[{track.min_range}, {track.max_range})",
-                level="trace",
-            )
-            for lightcurve_id, orbit_id in current_obs_q:
-                orbit_number = orbit_number_map[orbit_id]
-                key = (lightcurve_id, orbit_number)
-                self.seen_cache.add(key)
-            self.seen_oids.add(job.partition_oid)
-
     def process_job(self, job):
-        if self.buffers["lightpoints"] or self.buffers["observations"]:
-            self.flush()
-
         with self.db as db:
             oid = job.partition_oid
             acquire_req = []
@@ -269,8 +242,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             with scoped_block(db, oid, acquire_req, release_req):
                 pgclass = db.query(PGClass).get(oid)
                 self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
-                self.get_seen(db, job)
-
                 single_merge_jobs = sorted(
                     filter(
                         lambda job: (job.lightcurve_id, job.orbit_number)
@@ -282,10 +253,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
                 for single_merge_job in single_merge_jobs:
                     self.process_single_merge_job(single_merge_job)
-                    if self.should_flush:
-                        self.flush(db)
-            self.flush(db)
-        self.log(f"Finished pushing to {self.target_table}", level="success")
+
+        n_jobs = len(job.single_merge_jobs)
+        self.log(
+            f"Finished processing {n_jobs} jobs to {self.target_table}",
+            level="success"
+        )
         self.job_queue.task_done()
 
     def flush(self, db):
@@ -346,7 +319,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
-        self.log(f"Flushing {lp_size} lightpoints to remote", level="trace")
+        self.log(f"Flushing {lp_size} lightpoints to remote", level="debug")
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
@@ -356,6 +329,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         end = datetime.now()
 
+        assert db.query(QLPProcess).filter(QLPProcess.id == self.process_id).count() > 0
         metric = QLPOperation(
             process_id=self.process_id,
             time_start=start,
@@ -382,21 +356,33 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         raise NotImplementedError
 
     def set_new_parameters(self):
-        process = QLPProcess(
-            stage_id=self.stage_id,
-            state="running",
-            runtime_parameters=self.determine_process_parameters(),
-        )
-        self.log(
-            f"Updating runtime parameters to {process.runtime_parameters}"
-        )
         with self.db as db:
-            if self.process_id is not None:
-                old_process = db.query(QLPProcess).get(self.process_id)
-                old_process.state = "completed"
-                db.commit()
+            process = QLPProcess(
+                stage_id=self.stage_id,
+                state="running",
+                runtime_parameters=self.determine_process_parameters(),
+            )
             db.add(process)
+            db.session.flush()
+            self.log(
+                f"Updating runtime parameters to {process.runtime_parameters}"
+            )
+            if self.process_id is not None:
+                q = (
+                    db
+                    .query(QLPProcess)
+                    .filter(
+                        QLPProcess.id == self.process_id
+                    )
+                )
+                q.update(
+                    {"state": "completed"},
+                    synchronize_session=False
+                )
+
+            db.session.refresh(process)
             db.commit()
+            self.log(f"Added {process}")
             self.process_id = process.id
             self.runtime_parameters = process.runtime_parameters
 
