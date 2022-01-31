@@ -1,7 +1,10 @@
-from .base import PyObjIngestor
-from lightcurvedb.models.orbit import Orbit
-from click import echo
 import re
+
+from click import echo
+
+from lightcurvedb.models.orbit import Orbit
+
+from .base import PyObjIngestor
 
 EXTR = re.compile(r"^(?P<basename>tess[0-9]+)")
 

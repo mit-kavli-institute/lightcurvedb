@@ -1,7 +1,7 @@
 from collections import namedtuple
 from itertools import chain, permutations
 
-from hypothesis import given, note
+from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, rule
 from pytest import raises

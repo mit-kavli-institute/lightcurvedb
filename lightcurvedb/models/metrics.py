@@ -1,27 +1,25 @@
-from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPMetric
+import getpass
+import os
+from datetime import datetime
+
 from sqlalchemy import (
     BigInteger,
     Column,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     Sequence,
-    SmallInteger,
     String,
     Text,
     between,
-    func
+    func,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
-from sqlalchemy.orm.query import Query
-from datetime import datetime
 
-import getpass
-import os
+from lightcurvedb import __version__
+from lightcurvedb.core.base_model import QLPMetric
 
 
 class QLPStage(QLPMetric):
@@ -29,6 +27,7 @@ class QLPStage(QLPMetric):
     This model encompasses a stage of the QLP pipeline that we wish to
     record for analysis later.
     """
+
     __tablename__ = "qlpstages"
     id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
     name = Column(String(64), unique=True)
@@ -77,7 +76,9 @@ class QLPProcess(QLPMetric):
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
-    process_start = Column(DateTime, index=True, nullable=False, server_default=func.now())
+    process_start = Column(
+        DateTime, index=True, nullable=False, server_default=func.now()
+    )
     process_completion = Column(DateTime, index=True, nullable=True)
 
     state = Column(String(64), index=True, default="initialized")
@@ -86,6 +87,9 @@ class QLPProcess(QLPMetric):
     user = Column(String(64), index=True, default=getpass.getuser)
 
     operations = relationship("QLPOperation", backref="process")
+
+    def __repr__(self):
+        return f"QLPProcess: {self.id} {self.lcdb_version} {self.state}"
 
     def finish(self):
         if self.process_completion is None:

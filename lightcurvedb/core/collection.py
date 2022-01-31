@@ -2,10 +2,10 @@
 This module describes custom collection objects for handling
 many-to-one/one-to-many/many-to-many relations in SQLAlchemy.
 """
+from collections import OrderedDict, namedtuple
+
 from numpy import array as np_array
 from sqlalchemy.orm.collections import collection
-from collections import namedtuple, OrderedDict
-
 
 RawLightpoint = namedtuple(
     "RawLightpoint",

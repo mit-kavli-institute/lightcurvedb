@@ -1,27 +1,25 @@
 from __future__ import division, print_function
 
+import contextlib
 import os
 import warnings
-import numpy as np
-import contextlib
-from pandas import read_sql as pd_read_sql
 
+import numpy as np
+from pandas import read_sql as pd_read_sql
 from sqlalchemy import and_, func
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core.engines import engine_from_config
-from lightcurvedb.models.orbit import ORBIT_DTYPE
-from lightcurvedb.models.frame import FRAME_DTYPE
-from lightcurvedb.util.type_check import isiterable
-from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
-from lightcurvedb.models.frame import FrameAPIMixin
-from lightcurvedb.models.table_track import TableTrackerAPIMixin
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
-
+from lightcurvedb.models.orbit import ORBIT_DTYPE
+from lightcurvedb.models.table_track import TableTrackerAPIMixin
+from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.type_check import isiterable
 
 # Bring legacy capability
 # TODO Encapsulate so it doesn't pollute this namespace
@@ -33,6 +31,7 @@ class ORM_DB(contextlib.AbstractContextManager):
     """
     Base Wrapper for all SQLAlchemy Session objects
     """
+
     def __init__(self, SessionMaker):
         self._sessionmaker = SessionMaker
         self._session_stack = []
@@ -75,7 +74,7 @@ class ORM_DB(contextlib.AbstractContextManager):
             raise RuntimeError("Database nested too far! Cowardly refusing")
 
         return self
- 
+
     def close(self):
         """
         Closes the database connection. If this session has not been opened
@@ -256,9 +255,7 @@ class ORM_DB(contextlib.AbstractContextManager):
         model_inst : QLPModel
             The model to delete from the database.
         """
-        self.session.delete(
-            model_inst
-        )
+        self.session.delete(model_inst)
 
     def execute(self, *args, **kwargs):
         """
@@ -286,7 +283,13 @@ class ORM_DB(contextlib.AbstractContextManager):
         return self.depth > 0
 
 
-class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricAPIMixin):
+class DB(
+    ORM_DB,
+    FrameAPIMixin,
+    TableTrackerAPIMixin,
+    PGCatalogMixin,
+    QLPMetricAPIMixin,
+):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
@@ -304,6 +307,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricA
         db = db_from_config('path_to_config')
 
     """
+
     @property
     def orbits(self):
         """
@@ -1063,7 +1067,6 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricA
         if check:
             check.delete()
 
-
     # Begin helper methods to quickly grab reference maps
     @property
     def observation_df(self):
@@ -1125,6 +1128,32 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin, QLPMetricA
             .order_by(models.Frame.cadence.asc())
         )
         return [r for r, in q.all()]
+
+    def cadences_in_sectors(self, sectors, frame_type="Raw FFI", resolve=True):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.sector.in_(sectors),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
+
+    def cadences_in_orbit(
+        self, orbit_numbers, frame_type="Raw FFI", resolve=True
+    ):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.orbit_number.in_(orbit_numbers),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
 
     def get_baked_lcs(self, ids):
         return (
@@ -1199,7 +1228,7 @@ def db_from_config(config_path=None, **engine_kwargs):
     )
 
     factory = sessionmaker(bind=engine)
-    
+
     new_db = DB(factory)
     new_db._config = config_path
     return new_db

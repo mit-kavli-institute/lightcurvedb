@@ -3,15 +3,15 @@
 # from sqlalchemy import or_
 # from lightcurvedb.cli.base import lcdbcli
 # from lightcurvedb.models.metrics import QLPProcess, QLPAlteration
-# 
-# 
+#
+#
 # @lcdbcli.group()
 # @click.pass_context
 # def metrics(ctx):
 #     """Metric commands"""
 #     pass
-# 
-# 
+#
+#
 # @metrics.command()
 # @click.pass_context
 # @click.option("--job_type", type=str)
@@ -19,13 +19,13 @@
 #     """List the defined QLPProcesses"""
 #     with ctx.obj["dbconf"] as db:
 #         q = db.query(QLPProcess)
-# 
+#
 #         if job_type:
 #             q = q.filter(QLPProcess.job_type == job_type)
 #         table = tabulate([r.to_dict for r in q.all()], headers="keys")
 #         click.echo(table)
-# 
-# 
+#
+#
 # @metrics.command()
 # @click.pass_context
 # @click.argument("job_type", type=str)
@@ -80,6 +80,6 @@
 #                 q = q.filter(or_(*conditions))
 #             else:
 #                 q = q.filter(conditions[0])
-# 
+#
 #         table = tabulate([r.to_dict for r in q.all()], headers="keys")
 #         click.echo(table)

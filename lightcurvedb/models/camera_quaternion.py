@@ -1,12 +1,8 @@
 from datetime import datetime
 
+from astropy.time import Time, formats
 from dateutil import parser
 from pyquaternion import Quaternion
-
-from astropy.time import Time, formats
-from lightcurvedb.core.base_model import QLPReference
-from lightcurvedb.core.fields import high_precision_column
-from lightcurvedb.util.constants import GPS_LEAP_SECONDS
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -16,6 +12,10 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
+
+from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.util.constants import GPS_LEAP_SECONDS
 
 PYQUAT_KEYWORDS = {
     "q1",

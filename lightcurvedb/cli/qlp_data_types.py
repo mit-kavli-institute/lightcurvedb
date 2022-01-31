@@ -1,5 +1,7 @@
 import click
+
 from lightcurvedb.models import LightcurveType
+
 from . import lcdbcli
 
 

@@ -1,22 +1,21 @@
 from __future__ import division, print_function
 
+from multiprocessing import Pool
 from sys import exit
-from tqdm import tqdm
 
 import click
+from loguru import logger
+from sqlalchemy import text
+from tqdm import tqdm
 
 import lightcurvedb.models as defined_models
-from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.cli.types import QLPModelType
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
 from lightcurvedb.core.psql_tables import PGClass
 from lightcurvedb.models.table_track import RangedPartitionTrack
-from lightcurvedb.cli.types import QLPModelType
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util import merging
-from loguru import logger
-from sqlalchemy import text
-from multiprocessing import Pool
+from lightcurvedb.util.iter import chunkify
 
 
 @lcdbcli.group()
@@ -232,31 +231,20 @@ def delete_partitions(ctx, model, pattern):
 def merge_partitions(ctx, model, minimum_length, n_threads):
     with ctx.obj["dbconf"] as db:
         working_group = (
-            db
-            .query(
-                RangedPartitionTrack
-            )
+            db.query(RangedPartitionTrack)
             .filter(
                 RangedPartitionTrack.length < minimum_length,
-                RangedPartitionTrack.same_model(model)
+                RangedPartitionTrack.same_model(model),
             )
-            .order_by(
-                RangedPartitionTrack.min_range
-            )
+            .order_by(RangedPartitionTrack.min_range)
         )
 
         pairs = []
         for left, *remainder in chunkify(working_group, 2):
             if remainder:
-                pairs.append(
-                    merging.WorkingPair(
-                        left.oid, remainder[0].oid
-                    )
-                )
+                pairs.append(merging.WorkingPair(left.oid, remainder[0].oid))
             else:
-                click.echo(
-                    f"{left.pgclass.name} is a child node"
-                )
+                click.echo(f"{left.pgclass.name} is a child node")
 
     click.echo(f"Will process {len(pairs)} pairs")
     with Pool(n_threads) as pool:
@@ -274,19 +262,16 @@ def merge_partitions(ctx, model, minimum_length, n_threads):
 def attach_orphaned_partitions(ctx, model):
     with ctx.obj["dbconf"] as db:
         working_group = (
-            db
-            .query(
-                RangedPartitionTrack
-            )
-            .filter(
-                RangedPartitionTrack.same_model(model)
-            )
+            db.query(RangedPartitionTrack)
+            .filter(RangedPartitionTrack.same_model(model))
             .all()
         )
         orphans = []
         for track in tqdm(working_group):
             if track.pgclass is None:
-                logger.error(f"BAD TRACK {track.min_range} to {track.max_range}")
+                logger.error(
+                    f"BAD TRACK {track.min_range} to {track.max_range}"
+                )
                 continue
             if len(track.pgclass.parent) == 0:
                 logger.warning(f"{track.pgclass.relname} is orphaned!")

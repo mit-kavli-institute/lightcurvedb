@@ -4,12 +4,7 @@ from multiprocessing import Pool
 
 import click
 import numpy as np
-
 from astropy.io import fits
-from lightcurvedb.core.base_model import QLPReference
-from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
-from lightcurvedb.core.fields import high_precision_column
-from lightcurvedb.models import CameraQuaternion, Frame, Observation
 from sqlalchemy import (
     Boolean,
     Column,
@@ -22,6 +17,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
+
+from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
+from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.models import CameraQuaternion, Frame, Observation
 
 
 def _extr_fits_header(f):

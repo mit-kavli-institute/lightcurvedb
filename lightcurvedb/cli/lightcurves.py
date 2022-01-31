@@ -1,19 +1,19 @@
 from __future__ import division, print_function
 
-import click
 import re
+
+import click
 from tabulate import tabulate
-from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList
-from lightcurvedb.models import Lightcurve
 from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.jobs import IngestionPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
+from lightcurvedb.models import Lightcurve
 
 
 def gaps_in_ids(id_array):
@@ -47,7 +47,9 @@ def lightcurve(ctx):
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
 @click.option("--full-diff/--only-listed-orbits", is_flag=True, default=True)
 @click.option("--max-job-len", type=click.IntRange(min=1), default=1000)
-def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_job_len):
+def ingest_h5(
+    ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_job_len
+):
     with ctx.obj["dbconf"] as db, IngestionCache() as cache:
         plan = IngestionPlan(
             db,
@@ -55,7 +57,7 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
             full_diff=full_diff,
             orbits=orbits,
             cameras=cameras,
-            ccds=ccds
+            ccds=ccds,
         )
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
@@ -65,8 +67,9 @@ def ingest_h5(ctx, orbits, n_processes, cameras, ccds, fillgaps, full_diff, max_
     ingest_merge_jobs(
         ctx.obj["dbconf"],
         jobs,
-        n_processes, not ctx.obj["dryrun"],
-        log_level=ctx.obj["log_level"]
+        n_processes,
+        not ctx.obj["dryrun"],
+        log_level=ctx.obj["log_level"],
     )
     click.echo("Done!")
 

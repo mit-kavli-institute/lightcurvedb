@@ -1,6 +1,9 @@
-from hypothesis import strategies as st, given
-from lightcurvedb.cli.utils import slow_typecheck
 from math import isnan
+
+from hypothesis import given
+from hypothesis import strategies as st
+
+from lightcurvedb.cli.utils import slow_typecheck
 
 
 @given(

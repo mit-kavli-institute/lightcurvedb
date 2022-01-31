@@ -1,41 +1,29 @@
-from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
-from lightcurvedb.models.lightcurve import Lightcurve
+from click import Choice
 from sqlalchemy import (
     BigInteger,
-    SmallInteger,
     Boolean,
     Column,
-    Float,
     ForeignKey,
     Integer,
-    String,
+    SmallInteger,
     UniqueConstraint,
 )
-from click import Choice
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, insert
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
+
+from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
 
 
 class BLSResultLookup(QLPReference):
-    """
-    """
+    """ """
+
     __tablename__ = "bls_result_lookups"
-    __table_args__ = (
-        UniqueConstraint(
-            "bls_id",
-            "best_detrending_method_id"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("bls_id", "best_detrending_method_id"),)
 
     id = Column(BigInteger, primary_key=True)
     bls_id = Column(ForeignKey("bls.id"))
-    best_detrending_method_id = Column(
-        ForeignKey(
-            "best_orbit_lightcurves.id"
-        )
-    )
+    best_detrending_method_id = Column(ForeignKey("best_orbit_lightcurves.id"))
 
 
 class BLS(QLPDataProduct):
@@ -46,7 +34,11 @@ class BLS(QLPDataProduct):
     sector = Column(SmallInteger, index=True)
     tic_id = Column(BigInteger, index=True)
 
-    tce_n = Column(SmallInteger, index=Index(name="tce_n_gin", postgresql_using="gin"), nullable=False)
+    tce_n = Column(
+        SmallInteger,
+        index=Index(name="tce_n_gin", postgresql_using="gin"),
+        nullable=False,
+    )
     runtime_parameters = Column(
         JSONB,
         nullable=False,

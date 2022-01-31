@@ -1,9 +1,8 @@
-from hypothesis import strategies as st, given
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, rule, consumes
-from lightcurvedb.models import Lightcurve
-from .factories import lightpoint, lightcurve
-import numpy as np
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, consumes, rule
 
+from .factories import lightcurve, lightpoint
 
 ASSIGNABLE_ATTRS = {
     "barycentric_julian_date",
@@ -16,7 +15,8 @@ ASSIGNABLE_ATTRS = {
 }
 
 
-assignable_attr = lambda: st.one_of(st.just(col) for col in ASSIGNABLE_ATTRS)
+def assignable_attr():
+    return st.one_of(st.just(col) for col in ASSIGNABLE_ATTRS)
 
 
 class CollectionComparison(RuleBasedStateMachine):

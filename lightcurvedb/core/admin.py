@@ -2,6 +2,7 @@
 This module creates admin level POSTGRESQL attributes
 """
 from sqlalchemy import MetaData
+
 from lightcurvedb.util.decorators import suppress_warnings
 
 PSQL_META = None

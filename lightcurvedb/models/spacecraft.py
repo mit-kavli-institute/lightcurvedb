@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Float, DateTime
+from sqlalchemy import Column, DateTime, Float
 from sqlalchemy.ext.hybrid import hybrid_property
+
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
 

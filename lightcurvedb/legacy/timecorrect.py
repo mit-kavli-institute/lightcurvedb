@@ -1,12 +1,15 @@
-import pandas as pd
-import numpy as np
-from scipy.interpolate import interp1d
-from astropy import time, constants as const
 from functools import lru_cache
-from lightcurvedb.models import Frame, SpacecraftEphemris
+
+import numpy as np
+import pandas as pd
+from astropy import constants as const
+from astropy import time
+from loguru import logger
+from scipy.interpolate import interp1d
+
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import TIC8Parameters
-from loguru import logger
+from lightcurvedb.models import Frame, SpacecraftEphemris
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
@@ -15,8 +18,14 @@ BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
 @lru_cache(maxsize=1024)
 def get_tic_parameters(tic_id, *parameters):
     with IngestionCache() as cache:
-        cols = tuple(getattr(TIC8Parameters, parameter) for parameter in parameters)
-        result = cache.query(*cols).filter(TIC8Parameters.tic_id == tic_id).one_or_none()
+        cols = tuple(
+            getattr(TIC8Parameters, parameter) for parameter in parameters
+        )
+        result = (
+            cache.query(*cols)
+            .filter(TIC8Parameters.tic_id == tic_id)
+            .one_or_none()
+        )
         if result is None:
             result = tuple(None for _ in parameters)
     return result
@@ -84,7 +93,9 @@ class TimeCorrector:
         )
 
     def get_tic_params(self, tic):
-        ra, dec, tmag = get_tic_parameters(tic, "right_ascension", "declination", "tmag")
+        ra, dec, tmag = get_tic_parameters(
+            tic, "right_ascension", "declination", "tmag"
+        )
         return {
             "ra": ra,
             "dec": dec,
@@ -194,9 +205,7 @@ class StaticTimeCorrector(TimeCorrector):
             logger.error(
                 "Star Vector: {0}\n"
                 "Orbit Vector: {1}\n"
-                "tjd: {2}\n".format(
-                    star_vector, orbit_vector, tjd_time
-                )
+                "tjd: {2}\n".format(star_vector, orbit_vector, tjd_time)
             )
             raise
         return bjd.jd

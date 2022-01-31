@@ -1,6 +1,7 @@
 from __future__ import division, print_function
-from collections import defaultdict
+
 import itertools
+from collections import defaultdict
 
 
 def chunkify(iterable, chunksize, fillvalue=None):

@@ -1,11 +1,11 @@
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
-from lightcurvedb import db_from_config
-from lightcurvedb.models.frame import Frame, FRAME_DTYPE
-from lightcurvedb.models.orbit import Orbit, ORBIT_DTYPE
 from sqlalchemy.sql.expression import func
 
+from lightcurvedb import db_from_config
+from lightcurvedb.models.frame import FRAME_DTYPE, Frame
+from lightcurvedb.models.orbit import ORBIT_DTYPE, Orbit
 
 LEGACY_FRAME_TYPE_ID = "Raw FFI"
 

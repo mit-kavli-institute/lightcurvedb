@@ -3,8 +3,8 @@ This module defines utility decorators.
 """
 
 from functools import wraps
-from warnings import catch_warnings, simplefilter
 from time import time
+from warnings import catch_warnings, simplefilter
 
 
 def cast_to(type_):

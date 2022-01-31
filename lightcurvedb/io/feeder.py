@@ -3,16 +3,15 @@ This module describes multiprocessing queues in order to quickly feed
 IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
-from lightcurvedb import db_from_config, Lightcurve
-from lightcurvedb.io.procedures.procedure import (
-    get_bestaperture_data,
-    get_lightcurve_data,
-)
-from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
-from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
-from multiprocessing import Process, Manager
-from sqlalchemy.exc import InternalError
+from multiprocessing import Manager, Process
+
 import numpy as np
+from sqlalchemy.exc import InternalError
+
+from lightcurvedb import Lightcurve, db_from_config
+from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
+from lightcurvedb.io.procedures.procedure import get_lightcurve_data
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
 class LightcurveFeeder(Process):
@@ -67,14 +66,12 @@ class LightcurveFeeder(Process):
                     result["error"] = "No lightpoints found, empty lightcurve"
                 except PrimaryIdentNotFound:
                     result = {
-                        "error": "No lightcurve found for identifier {0}".format(id_),
-                        "id": id_
+                        "error": f"No lightcurve found for identifier {id_}",
+                        "id": id_,
                     }
                 except Exception as e:
                     # Catch all, clean queues and exit
-                    result = {
-                        "error": "Encountered terminating error: {0}".format(e)
-                    }
+                    result = {"error": f"Encountered terminating error: {e}"}
                     break
                 finally:
                     self.result_queue.put(result)
@@ -183,7 +180,10 @@ def yield_best_aperture_data(
     # Convert tic_ids to list of lightcurve ids
     ids = []
     with db_from_config(db_config_override) as db:
-        q = db.lightcurves_from_best_aperture(resolve=False).filter(Lightcurve.tic_id.in_(tic_ids), Lightcurve.lightcurve_type_id == "KSPMagnitude")
+        q = db.lightcurves_from_best_aperture(resolve=False).filter(
+            Lightcurve.tic_id.in_(tic_ids),
+            Lightcurve.lightcurve_type_id == "KSPMagnitude",
+        )
         for lc in q.all():
             ids.append(lc.id)
 

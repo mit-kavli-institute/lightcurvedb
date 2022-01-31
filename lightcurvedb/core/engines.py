@@ -3,20 +3,17 @@ from __future__ import division, print_function
 import os
 
 try:
-    from configparser import ConfigParser, NoSectionError
+    from configparser import ConfigParser
 except ImportError:
     # Python 2?
-    from ConfigParser import ConfigParser, NoSectionError
+    from ConfigParser import ConfigParser
 
+from psycopg2 import connect
+from sqlalchemy import create_engine, pool
+from sqlalchemy.event import listens_for
+from sqlalchemy.exc import DisconnectionError
 
 from lightcurvedb.util.constants import __DEFAULT_PATH__
-
-from sqlalchemy import create_engine
-from sqlalchemy.event import listens_for
-from sqlalchemy.engine.url import URL
-from sqlalchemy.exc import DisconnectionError
-from sqlalchemy import pool
-from psycopg2 import connect
 
 
 def __config_to_kwargs__(path):
@@ -84,6 +81,7 @@ def psycopg_connection(uri_override=None):
         port=kwargs["port"],
     )
 
+
 ENGINE_CONF_REQ_ARGS = {
     "username": "username",
     "password": "password",
@@ -99,14 +97,16 @@ ENGINE_CONF_OPT_ARGS = {
 OPT_DEFAULTS = {
     "dialect": "postgresql+psycopg2",
     "host": "localhost",
-    "port": 5432
+    "port": 5432,
 }
 
+
 def engine_from_config(
-        config_path,
-        config_group="Credentials",
-        uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
-        **engine_overrides):
+    config_path,
+    config_group="Credentials",
+    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
+    **engine_overrides
+):
     """
     Create an SQLAlchemy engine from the configuration path.
     """
@@ -124,10 +124,10 @@ def engine_from_config(
         kwargs[kwarg] = section.get(config_path, OPT_DEFAULTS[kwarg])
 
     if "poolclass" not in engine_overrides:
-        engine_overrides["poolclass"] = getattr(pool, kwargs.pop("poolclass", "NullPool"))
+        engine_overrides["poolclass"] = getattr(
+            pool, kwargs.pop("poolclass", "NullPool")
+        )
 
-    url = (
-        uri_template.format(**kwargs)
-    )
+    url = uri_template.format(**kwargs)
     engine = __init_engine__(url, **engine_overrides)
     return __register_process_guards__(engine)

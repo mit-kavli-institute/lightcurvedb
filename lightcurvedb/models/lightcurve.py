@@ -6,15 +6,6 @@ and directly related models
 """
 
 import numpy as np
-
-from lightcurvedb.core.base_model import (
-    QLPDataProduct,
-    QLPDataSubType,
-    QLPModel,
-)
-from lightcurvedb.core.collection import CadenceTracked
-from lightcurvedb.models import Frame, Orbit, Observation
-from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -23,15 +14,22 @@ from sqlalchemy import (
     Sequence,
     SmallInteger,
     func,
-    select,
     inspect,
 )
-from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+
+from lightcurvedb.core.base_model import (
+    QLPDataProduct,
+    QLPDataSubType,
+    QLPModel,
+)
+from lightcurvedb.core.collection import CadenceTracked
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
+
 
 def adapt_as_is_type(type_class):
     def adaptor(type_instance):
@@ -48,22 +46,12 @@ adapt_as_is_type(np.float64)
 
 def lp_ordered_array(table, spec):
     col = getattr(table, spec)
-    return func.array_agg(
-        aggregate_order_by(
-            col,
-            getattr(table, "cadence")
-        )
-    )
+    return func.array_agg(aggregate_order_by(col, getattr(table, "cadence")))
+
 
 def lp_structured_array(q, columns):
-    dtypes = [
-        (col, LIGHTPOINT_NP_DTYPES[col])
-        for col in columns
-    ]
-    return np.array(
-        q.all(),
-        dtype=dtypes
-    )
+    dtypes = [(col, LIGHTPOINT_NP_DTYPES[col]) for col in columns]
+    return np.array(q.all(), dtype=dtypes)
 
 
 class LightcurveType(QLPDataSubType):
@@ -238,7 +226,7 @@ class Lightcurve(QLPDataProduct):
     )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
-    observations = relationship(Observation, back_populates="lightcurve")
+    observations = relationship("Observation", back_populates="lightcurve")
 
     frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
@@ -420,19 +408,14 @@ class Lightcurve(QLPDataProduct):
             "error",
             "x_centroid",
             "y_centroid",
-            "quality_flag"
+            "quality_flag",
         )
 
         if self._lightpoint_cache is None:
             session = inspect(self).session
             q = (
-                session
-                .query(
-                    *(getattr(Lightpoint, col) for col in cols)
-                )
-                .filter(
-                    Lightpoint.lightcurve_id.in_((self.id, -1))
-                )
+                session.query(*(getattr(Lightpoint, col) for col in cols))
+                .filter(Lightpoint.lightcurve_id.in_((self.id, -1)))
                 .distinct(Lightpoint.lightcurve_id, Lightpoint.cadence)
                 .order_by(Lightpoint.cadence)
             )
@@ -447,45 +430,10 @@ class Lightcurve(QLPDataProduct):
             Lightpoint.cadence.between(q.c.min_cadence, q.c.max_cadence)
         )
 
-    def lightpoints_by_orbit(self, orbits, *frame_filters):
-        if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
-        q = (
-            select(
-                [
-                    func.min(Frame.cadence).label("min_cadence"),
-                    func.max(Frame.cadence).label("max_cadence"),
-                ]
-            )
-            .join(Frame.orbit)
-            .where(Orbit.orbit_number.in_(orbits), *frame_filters)
-            .select_from(Frame)
-        )
-
-        return self.lightpoints_by_cadence_q(q)
-
-    def lightpoints_by_sector(self, sectors, *frame_filters):
-        if not frame_filters:
-            frame_filters = (Frame.frame_type_id == "Raw FFI",)
-        q = (
-            select(
-                [
-                    func.min(Frame.cadence).label("min_cadence"),
-                    func.max(Frame.cadence).label("max_cadence"),
-                ]
-            )
-            .join(Frame.orbit)
-            .where(Orbit.sector.in_(sectors), *frame_filters)
-            .select_from(Frame)
-        )
-
-        return self.lightpoints_by_cadence_q(q)
-
     def update(self):
         session = inspect(self).session
         (
-            session
-            .query(Lightpoint)
+            session.query(Lightpoint)
             .filter_by(lightcurve_id=self.id)
             .delete(synchronize_session=False)
         )
@@ -496,12 +444,12 @@ class Lightcurve(QLPDataProduct):
             "error",
             "x_centroid",
             "y_centroid",
-            "quality_flag"
+            "quality_flag",
         )
 
         data = []
         for row in self.lightpoints:
             result = dict(zip(cols, row))
-            data.append(row)
+            data.append(result)
 
         session.bulk_insert_mappings(Lightpoint, data)

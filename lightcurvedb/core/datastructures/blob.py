@@ -1,8 +1,10 @@
-import struct
 import os
-from sqlalchemy.sql import sqltypes as sql_t
-from sqlalchemy.dialects.postgresql import base as psql_t
+import struct
 from io import BytesIO
+
+from sqlalchemy.dialects.postgresql import base as psql_t
+from sqlalchemy.sql import sqltypes as sql_t
+
 from lightcurvedb.util.logger import lcdb_logger as logger
 
 

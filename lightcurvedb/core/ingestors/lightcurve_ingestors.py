@@ -1,17 +1,16 @@
-import os
 import re
 import warnings
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from lightcurvedb.models import Lightcurve, Frame
+
 from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.temp_table import QualityFlags
-from functools import lru_cache
+from lightcurvedb.models import Frame, Lightcurve
 from lightcurvedb.util.decorators import track_runtime
-
 
 LC_ERROR_TYPES = {"RawMagnitude"}
 
@@ -51,12 +50,16 @@ def get_components(path):
 @lru_cache(maxsize=32)
 def get_qflags(min_cadence, max_cadence, camera, ccd):
     with IngestionCache() as cache:
-        q = cache.query(QualityFlags.cadence, QualityFlags.quality_flag).filter(
+        q = cache.query(
+            QualityFlags.cadence, QualityFlags.quality_flag
+        ).filter(
             QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
             QualityFlags.camera == camera,
             QualityFlags.ccd == ccd,
         )
-        return pd.read_sql(q.statement, cache.session.bind, index_col=["cadence"])
+        return pd.read_sql(
+            q.statement, cache.session.bind, index_col=["cadence"]
+        )
 
 
 @lru_cache(maxsize=32)
@@ -127,7 +130,9 @@ def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
     cadences = lc["Cadence"][()].astype(int)
 
     arr = np.empty(len(cadences), dtype=lp_dtype)
-    arr["lightcurve_id"] = np.full_like(cadences, lightcurve_id, dtype=np.dtype("u8"))
+    arr["lightcurve_id"] = np.full_like(
+        cadences, lightcurve_id, dtype=np.dtype("u8")
+    )
     arr["cadence"] = cadences
     arr["barycentric_julian_date"] = lc["BJD"][()]
 
@@ -155,8 +160,7 @@ def job_to_numpy(single_merge_job):
         single_merge_job.lightcurve_id,
         single_merge_job.aperture,
         single_merge_job.lightcurve_type,
-        single_merge_job.file_path
-
+        single_merge_job.file_path,
     )
 
 

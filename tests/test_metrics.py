@@ -1,7 +1,9 @@
-from hypothesis import strategies as st, given, note
+from hypothesis import given, note
+from hypothesis import strategies as st
+from packaging.version import parse
+
 from lightcurvedb import Lightcurve, __version__
-from lightcurvedb.models.metrics import QLPProcess, QLPAlteration
-from packaging.version import Version, parse
+from lightcurvedb.models.metrics import QLPAlteration, QLPProcess
 
 
 @given(st.integers(), st.integers(), st.datetimes(), st.datetimes())

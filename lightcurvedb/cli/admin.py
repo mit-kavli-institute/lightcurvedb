@@ -1,28 +1,26 @@
-import click
 import os
-from collections import defaultdict
-from tqdm import tqdm
-from glob import glob
 from functools import partial
-from sqlalchemy import text, and_, func
-from tabulate import tabulate
+from glob import glob
 from multiprocessing import Pool
 
+import click
+from sqlalchemy import and_, func, text
+from tabulate import tabulate
+from tqdm import tqdm
+
 from lightcurvedb import db
-from lightcurvedb.models import (
-    Observation,
-    Orbit,
-    Frame,
-    Lightpoint,
-    Lightcurve,
-)
+from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import CommaList, ModelField
 from lightcurvedb.cli.utils import tabulate_query
-from lightcurvedb.core import admin as psql_admin
 from lightcurvedb.core.psql_tables import PGStatActivity
+from lightcurvedb.models import (
+    Frame,
+    Lightcurve,
+    Lightpoint,
+    Observation,
+    Orbit,
+)
 from lightcurvedb.util.iter import chunkify
-
-from . import lcdbcli
 
 
 def get_mask(scratch_dir="/scratch/tmp/lcdb_ingestion"):
@@ -42,7 +40,6 @@ def recover(maximum_missing, lightcurve_ids):
     to_ingest = []
     fine = []
     with db:
-        orbit_map = dict(db.query(Orbit.id, Orbit.orbit_number))
         for id_ in sorted(lightcurve_ids):
             existing_cadence_q = (
                 db.query(Lightpoint.cadence).filter_by(lightcurve_id=id_)
@@ -107,7 +104,6 @@ def procedures(ctx):
     """
     Base SQL Procedure Commands
     """
-    pass
 
 
 @procedures.command()
@@ -296,34 +292,24 @@ def get_info(ctx, pids, columns):
 @click.argument("pids", type=int, nargs=-1)
 def terminate(ctx, pids):
     with ctx.obj["dbconf"] as db:
-        queries = db.query(PGStatActivity.query).filter(PGStatActivity.pid.in_(pids))
+        queries = db.query(PGStatActivity.query).filter(
+            PGStatActivity.pid.in_(pids)
+        )
 
         if queries.count() == 0:
-            click.echo(
-                "No queries with pids {pids} exist"
-            )
+            click.echo("No queries with pids {pids} exist")
             return 0
 
-        click.echo(
-            click.style(
-                "Will terminate..."
-            )
-        )
-        for query, in queries:
-            click.echo(
-                f"\t{query}"
-            )
+        click.echo(click.style("Will terminate..."))
+        for (query,) in queries:
+            click.echo(f"\t{query}")
         prompt_msg = click.style(
-            "TERMINATE THESE QUERIES?",
-            bg="red",
-            blink=True
+            "TERMINATE THESE QUERIES?", bg="red", blink=True
         )
 
-        click.confirm(
-            prompt_msg,
-            abort=True,
-            default=False
-        )
+        click.confirm(prompt_msg, abort=True, default=False)
 
-        db.query(PGStatActivity.terminate).filter(PGStatActivity.pid.in_(pids)).all()
+        db.query(PGStatActivity.terminate).filter(
+            PGStatActivity.pid.in_(pids)
+        ).all()
         click.echo("Terminated")

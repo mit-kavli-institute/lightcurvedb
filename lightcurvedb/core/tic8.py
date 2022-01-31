@@ -1,18 +1,21 @@
 import os
 import sys
 import warnings
+
+from sqlalchemy import Table
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SAWarning
-from sqlalchemy import create_engine, Table
-from lightcurvedb.core.engines import engine_from_config
-from lightcurvedb.core.connection import ORM_DB
-from lightcurvedb.util.constants import __DEFAULT_PATH__
 
+from lightcurvedb.core.connection import ORM_DB
+from lightcurvedb.core.engines import engine_from_config
+from lightcurvedb.util.constants import __DEFAULT_PATH__, TIC8_TEMPLATE
 
 
 class TIC8_DB(ORM_DB):
-    def __init__(self, config_path=None, config_section=None, greedy_reflect=True):
+    def __init__(
+        self, config_path=None, config_section=None, greedy_reflect=True
+    ):
         """
         Initializes a connection to the TIC8 Database.
 
@@ -28,7 +31,9 @@ class TIC8_DB(ORM_DB):
             the remote schemas to construct Python-side objects. If false
             this will occur with the first query.
         """
-        path = os.path.expanduser(config_path if config_path else __DEFAULT_PATH__)
+        path = os.path.expanduser(
+            config_path if config_path else __DEFAULT_PATH__
+        )
         section = config_section if config_section else "TIC8 Credentials"
         try:
             with warnings.catch_warnings():
@@ -37,7 +42,7 @@ class TIC8_DB(ORM_DB):
                 engine = engine_from_config(
                     path,
                     config_group=section,
-                    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}"
+                    uri_template=TIC8_TEMPLATE,
                 )
                 self.engine = engine
                 self._sessionmaker = sessionmaker(autoflush=True)
@@ -53,7 +58,7 @@ class TIC8_DB(ORM_DB):
                 (
                     "{0} was not found, "
                     "please check your configuration environment\n".format(
-                        CONFIG_PATH
+                        config_path
                     )
                 )
             )
@@ -66,7 +71,10 @@ class TIC8_DB(ORM_DB):
         BASE.prepare(self.engine, reflect=True)
         self.TIC8_Base = BASE
         self.data_class = Table(
-            "ticentries", BASE.metadata, autoload=True, autoload_with=self.engine
+            "ticentries",
+            BASE.metadata,
+            autoload=True,
+            autoload_with=self.engine,
         )
 
     @property

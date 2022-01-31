@@ -1,9 +1,9 @@
+from numpy import isnan
+from psycopg2.extensions import AsIs, Float, register_adapter
 from sqlalchemy import Column
 from sqlalchemy.dialects import postgresql as psql
-from sqlalchemy.schema import CreateColumn
 from sqlalchemy.ext.compiler import compiles
-from psycopg2.extensions import register_adapter, AsIs, Float
-from numpy import isnan
+from sqlalchemy.schema import CreateColumn
 
 
 def high_precision_column(precision=None, asdecimal=False, **column_args):
