@@ -3,7 +3,7 @@ from itertools import product
 
 import pandas as pd
 from click import echo
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Bundle
 from tqdm import tqdm
 
@@ -127,12 +127,7 @@ class IngestionPlan(object):
 
         # Construct relevant TIC ID query from file observations in cache
         cache_filters = []
-        obs_subquery = (
-            db
-            .query(
-                Observation.lightcurve_id,
-            )
-        )
+        obs_lightcurve_subquery = select(Observation.lightcurve_id)
         current_obs_filters = []
         if orbits:
             cache_filters.append(FileObservation.orbit_number.in_(orbits))
@@ -142,9 +137,8 @@ class IngestionPlan(object):
                     Orbit.orbit_number.in_(orbits)
                 )
             ]
-            obs_subquery = (
-                obs_subquery
-                .filter(Observation.orbit_id.in_(o_ids))
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.orbit_id.in_(o_ids))
             )
         else:
             o_ids = []
@@ -153,18 +147,16 @@ class IngestionPlan(object):
             cache_filters = apply_physical_filter(
                 cache_filters, FileObservation.camera, cameras
             )
-            obs_subquery = (
-                obs_subquery
-                .filter(Observation.camera.in_(cameras))
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.camera.in_(cameras))
             )
 
         if ccds:
             cache_filters = apply_physical_filter(
                 cache_filters, FileObservation.ccd, ccds
             )
-            obs_subquery = (
-                obs_subquery
-                .filter(Observation.camera.in_(ccds))
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.ccd.in_(ccds))
             )
 
         file_obs_columns = Bundle(
@@ -183,11 +175,13 @@ class IngestionPlan(object):
                     tic_mask, FileObservation.tic_id, base_q
                 )
             else:
+                subquery_tic_q = (
+                    select(FileObservation.tic_id)
+                    .where(*cache_filters)
+                )
                 cache_filters = (
                     FileObservation.tic_id.in_(
-                        cache.query(FileObservation.tic_id)
-                        .filter(*cache_filters)
-                        .subquery()
+                        subquery_tic_q
                     ),
                 )
                 file_observations = base_q.filter(*cache_filters)
@@ -230,7 +224,7 @@ class IngestionPlan(object):
                 Observation.orbit_id
             )
             .filter(
-                Observation.lightcurve_id.in_(obs_subquery.subquery())
+                Observation.lightcurve_id.in_(obs_lightcurve_subquery)
             )
         )
         seen_obs = set(obs_q.all())

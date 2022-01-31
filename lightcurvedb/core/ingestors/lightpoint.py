@@ -131,14 +131,14 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     mid_tjd_map = None
     orbit_map = None
     stage_id = None
-    process_id = None
+    process = None
     current_sample = 0
     n_samples = 0
     seen_cache = set()
     seen_oids = set()
     db = None
     runtime_parameters = {}
-    target_table = None
+    target_table = "lightpoints"
     buffer_order = ["lightpoints", "observations"]
 
     def __init__(self, config, name, job_queue, stage_id):
@@ -235,24 +235,20 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.seen_cache.add((lightcurve_id, orbit_number))
 
     def process_job(self, job):
-        with self.db as db:
-            oid = job.partition_oid
-            acquire_req = []
-            release_req = []
-            with scoped_block(db, oid, acquire_req, release_req):
-                pgclass = db.query(PGClass).get(oid)
-                self.target_table = f"{pgclass.namespace.name}.{pgclass.name}"
-                single_merge_jobs = sorted(
-                    filter(
-                        lambda job: (job.lightcurve_id, job.orbit_number)
-                        not in self.seen_cache,
-                        job.single_merge_jobs,
-                    ),
-                    key=lambda job: (job.lightcurve_id, job.orbit_number),
-                )
+        oid = job.partition_oid
+        acquire_req = []
+        release_req = []
+        single_merge_jobs = sorted(
+            filter(
+                lambda job: (job.lightcurve_id, job.orbit_number)
+                not in self.seen_cache,
+                job.single_merge_jobs,
+            ),
+            key=lambda job: (job.lightcurve_id, job.orbit_number),
+        )
 
-                for single_merge_job in single_merge_jobs:
-                    self.process_single_merge_job(single_merge_job)
+        for single_merge_job in single_merge_jobs:
+            self.process_single_merge_job(single_merge_job)
 
         n_jobs = len(job.single_merge_jobs)
         self.log(
@@ -329,15 +325,23 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         end = datetime.now()
 
-        assert db.query(QLPProcess).filter(QLPProcess.id == self.process_id).count() > 0
-        metric = QLPOperation(
-            process_id=self.process_id,
-            time_start=start,
-            time_end=end,
-            job_size=lp_size,
-            unit="lightpoint",
-        )
-        db.add(metric)
+        self.log(f"Sending metric to {self.process}")
+        process = db.query(QLPProcess).get(self.process.id)
+
+        if process is not None:
+            metric = QLPOperation(
+                process_id=self.process.id,
+                time_start=start,
+                time_end=end,
+                job_size=lp_size,
+                unit="lightpoint",
+            )
+            db.add(metric)
+        else:
+            self.log(
+                f"No process id {self.process.id} exists! Skipping telemetry recording",
+                level="warning"
+            )
 
     def flush_observations(self, db):
         obs = self.buffers.get("observations", [])
@@ -367,12 +371,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log(
                 f"Updating runtime parameters to {process.runtime_parameters}"
             )
-            if self.process_id is not None:
+            if self.process is not None:
                 q = (
                     db
                     .query(QLPProcess)
                     .filter(
-                        QLPProcess.id == self.process_id
+                        QLPProcess.id == self.process.id
                     )
                 )
                 q.update(
@@ -380,10 +384,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                     synchronize_session=False
                 )
 
-            db.session.refresh(process)
             db.commit()
-            self.log(f"Added {process}")
-            self.process_id = process.id
+            self.process = process
+            self.log(f"Added {self.process}")
             self.runtime_parameters = process.runtime_parameters
 
         self.n_samples = 0
@@ -391,7 +394,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     @property
     def should_flush(self):
         return (
-            len(self.buffers["lightpoints"])
+            sum(len(array) for array in self.buffers["lightpoints"])
             >= self.runtime_parameters["lp_buffer_threshold"]
         )
 
