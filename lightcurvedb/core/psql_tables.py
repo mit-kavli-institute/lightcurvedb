@@ -381,11 +381,14 @@ class PGIndex(PGCatalogModel):
     indexdef = Column(Text)
 
     index_on = relationship(
-        "PGClass", foreign_keys=[tablename], backref="index_definitions"
+        "PGClass",
+        foreign_keys=[tablename],
+        back_populates="index_definitions"
     )
     index_class = relationship(
         "PGClass",
         foreign_keys=[indexname],
+        back_populates="index_classes"
     )
 
     @hybrid_property
@@ -443,6 +446,10 @@ class PGClass(PGCatalogModel):
     type_ = relationship(PGType, backref="classes")
     owner = relationship(PGAuthID, backref="classes")
     namespace = relationship("PGNamespace", backref="pg_classes")
+
+    index_definitions = relationship("PGIndex", foreign_keys=[PGIndex.tablename], back_populates="index_on")
+    index_classes = relationship("PGIndex", foreign_keys=[PGIndex.indexname], back_populates="index_class")
+
     parent = relationship(
         "PGClass",
         secondary=PGInherits.__table__,
@@ -451,14 +458,7 @@ class PGClass(PGCatalogModel):
         single_parent=True,
         backref=backref("children"),
     )
-    index_parent = relationship(
-        "PGClass",
-        secondary=PGIndex.__table__,
-        primaryjoin=(relname == PGIndex.indexname),
-        secondaryjoin=(relname == PGIndex.tablename),
-        single_parent=True,
-        backref=backref("indexes"),
-    )
+
     buffers = relationship("PGBuffer", back_populates="pg_class")
 
     @classmethod
