@@ -6,7 +6,8 @@ import warnings
 
 import numpy as np
 from pandas import read_sql as pd_read_sql
-from sqlalchemy import and_, func
+from loguru import logger
+from sqlalchemy import and_, func, exc
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
@@ -64,16 +65,28 @@ class ORM_DB(contextlib.AbstractContextManager):
         ORM_DB
             Returns itself in an open state.
         """
-        if self.depth == 0:
-            session = self._sessionmaker()
-            self._session_stack.append(session)
-        elif 0 < self.depth < self._max_depth:
-            nested_session = self.session.begin_nested()
-            self._session_stack.append(nested_session)
-        else:
-            raise RuntimeError("Database nested too far! Cowardly refusing")
+        tries = 10
+        wait = 1
+        while tries > 1:
+            try:
+                if self.depth == 0:
+                    session = self._sessionmaker()
+                    self._session_stack.append(session)
+                elif 0 < self.depth < self._max_depth:
+                    nested_session = self.session.begin_nested()
+                    self._session_stack.append(nested_session)
+                else:
+                    raise RuntimeError("Database nested too far! Cowardly refusing")
+                return self
+            except exc.OperationalError as e:
+                logger.warning(
+                    f"Could not connect: {e}, waiting for {wait}s"
+                )
+                sleep(wait)
+                wait *= 2
+                tries -= 1
 
-        return self
+        raise RuntimeError("Could successfully connect to database")
 
     def close(self):
         """
@@ -360,7 +373,7 @@ class DB(
             .filter(models.Orbit.orbit_number.in_(orbit_numbers))
             .order_by(models.Orbit.orbit_number)
         )
-        return np.array(orbits.all(), dtype=ORBIT_DTYPE)
+        return np.array(list(map(tuple, orbits))), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(
         self,
@@ -487,7 +500,7 @@ class DB(
             .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, values)), dtype=FRAME_COMP_DTYPE)
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
         """
@@ -526,7 +539,7 @@ class DB(
             .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, values)), dtype=FRAME_COMP_DTYPE)
 
     def query_all_orbit_ids(self):
         """
