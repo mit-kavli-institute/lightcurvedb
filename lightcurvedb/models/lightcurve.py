@@ -51,7 +51,7 @@ def lp_ordered_array(table, spec):
 
 def lp_structured_array(q, columns):
     dtypes = [(col, LIGHTPOINT_NP_DTYPES[col]) for col in columns]
-    return np.array(q.all(), dtype=dtypes)
+    return np.array(list(map(tuple, q)), dtype=dtypes)
 
 
 class LightcurveType(QLPDataSubType):
