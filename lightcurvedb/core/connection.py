@@ -373,7 +373,7 @@ class DB(
             .filter(models.Orbit.orbit_number.in_(orbit_numbers))
             .order_by(models.Orbit.orbit_number)
         )
-        return np.array(list(map(tuple, orbits))), dtype=ORBIT_DTYPE)
+        return np.array(list(map(tuple, orbits)), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(
         self,
