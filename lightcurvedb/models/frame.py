@@ -166,6 +166,10 @@ class Frame(QLPDataProduct):
             print(repr(header))
             raise
 
+    @property
+    def data(self):
+        return fits.open(self.file_path)[0].data
+
 
 class FrameAPIMixin(object):
     """
