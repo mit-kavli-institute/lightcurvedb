@@ -361,6 +361,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     def set_new_parameters(self):
         with self.db as db:
+            self.log(f"Setting new parameters. DB State: {db}")
             process = QLPProcess(
                 stage_id=self.stage_id,
                 state="running",
