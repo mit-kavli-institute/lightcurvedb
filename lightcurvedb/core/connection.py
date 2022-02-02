@@ -41,7 +41,7 @@ class ORM_DB(contextlib.AbstractContextManager):
 
     def __repr__(self):
         if self.is_active:
-            return "<DB status=open>"
+            return f"<DB status=open depth={self.depth}>"
         else:
             return "<DB status=closed>"
 

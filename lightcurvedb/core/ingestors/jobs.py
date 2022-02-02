@@ -39,9 +39,7 @@ SingleMergeJob = namedtuple(
 PartitionJob = namedtuple(
     "PartitionJob", ("partition_oid", "single_merge_jobs")
 )
-LightcurveJob = namedtuple(
-    "LightcurveJob", ("lightcurve_id", "single_merge_jobs")
-)
+
 PHYSICAL_LIMIT = {1, 2, 3, 4}
 
 
@@ -220,18 +218,27 @@ class IngestionPlan(object):
         obs_q = (
             db
             .query(
-                Observation.lightcurve_id,
-                Observation.orbit_id
+                Lightcurve.id,
+                Orbit.orbit_number
+            )
+            .join(
+                Lightcurve.observations,
+            )
+            .join(
+                Observation.orbit
             )
             .filter(
-                Observation.lightcurve_id.in_(obs_lightcurve_subquery)
+                Lightcurve.tic_id.in_(tic_ids)
             )
         )
-        seen_obs = set(obs_q.all())
+
+        seen_obs = set()
+        for lightcurve_id, orbit_number in tqdm(obs_q, unit=" observations"):
+            seen_obs.add((lightcurve_id, orbit_number))
+
         echo("Building job list")
         pairs = list(yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
-            orbit_id = orbit_map[file_obs.c.orbit_number]
             for ap, lc_t in pairs:
                 lc_key = (file_obs.c.tic_id, ap, lc_t)
                 try:
@@ -241,7 +248,7 @@ class IngestionPlan(object):
                     id_map[lc_key] = id_
                     cur_tmp_id -= 1
 
-                if (id_, orbit_id) in seen_obs:
+                if (id_, file_obs.c.orbit_number) in seen_obs:
                     continue
 
                 ingest_job = {
@@ -356,6 +363,22 @@ class IngestionPlan(object):
             lambda g: len(g) > 1
         )
         return split_df
+
+    def get_jobs(self, db):
+        jobs = []
+        for row in tqdm(self._df.itertuples(index=False)):
+            job = SingleMergeJob(
+                lightcurve_id=row.lightcurve_id,
+                tic_id=row.tic_id,
+                aperture=row.aperture,
+                lightcurve_type=row.lightcurve_type,
+                orbit_number=row.orbit_number,
+                camera=row.camera,
+                ccd=row.ccd,
+                file_path=row.file_path
+            )
+            jobs.append(job)
+        return jobs
 
     def get_jobs_by_partition(self, db, max_length):
         buckets = defaultdict(list)

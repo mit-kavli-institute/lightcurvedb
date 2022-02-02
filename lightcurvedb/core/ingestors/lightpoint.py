@@ -157,7 +157,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log("Instantiated mid-tjd cadence map")
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
-            self.set_new_parameters()
+            self.set_new_parameters(db)
             self.log("Determined initial parameters")
 
     def get_quality_flags(self, camera, ccd, cadences):
@@ -235,26 +235,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.seen_cache.add((lightcurve_id, orbit_number))
 
     def process_job(self, job):
-        oid = job.partition_oid
-        acquire_req = []
-        release_req = []
-        single_merge_jobs = sorted(
-            filter(
-                lambda job: (job.lightcurve_id, job.orbit_number)
-                not in self.seen_cache,
-                job.single_merge_jobs,
-            ),
-            key=lambda job: (job.lightcurve_id, job.orbit_number),
-        )
-
-        for single_merge_job in single_merge_jobs:
-            self.process_single_merge_job(single_merge_job)
-
-        n_jobs = len(job.single_merge_jobs)
-        self.log(
-            f"Finished processing {n_jobs} jobs to {self.target_table}",
-            level="success"
-        )
+        self.process_single_merge_job(job)
         self.job_queue.task_done()
 
     def flush(self, db):
@@ -306,7 +287,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.n_samples += 1
 
         if self.should_refresh_parameters:
-            self.set_new_parameters()
+            self.set_new_parameters(db)
 
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints", [])
@@ -359,35 +340,35 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     def determine_process_parameters(self):
         raise NotImplementedError
 
-    def set_new_parameters(self):
-        with self.db as db:
-            process = QLPProcess(
-                stage_id=self.stage_id,
-                state="running",
-                runtime_parameters=self.determine_process_parameters(),
-            )
-            db.add(process)
-            db.session.flush()
-            self.log(
-                f"Updating runtime parameters to {process.runtime_parameters}"
-            )
-            if self.process is not None:
-                q = (
-                    db
-                    .query(QLPProcess)
-                    .filter(
-                        QLPProcess.id == self.process.id
-                    )
+    def set_new_parameters(self, db):
+        self.log(f"Setting new parameters. DB State: {db}")
+        process = QLPProcess(
+            stage_id=self.stage_id,
+            state="running",
+            runtime_parameters=self.determine_process_parameters(),
+        )
+        db.add(process)
+        db.session.flush()
+        self.log(
+            f"Updating runtime parameters to {process.runtime_parameters}"
+        )
+        if self.process is not None:
+            q = (
+                db
+                .query(QLPProcess)
+                .filter(
+                    QLPProcess.id == self.process.id
                 )
-                q.update(
-                    {"state": "completed"},
-                    synchronize_session=False
-                )
+            )
+            q.update(
+                {"state": "completed"},
+                synchronize_session=False
+            )
 
-            db.commit()
-            self.process = process
-            self.log(f"Added {self.process}")
-            self.runtime_parameters = process.runtime_parameters
+        db.commit()
+        self.process = process
+        self.log(f"Added {self.process}")
+        self.runtime_parameters = process.runtime_parameters
 
         self.n_samples = 0
 
@@ -442,7 +423,7 @@ def ingest_merge_jobs(
         while len(jobs) > 0:
             job = jobs.pop()
             job_queue.put(job)
-            total_single_jobs += len(job.single_merge_jobs)
+            total_single_jobs += 1
             bar.update(1)
 
     with db:
