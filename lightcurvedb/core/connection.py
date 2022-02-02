@@ -38,10 +38,11 @@ class ORM_DB(contextlib.AbstractContextManager):
         self._session_stack = []
         self._config = None
         self._max_depth = 10
+        self.depth = 0
 
     def __repr__(self):
         if self.is_active:
-            return "<DB status=open>"
+            return "<DB status=open depth={self.depth}>"
         else:
             return "<DB status=closed>"
 
