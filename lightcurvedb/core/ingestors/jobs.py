@@ -364,6 +364,22 @@ class IngestionPlan(object):
         )
         return split_df
 
+    def get_jobs(self, db):
+        jobs = []
+        for row in tqdm(self._df.itertuples(index=False)):
+            job = SingleMergeJob(
+                lightcurve_id=row.lightcurve_id,
+                tic_id=row.tic_id,
+                aperture=row.aperture,
+                lightcurve_type=row.lightcurve_type,
+                orbit_number=row.orbit_number,
+                camera=row.camera,
+                ccd=row.ccd,
+                file_path=row.file_path
+            )
+            jobs.append(job)
+        return jobs
+
     def get_jobs_by_partition(self, db, max_length):
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
