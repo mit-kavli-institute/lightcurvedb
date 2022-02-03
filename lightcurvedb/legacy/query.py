@@ -43,7 +43,7 @@ class QlpQuery(object):
             .filter(Orbit.orbit_number.in_(orbit_ids))
             .order_by(Orbit.orbit_number)
         )
-        return np.array(orbits.all(), dtype=ORBIT_DTYPE)
+        return np.array(list(map(tuple, orbits)), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(
         self, orbit_id, cadence_type, camera, frame_type=LEGACY_FRAME_TYPE_ID
@@ -78,7 +78,7 @@ class QlpQuery(object):
         # Differs from PATools in that orbit_id != orbit number
         # so we need to record that.
         cols = [Orbit.orbit_number] + list(Frame.get_legacy_attrs())
-        values = (
+        q = (
             self.db.query(*cols)
             .join(Frame.orbit)
             .filter(
@@ -87,14 +87,13 @@ class QlpQuery(object):
                 Orbit.orbit_number == orbit_id,
             )
             .order_by(Frame.cadence.asc())
-            .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, q)), dtype=FRAME_COMP_DTYPE)
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
         cols = [Orbit.orbit_number] + list(Frame.get_legacy_attrs())
-        values = (
+        q = (
             self.db.query(*cols)
             .join(Frame.orbit)
             .filter(
@@ -103,10 +102,9 @@ class QlpQuery(object):
                 Frame.cadence.in_(cadences),
             )
             .order_by(Frame.cadence.asc())
-            .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, q)), dtype=FRAME_COMP_DTYPE)
 
     def query_all_orbit_ids(self):
         return (
