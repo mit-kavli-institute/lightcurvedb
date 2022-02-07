@@ -85,7 +85,7 @@ def ingest_tic(ctx, tics, n_processes, fillgaps, max_job_len):
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
+        jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
@@ -118,7 +118,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps, max_job_len):
         click.echo(plan)
         plan.assign_new_lightcurves(db, fill_id_gaps=fillgaps)
 
-        jobs = plan.get_jobs_by_partition(db, max_length=max_job_len)
+        jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
         ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
