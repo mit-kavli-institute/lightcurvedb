@@ -52,7 +52,7 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
                     f"Entering db context for {func} with {args} and {kwargs}"
                 )
                 func_results = func(db_object, *args, **kwargs)
-                logger.debug(f"Exited db context for {func}")
+                logger.trace(f"Exited db context for {func}")
                 db_object.rollback()
             return func_results
 
