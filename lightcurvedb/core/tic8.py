@@ -1,27 +1,21 @@
 import os
 import sys
 import warnings
+
+from sqlalchemy import Table
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.exc import DisconnectionError, SAWarning
-from sqlalchemy.event import listens_for
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Table
 
-CONFIG_PATH = os.path.expanduser(
-    os.path.join("~", ".config", "tsig", "tic-dbinfo")
-)
-
-TIC8_CONFIGURATION = {
-    "pool_size": 10,
-    "max_overflow": -1,
-    "executemany_mode": "values",
-    "executemany_values_page_size": 10000,
-    "executemany_batch_page_size": 500,
-}
+from lightcurvedb.core.connection import ORM_DB
+from lightcurvedb.core.engines import engine_from_config
+from lightcurvedb.util.constants import __DEFAULT_PATH__, TIC8_TEMPLATE
 
 
-class TIC8_DB(object):
-    def __init__(self, config_path=CONFIG_PATH, greedy_reflect=True):
+class TIC8_DB(ORM_DB):
+    def __init__(
+        self, config_path=None, config_section=None, greedy_reflect=True
+    ):
         """
         Initializes a connection to the TIC8 Database.
 
@@ -30,53 +24,41 @@ class TIC8_DB(object):
         config_path: str or path-like
             The path to the INI-like configuration file that holds the
             credentials to the relevant TIC8 database.
+        config_section: str
+            The configuration section to read in the INI file.
         greedy_reflect: bool, optional
             If true a connection is immediately established to reflect
             the remote schemas to construct Python-side objects. If false
             this will occur with the first query.
         """
-        self.session = None
+        path = os.path.expanduser(
+            config_path if config_path else __DEFAULT_PATH__
+        )
+        section = config_section if config_section else "TIC8 Credentials"
         try:
-            for line in open(config_path, "rt").readlines():
-                key, value = line.strip().split("=")
-                key = key.strip()
-                value = value.strip()
-                TIC8_CONFIGURATION[key] = value
-
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=SAWarning)
 
-                TIC8_ENGINE = create_engine(
-                    "postgresql://{dbuser}:{dbpass}@{dbhost}:{dbport}/{dbname}".format(
-                        **TIC8_CONFIGURATION
-                    )
+                engine = engine_from_config(
+                    path,
+                    config_group=section,
+                    uri_template=TIC8_TEMPLATE,
                 )
+                self.engine = engine
+                self._sessionmaker = sessionmaker(autoflush=True)
+                self._sessionmaker.configure(bind=engine)
+                self._session_stack = []
+                self._config = path
+                self._max_depth = 10
 
-                @listens_for(TIC8_ENGINE, "connect")
-                def connect(dbapi_connection, connection_record):
-                    connection_record.info["pid"] = os.getpid()
-
-                @listens_for(TIC8_ENGINE, "checkout")
-                def checkout(
-                    dbapi_connection, connection_record, connection_proxy
-                ):
-                    pid = os.getpid()
-                    if connection_record.info["pid"] != pid:
-                        connection_record.connection = None
-                        connection_proxy.connection = None
-                        raise DisconnectionError(
-                            "Attempting to disassociate database connection"
-                        )
-
-                self.engine = TIC8_ENGINE
                 if greedy_reflect:
-                    self.__reflect__(TIC8_ENGINE)
+                    self.__reflect__()
         except IOError:
             sys.stderr.write(
                 (
                     "{0} was not found, "
                     "please check your configuration environment\n".format(
-                        CONFIG_PATH
+                        config_path
                     )
                 )
             )
@@ -84,14 +66,15 @@ class TIC8_DB(object):
             self.engine = None
             self.entries = None
 
-    def __reflect__(self, engine):
+    def __reflect__(self):
         BASE = automap_base()
-        BASE.prepare(engine, reflect=True)
+        BASE.prepare(self.engine, reflect=True)
         self.TIC8_Base = BASE
-        self.sessionclass = sessionmaker(autoflush=True)
-        self.sessionclass.configure(bind=engine)
         self.data_class = Table(
-            "ticentries", BASE.metadata, autoload=True, autoload_with=engine
+            "ticentries",
+            BASE.metadata,
+            autoload=True,
+            autoload_with=self.engine,
         )
 
     @property
@@ -99,68 +82,6 @@ class TIC8_DB(object):
         if self.TIC8_Base is None:
             self.__reflect__(self.engine)
         return self.data_class
-
-    @property
-    def is_active(self):
-        return self.session is not None
-
-    def __enter__(self):
-        return self.open()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    def open(self):  # noqa: B006
-        """
-        Establish a connection to the TIC8 database. If this session
-        has already been opened a warning will be emitted before a no-op.
-
-        Returns
-        -------
-        TIC8_DB
-            Returns itself in an open state
-        """
-        if not self.session:
-            self.session = self.sessionclass()
-        else:
-            warnings.warn(
-                "TIC8 Session has already been scoped. Ignoring duplicate "
-                "open call",
-                RuntimeWarning,
-            )
-        return self
-
-    def close(self):
-        """
-        Closes the database connection. If this session has not been opened "
-        "a warning will be emitted."
-        """
-        if self.session is not None:
-            self.session.close()
-            self.session = None
-        else:
-            warnings.warn(
-                "TIC8 Session has already been closed. Ignoring duplicate "
-                "close call.",
-                RuntimeWarning,
-            )
-        return self
-
-    def query(self, *args, **params):
-        if not self.is_active:
-            raise RuntimeError(
-                "Session is not open. Please call `db_inst.open()` "
-                "or use `with db_inst as opendb:`"
-            )
-        return self.session.query(*args, **params)
-
-    def bind(self, *args, **params):
-        if not self.is_active:
-            raise RuntimeError(
-                "Session is not open. Please call `db_inst.open()` "
-                "or use `with db_inst as opendb:`"
-            )
-        return self.session.bind
 
     def get_stellar_param(self, tic_id, *parameters):
         cols = [self.ticentries.c[column] for column in parameters]

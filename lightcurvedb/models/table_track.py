@@ -1,16 +1,21 @@
-from lightcurvedb.core.base_model import QLPMetric
-from tqdm import tqdm
+from functools import partial
+from multiprocessing import Pool
+
 from sqlalchemy import (
-    Integer,
-    String,
     CheckConstraint,
     Column,
-    Sequence,
     ForeignKey,
+    Integer,
+    Sequence,
+    String,
+    text,
 )
-from multiprocessing import Pool
-from functools import partial
-from sqlalchemy.ext.hybrid import hybrid_method
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
+from tqdm import tqdm
+
+from lightcurvedb.core.base_model import QLPMetric
+from lightcurvedb.core.psql_tables import PGClass
 
 
 class PartitionTrack(QLPMetric):
@@ -18,13 +23,15 @@ class PartitionTrack(QLPMetric):
 
     id = Column(Integer, Sequence("partition_tracks_id_seq"), primary_key=True)
     model = Column(String(64), index=True)
-    oid = Column(Integer, index=True, unique=True)
+    oid = Column(ForeignKey(PGClass.oid), index=True, unique=True)
     tracker_type = Column(String(64), index=True)
 
     __mapper_args__ = {
         "polymorphic_identity": "tracks",
         "polymorphic_on": tracker_type,
     }
+
+    pgclass = relationship(PGClass)
 
     @hybrid_method
     def same_model(self, Model):
@@ -55,6 +62,20 @@ class PartitionTrack(QLPMetric):
     def get_check_func(self):
         return lambda value: value == self.model
 
+    def generate_detachment_q(self):
+        parent = self.pgclass.parent[0]
+        target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
+        q = text(
+            f"""
+            ALTER TABLE {parent.name}
+            DETACH PARTITION {target}
+            """
+        )
+        return q
+
+    def generate_attachment_q(self):
+        raise NotImplementedError
+
 
 class RangedPartitionTrack(PartitionTrack):
     __tablename__ = "ranged_partition_tracks"
@@ -78,6 +99,27 @@ class RangedPartitionTrack(PartitionTrack):
 
     def get_check_func(self):
         return self.contains_value
+
+    @hybrid_property
+    def length(self):
+        return self.max_range - self.min_range
+
+    @length.expression
+    def length(cls):
+        return cls.max_range - cls.min_range
+
+    def generate_attachment_q(self):
+        parent = self.pgclass.parent[0]
+        target = f"{self.pgclass.namespace.name}.{self.pgclass.name}"
+        q = text(
+            f"""
+            ALTER TABLE {parent.name}
+            ATTACH PARTITION {target}
+            FOR VALUES ({self.min_range}) TO ({self.max_range})
+            """
+        )
+
+        return q
 
 
 def range_check(ranges, value):
@@ -121,9 +163,7 @@ def range_check(ranges, value):
         return value, oid
 
     # Left and right indexes point to a range which does not match
-    raise ValueError(
-        "Could not match {0} to any partition".format(value)
-    )
+    raise ValueError("Could not match {0} to any partition".format(value))
 
 
 class TableTrackerAPIMixin(object):
@@ -170,17 +210,16 @@ class TableTrackerAPIMixin(object):
         Raises
         ------
         NotImplementedError:
-            Raised if the given Model is not supported for multiprocess mapping.
+            Raised if the given Model is not supported for multiprocess
+            mapping.
         """
         partition_tracks = list(
             self.query(PartitionTrack).filter(PartitionTrack.same_model(Model))
         )
         if isinstance(partition_tracks[0], RangedPartitionTrack):
             ranges = sorted(
-                [
-                    (t.min_range, t.max_range, t.oid) for t in partition_tracks
-                ],
-                key=lambda t: t[0]
+                [(t.min_range, t.max_range, t.oid) for t in partition_tracks],
+                key=lambda t: t[0],
             )
             func = partial(range_check, ranges)
         else:
@@ -191,5 +230,8 @@ class TableTrackerAPIMixin(object):
             )
 
         with Pool(processes=n_workers) as pool:
-            for value, oid in tqdm(pool.imap_unordered(func, values, chunksize=10000), total=len(values)):
+            for value, oid in tqdm(
+                pool.imap_unordered(func, values, chunksize=10000),
+                total=len(values),
+            ):
                 yield value, oid

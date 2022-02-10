@@ -1,6 +1,8 @@
-import click
 import sys
+
+import click
 from loguru import logger
+
 from .types import Database
 
 
@@ -27,5 +29,6 @@ def lcdbcli(ctx, dbconf, dryrun, logging, logfile):
         logger.add(sys.stdout, level=logging.upper())
         logger.debug("Set logging to {0}".format(logging))
 
+    ctx.obj["log_level"] = logging
     ctx.obj["dryrun"] = dryrun
     ctx.obj["dbconf"] = dbconf

@@ -1,25 +1,26 @@
 from __future__ import division, print_function
 
+import contextlib
 import os
 import warnings
+
 import numpy as np
 from pandas import read_sql as pd_read_sql
-
-from sqlalchemy import and_, func
+from loguru import logger
+from sqlalchemy import and_, func, exc
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core.engines import engine_from_config
-from lightcurvedb.models.orbit import ORBIT_DTYPE
-from lightcurvedb.models.frame import FRAME_DTYPE
-from lightcurvedb.util.type_check import isiterable
-from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
-from lightcurvedb.models.frame import FrameAPIMixin
+from lightcurvedb.models.metrics import QLPMetricAPIMixin
+from lightcurvedb.models.orbit import ORBIT_DTYPE
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
-
+from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.type_check import isiterable
 
 # Bring legacy capability
 # TODO Encapsulate so it doesn't pollute this namespace
@@ -27,19 +28,20 @@ LEGACY_FRAME_TYPE_ID = "Raw FFI"
 FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
 
-class ORM_DB(object):
+class ORM_DB(contextlib.AbstractContextManager):
     """
     Base Wrapper for all SQLAlchemy Session objects
     """
+
     def __init__(self, SessionMaker):
         self._sessionmaker = SessionMaker
-        self._session = None
-        self._active = False
+        self._session_stack = []
         self._config = None
+        self._max_depth = 10
 
     def __repr__(self):
-        if self._active:
-            return "<DB status=open>"
+        if self.is_active:
+            return f"<DB status=open depth={self.depth}>"
         else:
             return "<DB status=closed>"
 
@@ -63,18 +65,29 @@ class ORM_DB(object):
         ORM_DB
             Returns itself in an open state.
         """
-        if self._active:
-            warnings.warn(
-                "DB session is already scoped. Ignoring duplicate open call",
-                RuntimeWarning,
-            )
-        else:
-            if self._session is None:
-                self._session = self._sessionmaker()
-            self._active = True
+        tries = 10
+        wait = 1
+        while tries > 1:
+            try:
+                if self.depth == 0:
+                    session = self._sessionmaker()
+                    self._session_stack.append(session)
+                elif 0 < self.depth < self._max_depth:
+                    nested_session = self.session.begin_nested()
+                    self._session_stack.append(nested_session)
+                else:
+                    raise RuntimeError("Database nested too far! Cowardly refusing")
+                return self
+            except exc.OperationalError as e:
+                logger.warning(
+                    f"Could not connect: {e}, waiting for {wait}s"
+                )
+                sleep(wait)
+                wait *= 2
+                tries -= 1
 
-        return self
- 
+        raise RuntimeError("Could successfully connect to database")
+
     def close(self):
         """
         Closes the database connection. If this session has not been opened
@@ -85,13 +98,18 @@ class ORM_DB(object):
         ORM_DB
             Returns itself in a closed state.
         """
-        if self._active:
-            self._session.close()
-            self._active = False
-        else:
+        try:
+            if self.depth > 1:
+                self.session.rollback()
+                self._session_stack.pop()
+            else:
+                self._session_stack[0].close()
+                self._session_stack.pop()
+        except IndexError:
             warnings.warn(
                 "DB session is not active. Ignoring duplicate close call"
             )
+
         return self
 
     @property
@@ -111,12 +129,13 @@ class ORM_DB(object):
             Attempting to access this property without first calling
             ``open()``.
         """
-        if not self._active:
+        try:
+            return self._session_stack[0]
+        except IndexError:
             raise RuntimeError(
                 "Session is not open. Please call `db_inst.open()`"
                 "or use `with db_inst as opendb:`"
             )
-        return self._session
 
     @property
     def bind(self):
@@ -134,12 +153,31 @@ class ORM_DB(object):
         RuntimeError
             Attempted to access this propery without first calling ``open()``.
         """
-        if not self._active:
+        if not self.is_active:
             raise RuntimeError(
                 "Session is not open. Please call `db_inst.open()`"
                 "or use `with db_inst as opendb:`"
             )
-        return self._session.bind
+        return self.session.bind
+
+    @property
+    def depth(self):
+        """
+        What is the current transaction depth. For initially opened
+        connections this will be 1. You can continue calling nested
+        transactions until the max_depth amount is reached.
+
+        Nested transaction scope and rules will follow PostgreSQL's
+        implementation of SAVEPOINTS.
+
+        Returns
+        -------
+        int
+            The depth of transaction levels. 0 for closed transactions,
+            1 for initially opened connections, and n < max_depth for
+            nested transactions.
+        """
+        return len(self._session_stack)
 
     def query(self, *args):
         """
@@ -180,20 +218,20 @@ class ORM_DB(object):
             Returns the Query object.
 
         """
-        return self._session.query(*args)
+        return self.session.query(*args)
 
     def commit(self):
         """
         Commit the executed queries in the database to make any
         changes permanent.
         """
-        self._session.commit()
+        self.session.commit()
 
     def rollback(self):
         """
         Rollback all changes to the previous commit.
         """
-        self._session.rollback()
+        self.session.rollback()
 
     def add(self, model_inst):
         """
@@ -209,7 +247,7 @@ class ORM_DB(object):
         sqlalchemy.IntegrityError
             Raised if the given instance violates given SQL constraints.
         """
-        self._session.add(model_inst)
+        self.session.add(model_inst)
 
     def update(self, *args, **kwargs):
         """
@@ -219,9 +257,9 @@ class ORM_DB(object):
         -------
         sqlalchemy.Query
         """
-        self._session.update(*args, **kwargs)
+        self.session.update(*args, **kwargs)
 
-    def delete(self, model_inst, synchronize_session="evaluate"):
+    def delete(self, model_inst):
         """
         A helper method to ``db.session.delete()``.
 
@@ -229,21 +267,21 @@ class ORM_DB(object):
         ----------
         model_inst : QLPModel
             The model to delete from the database.
-        synchronize_session : str, optional
-            How the session should change it's internal records to
-            reflect changes made to the database. See SQLAlchemy
-            docs for details.
         """
-        self._session.delete(
-            model_inst, synchronize_session=synchronize_session
-        )
+        self.session.delete(model_inst)
 
     def execute(self, *args, **kwargs):
         """
         Alias for db session execution. See sqlalchemy.Session.execute for
         more information.
         """
-        return self._session.execute(*args, **kwargs)
+        return self.session.execute(*args, **kwargs)
+
+    def flush(self):
+        """
+        Flush any pending queries to the remote database.
+        """
+        return self.session.flush()
 
     @property
     def is_active(self):
@@ -255,10 +293,16 @@ class ORM_DB(object):
         -------
         bool
         """
-        return self._active
+        return self.depth > 0
 
 
-class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
+class DB(
+    ORM_DB,
+    FrameAPIMixin,
+    TableTrackerAPIMixin,
+    PGCatalogMixin,
+    QLPMetricAPIMixin,
+):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.
 
@@ -276,6 +320,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
         db = db_from_config('path_to_config')
 
     """
+
     @property
     def orbits(self):
         """
@@ -328,7 +373,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             .filter(models.Orbit.orbit_number.in_(orbit_numbers))
             .order_by(models.Orbit.orbit_number)
         )
-        return np.array(orbits.all(), dtype=ORBIT_DTYPE)
+        return np.array(list(map(tuple, orbits)), dtype=ORBIT_DTYPE)
 
     def query_orbit_cadence_limit(
         self,
@@ -455,7 +500,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, values)), dtype=FRAME_COMP_DTYPE)
 
     def query_frames_by_cadence(self, camera, cadence_type, cadences):
         """
@@ -494,7 +539,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             .all()
         )
 
-        return np.array(values, dtype=FRAME_COMP_DTYPE)
+        return np.array(list(map(tuple, values)), dtype=FRAME_COMP_DTYPE)
 
     def query_all_orbit_ids(self):
         """
@@ -545,11 +590,11 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             A query of lightcurves that match the given parameters.
         """
         q = self.lightcurves
-        if apertures:
+        if apertures is not None:
             q = q.filter(models.Lightcurve.aperture_id.in_(apertures))
-        if types:
+        if types is not None:
             q = q.filter(models.Lightcurve.lightcurve_type_id.in_(types))
-        if tics:
+        if tics is not None:
             q = q.filter(models.Lightcurve.tic_id.in_(tics))
         return q
 
@@ -738,7 +783,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             self.query(col)
             .join(models.Lightcurve.observations)
             .join(models.Observation.orbit)
-            .filter(models.Orbit.orbit_numbers.in_(orbit_numbers))
+            .filter(models.Orbit.orbit_number.in_(orbit_numbers))
         )
 
         if cameras:
@@ -1010,7 +1055,7 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
         permanent.
         """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
-        self._session.execute(upsert)
+        self.session.execute(upsert)
 
     def unset_best_aperture(self, tic_id):
         """
@@ -1028,13 +1073,12 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
         to be made permanent.
         """
         check = (
-            self._session.query(models.BestApertureMap)
+            self.session.query(models.BestApertureMap)
             .filter(models.BestApertureMap.tic_id == tic_id)
             .one_or_none()
         )
         if check:
             check.delete()
-
 
     # Begin helper methods to quickly grab reference maps
     @property
@@ -1097,6 +1141,32 @@ class DB(ORM_DB, FrameAPIMixin, TableTrackerAPIMixin, PGCatalogMixin):
             .order_by(models.Frame.cadence.asc())
         )
         return [r for r, in q.all()]
+
+    def cadences_in_sectors(self, sectors, frame_type="Raw FFI", resolve=True):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.sector.in_(sectors),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
+
+    def cadences_in_orbit(
+        self, orbit_numbers, frame_type="Raw FFI", resolve=True
+    ):
+        q = (
+            self.query(models.Frame.cadence)
+            .filter(
+                models.Orbit.orbit_number.in_(orbit_numbers),
+                models.Frame.frame_type_id == frame_type,
+            )
+            .distinct(models.Frame.cadence)
+        )
+
+        return [r for r, in q] if resolve else q
 
     def get_baked_lcs(self, ids):
         return (
@@ -1171,7 +1241,7 @@ def db_from_config(config_path=None, **engine_kwargs):
     )
 
     factory = sessionmaker(bind=engine)
-    
+
     new_db = DB(factory)
     new_db._config = config_path
     return new_db

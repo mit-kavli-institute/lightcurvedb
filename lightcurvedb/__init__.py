@@ -1,6 +1,6 @@
-__version__ = "0.9.5"
+__version__ = "0.11.7"
 
-from lightcurvedb.core.connection import DB, db, db_from_config
+from lightcurvedb.core.connection import db, db_from_config
 from lightcurvedb.managers import LightcurveManager
 from lightcurvedb.models import (
     Aperture,
@@ -20,5 +20,5 @@ __all__ = [
     "Observation",
     "Orbit",
     "db_from_config",
-    "db"
+    "db",
 ]

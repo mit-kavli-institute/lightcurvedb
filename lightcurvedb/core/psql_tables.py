@@ -6,53 +6,51 @@ This table should be modified depending on which version of PostgreSQL
 is used.
 """
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    BigInteger,
-    String,
-    Text,
-    DateTime,
-    inspect,
-    Boolean,
-    Float,
-    ForeignKey,
-    SmallInteger,
-)
-
-
-from sqlalchemy.types import CHAR
-from sqlalchemy.dialects.postgresql import OID, INET
-from sqlalchemy.ext.declarative import as_declarative
-from sqlalchemy.orm import relationship, backref
-from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.sql import func
 from datetime import datetime
 
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    inspect,
+)
+from sqlalchemy.dialects.postgresql import INET, OID
+from sqlalchemy.ext.declarative import as_declarative
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import backref, relationship
+from sqlalchemy.sql import func
+from sqlalchemy.types import CHAR
 
 # Alias referenced datatypes to better match internal datatypes
 XID = Integer
 NAME = String(64)
+
 
 @as_declarative()
 class PGInternalModel(object):
     """
     Core internal wrapper for all reflected postgres catalogs
     """
+
     __abstract__ = True
 
     def __repr__(self):
 
-        return "<{0}: ({1})".format(
-            self.__tablename__,
-            inspect(self).identity
-        )
+        return "<{0}: ({1})".format(self.__tablename__, inspect(self).identity)
 
 
 class PGExtensionModel(PGInternalModel):
     """
     Wrapper for extended postgres modules.
     """
+
     __abstract__ = True
 
 
@@ -267,6 +265,14 @@ class PGStatActivity(PGStatModel):
         """
         return func.cardinality(cls.blocked_by) > 0
 
+    @hybrid_property
+    def terminate(self):
+        raise NotImplementedError
+
+    @terminate.expression
+    def terminate(cls):
+        return func.pg_terminate_backend(cls.pid)
+
 
 """
 ##############
@@ -304,6 +310,14 @@ class PGNamespace(PGCatalogModel):
 
     owner = relationship(PGAuthID, backref="namespaces")
 
+    @hybrid_property
+    def name(self):
+        return self.nspname
+
+    @name.expression
+    def name(cls):
+        return cls.nspname
+
 
 class PGType(PGCatalogModel):
     """
@@ -315,6 +329,14 @@ class PGType(PGCatalogModel):
     oid = Column(OID, primary_key=True)
     typname = Column(NAME)
     typnamespace = Column(OID, ForeignKey(PGNamespace.__tablename__ + ".oid"))
+
+    @hybrid_property
+    def name(self):
+        return self.typname
+
+    @name.expression
+    def name(cls):
+        return cls.typname
 
 
 class PGInherits(PGCatalogModel):
@@ -351,9 +373,31 @@ class PGIndex(PGCatalogModel):
 
     __tablename__ = "pg_indexes"
 
-    schemaname = Column(NAME, ForeignKey(PGNamespace.nspname), primary_key=True)
+    schemaname = Column(
+        NAME, ForeignKey(PGNamespace.nspname), primary_key=True
+    )
     tablename = Column(NAME, ForeignKey("pg_class.relname"))
     indexname = Column(NAME, ForeignKey("pg_class.relname"))
+    indexdef = Column(Text)
+
+    index_on = relationship(
+        "PGClass",
+        foreign_keys=[tablename],
+        back_populates="index_definitions"
+    )
+    index_class = relationship(
+        "PGClass",
+        foreign_keys=[indexname],
+        back_populates="index_classes"
+    )
+
+    @hybrid_property
+    def name(self):
+        return self.indexname
+
+    @name.expression
+    def name(cls):
+        return cls.indexname
 
 
 class PGDatabase(PGCatalogModel):
@@ -370,6 +414,14 @@ class PGDatabase(PGCatalogModel):
     datlastsysoid = Column(OID)
 
     buffers = relationship("PGBuffer", back_populates="database")
+
+    @hybrid_property
+    def name(self):
+        return self.datname
+
+    @name.expression
+    def name(cls):
+        return cls.datname
 
 
 class PGClass(PGCatalogModel):
@@ -393,10 +445,11 @@ class PGClass(PGCatalogModel):
 
     type_ = relationship(PGType, backref="classes")
     owner = relationship(PGAuthID, backref="classes")
-    namespace = relationship(
-        "PGNamespace",
-        backref="pg_classes"
-    )
+    namespace = relationship("PGNamespace", backref="pg_classes")
+
+    index_definitions = relationship("PGIndex", foreign_keys=[PGIndex.tablename], back_populates="index_on")
+    index_classes = relationship("PGIndex", foreign_keys=[PGIndex.indexname], back_populates="index_class")
+
     parent = relationship(
         "PGClass",
         secondary=PGInherits.__table__,
@@ -405,22 +458,20 @@ class PGClass(PGCatalogModel):
         single_parent=True,
         backref=backref("children"),
     )
-    index_parent = relationship(
-        "PGClass",
-        secondary=PGIndex.__table__,
-        primaryjoin=(relname == PGIndex.indexname),
-        secondaryjoin=(relname == PGIndex.tablename),
-        single_parent=True,
-        backref=backref("indexes")
-    )
-    buffers = relationship(
-        "PGBuffer",
-        back_populates="pg_class"
-    )
+
+    buffers = relationship("PGBuffer", back_populates="pg_class")
 
     @classmethod
     def expression(cls):
         return func.pg_get_expr(cls.relpartbound, cls.oid).label("expression")
+
+    @hybrid_property
+    def name(self):
+        return self.relname
+
+    @name.expression
+    def name(cls):
+        return cls.relname
 
 
 class PGBuffer(PGExtensionModel):
@@ -436,7 +487,9 @@ class PGBuffer(PGExtensionModel):
     relfilenode = Column(ForeignKey(PGClass.relfilenode))
 
     database = relationship("PGDatabase", back_populates="buffers")
-    pg_class = relationship(PGClass, foreign_keys=[relfilenode], back_populates="buffers")
+    pg_class = relationship(
+        PGClass, foreign_keys=[relfilenode], back_populates="buffers"
+    )
 
 
 class PGCatalogMixin(object):

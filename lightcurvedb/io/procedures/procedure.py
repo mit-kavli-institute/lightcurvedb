@@ -1,6 +1,7 @@
 import os
 from glob import glob
-from sqlalchemy import DDL, column, select, func
+
+from sqlalchemy import DDL, column, func, select
 
 PROCEDURE_BASE = os.path.dirname(os.path.realpath(__file__))
 PROCEDURE_DEF_DIR = os.path.join(PROCEDURE_BASE)

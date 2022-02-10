@@ -1,10 +1,11 @@
-import click
 import os
-from lightcurvedb.core.connection import db_from_config
+
+import click
+
 from lightcurvedb import models as Models
 from lightcurvedb.cli.utils import resolve_filter_column
+from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.util.sql import get_operator_f
-
 
 MODEL_LOOKUP = {
     name.lower().replace("_", ""): getattr(Models, name)
@@ -60,9 +61,7 @@ class ModelField(click.ParamType):
             field = getattr(self.Model, value)
             return field
         except AttributeError:
-            self.fail(
-                "{0} does not have the attribute {1}".format(Model, value)
-            )
+            self.fail(f"{self.Model} does not have the attribute {value}")
 
 
 class QLPModelType(click.ParamType):

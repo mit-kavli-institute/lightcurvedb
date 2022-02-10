@@ -1,8 +1,9 @@
 import os
+from glob import glob
+from itertools import groupby, product
+
 import click
 from astropy.io import fits
-from itertools import groupby, product
-from glob import glob
 from tabulate import tabulate
 
 

@@ -1,7 +1,10 @@
-import pandas as pd
 import os
 import re
+
+import pandas as pd
+
 from lightcurvedb.util.logger import lcdb_logger as logger
+
 from .temp_table import QualityFlags
 
 

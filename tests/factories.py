@@ -1,26 +1,24 @@
-import numpy as np
-from hypothesis import assume
-from hypothesis.extra import numpy as np_st
+import sys
+
 from hypothesis.strategies import (
-    floats,
-    text,
-    composite,
-    characters,
-    integers,
     booleans,
-    one_of,
-    none,
-    from_regex,
+    builds,
+    characters,
+    composite,
+    floats,
+    integers,
     just,
     lists,
-    tuples,
+    none,
+    one_of,
     sampled_from,
-    builds,
+    text,
+    tuples,
 )
-import sys
+
 from lightcurvedb import models
 
-from .constants import CONFIG_PATH, PSQL_INT_MAX, TIC_ID_MAX
+from .constants import PSQL_INT_MAX, TIC_ID_MAX
 
 ABC = "abcdefghijklmnopqrstuvwxyz"
 
@@ -30,7 +28,8 @@ else:
     alphabet = sampled_from(ABC + ABC.upper())
 
 
-define_strategy = lambda f: f
+def define_strategy(f):
+    return f
 
 
 @define_strategy
@@ -76,7 +75,9 @@ def aperture(draw):
 @composite
 def orbit(draw, **overrides):
     orb = models.Orbit(
-        id=draw(overrides.get("id", integers(min_value=0, max_value=PSQL_INT_MAX))),
+        id=draw(
+            overrides.get("id", integers(min_value=0, max_value=PSQL_INT_MAX))
+        ),
         orbit_number=draw(
             overrides.get(
                 "orbit_number", integers(min_value=0, max_value=PSQL_INT_MAX)
@@ -120,7 +121,7 @@ def orbit(draw, **overrides):
 def frame_type(draw, **overrides):
     f_type = models.FrameType(
         name=draw(overrides.pop("name", postgres_text())),
-        description=draw(overrides.pop("description", postgres_text()))
+        description=draw(overrides.pop("description", postgres_text())),
     )
     return f_type
 
@@ -156,7 +157,7 @@ def frame(draw, **overrides):
     cadence = draw(
         overrides.pop("cadence", integers(min_value=0, max_value=PSQL_INT_MAX))
     )
-    orbit_id = draw(overrides.pop("orbit_id", none())),
+    orbit_id = (draw(overrides.pop("orbit_id", none())),)
 
     sort = sorted(tjds)
     start_tjd = sort[0]
@@ -222,10 +223,10 @@ def orbit_frames(draw):
                 orbit=just(target_orbit),
                 cadence_type=just(30),
                 camera=just(1),
-                orbit_id=just(target_orbit.id)
+                orbit_id=just(target_orbit.id),
             ),
             min_size=1,
-            max_size=10
+            max_size=10,
         )
     )
     for cadence, f in enumerate(result):

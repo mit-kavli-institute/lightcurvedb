@@ -1,7 +1,10 @@
-from astropy.io import fits
 import os
-from .base import MultiIngestor
+
+from astropy.io import fits
+
 from lightcurvedb.models.frame import Frame
+
+from .base import MultiIngestor
 
 
 class FrameIngestor(MultiIngestor):
@@ -57,7 +60,8 @@ def from_fits(path, cadence_type=30, frame_type=None, orbit=None):
     """
     abspath = os.path.abspath(path)
     header = fits.open(abspath)[0].header
-
+    if cadence_type is None:
+        cadence_type = header["INT_TIME"] // 60
     try:
         return Frame(
             cadence_type=cadence_type,

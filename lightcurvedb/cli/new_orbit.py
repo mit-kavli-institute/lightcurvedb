@@ -1,14 +1,16 @@
-import click
 import os
 import re
 from functools import partial
-from lightcurvedb.models import FrameType, Frame, Orbit, CameraQuaternion
+from multiprocessing import Pool
+
+import click
+
+from lightcurvedb.core.ingestors.frame_ingestor import from_fits
+from lightcurvedb.models import CameraQuaternion, Frame, FrameType, Orbit
 from lightcurvedb.models.camera_quaternion import get_utc_time
 from lightcurvedb.util.contexts import get_parent_dir
-from lightcurvedb.core.ingestors.frame_ingestor import from_fits
-from multiprocessing import Pool
-from .base import lcdbcli
 
+from .base import lcdbcli
 
 FITS_CHECK = re.compile(r"tess\d+-\d+-[1-4]-crm-ffi\.fits$")
 QUAT_CHECK = re.compile(r"cam(?P<camera>[1-4])_quat.txt$")

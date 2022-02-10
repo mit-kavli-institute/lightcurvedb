@@ -1,26 +1,26 @@
+from collections import defaultdict, namedtuple
+from itertools import product
+
+import pandas as pd
+from click import echo
+from sqlalchemy import text, select
+from sqlalchemy.orm import Bundle
+from tqdm import tqdm
+
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     allocate_lightcurve_ids,
     get_missing_ids,
 )
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
-    Observation,
-    Lightcurve,
-    Lightpoint,
-    Orbit,
     Aperture,
+    Lightcurve,
     LightcurveType,
+    Lightpoint,
+    Observation,
+    Orbit,
 )
-from collections import namedtuple, defaultdict
-from sqlalchemy import distinct, text, func
-from loguru import logger
-from click import echo
-from tqdm import tqdm
-from itertools import product
-import pandas as pd
-from math import isnan
-
+from lightcurvedb.util.iter import chunkify
 
 SingleMergeJob = namedtuple(
     "SingleMergeJob",
@@ -39,9 +39,7 @@ SingleMergeJob = namedtuple(
 PartitionJob = namedtuple(
     "PartitionJob", ("partition_oid", "single_merge_jobs")
 )
-LightcurveJob = namedtuple(
-    "LightcurveJob", ("lightcurve_id", "single_merge_jobs")
-)
+
 PHYSICAL_LIMIT = {1, 2, 3, 4}
 
 
@@ -89,6 +87,28 @@ def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
     return accumulator
 
 
+def yield_lightcurve_fields(db, background_name_template="%background%"):
+    """
+    Yield lightcurve apertures and types
+    """
+    bg_aperture_filter = Aperture.name.ilike(background_name_template)
+    bg_type_filter = LightcurveType.name.ilike(background_name_template)
+
+    fg_apertures = db.query(Aperture).filter(~bg_aperture_filter)
+    fg_types = db.query(LightcurveType).filter(~bg_type_filter)
+
+    bg_apertures = db.query(Aperture).filter(bg_aperture_filter)
+    bg_types = db.query(LightcurveType).filter(bg_type_filter)
+
+    _iter = product(fg_apertures, fg_types)
+    for fg_aperture, fg_lightcurve_type in _iter:
+        yield fg_aperture.name, fg_lightcurve_type.name
+
+    _iter = product(bg_apertures, bg_types)
+    for bg_aperture, bg_lightcurve_type in _iter:
+        yield bg_aperture.name, bg_lightcurve_type.name
+
+
 class IngestionPlan(object):
     def __init__(
         self,
@@ -105,134 +125,122 @@ class IngestionPlan(object):
 
         # Construct relevant TIC ID query from file observations in cache
         cache_filters = []
+        obs_lightcurve_subquery = select(Observation.lightcurve_id)
         current_obs_filters = []
         if orbits:
-            cache_filters.append(
-                FileObservation.orbit_number.in_(orbits)
-            )
-            o_ids = [id_ for id_, in db.query(Orbit.id).filter(Orbit.orbit_number.in_(orbits))]
-            current_obs_filters.append(
-                Observation.orbit_id.in_(o_ids)
+            cache_filters.append(FileObservation.orbit_number.in_(orbits))
+            o_ids = [
+                id_
+                for id_, in db.query(Orbit.id).filter(
+                    Orbit.orbit_number.in_(orbits)
+                )
+            ]
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.orbit_id.in_(o_ids))
             )
         else:
             o_ids = []
 
         if cameras:
             cache_filters = apply_physical_filter(
-                cache_filters,
-                FileObservation.camera,
-                cameras
+                cache_filters, FileObservation.camera, cameras
             )
-            current_obs_filters = apply_physical_filter(
-                current_obs_filters,
-                Observation.camera,
-                cameras
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.camera.in_(cameras))
             )
 
         if ccds:
             cache_filters = apply_physical_filter(
-                cache_filters,
-                FileObservation.ccd,
-                ccds
+                cache_filters, FileObservation.ccd, ccds
             )
-            current_obs_filters = apply_physical_filter(
-                current_obs_filters,
-                Observation.ccd,
-                ccds
+            obs_lightcurve_subquery = (
+                obs_lightcurve_subquery.where(Observation.ccd.in_(ccds))
             )
 
-        base_q = cache.query(FileObservation)
+        file_obs_columns = Bundle(
+            "c",
+            FileObservation.tic_id,
+            FileObservation.orbit_number,
+            FileObservation.camera,
+            FileObservation.ccd,
+            FileObservation.file_path,
+        )
+        base_q = cache.query(file_obs_columns)
         echo("Querying file cache")
         if full_diff:
             if tic_mask:
                 file_observations = sqlite_accumulator(
-                    tic_mask,
-                    FileObservation.tic_id,
-                    base_q
+                    tic_mask, FileObservation.tic_id, base_q
                 )
             else:
+                subquery_tic_q = (
+                    select(FileObservation.tic_id)
+                    .where(*cache_filters)
+                )
                 cache_filters = (
                     FileObservation.tic_id.in_(
-                        cache.query(FileObservation.tic_id).filter(*cache_filters).subquery()
+                        subquery_tic_q
                     ),
                 )
                 file_observations = base_q.filter(*cache_filters)
         else:
-            file_observations = (
-                cache
-                .query(FileObservation)
-                .filter(*cache_filters)
-            )
+            file_observations = base_q.filter(*cache_filters)
 
-        tic_ids = {file_obs.tic_id for file_obs in file_observations}
+        tic_ids = {file_obs.c.tic_id for file_obs in file_observations}
+        self.tics = tic_ids
         db.execute(text("SET LOCAL work_mem TO '2GB'"))
 
         echo("Performing lightcurve query")
-        apertures = [ap.name for ap in db.query(Aperture)]
-        lightcurve_types = [lc_t.name for lc_t in db.query(LightcurveType)]
 
-        lightcurves = (
-            db
-            .query(Lightcurve)
-            .filter(Lightcurve.tic_id.in_(tic_ids))
+        lc_bn = Bundle(
+            "c",
+            Lightcurve.tic_id,
+            Lightcurve.aperture_id,
+            Lightcurve.lightcurve_type_id,
+            Lightcurve.id,
         )
+
+        lightcurves = db.query(lc_bn).filter(Lightcurve.tic_id.in_(tic_ids))
 
         id_map = {}
         echo("Reading lightcurves for ID mapping")
         for lc in tqdm(lightcurves, unit=" lightcurves"):
-            id_map[(lc.tic_id, lc.aperture_id, lc.lightcurve_type_id)] = lc.id
-
-        echo("Getting current observations from database")
-        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-        seen_cache = set()
-        tic_chunks = list(chunkify(tic_ids, 1000))
-        q = (
-            db
-            .query(
-                Observation.lightcurve_id,
-                Observation.orbit_id
-            )
-            .filter(*current_obs_filters)
-        )
-        for lightcurve_id, orbit_id in tqdm(q, unit=" observations"):
-            seen_cache.add((lightcurve_id, orbit_id))
-
-        if full_diff:
-            echo("Grabbing full lightcurve observation baseline difference")
-            ide_cte = (
-                db
-                .query(Observation.lightcurve_id.distinct().label("lightcurve_id"))
-                .filter(*current_obs_filters)
-                .cte(name="relevant_ids")
-            )
-            full_q = (
-                db
-                .query(
-                    Observation.lightcurve_id,
-                    func.array_agg(Observation.orbit_id)
-                )
-                .join(
-                    ide_cte,
-                    ide_cte.c.lightcurve_id == Observation.lightcurve_id
-                )
-                .group_by(Observation.lightcurve_id)
-            )
-            if o_ids:
-                full_q.filter(~Observation.orbit_id.in_(o_ids))
-            for lightcurve_id, o_id_arr in tqdm(full_q.all(), unit=" lightcurves"):
-                for orbit_id in o_id_arr:
-                    seen_cache.add((lightcurve_id, orbit_id))
+            id_map[
+                (lc.c.tic_id, lc.c.aperture_id, lc.c.lightcurve_type_id)
+            ] = lc.c.id
 
         plan = []
         cur_tmp_id = -1
 
         self.ignored_jobs = 0
+        echo("Reading current observations")
+        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+        obs_q = (
+            db
+            .query(
+                Lightcurve.id,
+                Orbit.orbit_number
+            )
+            .join(
+                Lightcurve.observations,
+            )
+            .join(
+                Observation.orbit
+            )
+            .filter(
+                Lightcurve.tic_id.in_(tic_ids)
+            )
+        )
+
+        seen_obs = set()
+        for lightcurve_id, orbit_number in tqdm(obs_q, unit=" observations"):
+            seen_obs.add((lightcurve_id, orbit_number))
 
         echo("Building job list")
+        pairs = list(yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
-            orbit_id = orbit_map[file_obs.orbit_number]
-            for ap, lc_t in product(apertures, lightcurve_types):
-                lc_key = (file_obs.tic_id, ap, lc_t)
+            for ap, lc_t in pairs:
+                lc_key = (file_obs.c.tic_id, ap, lc_t)
                 try:
                     id_ = id_map[lc_key]
                 except KeyError:
@@ -240,23 +248,22 @@ class IngestionPlan(object):
                     id_map[lc_key] = id_
                     cur_tmp_id -= 1
 
-                if (id_, orbit_id) in seen_cache:
-                    self.ignored_jobs += 1
+                if (id_, file_obs.c.orbit_number) in seen_obs:
                     continue
 
                 ingest_job = {
                     "lightcurve_id": id_,
-                    "tic_id": file_obs.tic_id,
+                    "tic_id": file_obs.c.tic_id,
                     "aperture": ap,
                     "lightcurve_type": lc_t,
-                    "orbit_number": file_obs.orbit_number,
-                    "camera": file_obs.camera,
-                    "ccd": file_obs.ccd,
-                    "file_path": file_obs.file_path,
+                    "orbit_number": file_obs.c.orbit_number,
+                    "camera": file_obs.c.camera,
+                    "ccd": file_obs.c.ccd,
+                    "file_path": file_obs.c.file_path,
                 }
-                seen_cache.add((id_, orbit_id))
 
                 plan.append(ingest_job)
+        echo("Converting plan to dataframe")
         self._df = pd.DataFrame(plan)
 
     def __repr__(self):
@@ -281,7 +288,7 @@ class IngestionPlan(object):
             len(partitions),
             len(set(self._df[self._df.lightcurve_id > 0].lightcurve_id)),
             len(set(self._df[self._df.lightcurve_id < 0].lightcurve_id)),
-            self.ignored_jobs
+            self.ignored_jobs,
         )
 
     def assign_new_lightcurves(self, db, fill_id_gaps=False):
@@ -311,7 +318,9 @@ class IngestionPlan(object):
         update_map = dict(zip(new_ids, usable_ids))
 
         echo("Updating ingestion plan temporary IDs")
-        self._df["lightcurve_id"] = self._df["lightcurve_id"].map(update_map)
+        self._df["lightcurve_id"] = self._df["lightcurve_id"].map(
+            lambda id_: update_map.get(id_, id_)
+        )
 
         echo("Submitting new lightcurve definitions to database")
         param_df = self._df[self._df.lightcurve_id.isin(usable_ids)]
@@ -355,46 +364,60 @@ class IngestionPlan(object):
         )
         return split_df
 
+    def get_jobs(self, db):
+        jobs = []
+        for row in tqdm(self._df.itertuples(index=False)):
+            job = SingleMergeJob(
+                lightcurve_id=row.lightcurve_id,
+                tic_id=row.tic_id,
+                aperture=row.aperture,
+                lightcurve_type=row.lightcurve_type,
+                orbit_number=row.orbit_number,
+                camera=row.camera,
+                ccd=row.ccd,
+                file_path=row.file_path
+            )
+            jobs.append(job)
+        return jobs
+
     def get_jobs_by_partition(self, db, max_length):
         buckets = defaultdict(list)
         echo("Grabbing partition ranges...")
         if len(self._df) == 0:
             # No duplicates, partition is empty
             return []
-        results = db.map_values_to_partitions(
-            Lightpoint, self._df["lightcurve_id"]
-        )
-        partition_oid_df = pd.DataFrame(
-            results, columns=["lightcurve_id", "partition_oid"]
-        )
-        self._df = pd.merge(self._df, partition_oid_df, how="inner", on="lightcurve_id")
 
-        self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_number"], inplace=True
+        id_oid_map = dict(
+            db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
         )
 
-        for row in tqdm(self._df.to_dict("records")):
-            oid = int(row.pop("partition_oid"))
-            buckets[oid].append(SingleMergeJob(**row))
+        echo("Assigning lightcurve id -> table oids")
+        tqdm.pandas()
+        self._df["oid"] = self._df["lightcurve_id"].progress_apply(
+            lambda id_: int(id_oid_map[id_])
+        )
+
+        echo("Grouping by table oid")
+        tqdm.pandas()
+        for oid, group in self._df.groupby("oid"):
+            jobs = []
+            for row in group.to_dict("records"):
+                row.pop("oid")
+                jobs.append(SingleMergeJob(**row))
+            buckets[oid] = jobs
 
         partition_jobs = []
-        with tqdm(total=len(buckets)) as bar:
+        echo("Constructing multiprocessing work")
+        with tqdm(total=len(buckets), unit=" partition jobs") as bar:
             for partition_oid, jobs in buckets.items():
-                job_chunks = list(chunkify(jobs, max_length))
-                if len(job_chunks) > 1:
-                    bar.write(
-                        "Splitting work across partition OID {0} with {1} workloads".format(
-                            partition_oid,
-                            len(job_chunks)
-                        )
-                    )
-                for chunk in job_chunks:
+                for job_chunk in chunkify(jobs, max_length):
                     partition_jobs.append(
                         PartitionJob(
-                            partition_oid=partition_oid, single_merge_jobs=chunk
+                            partition_oid=partition_oid,
+                            single_merge_jobs=job_chunk,
                         )
                     )
-            bar.update(1)
+                bar.update(1)
         return partition_jobs
 
     def get_jobs_by_lightcurve(self, db):
@@ -412,8 +435,6 @@ class IngestionPlan(object):
         lightcurve_jobs = []
         for id_, jobs in bucket.items():
             lightcurve_jobs.append(
-                LightcurveJob(
-                    lightcurve_id=id_, single_merge_jobs=jobs
-                )
+                LightcurveJob(lightcurve_id=id_, single_merge_jobs=jobs)
             )
         return lightcurve_jobs

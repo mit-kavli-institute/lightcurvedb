@@ -64,4 +64,3 @@ one bulk query and interface the collection in a dictionary-like manner.
 
 .. autoclass:: lightcurvedb.managers.lightcurve_query.LightcurveManager
    :members:
-

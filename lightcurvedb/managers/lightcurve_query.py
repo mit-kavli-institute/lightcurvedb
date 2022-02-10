@@ -1,9 +1,8 @@
 from sqlalchemy.orm.query import Query
 
 from lightcurvedb.exceptions import LightcurveDBException
-from lightcurvedb.models import Lightcurve
 from lightcurvedb.managers.manager import manager_factory
-
+from lightcurvedb.models import Lightcurve
 
 BaseLightcurveManager = manager_factory(
     Lightcurve, "tic_id", "aperture_id", "lightcurve_type_id"

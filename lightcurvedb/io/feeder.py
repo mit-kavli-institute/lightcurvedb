@@ -3,15 +3,15 @@ This module describes multiprocessing queues in order to quickly feed
 IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
-from lightcurvedb import db_from_config
-from lightcurvedb.io.procedures.procedure import (
-    get_bestaperture_data,
-    get_lightcurve_data,
-)
-from lightcurvedb.models.lightpoint import Lightpoint, LIGHTPOINT_NP_DTYPES
-from multiprocessing import Process, Manager
-from sqlalchemy.exc import InternalError
+from multiprocessing import Manager, Process
+
 import numpy as np
+from sqlalchemy.exc import InternalError
+
+from lightcurvedb import Lightcurve, db_from_config
+from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
+from lightcurvedb.io.procedures.procedure import get_lightcurve_data
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
 class LightcurveFeeder(Process):
@@ -36,8 +36,18 @@ class LightcurveFeeder(Process):
         id_ = self.id_queue.get()
         with db_from_config(self.config) as db:
             while id_ is not None:
+                # Grab lightcurve data
                 stmt = self.stmt_func(id_, *self.columns)
                 try:
+                    lc = db.lightcurves.get(id_)
+                    if lc is None:
+                        raise PrimaryIdentNotFound
+                    result = {
+                        "id": lc.id,
+                        "tic_id": lc.tic_id,
+                        "aperture": lc.aperture_id,
+                        "lightcurve_type": lc.lightcurve_type_id,
+                    }
                     data = np.array(
                         list(map(tuple, db.execute(stmt))),
                         dtype=[
@@ -45,16 +55,26 @@ class LightcurveFeeder(Process):
                             for column in self.columns
                         ],
                     )
+                    if len(data) == 0:
+                        raise EmptyLightcurve
+                    result["data"] = data
+                except EmptyLightcurve:
+                    result["error"] = "No lightpoints found, empty lightcurve"
                 except InternalError:
                     # No data found!
                     db.rollback()
-                    data = None
-                except Exception:
+                    result["error"] = "No lightpoints found, empty lightcurve"
+                except PrimaryIdentNotFound:
+                    result = {
+                        "error": f"No lightcurve found for identifier {id_}",
+                        "id": id_,
+                    }
+                except Exception as e:
                     # Catch all, clean queues and exit
-                    data = None
+                    result = {"error": f"Encountered terminating error: {e}"}
                     break
                 finally:
-                    self.result_queue.put(data)
+                    self.result_queue.put(result)
                     self.id_queue.task_done()
                     id_ = self.id_queue.get()
 
@@ -157,10 +177,20 @@ def yield_best_aperture_data(
         either provided in the columns argument or any Lightpoint column
         name.
     """
+    # Convert tic_ids to list of lightcurve ids
+    ids = []
+    with db_from_config(db_config_override) as db:
+        q = db.lightcurves_from_best_aperture(resolve=False).filter(
+            Lightcurve.tic_id.in_(tic_ids),
+            Lightcurve.lightcurve_type_id == "KSPMagnitude",
+        )
+        for lc in q.all():
+            ids.append(lc.id)
+
     for data in _yield_data(
-        get_bestaperture_data,
+        get_lightcurve_data,
         columns,
-        tic_ids,
+        ids,
         db_config_override=db_config_override,
         n_threads=n_threads,
     ):

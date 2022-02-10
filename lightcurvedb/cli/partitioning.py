@@ -1,15 +1,21 @@
 from __future__ import division, print_function
 
+from multiprocessing import Pool
 from sys import exit
-from tqdm import tqdm
 
 import click
+from loguru import logger
+from sqlalchemy import text
+from tqdm import tqdm
 
 import lightcurvedb.models as defined_models
-from lightcurvedb.models.table_track import RangedPartitionTrack
 from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.cli.types import QLPModelType
 from lightcurvedb.core.partitioning import emit_ranged_partition_ddl
-from sqlalchemy import text
+from lightcurvedb.core.psql_tables import PGClass
+from lightcurvedb.models.table_track import RangedPartitionTrack
+from lightcurvedb.util import merging
+from lightcurvedb.util.iter import chunkify
 
 
 @lcdbcli.group()
@@ -217,54 +223,66 @@ def delete_partitions(ctx, model, pattern):
                 click.echo("\tDeleted {0}".format(name))
 
 
-def schemaed_table(table, schema):
-    return "{0}.{1}".format(schema, table) if schema else table
+@partitioning.command()
+@click.pass_context
+@click.argument("model", type=QLPModelType())
+@click.argument("minimum_length", type=int)
+@click.option("--n-threads", "-n", type=int, default=0)
+def merge_partitions(ctx, model, minimum_length, n_threads):
+    with ctx.obj["dbconf"] as db:
+        working_group = (
+            db.query(RangedPartitionTrack)
+            .filter(
+                RangedPartitionTrack.length < minimum_length,
+                RangedPartitionTrack.same_model(model),
+            )
+            .order_by(RangedPartitionTrack.min_range)
+        )
+
+        pairs = []
+        for left, *remainder in chunkify(working_group, 2):
+            if remainder:
+                pairs.append(merging.WorkingPair(left.oid, remainder[0].oid))
+            else:
+                click.echo(f"{left.pgclass.name} is a child node")
+
+    click.echo(f"Will process {len(pairs)} pairs")
+    with Pool(n_threads) as pool:
+        results = pool.imap_unordered(merging.merge_working_pair, pairs)
+        for oid in results:
+            if oid is not None and isinstance(oid, int):
+                with ctx.obj["dbconf"] as db:
+                    relname = db.query(PGClass).get(oid).relname
+                    logger.success(relname)
 
 
 @partitioning.command()
 @click.pass_context
-@click.argument("model", type=str)
-@click.option("--pattern", "-p", type=str, default=".*")
-@click.option("--schema", type=str, default="partitions")
-def set_unlogged(ctx, model, pattern, schema):
-    try:
-        target_model = getattr(defined_models, model)
-    except AttributeError:
-        click.echo("No known model {0}".format(model))
-        exit(1)
+@click.argument("model", type=QLPModelType())
+def attach_orphaned_partitions(ctx, model):
     with ctx.obj["dbconf"] as db:
-        partitions = db.get_partitions_df(target_model)
-        tablenames = list(partitions.partition_name)
+        working_group = (
+            db.query(RangedPartitionTrack)
+            .filter(RangedPartitionTrack.same_model(model))
+            .all()
+        )
+        orphans = []
+        for track in tqdm(working_group):
+            if track.pgclass is None:
+                logger.error(
+                    f"BAD TRACK {track.min_range} to {track.max_range}"
+                )
+                continue
+            if len(track.pgclass.parent) == 0:
+                logger.warning(f"{track.pgclass.relname} is orphaned!")
+                orphans.append(track)
 
-        for table in tablenames:
-            table = schemaed_table(table, schema)
-            q = text("ALTER TABLE {0} SET UNLOGGED".format(table))
-            click.echo("Altering {0}".format(click.style(table, bold=True)))
-            db.session.execute(q)
-            db.commit()
-        click.echo("Altered {0} tables! Done".format(len(tablenames)))
-
-
-@partitioning.command()
-@click.pass_context
-@click.argument("model", type=str)
-@click.option("--pattern", "-p", type=str, default=".*")
-@click.option("--schema", type=str, default="partitions")
-def set_logged(ctx, model, pattern, schema):
-    try:
-        target_model = getattr(defined_models, model)
-    except AttributeError:
-        click.echo("No known model {0}".format(model))
-        exit(1)
-
-    with ctx.obj["dbconf"] as db:
-        partitions = db.get_partitions_df(target_model)
-        tablenames = list(partitions.partition_name)
-
-        for table in tablenames:
-            table = schemaed_table(table, schema)
-            q = text("ALTER TABLE {0} SET LOGGED".format(table))
-            click.echo("Altering {0}".format(click.style(table, bold=True)))
-            db.session.execute(q)
-            db.commit()
-        click.echo("Altered {0} tables! Done".format(len(tablenames)))
+        parent = model.__tablename__
+        if not orphans:
+            logger.success("No orphaned tables.")
+            return 0
+        for orphan in tqdm(orphans, unit="orphans"):
+            merging.attach(db, parent, orphan.pgclass, orphan)
+            logger.info(f"Attached {orphan.pgclass.name}")
+        db.commit()
+        logger.success(f"Attached {len(orphans)} orphaned tables")

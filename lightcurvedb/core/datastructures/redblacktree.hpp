@@ -56,7 +56,7 @@ class TreeIterator {
                 // Nothing to increment on
                 throw exception();
             }
-            // Traverse the tree in 
+            // Traverse the tree in
             if (this->current->right) {
 
             }
@@ -91,7 +91,7 @@ class RedblackTree {
     private:
         void rotate_left(Node<T> *target);
         void rotate_right(Node<T> *target);
-        
+
         Node<T> *root;
         C comp;
 

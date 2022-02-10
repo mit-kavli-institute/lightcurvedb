@@ -1,9 +1,16 @@
 import os
+from collections import defaultdict
+from configparser import ConfigParser
+from datetime import datetime
+from functools import lru_cache
+
 import numpy as np
 from astropy import units as u
-from configparser import ConfigParser
-from lightcurvedb.util.decorators import suppress_warnings
 
+from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
+from lightcurvedb.core.tic8 import TIC8_DB
+from lightcurvedb.models.bls import BLS
+from lightcurvedb.util.decorators import suppress_warnings
 
 LEGACY_MAPPER = {
     "bls_npointsaftertransit_1_0": (
@@ -30,6 +37,22 @@ LEGACY_MAPPER = {
     "bls_period_1_0": ("period", float),
     "bls_no": ("bls_no", int),
 }
+
+
+def get_stellar_radius(tic_id):
+    with TIC8_DB() as tic8:
+        ticentries = tic8.ticentries
+        radius, radius_error = (
+            tic8.query(ticentries.c.rad, ticentries.c.e_rad)
+            .filter(ticentries.c.id == tic_id)
+            .one()
+        )
+        if radius is None:
+            radius = float("nan")
+        if radius_error is None:
+            radius_error = float("nan")
+
+        return radius * u.solRad, radius_error * u.solRad
 
 
 @suppress_warnings
@@ -75,16 +98,16 @@ def estimate_transit_duration(period, duration_rel_period):
     return period * duration_rel_period
 
 
-def get_bls_run_parameters(orbit, camera):
+@lru_cache
+def get_bls_run_parameters(sector_run_directory, camera):
     """
     Open each QLP config file and attempt to determine what
     were the parameters for legacy BLS execution.
     """
-    run_dir = orbit.get_sector_directory("ffi", "run")
     parser = ConfigParser()
 
     config_name = "example-lc-pdo{0}.cfg".format(camera)
-    path = os.path.join(run_dir, config_name)
+    path = os.path.join(sector_run_directory, config_name)
 
     parser.read(path)
 
@@ -105,7 +128,112 @@ def normalize(headers, lines):
         tokens = line.split()
         for token, header in zip(tokens, headers):
             norm, type_ = LEGACY_MAPPER.get(header.lower(), (None, None))
-            if not norm:
+            if norm is None:
                 continue
             result[norm] = type_(token)
         yield result
+
+
+class BaseBLSIngestor(BufferedDatabaseIngestor):
+    job_queue = None
+    buffers = defaultdict(list)
+    seen_cache = set()
+    buffer_order = ["bls"]
+
+    def __init__(self, config, name, job_queue, tic_parameters):
+        super().__init__(config, name, job_queue)
+        self.tic_parameters = tic_parameters
+
+    def _get_tic_parameters(self, tic_id):
+        try:
+            rad, error = self.tic_parameters[tic_id]
+        except KeyError:
+            rad, error = get_stellar_radius(tic_id)
+            self.tic_parameters[tic_id] = rad, error
+        return rad, error
+
+    def load_summary_file(self, tic_id, sector, path):
+        # Get inode date change
+        date = datetime.fromtimestamp(os.path.getctime(path))
+        lines = list(map(lambda l: l.strip(), open(path, "rt").readlines()))
+
+        if len(lines) < 2:
+            # No data/malformed bls summary files
+            self.log("Unable to parse file {path}", level="error")
+            raise RuntimeError
+
+        headers = lines[0][2:]
+        headers = tuple(map(lambda l: l.lower(), headers.split()))
+        lines = lines[1:]
+        results = list(normalize(headers, lines))
+        stellar_radius, stellar_radius_error = self._get_tic_parameters(tic_id)
+        accepted = []
+        for result in results:
+            # Assume that each additional BLS calculate
+            result["tce_n"] = int(result.pop("bls_no"))
+            result["created_on"] = date
+            planet_radius = estimate_planet_radius(
+                stellar_radius, float(result["transit_depth"])
+            ).value
+            planet_radius_error = estimate_planet_radius(
+                stellar_radius_error, float(result["transit_depth"])
+            ).value
+            result["transit_duration"] = estimate_transit_duration(
+                result["period"], result["duration_rel_period"]
+            )
+            result["planet_radius"] = (
+                planet_radius if not np.isnan(planet_radius) else float("nan")
+            )
+            result["planet_radius_error"] = (
+                planet_radius_error
+                if not np.isnan(planet_radius_error)
+                else float("nan")
+            )
+            result["tic_id"] = int(tic_id)
+            result["sector"] = int(sector)
+
+            if "period_inv_transit" not in result:
+                result["period_inv_transit"] = float("nan")
+            accepted.append(result)
+        return accepted
+
+    def flush_bls(self, db):
+        self.log("Flushing bls entries")
+        tic_ids = {param["tic_id"] for param in self.buffers["bls"]}
+        keys = ("sector", "tic_id", "tce_n")
+        cache = set(
+            db.query(*[getattr(BLS, key) for key in keys]).filter(
+                BLS.tic_id.in_(tic_ids)
+            )
+        )
+        self.log(
+            f"Filtering {len(self.buffers['bls'])} bls results against "
+            f"{len(cache)} relevant entries in db"
+        )
+
+        db.session.bulk_insert_mappings(
+            BLS,
+            filter(
+                lambda param: tuple(param[key] for key in keys) not in cache,
+                self.buffers["bls"],
+            ),
+        )
+        self.log("Submitted bls entries")
+
+    def process_job(self, job):
+        path = job["path"]
+        tic_id = job["tic_id"]
+        sector = job["sector"]
+        config_parameters = get_bls_run_parameters(
+            job["sector_run_directory"], job["camera"]
+        )
+        all_bls_parameters = self.load_summary_file(tic_id, sector, path)
+        for bls_parameters in all_bls_parameters:
+            bls_parameters["runtime_parameters"] = config_parameters
+            self.buffers["bls"].append(bls_parameters)
+
+        self.log(f"Processed {path}", level="trace")
+
+    @property
+    def should_flush(self):
+        return len(self.buffers["bls"]) >= 10000

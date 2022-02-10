@@ -1,11 +1,4 @@
 import pandas as pd
-from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb.core.partitioning import (
-    Partitionable,
-    emit_ranged_partition_ddl,
-)
-from lightcurvedb.core.datastructures.blob import Blobable
-from lightcurvedb.util.iter import keyword_zip
 from sqlalchemy import (
     BigInteger,
     Column,
@@ -17,6 +10,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
+
+from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.core.datastructures.blob import Blobable
+from lightcurvedb.core.partitioning import (
+    Partitionable,
+    emit_ranged_partition_ddl,
+)
+from lightcurvedb.util.iter import keyword_zip
 
 LIGHTPOINT_PARTITION_RANGE = 10 ** 6
 UPDATEABLE_PARAMS = [

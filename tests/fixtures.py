@@ -1,7 +1,9 @@
 import pytest
 from sqlalchemy import text
-from lightcurvedb.core.connection import db_from_config
+
 from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.core.connection import db_from_config
+
 from .constants import CONFIG_PATH
 
 
