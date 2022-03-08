@@ -1,8 +1,7 @@
-from __future__ import division, print_function
-
 import re
 
 import click
+from pathlib import Path
 from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
@@ -11,7 +10,7 @@ from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.jobs import IngestionPlan
+from lightcurvedb.core.ingestors.jobs import IngestionPlan, DirectoryPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
 from lightcurvedb.models import Lightcurve
 
@@ -80,7 +79,8 @@ def ingest_h5(
 @click.option("--recursive", "-r", is_flag=True, default=False)
 def ingest_dir(ctx, paths, n_processes, recursive):
     with ctx.obj["dbconf"] as db:
-        plan = DirectoryPlan(db, recursive=recursive)
+        directories = [Path(path) for path in paths]
+        plan = DirectoryPlan(directories, db, recursive=recursive)
         jobs = plan.get_jobs()
     ingest_merge_jobs(
         ctx.obj["dbconf"],
