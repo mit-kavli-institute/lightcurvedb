@@ -76,7 +76,7 @@ def ingest_h5(
 @lightcurve.command()
 @click.pass_context
 @click.argument("paths", nargs=-1, type=click.Path(file_okay=False, exists=True))
-@click.option("--n-processes", default=16, type.click.IntRange(min=1))
+@click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
 def ingest_dir(ctx, paths, n_processes, recursive):
     with ctx.obj["dbconf"] as db:
