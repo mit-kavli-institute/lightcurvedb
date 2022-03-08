@@ -313,7 +313,7 @@ class IngestionPlan(object):
             seen_obs.add((lightcurve_id, orbit_number))
 
         echo("Building job list")
-        pairs = list(yield_lightcurve_fields(db))
+        pairs = list(_yield_lightcurve_fields(db))
         for file_obs in tqdm(file_observations, unit=" file observations"):
             for ap, lc_t in pairs:
                 lc_key = (file_obs.c.tic_id, ap, lc_t)
