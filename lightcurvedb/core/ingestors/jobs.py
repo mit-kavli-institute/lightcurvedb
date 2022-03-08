@@ -2,7 +2,9 @@ from collections import defaultdict, namedtuple
 from itertools import product
 
 import pandas as pd
+import pathlib
 from click import echo
+from loguru import logger
 from sqlalchemy import text, select
 from sqlalchemy.orm import Bundle
 from tqdm import tqdm
@@ -21,6 +23,7 @@ from lightcurvedb.models import (
     Orbit,
 )
 from lightcurvedb.util.iter import chunkify
+from lightcurvedb.util.context import extract_pdo_path_context
 
 SingleMergeJob = namedtuple(
     "SingleMergeJob",
@@ -87,7 +90,7 @@ def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
     return accumulator
 
 
-def yield_lightcurve_fields(db, background_name_template="%background%"):
+def _yield_lightcurve_fields(db, background_name_template="%background%"):
     """
     Yield lightcurve apertures and types
     """
@@ -107,6 +110,79 @@ def yield_lightcurve_fields(db, background_name_template="%background%"):
     _iter = product(bg_apertures, bg_types)
     for bg_aperture, bg_lightcurve_type in _iter:
         yield bg_aperture.name, bg_lightcurve_type.name
+
+
+def _tic_from_h5(path):
+    base = path.name
+    return int(base.split(".")[0])
+
+
+def _get_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
+    key = (tic_id, aperture, lightcurve_type)
+
+    try:
+        id_ = id_map[key]
+    except KeyError:
+        logger.trace(f"Need new id for {tic_id}")
+        lc = Lightcurve(
+            tic_id=tic_id,
+            aperture_id=aperture,
+            lightcurve_type=lightcurve_type
+        )
+        db.add(lc)
+        db.commit()
+        id_ = lc.id
+
+    return id_
+
+def _get_smjs_from_paths(db, contexts):
+    pairs = list(_yield_lightcurve_fields(db))
+
+    tic_ids = set(_tic_from_h5(context["path"]) for context in contexts)
+    id_map = {}
+
+    for aperture, lightcurve_type in pairs:
+        q = (
+            db
+            .query(
+                Lightcurve.tic_id,
+                Lightcurve.id
+            )
+            .filter(
+                Lightcurve.aperture_id == aperture,
+                Lightcurve.lightcurve_type_id == lightcurve_type
+                Lightcurve.tic_id.in_(tic_ids)
+            )
+        )
+        for tic_id, lightcurve_id in q:
+            key = (tic_id, aperture, lightcurve_type)
+            id_map[key] = lightcurve_id
+
+    jobs = []
+    for context in tqdm(contexts):
+        path = context["path"]
+        tic_id = int(_tic_from_h5(path))
+        for aperture, lightcurve_type in pairs:
+            id_ = _get_lightcurve_id(
+                db,
+                id_map,
+                tic_id,
+                aperture,
+                lightcurve_type
+            )
+
+            smj = SingleMergeJob(
+                lightcurve_id=id_,
+                tic_id=tic_id,
+                aperture=aperture,
+                lightcurve_type=lightcurve_type,
+                orbit_number=int(context["orbit_number"]),
+                camera=int(context["camera"])
+                ccd=int(context["ccd"]),
+                file_path=path
+            )
+            jobs.append(smj)
+    return jobs
 
 
 class IngestionPlan(object):
@@ -438,3 +514,86 @@ class IngestionPlan(object):
                 LightcurveJob(lightcurve_id=id_, single_merge_jobs=jobs)
             )
         return lightcurve_jobs
+
+
+class DirectoryPlan:
+    files = None
+    jobs = None
+
+    def __init__(
+        directories: list[pathlib.Path],
+        db,
+        recursive=False,
+    ):
+        self.source_dirs = directories
+        self.db = db
+        self._look_for_files()
+        self._preprocess_files()
+
+    def _look_for_files(self):
+        contexts = []
+        for source_dir in self.source_dirs:
+            logger.debug(f"Looking for h5 files in {source_dir}")
+            if self.recursive:
+                _file_iter = source_dir.rglob("*.h5")
+            else:
+                _file_iter = source_dir.glob("*.h5")
+
+            for i, h5_path in enumterate(_file_iter):
+                context = extract_pdo_path_context(h5_path)
+                context["path"] = h5_path
+                contexts.append(context)
+            logger.debug(f"Found {i} files in {source_dir}")
+
+        self.files = contexts
+
+    def _get_observed(self, db, jobs):
+        _mask = set()
+        observed = set()
+
+        for job in jobs:
+            orbit_number = job.orbit_number
+            key = (
+                orbit_number,
+                job.camera,
+                job.ccd
+            )
+            if key not in _mask:
+                logger.debug(
+                    f"Querying observation cache for orbit {orbit_number} "
+                    f"Cam {job.camera} CCD {job.ccd}"
+                )
+                q = (
+                    db
+                    .query(
+                        Observation.lightcurve_id
+                    )
+                    .filter(
+                        Orbit.orbit_number == orbit_number,
+                        Observation.camera == job.camera,
+                        Observation.ccd == job.ccd
+                    )
+                )
+                for id_ in q:
+                    observed.add((id_, orbit_number))
+
+                _mask.add(key)
+
+        return observed
+
+    def _preprocess_files(self):
+        logger.debug(f"Preprocessing {len(self.files)} files")
+        with self.db as db:
+            jobs = []
+            naive_jobs = _get_smjs_from_paths(db, self.files)
+            observed = self._get_observed(db, naive_jobs)
+            for job in tqdm(jobs):
+                key = (job.lightcurve_id, job.orbit_number)
+                if key not in observed:
+                    jobs.append(job)
+
+        logger.debug(f"Generated {len(jobs)} jobs")
+        self.jobs = jobs
+
+    def get_jobs(self):
+        return self.jobs
