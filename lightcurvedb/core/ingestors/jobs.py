@@ -556,30 +556,30 @@ class DirectoryPlan:
         observed = set()
 
         for job in jobs:
-            orbit_number = job.orbit_number
             key = (
-                orbit_number,
+                job.orbit_number,
                 job.camera,
                 job.ccd
             )
             if key not in _mask:
                 logger.debug(
-                    f"Querying observation cache for orbit {orbit_number} "
+                    f"Querying observation cache for orbit {job.orbit_number} "
                     f"Cam {job.camera} CCD {job.ccd}"
                 )
                 q = (
                     db
                     .query(
-                        Observation.lightcurve_id
+                        Observation.lightcurve_id, Orbit.orbit_number
                     )
                     .join(Observation.orbit)
                     .filter(
-                        Orbit.orbit_number == orbit_number,
+                        Orbit.orbit_number == job.orbit_number,
                         Observation.camera == job.camera,
                         Observation.ccd == job.ccd
                     )
                 )
-                for i, id_ in enumerate(q):
+                for i, row in enumerate(q):
+                    id_, orbit_number = row
                     observed.add((id_, orbit_number))
 
                 logger.debug(
@@ -604,8 +604,8 @@ class DirectoryPlan:
                 if key not in observed:
                     jobs.append(job)
                     observed.add(key)
-
-        logger.debug(f"Generated {len(jobs)} jobs")
+        ignored = len(naive_jobs) - len(jobs)
+        logger.debug(f"Generated {len(jobs)} jobs, ignoring {ignored}")
         self.jobs = jobs
 
     def get_jobs(self):
