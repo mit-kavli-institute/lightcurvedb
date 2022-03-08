@@ -75,6 +75,25 @@ def ingest_h5(
 
 @lightcurve.command()
 @click.pass_context
+@click.argument("paths", nargs=-1, type=click.Path(file_okay=False, exists=True))
+@click.option("--n-processes", default=16, type.click.IntRange(min=1))
+@click.option("--recursive", "-r", is_flag=True, default=False)
+def ingest_dir(ctx, paths, n_processes, recursive):
+    with ctx.obj["dbconf"] as db:
+        plan = DirectoryPlan(db, recursive=recursive)
+        jobs = plan.get_jobs()
+    ingest_merge_jobs(
+        ctx.obj["dbconf"],
+        jobs,
+        n_processes,
+        not ctx.obj["dryrun"],
+        log_level=ctx.obj["log_level"]
+    )
+    click.echo("Done!")
+
+
+@lightcurve.command()
+@click.pass_context
 @click.argument("tics", type=int, nargs=-1)
 @click.option("--n-processes", default=1, type=click.IntRange(min=1))
 @click.option("--fill-id-gaps", "fillgaps", is_flag=True, default=False)
