@@ -10,6 +10,7 @@ from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
 from sqlalchemy import func, text
+from sqlalchemy.exc import InternalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -244,7 +245,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             try:
                 super().flush(db)
                 ingested = True
-            except (InFailedSqlTransaction, UniqueViolation) as e:
+            except (InFailedSqlTransaction, UniqueViolation, InternalError) as e:
                 db.rollback()
                 self.log(
                     "Needing to reduce ingestion due to {0}".format(e),
@@ -253,6 +254,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 match = re.search(
                     r"\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
                 )
+
+                match = match.groupdict()
+
                 orbit_id, lightcurve_id = int(match["orbit_id"]), int(
                     match["lightcurve_id"]
                 )
@@ -302,27 +306,21 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         while len(lps) > 0:
             chunk = lps.pop()
-            mgr.threading_copy(chunk)
+            mgr.copy(chunk)
 
         end = datetime.now()
 
         self.log(f"Sending metric to {self.process}")
         process = db.query(QLPProcess).get(self.process.id)
 
-        if process is not None:
-            metric = QLPOperation(
-                process_id=self.process.id,
-                time_start=start,
-                time_end=end,
-                job_size=lp_size,
-                unit="lightpoint",
-            )
-            db.add(metric)
-        else:
-            self.log(
-                f"No process id {self.process.id} exists! Skipping telemetry recording",
-                level="warning"
-            )
+        metric = QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=lp_size,
+            unit="lightpoint",
+        )
+        return metric
 
     def flush_observations(self, db):
         obs = self.buffers.get("observations", [])
