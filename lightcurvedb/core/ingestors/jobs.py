@@ -556,15 +556,9 @@ class DirectoryPlan:
         observed = set()
 
         for job in jobs:
-            key = (
-                job.orbit_number,
-                job.camera,
-                job.ccd
-            )
-            if key not in _mask:
+            if job.orbit_number not in _mask:
                 logger.debug(
-                    f"Querying observation cache for orbit {job.orbit_number} "
-                    f"Cam {job.camera} CCD {job.ccd}"
+                    f"Querying observation cache for orbit {job.orbit_number}"
                 )
                 q = (
                     db
@@ -574,8 +568,6 @@ class DirectoryPlan:
                     .join(Observation.orbit)
                     .filter(
                         Orbit.orbit_number == job.orbit_number,
-                        Observation.camera == job.camera,
-                        Observation.ccd == job.ccd
                     )
                 )
                 for i, row in enumerate(q):
@@ -583,11 +575,10 @@ class DirectoryPlan:
                     observed.add((id_, orbit_number))
 
                 logger.debug(
-                    f"Tracking {i} entries from orbit {orbit_number} "
-                    f"Cam {job.camera} CCD {job.ccd}"
+                    f"Tracking {i} entries from orbit {orbit_number}"
                 )
 
-                _mask.add(key)
+                _mask.add(job.orbit_number)
 
         return observed
 
