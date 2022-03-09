@@ -38,10 +38,19 @@ class BufferedDatabaseIngestor(Process):
         raise NotImplementedError
 
     def flush(self, db):
+        metrics = []
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
             flush_method = getattr(self, method_name)
-            flush_method(db)
+            metric = flush_method(db)
+            if metric is not None:
+                metrics.append(metric)
+
+        db.commit()
+
+        # Emplace metrics
+        for metric in metrics:
+            db.add(metric)
         db.commit()
 
         # Clear buffers
