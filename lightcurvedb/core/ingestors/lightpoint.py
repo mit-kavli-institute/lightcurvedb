@@ -148,7 +148,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.log("Initialized")
 
     def _load_contexts(self):
-        self.db = db_from_config(self.db_config)
         with self.db as db, IngestionCache() as cache:
             self.normalizer = TimeCorrector(db, cache)
             self.log("Instantiated bjd normalizer")

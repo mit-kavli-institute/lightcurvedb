@@ -11,6 +11,7 @@ class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
     db_config = None
+    db = None
     buffers = defaultdict(list)
     buffer_order = []
 
@@ -31,7 +32,7 @@ class BufferedDatabaseIngestor(Process):
     def _execute_job(self, job):
         self.process_job(job)
         if self.should_flush:
-            with db_from_config(self.db_config) as db:
+            with self.db as db:
                 self.flush(db)
 
     def process_job(self, job):
