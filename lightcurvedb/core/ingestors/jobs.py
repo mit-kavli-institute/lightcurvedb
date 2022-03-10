@@ -534,6 +534,16 @@ class DirectoryPlan:
         self._look_for_files()
         self._preprocess_files()
 
+
+    def __repr__(self):
+        file_msg = f"Considered {len(self.files)} files"
+        tics = {context.tic_id for context in self.jobs}
+        tic_msg = f"{len(tics)} total unique TIC ids"
+
+        messages = [file_msg, tic_msg]
+
+        return "\n".join(messages)
+
     def _look_for_files(self):
         contexts = []
         for source_dir in self.source_dirs:

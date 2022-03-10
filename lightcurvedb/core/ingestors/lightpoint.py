@@ -303,8 +303,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
-        while len(lps) > 0:
-            chunk = lps.pop()
+        for chunk in lps:
             mgr.copy(chunk)
 
         end = datetime.now()
