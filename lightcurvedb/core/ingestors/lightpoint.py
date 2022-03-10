@@ -240,52 +240,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     def flush(self, db):
         ingested = False
-        while not ingested:
-            try:
-                super().flush(db)
-                ingested = True
-            except (InFailedSqlTransaction, UniqueViolation, InternalError) as e:
-                db.rollback()
-                self.log(
-                    "Needing to reduce ingestion due to {0}".format(e),
-                    level="error",
-                )
-                match = re.search(
-                    r"\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
-                )
 
-                match = match.groupdict()
-
-                orbit_id, lightcurve_id = int(match["orbit_id"]), int(
-                    match["lightcurve_id"]
-                )
-                q = (
-                    db.query(func.min(Frame.cadence), func.max(Frame.cadence))
-                    .filter(
-                        Frame.orbit_id == orbit_id,
-                        Frame.frame_type_id == "Raw FFI",
-                    )
-                    .group_by(Frame.orbit_id)
-                )
-                min_cadence, max_cadence = q.one()
-                self.buffers["observations"] = list(
-                    filter(
-                        lambda obs: not (
-                            obs[0] == lightcurve_id and obs[1] == orbit_id
-                        ),
-                        self.buffers["observations"],
-                    )
-                )
-                for lp_buffer in self.buffers["lightpoints"]:
-                    id_mask = lp_buffer["lightcurve_id"] == lightcurve_id
-                    cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (
-                        lp_buffer["cadence"] <= max_cadence
-                    )
-                    lp_buffer = lp_buffer[~(id_mask & cadence_mask)]
-                self.log(
-                    "Reduced ingestion work due to observation collision",
-                    level="warning",
-                )
+        super().flush(db)
 
         self.n_samples += 1
 
