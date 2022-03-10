@@ -160,6 +160,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.set_new_parameters(db)
             self.log("Determined initial parameters")
 
+    def _postflush(self, db):
+        self.n_samples += 1
+
+        if self.should_refresh_parameters:
+            self.set_new_parameters(db)
+
     def get_quality_flags(self, camera, ccd, cadences):
         qflag_df = self.quality_flag_map[(camera, ccd)].loc[cadences]
         return qflag_df.quality_flag.to_numpy()
@@ -238,16 +244,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.process_single_merge_job(job)
         self.job_queue.task_done()
 
-    def flush(self, db):
-        ingested = False
-
-        super().flush(db)
-
-        self.n_samples += 1
-
-        if self.should_refresh_parameters:
-            self.set_new_parameters(db)
-
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints", [])
         if len(lps) < 1:
@@ -264,7 +260,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         end = datetime.now()
 
-        self.log(f"Sending metric to {self.process}")
         process = db.query(QLPProcess).get(self.process.id)
 
         metric = QLPOperation(
@@ -336,6 +331,29 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         return self.n_samples >= 3
 
 
+class ImmediateLightpointIngestor(BaseLightpointIngestor):
+    def _execute_job(self, job):
+        self.process_job(job)
+        with self.db as db:
+            metric = self.flush_lightpoints(db)
+            for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
+                obs = Observation(
+                    lightcurve_id=lc_id,
+                    orbit_id=orbit_id,
+                    camera=camera,
+                    ccd=ccd
+                )
+                db.add(obs)
+            db.add(metric)
+            db.commit()
+
+        # Clear buffers
+        for buffer_key in self.buffer_order:
+            self.buffers[buffer_key] = []
+
+    def determine_process_parameters(self):
+        return {}
+
 class SamplingLightpointIngestor(BaseLightpointIngestor):
     max_lp_buffersize = 10e5
     min_lp_buffersize = 1
@@ -388,12 +406,13 @@ def ingest_merge_jobs(
             enqueue=True,
         )
         for n in range(n_processes):
-            p = ExponentialSamplingLightpointIngestor(
+            p = ImmediateLightpointIngestor(
                 db._config, f"worker-{n}", job_queue, stage.id
             )
             p.start()
 
         # Wait until all jobs have been pulled off queue
+        n_todo = total_single_jobs
         while not job_queue.empty():
             queue_size = job_queue.qsize()
             n_done = n_todo - queue_size

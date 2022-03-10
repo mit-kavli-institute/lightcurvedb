@@ -35,10 +35,17 @@ class BufferedDatabaseIngestor(Process):
             with self.db as db:
                 self.flush(db)
 
+    def _preflush(self, db):
+        pass
+
+    def _postflush(self, db):
+        pass
+
     def process_job(self, job):
         raise NotImplementedError
 
     def flush(self, db):
+        self._preflush(db)
         metrics = []
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
@@ -57,6 +64,8 @@ class BufferedDatabaseIngestor(Process):
         # Clear buffers
         for buffer_key in self.buffer_order:
             self.buffers[buffer_key] = []
+
+        self._postflush(db)
 
     def run(self):
         self.log("Entering main runtime")
