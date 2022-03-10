@@ -77,19 +77,24 @@ def ingest_h5(
 @click.argument("paths", nargs=-1, type=click.Path(file_okay=False, exists=True))
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
-def ingest_dir(ctx, paths, n_processes, recursive):
+@click.option("--ingest/--plan", is_flag=True, default=True)
+def ingest_dir(ctx, paths, n_processes, recursive, ingest):
     with ctx.obj["dbconf"] as db:
         directories = [Path(path) for path in paths]
         plan = DirectoryPlan(directories, db, recursive=recursive)
         jobs = plan.get_jobs()
-    ingest_merge_jobs(
-        ctx.obj["dbconf"],
-        jobs,
-        n_processes,
-        not ctx.obj["dryrun"],
-        log_level=ctx.obj["log_level"]
-    )
-    click.echo("Done!")
+
+    if ingest:
+        ingest_merge_jobs(
+            ctx.obj["dbconf"],
+            jobs,
+            n_processes,
+            not ctx.obj["dryrun"],
+            log_level=ctx.obj["log_level"]
+        )
+        click.echo("Done!")
+    else:
+        click.echo(plane)
 
 
 @lightcurve.command()
