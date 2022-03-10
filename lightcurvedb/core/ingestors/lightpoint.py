@@ -332,24 +332,40 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
 
 class ImmediateLightpointIngestor(BaseLightpointIngestor):
-    def _execute_job(self, job):
+    def _execute_job(self, db, job):
         self.process_job(job)
-        with self.db as db:
-            metric = self.flush_lightpoints(db)
-            for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
-                obs = Observation(
-                    lightcurve_id=lc_id,
-                    orbit_id=orbit_id,
-                    camera=camera,
-                    ccd=ccd
-                )
-                db.add(obs)
-            db.add(metric)
-            db.commit()
+        metric = self.flush_lightpoints(db)
+        for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
+            obs = Observation(
+                lightcurve_id=lc_id,
+                orbit_id=orbit_id,
+                camera=camera,
+                ccd=ccd
+            )
+            db.add(obs)
+        db.add(metric)
+        db.commit()
 
         # Clear buffers
         for buffer_key in self.buffer_order:
             self.buffers[buffer_key] = []
+
+    def run(self):
+        self.log("Entering main runtime")
+        self.db = db_from_config(self.db_config)
+        self._load_contexts()
+        with self.db as db:
+            while not self.job_queue.empty():
+                try:
+                    job = self.job_queue.get(timeout=10)
+                    self._execute_job(db, job)
+                except Empty:
+                    self.log("Timed out", level="error")
+                    break
+                except KeyboardInterrupt:
+                    self.log("Received keyboard interrupt")
+                    break
+        self.log("Finished, exiting main runtime")
 
     def determine_process_parameters(self):
         return {}
