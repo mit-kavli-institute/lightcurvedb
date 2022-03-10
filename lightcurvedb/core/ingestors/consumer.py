@@ -77,7 +77,7 @@ class BufferedDatabaseIngestor(Process):
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")
-            with db_from_config(self.db_config) as db:
+            with self.db as db:
                 self.flush(db)
 
         self.log("Finished, exiting main runtime")
