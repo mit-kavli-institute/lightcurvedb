@@ -118,6 +118,10 @@ def _tic_from_h5(path):
 
 
 def _get_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
+    """
+    Helper method to resolve lightcurve ids. If an ID is not found, a
+    lightcurve object is created and sent to the database for a new ID.
+    """
     key = (tic_id, aperture, lightcurve_type)
 
     try:
@@ -136,6 +140,10 @@ def _get_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
     return id_
 
 def _get_smjs_from_paths(db, contexts):
+    """
+    Given a list of h5 paths, convert each one into the corresponding
+    single merge jobs.
+    """
     pairs = list(_yield_lightcurve_fields(db))
 
     tic_ids = set(_tic_from_h5(context["path"]) for context in contexts)
