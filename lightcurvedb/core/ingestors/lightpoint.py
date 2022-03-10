@@ -370,13 +370,9 @@ def ingest_merge_jobs(
     total_single_jobs = 0
 
     echo("Enqueing multiprocessing work")
-    n_todo = len(jobs)
-    with tqdm(total=len(jobs), unit=" jobs") as bar:
-        while len(jobs) > 0:
-            job = jobs.pop()
-            job_queue.put(job)
-            total_single_jobs += 1
-            bar.update(1)
+    total_single_merge_jobs = len(jobs)
+    for job in tqdm(jobs, unit=" jobs"):
+        job_queue.put(job)
 
     with db:
         echo("Grabbing introspective processing tracker")
