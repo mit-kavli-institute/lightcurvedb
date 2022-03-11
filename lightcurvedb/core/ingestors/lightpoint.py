@@ -428,12 +428,12 @@ def ingest_merge_jobs(
             p.start()
 
         # Wait until all jobs have been pulled off queue
-        n_todo = total_single_jobs
+        prev = job_queue.qsize()
         while not job_queue.empty():
-            queue_size = job_queue.qsize()
-            n_done = n_todo - queue_size
-            bar.update(n_done)
-            n_todo = queue_size
+            cur = job_queue.qsize()
+            diff = prev - cur
+            bar.update(diff)
+            prev = cur
             sleep(5)
 
         logger.debug("Job queue empty, waiting for worker exits")
