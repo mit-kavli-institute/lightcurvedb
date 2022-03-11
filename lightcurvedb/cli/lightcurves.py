@@ -94,7 +94,7 @@ def ingest_dir(ctx, paths, n_processes, recursive, ingest):
         )
         click.echo("Done!")
     else:
-        click.echo(plane)
+        click.echo(plan)
 
 
 @lightcurve.command()
