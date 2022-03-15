@@ -137,7 +137,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     current_sample = 0
     n_samples = 0
     seen_cache = set()
-    seen_oids = set()
     db = None
     runtime_parameters = {}
     target_table = "lightpoints"
@@ -212,7 +211,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         lightcurve["data"] = aligned_mag
         return lightcurve
 
-    def process_single_merge_job(self, smj):
+    def process_job(self, smj):
         orbit_number = smj.orbit_number
         lightcurve_id = smj.lightcurve_id
 
@@ -240,10 +239,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log(f"Unable to process {smj.file_path}", level="error")
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
-
-    def process_job(self, job):
-        self.process_single_merge_job(job)
-        self.job_queue.task_done()
+            self.job_queue.task_done()
 
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints")
@@ -419,7 +415,7 @@ def ingest_merge_jobs(
             enqueue=True,
         )
         for n in range(n_processes):
-            p = ImmediateLightpointIngestor(
+            p = ExponentialSamplingLightpointIngestor(
                 db._config, f"worker-{n}", job_queue, stage.id
             )
             p.start()
