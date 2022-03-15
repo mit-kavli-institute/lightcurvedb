@@ -117,7 +117,7 @@ def _tic_from_h5(path):
     return int(base.split(".")[0])
 
 
-def _get_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
+def _get_or_create_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
     """
     Helper method to resolve lightcurve ids. If an ID is not found, a
     lightcurve object is created and sent to the database for a new ID.
@@ -173,7 +173,7 @@ def _get_smjs_from_paths(db, contexts):
         path = context["path"]
         tic_id = int(_tic_from_h5(path))
         for aperture, lightcurve_type in pairs:
-            id_ = _get_lightcurve_id(
+            id_ = _get_or_create_lightcurve_id(
                 db,
                 id_map,
                 tic_id,
