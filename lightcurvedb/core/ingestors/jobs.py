@@ -1,17 +1,17 @@
+import pathlib
 from collections import defaultdict, namedtuple
 from itertools import product
 
 import pandas as pd
-import pathlib
 from click import echo
 from loguru import logger
-from sqlalchemy import text, select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Bundle
 from tqdm import tqdm
 
 from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     allocate_lightcurve_ids,
-    get_missing_ids,
+    get_missing_ids
 )
 from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.models import (
@@ -20,10 +20,10 @@ from lightcurvedb.models import (
     LightcurveType,
     Lightpoint,
     Observation,
-    Orbit,
+    Orbit
 )
-from lightcurvedb.util.iter import chunkify
 from lightcurvedb.util.contexts import extract_pdo_path_context
+from lightcurvedb.util.iter import chunkify
 
 SingleMergeJob = namedtuple(
     "SingleMergeJob",
