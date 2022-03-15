@@ -14,6 +14,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
     get_missing_ids
 )
 from lightcurvedb.core.ingestors.temp_table import FileObservation
+from lightcurvedb.experimental.temp_table import TempTable
 from lightcurvedb.models import (
     Aperture,
     Lightcurve,
@@ -149,23 +150,29 @@ def _get_smjs_from_paths(db, contexts):
     tic_ids = set(_tic_from_h5(context["path"]) for context in contexts)
     id_map = {}
 
-    for aperture, lightcurve_type in pairs:
-        logger.debug(f"Querying lightcurve ids for {aperture} and {lightcurve_type}")
-        q = (
-            db
-            .query(
-                Lightcurve.tic_id,
-                Lightcurve.id
+    temp = TempTable(db, "tic_ids")
+    temp.add_column("tic_id", "bigint", primary_key=True)
+    with temp:
+        temp.insert_many(tic_ids, scalar=True)
+        for aperture, lightcurve_type in pairs:
+            logger.debug(f"Quering lightcurve ids for {aperture} and {lightcurve_type}")
+            q = (
+                db
+                .query(
+                    Lightcurve.tic_id,
+                    Lightcurve.id
+                )
+                .join(
+                    temp.table, temp["tic_id"] == Lightcurve.tic_id
+                )
+                .filter(
+                    Lightcurve.aperture_id == aperture,
+                    Lightcurve.lightcurve_type_id == lightcurve_type,
+                )
             )
-            .filter(
-                Lightcurve.aperture_id == aperture,
-                Lightcurve.lightcurve_type_id == lightcurve_type,
-                Lightcurve.tic_id.in_(tic_ids)
-            )
-        )
-        for tic_id, lightcurve_id in q:
-            key = (tic_id, aperture, lightcurve_type)
-            id_map[key] = lightcurve_id
+            for tic_id, lightcurve_id in q:
+                key = (tic_id, aperture, lightcurve_type)
+                id_map[key] = lightcurve_id
 
     jobs = []
     logger.debug("Grabbing ids for each file")
