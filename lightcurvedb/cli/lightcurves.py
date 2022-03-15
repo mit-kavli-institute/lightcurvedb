@@ -66,7 +66,6 @@ def ingest_h5(
         ctx.obj["dbconf"],
         jobs,
         n_processes,
-        not ctx.obj["dryrun"],
         log_level=ctx.obj["log_level"],
     )
     click.echo("Done!")
@@ -89,7 +88,6 @@ def ingest_dir(ctx, paths, n_processes, recursive, ingest):
             ctx.obj["dbconf"],
             jobs,
             n_processes,
-            not ctx.obj["dryrun"],
             log_level=ctx.obj["log_level"]
         )
         click.echo("Done!")
@@ -112,7 +110,7 @@ def ingest_tic(ctx, tics, n_processes, fillgaps, max_job_len):
         jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes
     )
     click.echo("Done!")
 
@@ -145,7 +143,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps, max_job_len):
         jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes,
     )
 
 
