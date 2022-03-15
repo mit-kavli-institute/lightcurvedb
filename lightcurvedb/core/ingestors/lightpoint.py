@@ -9,6 +9,7 @@ from click import echo
 from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
+from queue import Empty
 from sqlalchemy import func, text
 from sqlalchemy.exc import InternalError
 from tqdm import tqdm
