@@ -228,6 +228,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         lightcurve_id = smj.lightcurve_id
 
         if (lightcurve_id, orbit_number) in self.seen_cache:
+            self.log(f"Ignoring duplicate job")
             return None
 
         try:
