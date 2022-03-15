@@ -71,8 +71,6 @@ class BufferedDatabaseIngestor(Process):
         self.log("Entering main runtime")
         self.db = db_from_config(self.db_config)
         self._load_contexts()
-        job = self.job_queue.get()
-        self._execute_job(job)
         while not self.job_queue.empty():
             try:
                 job = self.job_queue.get(timeout=10)

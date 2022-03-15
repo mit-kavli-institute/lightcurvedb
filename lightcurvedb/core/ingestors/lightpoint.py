@@ -246,9 +246,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.job_queue.task_done()
 
     def flush_lightpoints(self, db):
-        lps = self.buffers.get("lightpoints", [])
-        if len(lps) < 1:
-            return
+        lps = self.buffers.get("lightpoints")
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
@@ -273,9 +271,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         return metric
 
     def flush_observations(self, db):
-        obs = self.buffers.get("observations", [])
-        if len(obs) < 1:
-            return
+        obs = self.buffers.get("observations")
         self.log(f"Flushing {len(obs)} observations to remote", level="trace")
         conn = db.session.connection().connection
         mgr = CopyManager(
