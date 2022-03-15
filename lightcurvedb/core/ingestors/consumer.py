@@ -11,6 +11,7 @@ class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
     db_config = None
+    db = None
     buffers = defaultdict(list)
     buffer_order = []
 
@@ -31,25 +32,44 @@ class BufferedDatabaseIngestor(Process):
     def _execute_job(self, job):
         self.process_job(job)
         if self.should_flush:
-            with db_from_config(self.db_config) as db:
+            with self.db as db:
                 self.flush(db)
+
+    def _preflush(self, db):
+        pass
+
+    def _postflush(self, db):
+        pass
 
     def process_job(self, job):
         raise NotImplementedError
 
     def flush(self, db):
+        self._preflush(db)
+        metrics = []
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
             flush_method = getattr(self, method_name)
-            flush_method(db)
+            metric = flush_method(db)
+            if metric is not None:
+                metrics.append(metric)
+
+        db.commit()
+
+        # Emplace metrics
+        for metric in metrics:
+            db.add(metric)
         db.commit()
 
         # Clear buffers
         for buffer_key in self.buffer_order:
             self.buffers[buffer_key] = []
 
+        self._postflush(db)
+
     def run(self):
         self.log("Entering main runtime")
+        self.db = db_from_config(self.db_config)
         self._load_contexts()
         job = self.job_queue.get()
         self._execute_job(job)
@@ -66,7 +86,7 @@ class BufferedDatabaseIngestor(Process):
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")
-            with db_from_config(self.db_config) as db:
+            with self.db as db:
                 self.flush(db)
 
         self.log("Finished, exiting main runtime")

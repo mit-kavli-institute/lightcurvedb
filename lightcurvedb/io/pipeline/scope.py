@@ -48,11 +48,11 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
                 **connection_kwargs
             )
             with configured_db as db_object:
-                logger.debug(
+                logger.trace(
                     f"Entering db context for {func} with {args} and {kwargs}"
                 )
                 func_results = func(db_object, *args, **kwargs)
-                logger.debug(f"Exited db context for {func}")
+                logger.trace(f"Exited db context for {func}")
                 db_object.rollback()
             return func_results
 
@@ -65,7 +65,7 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
 def scoped_block(db, resource, acquire_actions=[], release_actions=[]):
     try:
         for action in acquire_actions:
-            logger.debug(action)
+            logger.trace(action)
             db.execute(action)
         db.commit()
         yield resource
@@ -73,6 +73,6 @@ def scoped_block(db, resource, acquire_actions=[], release_actions=[]):
         db.rollback()
     finally:
         for action in release_actions:
-            logger.debug(action)
+            logger.trace(action)
             db.execute(action)
         db.commit()

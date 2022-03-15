@@ -31,14 +31,6 @@ REGISTER(r"cam(?P<camera>[1-4])")
 REGISTER(r"ccd(?P<ccd>[1-4])")
 
 
-try:
-    from pathlib import Path
-
-    def get_parent_dir(path):
-        return Path(path).parts[-1]
-
-
-except ImportError:
-
-    def get_parent_dir(path):
-        return os.path.basename(os.path.dirname(path))
+from pathlib import Path
+def get_parent_dir(path):
+    return Path(path).parts[-1]

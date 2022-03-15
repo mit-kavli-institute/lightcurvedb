@@ -9,7 +9,9 @@ from click import echo
 from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
+from queue import Empty
 from sqlalchemy import func, text
+from sqlalchemy.exc import InternalError
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -147,7 +149,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.log("Initialized")
 
     def _load_contexts(self):
-        self.db = db_from_config(self.db_config)
         with self.db as db, IngestionCache() as cache:
             self.normalizer = TimeCorrector(db, cache)
             self.log("Instantiated bjd normalizer")
@@ -159,6 +160,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log("Instantiated Orbit ID map")
             self.set_new_parameters(db)
             self.log("Determined initial parameters")
+
+    def _postflush(self, db):
+        self.n_samples += 1
+
+        if self.should_refresh_parameters:
+            self.set_new_parameters(db)
 
     def get_quality_flags(self, camera, ccd, cadences):
         qflag_df = self.quality_flag_map[(camera, ccd)].loc[cadences]
@@ -238,57 +245,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.process_single_merge_job(job)
         self.job_queue.task_done()
 
-    def flush(self, db):
-        ingested = False
-        while not ingested:
-            try:
-                super().flush(db)
-                ingested = True
-            except (InFailedSqlTransaction, UniqueViolation) as e:
-                db.rollback()
-                self.log(
-                    "Needing to reduce ingestion due to {0}".format(e),
-                    level="error",
-                )
-                match = re.search(
-                    r"\((?P<orbit_id>\d+),\s*(?P<lightcurve_id>\d+)\)", str(e)
-                )
-                orbit_id, lightcurve_id = int(match["orbit_id"]), int(
-                    match["lightcurve_id"]
-                )
-                q = (
-                    db.query(func.min(Frame.cadence), func.max(Frame.cadence))
-                    .filter(
-                        Frame.orbit_id == orbit_id,
-                        Frame.frame_type_id == "Raw FFI",
-                    )
-                    .group_by(Frame.orbit_id)
-                )
-                min_cadence, max_cadence = q.one()
-                self.buffers["observations"] = list(
-                    filter(
-                        lambda obs: not (
-                            obs[0] == lightcurve_id and obs[1] == orbit_id
-                        ),
-                        self.buffers["observations"],
-                    )
-                )
-                for lp_buffer in self.buffers["lightpoints"]:
-                    id_mask = lp_buffer["lightcurve_id"] == lightcurve_id
-                    cadence_mask = (min_cadence <= lp_buffer["cadence"]) & (
-                        lp_buffer["cadence"] <= max_cadence
-                    )
-                    lp_buffer = lp_buffer[~(id_mask & cadence_mask)]
-                self.log(
-                    "Reduced ingestion work due to observation collision",
-                    level="warning",
-                )
-
-        self.n_samples += 1
-
-        if self.should_refresh_parameters:
-            self.set_new_parameters(db)
-
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints", [])
         if len(lps) < 1:
@@ -300,29 +256,21 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
-        while len(lps) > 0:
-            chunk = lps.pop()
-            mgr.threading_copy(chunk)
+        for chunk in lps:
+            mgr.copy(chunk)
 
         end = datetime.now()
 
-        self.log(f"Sending metric to {self.process}")
         process = db.query(QLPProcess).get(self.process.id)
 
-        if process is not None:
-            metric = QLPOperation(
-                process_id=self.process.id,
-                time_start=start,
-                time_end=end,
-                job_size=lp_size,
-                unit="lightpoint",
-            )
-            db.add(metric)
-        else:
-            self.log(
-                f"No process id {self.process.id} exists! Skipping telemetry recording",
-                level="warning"
-            )
+        metric = QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=lp_size,
+            unit="lightpoint",
+        )
+        return metric
 
     def flush_observations(self, db):
         obs = self.buffers.get("observations", [])
@@ -384,6 +332,45 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         return self.n_samples >= 3
 
 
+class ImmediateLightpointIngestor(BaseLightpointIngestor):
+    def _execute_job(self, db, job):
+        self.process_job(job)
+        metric = self.flush_lightpoints(db)
+        for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
+            obs = Observation(
+                lightcurve_id=lc_id,
+                orbit_id=orbit_id,
+                camera=camera,
+                ccd=ccd
+            )
+            db.add(obs)
+        db.add(metric)
+        db.commit()
+
+        # Clear buffers
+        for buffer_key in self.buffer_order:
+            self.buffers[buffer_key] = []
+
+    def run(self):
+        self.log("Entering main runtime")
+        self.db = db_from_config(self.db_config)
+        self._load_contexts()
+        with self.db as db:
+            while not self.job_queue.empty():
+                try:
+                    job = self.job_queue.get(timeout=10)
+                    self._execute_job(db, job)
+                except Empty:
+                    self.log("Timed out", level="error")
+                    break
+                except KeyboardInterrupt:
+                    self.log("Received keyboard interrupt")
+                    break
+        self.log("Finished, exiting main runtime")
+
+    def determine_process_parameters(self):
+        return {}
+
 class SamplingLightpointIngestor(BaseLightpointIngestor):
     max_lp_buffersize = 10e5
     min_lp_buffersize = 1
@@ -407,7 +394,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
 
 def ingest_merge_jobs(
-    db, jobs, n_processes, commit, log_level="info", worker_class=None
+    db, jobs, n_processes, log_level="info", worker_class=None
 ):
     """
     Process and ingest SingleMergeJob objects.
@@ -418,13 +405,9 @@ def ingest_merge_jobs(
     total_single_jobs = 0
 
     echo("Enqueing multiprocessing work")
-    n_todo = len(jobs)
-    with tqdm(total=len(jobs), unit=" jobs") as bar:
-        while len(jobs) > 0:
-            job = jobs.pop()
-            job_queue.put(job)
-            total_single_jobs += 1
-            bar.update(1)
+    total_single_merge_jobs = len(jobs)
+    for job in tqdm(jobs, unit=" jobs"):
+        job_queue.put(job)
 
     with db:
         echo("Grabbing introspective processing tracker")
@@ -440,17 +423,18 @@ def ingest_merge_jobs(
             enqueue=True,
         )
         for n in range(n_processes):
-            p = ExponentialSamplingLightpointIngestor(
+            p = ImmediateLightpointIngestor(
                 db._config, f"worker-{n}", job_queue, stage.id
             )
             p.start()
 
         # Wait until all jobs have been pulled off queue
+        prev = job_queue.qsize()
         while not job_queue.empty():
-            queue_size = job_queue.qsize()
-            n_done = n_todo - queue_size
-            bar.update(n_done)
-            n_todo = queue_size
+            cur = job_queue.qsize()
+            diff = prev - cur
+            bar.update(diff)
+            prev = cur
             sleep(5)
 
         logger.debug("Job queue empty, waiting for worker exits")

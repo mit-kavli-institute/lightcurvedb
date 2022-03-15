@@ -1,8 +1,7 @@
-from __future__ import division, print_function
-
 import re
 
 import click
+from pathlib import Path
 from tabulate import tabulate
 
 from lightcurvedb.cli.base import lcdbcli
@@ -11,7 +10,7 @@ from lightcurvedb.core.datastructures.data_packers import (
     LightpointPartitionReader,
 )
 from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.jobs import IngestionPlan
+from lightcurvedb.core.ingestors.jobs import IngestionPlan, DirectoryPlan
 from lightcurvedb.core.ingestors.lightpoint import ingest_merge_jobs
 from lightcurvedb.models import Lightcurve
 
@@ -67,10 +66,33 @@ def ingest_h5(
         ctx.obj["dbconf"],
         jobs,
         n_processes,
-        not ctx.obj["dryrun"],
         log_level=ctx.obj["log_level"],
     )
     click.echo("Done!")
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("paths", nargs=-1, type=click.Path(file_okay=False, exists=True))
+@click.option("--n-processes", default=16, type=click.IntRange(min=1))
+@click.option("--recursive", "-r", is_flag=True, default=False)
+@click.option("--ingest/--plan", is_flag=True, default=True)
+def ingest_dir(ctx, paths, n_processes, recursive, ingest):
+    with ctx.obj["dbconf"] as db:
+        directories = [Path(path) for path in paths]
+        plan = DirectoryPlan(directories, db, recursive=recursive)
+        jobs = plan.get_jobs()
+
+    if ingest:
+        ingest_merge_jobs(
+            ctx.obj["dbconf"],
+            jobs,
+            n_processes,
+            log_level=ctx.obj["log_level"]
+        )
+        click.echo("Done!")
+    else:
+        click.echo(plan)
 
 
 @lightcurve.command()
@@ -88,7 +110,7 @@ def ingest_tic(ctx, tics, n_processes, fillgaps, max_job_len):
         jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes
     )
     click.echo("Done!")
 
@@ -121,7 +143,7 @@ def ingest_listed_tics(ctx, tic_list_file, n_processes, fillgaps, max_job_len):
         jobs = plan.get_jobs(db)
 
     ingest_merge_jobs(
-        ctx.obj["dbconf"], jobs, n_processes, not ctx.obj["dryrun"]
+        ctx.obj["dbconf"], jobs, n_processes,
     )
 
 
