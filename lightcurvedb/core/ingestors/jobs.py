@@ -150,7 +150,7 @@ def _get_smjs_from_paths(db, contexts):
     id_map = {}
 
     for aperture, lightcurve_type in pairs:
-        logger.debug(f"Quering lightcurve ids for {aperture} and {lightcurve_type}")
+        logger.debug(f"Querying lightcurve ids for {aperture} and {lightcurve_type}")
         q = (
             db
             .query(
