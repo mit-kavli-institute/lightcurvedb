@@ -47,7 +47,6 @@ class BufferedDatabaseIngestor(Process):
     def flush(self, db):
         self._preflush(db)
         metrics = []
-        conn = db.session.connection().connection
 
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
@@ -61,6 +60,7 @@ class BufferedDatabaseIngestor(Process):
         # Emplace metrics
         for metric in metrics:
             db.add(metric)
+
         db.commit()
 
         # Clear buffers

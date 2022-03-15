@@ -1,4 +1,5 @@
 import re
+import warnings
 from datetime import datetime
 from functools import lru_cache
 from multiprocessing import Manager
@@ -177,7 +178,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     def get_mag_alignment_offset(self, data, quality_flags, tmag):
         mask = quality_flags == 0
-        return np.nanmedian(data[mask]) - tmag
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return np.nanmedian(data[mask]) - tmag
 
     def process_h5(self, id_, aperture, lightcurve_type, h5path):
         self.log(f"Processing {h5path}", level="trace")
@@ -206,6 +209,13 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         mid_tjd = self.get_mid_tjd(camera, cadences)
         bjd = self.normalizer.correct(tic_id, mid_tjd)
         mag_offset = self.get_mag_alignment_offset(data, quality_flags, tmag)
+        if np.isnan(mag_offset):
+            self.log(
+                f"{tic_id} {aperture} {lightcurve_type} orbit " 
+                f"{context['orbit_number']} returned NaN for "
+                "alignment offset",
+                level="warning"
+            )
         aligned_mag = data - mag_offset
 
         lightcurve["quality_flag"] = quality_flags
@@ -259,8 +269,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             mgr.copy(chunk)
 
         end = datetime.now()
-
-        process = db.query(QLPProcess).get(self.process.id)
 
         metric = QLPOperation(
             process_id=self.process.id,
@@ -438,7 +446,7 @@ def ingest_merge_jobs(
             diff = prev - cur
             bar.update(diff)
             prev = cur
-            sleep(5)
+            sleep(1)
 
         logger.debug("Job queue empty, waiting for worker exits")
         for worker in workers:
