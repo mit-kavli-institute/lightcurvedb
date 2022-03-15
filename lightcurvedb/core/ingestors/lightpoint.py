@@ -139,6 +139,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     seen_cache = set()
     db = None
     runtime_parameters = {}
+    rng = None
     target_table = "lightpoints"
     buffer_order = ["lightpoints", "observations"]
 
@@ -157,6 +158,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.log("Instantiated mid-tjd cadence map")
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
+            self.rng = np.random.default_rng()
             self.set_new_parameters(db)
             self.log("Determined initial parameters")
 
@@ -246,7 +248,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
-        self.log(f"Flushing {lp_size} lightpoints to remote", level="debug")
+        self.log(
+            f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
+            level="debug"
+        )
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
@@ -358,6 +363,9 @@ class ImmediateLightpointIngestor(BaseLightpointIngestor):
                 except KeyboardInterrupt:
                     self.log("Received keyboard interrupt")
                     break
+                except:
+                    self.log("Breaking", level="exception")
+                    break
         self.log("Finished, exiting main runtime")
 
     def determine_process_parameters(self):
@@ -381,7 +389,10 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
     min_exponent = 3
 
     def determine_process_parameters(self):
-        exp = np.random.randint(self.min_exponent, high=self.max_exponent)
+        # Force to python int, np.int64 is not JSON compatible
+        exp = int(
+            self.rng.integers(self.min_exponent, high=self.max_exponent)
+        )
         return {"lp_buffer_threshold": 2 ** exp}
 
 

@@ -47,6 +47,8 @@ class BufferedDatabaseIngestor(Process):
     def flush(self, db):
         self._preflush(db)
         metrics = []
+        conn = db.session.connection().connection
+
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
             flush_method = getattr(self, method_name)
