@@ -1,5 +1,6 @@
 import os
 import re
+import warnings
 from glob import glob
 
 import pandas as pd
@@ -33,6 +34,7 @@ DEFAULT_CACHENAME = "INGESTIONCACHE.db"
 
 class IngestionCache(ORM_DB):
     def __init__(self, scratch_dir=DEFAULT_SCRATCH, name=DEFAULT_CACHENAME):
+        warnings.warn("CACHE USAGE", warnings.DeprecationWarning)
         if not os.path.exists(scratch_dir):
             os.makedirs(scratch_dir)
 
