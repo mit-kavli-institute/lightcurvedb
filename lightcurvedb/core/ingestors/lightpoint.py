@@ -267,7 +267,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         start = datetime.now()
 
         for chunk in lps:
-            mgr.copy(chunk)
+            mgr.threading_copy(chunk)
 
         end = datetime.now()
 
