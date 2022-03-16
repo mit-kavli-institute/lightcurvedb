@@ -430,7 +430,7 @@ def ingest_merge_jobs(
         logger.remove()
         logger.add(
             lambda msg: tqdm.write(msg, end=""),
-            colorize=False,
+            colorize=True,
             level=log_level.upper(),
             enqueue=True,
         )
@@ -439,6 +439,7 @@ def ingest_merge_jobs(
                 db._config, f"worker-{n}", job_queue, stage.id
             )
             p.start()
+            workers.append(p)
 
         # Wait until all jobs have been pulled off queue
         prev = job_queue.qsize()
@@ -449,9 +450,9 @@ def ingest_merge_jobs(
             prev = cur
             sleep(1)
 
-        logger.debug("Job queue empty, waiting for worker exits")
+        bar.update(prev)
+        job_queue.join()
         for worker in workers:
             worker.join()
-
-        logger.debug("Joining work queues")
-        job_queue.join()
+            logger.debug(str(worker))
+        logger.debug("Job queue empty, cleaning")

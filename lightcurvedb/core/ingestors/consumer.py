@@ -89,6 +89,9 @@ class BufferedDatabaseIngestor(Process):
             with self.db as db:
                 self.flush(db)
 
+        if self.job_queue.empty():
+            self.log(f"Successfully finished all jobs", level="success")
+
         self.log("Finished, exiting main runtime")
 
     @property
