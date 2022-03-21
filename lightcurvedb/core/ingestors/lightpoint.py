@@ -1,5 +1,7 @@
 import re
 import warnings
+from random import sample
+from collections import defaultdict
 from datetime import datetime
 from functools import lru_cache
 from multiprocessing import Manager
@@ -11,8 +13,9 @@ from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
 from queue import Empty
-from sqlalchemy import func, text
+from sqlalchemy import func, text, Integer
 from sqlalchemy.exc import InternalError
+from sqlalchemy.sql.expression import cast
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
@@ -246,8 +249,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             )
             self.buffers["lightpoints"].append(lightpoint_array)
             self.buffers["observations"].append(observation)
-        except OSError:
-            self.log(f"Unable to open {smj.file_path}", level="error")
+        except OSError as e:
+            self.log(f"Unable to open {smj.file_path}: {e}", level="exception")
         except ValueError:
             self.log(f"Unable to process {smj.file_path}", level="error")
         finally:
@@ -267,7 +270,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         start = datetime.now()
 
         for chunk in lps:
-            mgr.copy(chunk)
+            mgr.threading_copy(chunk)
 
         end = datetime.now()
 
@@ -383,6 +386,7 @@ class ImmediateLightpointIngestor(BaseLightpointIngestor):
 class SamplingLightpointIngestor(BaseLightpointIngestor):
     max_lp_buffersize = 10e5
     min_lp_buffersize = 1
+    bucket_size = 100
 
     def determine_process_parameters(self):
         lp_buffersize = np.random.randint(
@@ -395,13 +399,33 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
 
 class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
     max_exponent = 24
-    min_exponent = 3
+    min_exponent = 9
 
     def determine_process_parameters(self):
         # Force to python int, np.int64 is not JSON compatible
-        exp = int(
-            self.rng.integers(self.min_exponent, high=self.max_exponent)
+        job_size_log2 = cast(func.log(2, QLPOperation.job_size), Integer)
+
+        q = (
+            self
+            .db
+            .query(job_size_log2, func.Count(QLPOperation.id))
+            .join(QLPOperation.process)
+            .filter(QLPProcess.current_version())
+            .group_by(job_size_log2)
         )
+
+        current_samples = dict(q)
+        samples = defaultdict(list)
+        for exp in range(self.min_exponent, self.max_exponent + 1):
+            n_samples = current_samples.get(exp, 0)
+            samples[n_samples].append(exp)
+
+        lowest_sample_rate = min(samples.keys())
+        possible_exp = samples[lowest_sample_rate]
+        
+        # naively pick first
+        exp = sample(possible_exp, 1)[0]
+
         return {"lp_buffer_threshold": 2 ** exp}
 
 

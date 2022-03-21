@@ -14,9 +14,7 @@ from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
 
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
-    from h5py import File as H5File
+from h5py import File as H5File
 
 
 path_components = re.compile(
@@ -78,32 +76,27 @@ def get_mid_tjd(min_cadence, max_cadence, camera, config_override=None):
     return df
 
 
-@lru_cache(maxsize=10)
-def get_h5(path):
-    return H5File(path, "r")
-
-
 @track_runtime
 def get_h5_data(merge_job):
-    lc = get_h5(merge_job.file_path)
-    lc = lc["LightCurve"]
-    cadences = lc["Cadence"][()].astype(int)
+    with H5File(merge_job.file_path, "r") as lc:
+        lc = lc["LightCurve"]
+        cadences = lc["Cadence"][()].astype(int)
 
-    if merge_job.lightcurve_type == "Background":
-        data = lc["Background"]["Value"][()]
-        errors = lc["Background"]["Error"][()]
-        x_centroids = lc["X"][()]
-        y_centroids = lc["Y"][()]
-    else:
-        lc = lc["AperturePhotometry"][merge_job.aperture]
-        x_centroids = lc["X"][()]
-        y_centroids = lc["Y"][()]
-        data = lc[merge_job.lightcurve_type][()]
-        errors = (
-            lc["{0}Error".format(merge_job.lightcurve_type)][()]
-            if merge_job.lightcurve_type in LC_ERROR_TYPES
-            else np.full_like(cadences, np.nan, dtype=np.double)
-        )
+        if merge_job.lightcurve_type == "Background":
+            data = lc["Background"]["Value"][()]
+            errors = lc["Background"]["Error"][()]
+            x_centroids = lc["X"][()]
+            y_centroids = lc["Y"][()]
+        else:
+            lc = lc["AperturePhotometry"][merge_job.aperture]
+            x_centroids = lc["X"][()]
+            y_centroids = lc["Y"][()]
+            data = lc[merge_job.lightcurve_type][()]
+            errors = (
+                lc["{0}Error".format(merge_job.lightcurve_type)][()]
+                if merge_job.lightcurve_type in LC_ERROR_TYPES
+                else np.full_like(cadences, np.nan, dtype=np.double)
+            )
     return {
         "cadence": cadences,
         "data": data,
@@ -113,45 +106,48 @@ def get_h5_data(merge_job):
     }
 
 
+lp_dtype = np.dtype(
+    [
+        ("lightcurve_id", np.dtype("u8")),
+        ("cadence", np.dtype("u4")),
+        ("barycentric_julian_date", np.dtype("f8")),
+        ("data", np.dtype("f8")),
+        ("error", np.dtype("f8")),
+        ("x_centroid", np.dtype("f8")),
+        ("y_centroid", np.dtype("f8")),
+        ("quality_flag", np.dtype("u4")),
+    ]
+)
+
+
 def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
-    lp_dtype = np.dtype(
-        [
-            ("lightcurve_id", np.dtype("u8")),
-            ("cadence", np.dtype("u4")),
-            ("barycentric_julian_date", np.dtype("f8")),
-            ("data", np.dtype("f8")),
-            ("error", np.dtype("f8")),
-            ("x_centroid", np.dtype("f8")),
-            ("y_centroid", np.dtype("f8")),
-            ("quality_flag", np.dtype("u4")),
-        ]
-    )
-    lc = get_h5(filepath)["LightCurve"]
-    cadences = lc["Cadence"][()].astype(int)
+    with H5File(filepath, "r") as h5:
+        lc = h5["LightCurve"]
+        cadences = lc["Cadence"][()].astype(int)
 
-    arr = np.empty(len(cadences), dtype=lp_dtype)
-    arr["lightcurve_id"] = np.full_like(
-        cadences, lightcurve_id, dtype=np.dtype("u8")
-    )
-    arr["cadence"] = cadences
-    arr["barycentric_julian_date"] = lc["BJD"][()]
-
-    if type_ == "Background":
-        arr["x_centroid"] = lc["X"][()]
-        arr["y_centroid"] = lc["Y"][()]
-        lc = lc["Background"]
-        arr["data"] = lc["Value"][()]
-        arr["error"] = lc["Error"][()]
-    else:
-        lc = lc["AperturePhotometry"][aperture]
-        arr["x_centroid"] = lc["X"][()]
-        arr["y_centroid"] = lc["Y"][()]
-        arr["data"] = lc[type_][()]
-        arr["error"] = (
-            lc["{0}Error".format(type_)][()]
-            if type_ in LC_ERROR_TYPES
-            else np.full_like(cadences, np.nan, dtype=np.double)
+        arr = np.empty(len(cadences), dtype=lp_dtype)
+        arr["lightcurve_id"] = np.full_like(
+            cadences, lightcurve_id, dtype=np.dtype("u8")
         )
+        arr["cadence"] = cadences
+        arr["barycentric_julian_date"] = lc["BJD"][()]
+
+        if type_ == "Background":
+            arr["x_centroid"] = lc["X"][()]
+            arr["y_centroid"] = lc["Y"][()]
+            lc = lc["Background"]
+            arr["data"] = lc["Value"][()]
+            arr["error"] = lc["Error"][()]
+        else:
+            lc = lc["AperturePhotometry"][aperture]
+            arr["x_centroid"] = lc["X"][()]
+            arr["y_centroid"] = lc["Y"][()]
+            arr["data"] = lc[type_][()]
+            arr["error"] = (
+                lc["{0}Error".format(type_)][()]
+                if type_ in LC_ERROR_TYPES
+                else np.full_like(cadences, np.nan, dtype=np.double)
+            )
     return arr
 
 
