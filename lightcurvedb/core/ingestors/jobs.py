@@ -594,7 +594,7 @@ class DirectoryPlan:
                     observed.add((id_, orbit_number))
 
                 logger.debug(
-                    f"Tracking {i} entries from orbit {orbit_number}"
+                    f"Tracking {i} entries from orbit {job.orbit_number}"
                 )
 
                 _mask.add(job.orbit_number)
