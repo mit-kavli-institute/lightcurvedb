@@ -132,7 +132,7 @@ def _get_or_create_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
         lc = Lightcurve(
             tic_id=tic_id,
             aperture_id=aperture,
-            lightcurve_type=lightcurve_type
+            lightcurve_type_id=lightcurve_type
         )
         db.add(lc)
         db.commit()

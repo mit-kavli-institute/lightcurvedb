@@ -83,6 +83,12 @@ class BufferedDatabaseIngestor(Process):
             except KeyboardInterrupt:
                 self.log("Received keyboard interrupt")
                 break
+            except:
+                self.log(
+                    "Unhandled exeception, cowardly exiting...", 
+                    level="exception"
+                )
+                break
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")
