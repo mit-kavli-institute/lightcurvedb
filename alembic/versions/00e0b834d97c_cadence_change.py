@@ -1,4 +1,4 @@
-"""empty message
+"""Update Frames to use Cadences defined by seconds
 
 Revision ID: 00e0b834d97c
 Revises: efb12c5fb79c, be86fdf5cef3
