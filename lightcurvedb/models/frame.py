@@ -13,8 +13,9 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, hybrid_method
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+from sqlalchemy.sql.expression import cast
 
 from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
@@ -124,6 +125,47 @@ class Frame(QLPDataProduct):
             columns = FRAME_DTYPE
 
         return tuple(getattr(cls, column) for column, dtype in columns)
+
+    @hybrid_method
+    def cadence_type_in_minutes(self, clamp=False):
+        """
+        Return the cadence_type in minutes.
+
+        Parameters
+        ----------
+        clamp: bool
+            If true, clamp the value to an integer instead of returning as a
+            float.
+
+        Returns
+        -------
+        (float, int)
+            The cadence_type in minutes. Return type is dependent on clamp. If
+            clamp is specified return with an integer otherwise as a float.
+        """
+        return self.cadence_type // 60 if clamp else self.cadence_type / 60
+
+    @cadence_type_in_minutes.expression
+    def cadence_type_in_minutes(cls, clamp=False):
+        """
+        Evaluate an expression using cadence_type in minutes.
+
+        Parameters
+        ----------
+        clamp: bool
+            If true, clamp the value to an integer using an SQL type cast.
+
+        Example
+        -------
+        >>> with db:
+            # Get Frames with a 30 minute cadence type
+            q = db.query(Frame).filter(Frame.cadence_type_in_minutes(clamp=True) == 30)
+            print(q.all())
+        """
+        param = cls.cadence_type / 60
+        if clamp:
+            return cast(param, Integer)
+        return param
 
     def copy(self, other):
         self.cadence_type = other.cadence_type
