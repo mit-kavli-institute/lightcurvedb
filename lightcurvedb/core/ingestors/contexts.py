@@ -87,7 +87,7 @@ class DataStructure:
 
 class IngestionContext:
 
-    def __init__(self, indexes, *files, sqlite_loc=None):
+    def __init__(self, sqlite_loc=None):
         self._meta = sa.MetaData()
         self._contexts = {}
 
