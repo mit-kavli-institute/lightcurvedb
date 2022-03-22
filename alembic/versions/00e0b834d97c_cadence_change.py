@@ -17,8 +17,15 @@ depends_on = None
 
 
 def upgrade():
-    pass
+    #  Update current values
+    op.execute(
+        "UPDATE frames SET cadence_type = cadence_type * 60"
+    )
 
 
 def downgrade():
-    pass
+    # WARNING WILL RESULT IN LOSS OF SUB MINUTE RESOLUTION
+    # DATA WILL BE LOST
+    op.execute(
+        "UPDATE frames SET cadence_type = cadence_type / 60"
+    )
