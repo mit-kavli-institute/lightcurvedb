@@ -63,59 +63,6 @@ def push_observations(conn, observations):
     return timing
 
 
-def acquire_partition(db, oid):
-    indices_q = text(
-        f"""
-        SELECT pi.schemaname, pi.tablename, pi.indexname, pi.indexdef
-        FROM pg_indexes pi
-        JOIN pg_class pc ON pc.relname = pi.tablename
-        WHERE pc.oid = {oid}
-        """
-    )
-    indices = db.execute(indices_q).fetchall()
-
-    work = []
-
-    for schema, tablename, indexname, indexdf in indices:
-        drop_q = text(f"DROP INDEX {schema}.{indexname}")
-        work.append(drop_q)
-
-    return work
-
-
-def release_partition(db, oid):
-    track = db.query(RangedPartitionTrack).filter_by(oid=oid).one()
-
-    work = []
-
-    gin_index_name = f"ix_lightpoints_{track.min_range}_{track.max_range}_gin"
-    brin_index_name = (
-        f"ix_lightpoints_{track.min_range}_{track.max_range}_cadence"
-    )
-
-    work.append(
-        text(
-            f"""
-            CREATE INDEX {gin_index_name}
-            ON {track.pgclass.namespace.name}.{track.pgclass.name}
-            USING gin (lightcurve_id)
-            WITH (fastupdate = off)
-            """
-        )
-    )
-    work.append(
-        text(
-            f"""
-            CREATE INDEX {brin_index_name}
-            ON {track.pgclass.namespace.name}.{track.pgclass.name}
-            USING brin (cadence)
-            WITH (pages_per_range = 1)
-            """
-        )
-    )
-    return work
-
-
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
     logger.warning(
