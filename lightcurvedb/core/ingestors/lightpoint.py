@@ -33,35 +33,6 @@ from lightcurvedb.models import Frame, Lightpoint, Observation, Orbit
 from lightcurvedb.models.metrics import QLPOperation, QLPProcess
 from lightcurvedb.models.table_track import RangedPartitionTrack
 
-LC_ERROR_TYPES = {"RawMagnitude"}
-
-
-def push_lightpoints(mgr, lp_arr):
-    timing = {}
-    stamp = time()
-    mgr.threading_copy(lp_arr)
-    timing["copy_elapsed"] = time() - stamp
-    timing["n_lightpoints"] = len(lp_arr)
-    return timing
-
-
-def push_observations(conn, observations):
-    timing = {}
-    with conn.cursor() as cur:
-        values_iter = map(
-            lambda row: f"({row[0]}, {row[1]}, {row[2]}, {row[3]})",
-            observations,
-        )
-        value_str = ", ".join(values_iter)
-        stamp = time()
-        cur.execute(
-            "INSERT INTO observations ("
-            "lightcurve_id, orbit_id, camera, ccd"
-            f") VALUES {value_str}"
-        )
-        timing["obs_insertion_time"] = time() - stamp
-    return timing
-
 
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
