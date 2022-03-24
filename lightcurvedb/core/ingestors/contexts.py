@@ -121,7 +121,7 @@ def populate_ephemeris(conn, db):
 
 @with_sqlite
 def get_tic_parameters(conn, tic_id, *parameters):
-    param_str = ", ".join(paramters)
+    param_str = ", ".join(parameters)
     q = conn.execute(
         f"SELECT {param_str} FROM tic_parameters WHERE tic_id = {tic_id}"
     )

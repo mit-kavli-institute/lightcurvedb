@@ -37,6 +37,7 @@ def test_tic_catalog_loading(parameters):
 
         for param in parameters:
             remote = contexts.get_tic_parameters(
+                sqlite_path,
                 param["tic_id"],
                 *tuple(param.keys())
             )
