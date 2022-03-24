@@ -47,6 +47,14 @@ def ccd_str(draw, ccd=None):
 def tic_ids(draw):
     return draw(st.integers(min_value=1, max_value=10005000540))
 
+@st.composite
+def cadences(draw):
+    return draw(st.integers(min_value=1))
+
+@st.composite
+def quality_flags(draw):
+    return draw(st.integers(min_value=0, max_value=1))
+
 
 @st.composite
 def tic_parameters(draw):

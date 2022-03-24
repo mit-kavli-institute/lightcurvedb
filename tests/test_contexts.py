@@ -7,16 +7,20 @@ from .strategies import tess as tess_st
 
 
 TIC_PARAM_ORDER = ("tic_id", "ra", "dec", "tmag", "pmra", "pmdec", "jmag", "kmag", "vmag")
-QUALITY_FLAG_PARAM_ORDER = ("cadence", "camera", "ccd", "quality_flag")
 
-
-def _dump_txt(path, data, param_order, formatter=str):
+def _dump_tuple_txt(path, data, formatter=str):
     with open(path, "wt") as fout:
         for row in data:
-            _raw = tuple(row[key] for key in param_order)
-            fout.write("\t".join(map(formatter, _raw)))
+            fout.write("\t".join(map(formatter, row)))
             fout.write("\n")
     return path
+
+def _dump_dict_txt(path, data, param_order, formatter=str):
+    return _dump_tuple_txt(
+        path,
+        (tuple(row[key] for key in param_order) for row in data),
+        formatter=formatter
+    )
 
 
 @given(
@@ -32,7 +36,7 @@ def test_tic_catalog_loading(parameters):
 
         contexts.make_shared_context(sqlite_path)
 
-        _dump_txt(catalog_path, parameters, TIC_PARAM_ORDER)
+        _dump_dict_txt(catalog_path, parameters, TIC_PARAM_ORDER)
 
         contexts.populate_tic_catalog(sqlite_path, catalog_path)
 
@@ -48,3 +52,21 @@ def test_tic_catalog_loading(parameters):
                     assert isnan(remote[key])
                 else:
                     assert param[key] == remote[key]
+
+
+@given(
+    st.lists(
+        st.tuples(
+            tess_st.cadences(),
+            tess_st.cameras(),
+            tess_st.ccds(),
+            tess_st.quality_flags()
+        ),
+        unique_by=lambda r: (r[0], r[1], r[2])
+    )
+)
+def test_quality_flag_loading(quality_flags):
+    sqlite_name = pathlib.Path("db.sqlite")
+    qflag_name = pathlib.Path("quality_flags.txt")
+
+ 
