@@ -29,6 +29,8 @@ def test_tic_catalog_loading(parameters):
         sqlite_path = pathlib.Path(tmpdir) / sqlite_name
         catalog_path = pathlib.Path(tmpdir) / catalog_name
 
+        contexts.make_shared_context(sqlite_path)
+
         _dump_txt(catalog_path, parameters, TIC_PARAM_ORDER)
 
         contexts.populate_tic_catalog(sqlite_path, catalog_path)
