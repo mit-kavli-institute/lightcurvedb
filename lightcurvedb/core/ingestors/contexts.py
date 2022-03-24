@@ -20,7 +20,7 @@ def with_sqlite(function):
 
 
 @with_sqlite
-def _make_shared_context(conn):
+def make_shared_context(conn):
     """
     Creates the expected tables needed for ingestion contexts.
     """
@@ -36,7 +36,7 @@ def _make_shared_context(conn):
             " pmdec REAL,"
             " jmag REAL,"
             " kmag REAL,"
-            " vmag REAL) WITHOUT ROWID"
+            " vmag REAL)"
         )
         conn.execute(
             "CREATE TABLE quality_flags "
