@@ -1,5 +1,6 @@
 import pandas as pd
 import sqlite3
+import numpy as np
 from lightcurvedb.util.iter import chunkify
 from lightcurvedb.models import Frame, SpacecraftEphemris
 from functools import wraps
@@ -67,8 +68,8 @@ def _iter_tic_catalog(catalog_path):
             yield int(tic_id), *tuple(map(float, data))
 
 
-def __iter_quality_flags(quality_flag_path, *constants):
-    with open(catalog_path, "rt") as fin:
+def _iter_quality_flags(quality_flag_path, *constants):
+    with open(quality_flag_path, "rt") as fin:
         for line in fin:
             cadence, quality_flag = line.strip().split()
             yield int(cadence), int(quality_flag), *constants
@@ -94,8 +95,8 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
         _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
         for chunk in chunkify(_iter, 1024):
             conn.executemany(
-                "INSERT INTO quality_flags(cadence, quality_flag)"
-                " VALUES (?, ?)",
+                "INSERT INTO quality_flags(cadence, quality_flag, camera, ccd)"
+                " VALUES (?, ?, ?, ?)",
                 chunk
             )
 
@@ -131,3 +132,31 @@ def get_tic_parameters(conn, tic_id, *parameters):
     )
     result = q.fetchall()[0]
     return dict(zip(parameters, map(_none_to_nan, result)))
+
+
+@with_sqlite
+def get_qflag(conn, cadence, camera, ccd):
+    q = conn.execute(
+        "SELECT quality_flag FROM quality_flags WHERE "
+        f"cadence = {cadence} AND camera = {camera} AND ccd = {ccd}"
+    )
+    return q.fetchall()[0][0]
+
+
+@with_sqlite
+def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
+    base_q = "SELECT cadence, quality_flag FROM quality_flags "
+    filter_q = f"WHERE camera = {camera} AND ccd = {ccd}"
+    if cadence_min is not None and cadence_max is not None:
+        filter_q += f" AND cadence BETWEEN {cadence_min} AND {cadence_max}"
+    elif cadence_min is not None:
+        filter_q += f" AND cadence >= {cadence_min}"
+    elif cadence_max is not None:
+        filter_q += f" AND cadence <= {cadence_max}"
+
+    q = conn.execute(base_q + filter_q + " ORDER BY cadence")
+    
+    return np.array(
+        q.fetchall(),
+        dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
+    )

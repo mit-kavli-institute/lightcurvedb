@@ -1,8 +1,8 @@
 import tempfile
 import pathlib
+import numpy as np
 from lightcurvedb.core.ingestors import contexts
 from hypothesis import strategies as st, given
-from numpy import isnan
 from .strategies import tess as tess_st
 
 
@@ -48,8 +48,8 @@ def test_tic_catalog_loading(parameters):
             )
             for key in TIC_PARAM_ORDER:
                 ref = param[key]
-                if isnan(ref):
-                    assert isnan(remote[key])
+                if np.isnan(ref):
+                    assert np.isnan(remote[key])
                 else:
                     assert param[key] == remote[key]
 
@@ -58,15 +58,64 @@ def test_tic_catalog_loading(parameters):
     st.lists(
         st.tuples(
             tess_st.cadences(),
-            tess_st.cameras(),
-            tess_st.ccds(),
             tess_st.quality_flags()
         ),
-        unique_by=lambda r: (r[0], r[1], r[2])
-    )
+        unique_by=lambda r: r[0]
+    ),
+    tess_st.cameras(),
+    tess_st.ccds()
 )
-def test_quality_flag_loading(quality_flags):
+def test_quality_flag_loading(quality_flags, camera, ccd):
     sqlite_name = pathlib.Path("db.sqlite")
     qflag_name = pathlib.Path("quality_flags.txt")
 
- 
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sqlite_path = pathlib.Path(tmpdir) / sqlite_name
+        qflag_path = pathlib.Path(tmpdir) / qflag_name
+
+        contexts.make_shared_context(sqlite_path)
+
+        _dump_tuple_txt(
+            qflag_path,
+            quality_flags
+        )
+
+        contexts.populate_quality_flags(sqlite_path, qflag_path, camera, ccd)
+
+        for cadence, quality_flag in quality_flags:
+            remote_flag = contexts.get_qflag(sqlite_path, cadence, camera, ccd)
+            assert remote_flag == quality_flag
+
+
+@given(
+    st.lists(
+        st.tuples(
+            tess_st.cadences(),
+            tess_st.quality_flags()
+        ),
+        unique_by=lambda r: r[0]
+    ),
+    tess_st.cameras(),
+    tess_st.ccds()
+)
+def test_quality_flag_ordering(quality_flags, camera, ccd):
+    sqlite_name = pathlib.Path("db.sqlite")
+    qflag_name = pathlib.Path("quality_flags.txt")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sqlite_path = pathlib.Path(tmpdir) / sqlite_name
+        qflag_path = pathlib.Path(tmpdir) / qflag_name
+
+        contexts.make_shared_context(sqlite_path)
+
+        _dump_tuple_txt(
+            qflag_path,
+            quality_flags
+        )
+
+        contexts.populate_quality_flags(sqlite_path, qflag_path, camera, ccd)
+        np_arr = contexts.get_qflag_np(sqlite_path, camera, ccd)
+        for ith, row in enumerate(sorted(quality_flags, key=lambda r: r[0])):
+            remote_row = np_arr[ith]
+            assert row[0] == remote_row[0]
+            assert row[1] == remote_row[1]

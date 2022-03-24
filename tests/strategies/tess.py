@@ -49,7 +49,7 @@ def tic_ids(draw):
 
 @st.composite
 def cadences(draw):
-    return draw(st.integers(min_value=1))
+    return draw(st.integers(min_value=1, max_value=100000))
 
 @st.composite
 def quality_flags(draw):
