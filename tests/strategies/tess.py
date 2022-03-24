@@ -26,10 +26,12 @@ def sector_str(draw, sector=None):
     sector = draw(st.just(sector)) if sector else draw(sectors())
     return f"sector-{sector}"
 
+
 @st.composite
 def orbit_str(draw, orbit=None):
     orbit = draw(st.just(orbit)) if orbit else draw(orbits())
     return f"orbit-{orbit}"
+
 
 @st.composite
 def camera_str(draw, camera=None):
@@ -47,9 +49,11 @@ def ccd_str(draw, ccd=None):
 def tic_ids(draw):
     return draw(st.integers(min_value=1, max_value=10005000540))
 
+
 @st.composite
 def cadences(draw):
     return draw(st.integers(min_value=1, max_value=100000))
+
 
 @st.composite
 def quality_flags(draw):
