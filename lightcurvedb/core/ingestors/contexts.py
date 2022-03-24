@@ -119,6 +119,10 @@ def populate_ephemeris(conn, db):
         )
 
 
+def _none_to_nan(value):
+    return float("nan") if value is None else value
+
+
 @with_sqlite
 def get_tic_parameters(conn, tic_id, *parameters):
     param_str = ", ".join(parameters)
@@ -126,4 +130,4 @@ def get_tic_parameters(conn, tic_id, *parameters):
         f"SELECT {param_str} FROM tic_parameters WHERE tic_id = {tic_id}"
     )
     result = q.fetchall()[0]
-    return dict(zip(parameters, result))
+    return dict(zip(parameters, map(_none_to_nan, result)))

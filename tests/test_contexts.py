@@ -2,6 +2,7 @@ import tempfile
 import pathlib
 from lightcurvedb.core.ingestors import contexts
 from hypothesis import strategies as st, given
+from numpy import isnan
 from .strategies import tess as tess_st
 
 
@@ -42,4 +43,8 @@ def test_tic_catalog_loading(parameters):
                 *tuple(param.keys())
             )
             for key in TIC_PARAM_ORDER:
-                assert param[key] == remote[key]
+                ref = param[key]
+                if isnan(ref):
+                    assert isnan(remote[key])
+                else:
+                    assert param[key] == remote[key]
