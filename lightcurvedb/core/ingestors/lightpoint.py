@@ -34,6 +34,10 @@ from lightcurvedb.models.metrics import QLPOperation, QLPProcess
 from lightcurvedb.models.table_track import RangedPartitionTrack
 
 
+def _load_tic_parameters(distinct_run_setups):
+    raise NotImplementedError
+
+
 @lru_cache(maxsize=16)
 def query_tic(tic, *fields):
     logger.warning(
@@ -360,8 +364,14 @@ def ingest_merge_jobs(
 
     echo("Enqueing multiprocessing work")
     total_single_merge_jobs = len(jobs)
+    distinct_run_setups = set()
+
     for job in tqdm(jobs, unit=" jobs"):
         job_queue.put(job)
+        distinct_run_setups.add((job.orbit_number, job.camera, job.ccd))
+
+    echo("Obtaining common contexts")
+    for orbit_number, camera, ccd in 
 
     with db:
         echo("Grabbing introspective processing tracker")

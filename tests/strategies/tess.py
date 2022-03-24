@@ -36,7 +36,31 @@ def camera_str(draw, camera=None):
     camera = draw(st.just(camera)) if camera else draw(cameras())
     return f"cam{camera}"
 
+
 @st.composite
 def ccd_str(draw, ccd=None):
     ccd = draw(st.just(ccd)) if ccd else draw(ccds())
     return f"ccd{ccd}"
+
+
+@st.composite
+def tic_ids(draw):
+    return draw(st.integers(min_value=1, max_value=10005000540))
+
+
+@st.composite
+def tic_parameters(draw):
+    return draw(
+        st.builds(
+            dict,
+            tic_id=tic_ids(),
+            ra=st.floats(min_value=-180, max_value=180),
+            dec=st.floats(min_value=-180, max_value=180),
+            tmag=st.floats(allow_nan=False, allow_infinity=False),
+            pmra=st.floats(min_value=-180, max_value=180),
+            pmdec=st.floats(min_value=-180, max_value=180),
+            jmag=st.floats(),
+            kmag=st.floats(),
+            vmag=st.floats(),
+        )
+    )
