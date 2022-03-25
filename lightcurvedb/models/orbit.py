@@ -64,7 +64,7 @@ class Orbit(QLPReference):
 
     crm = Column(Boolean, nullable=False)  # Has been correct for CRM
     crm_n = Column(Integer, nullable=False)  # Cosmic Ray Mitigation Number
-    basename = Column(String(256), nullable=False)
+    _basename = Column("basename", String(256), nullable=False)
 
     # Relationships
     frames = relationship("Frame", back_populates="orbit")
@@ -217,6 +217,15 @@ class Orbit(QLPReference):
     @dec.expression
     def dec(cls):
         return cls.declination
+
+    @hybrid_property
+    def basename(self):
+        return self._basename
+
+    @basename.setter
+    def basename(self, value):
+        """Sanitize"""
+        self._basename = value.replace("\x00", "\uFFFD")
 
     def get_qlp_directory(self, base_path=QLP_ORBITS, suffixes=None):
         """
