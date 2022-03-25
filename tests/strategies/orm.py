@@ -27,7 +27,6 @@ def orbits(draw):
     return draw(
         st.builds(
             models.Orbit,
-            id=psql_integers(),
             orbit_number=tess_st.orbits(),
             sector=tess_st.sectors(),
             right_ascension=st.floats(),
@@ -40,5 +39,38 @@ def orbits(draw):
             crm=st.booleans(),
             crm_n=psql_integers(),
             basename=st.text(min_size=1, max_size=256)
+        )
+    )
+
+@st.composite
+def frame_types(draw):
+    return draw(
+        st.builds(
+            models.frame.FrameType,
+            name=st.text(min_size=1, max_size=64),
+            description=st.text()
+        )
+    )
+
+@st.composite
+def frames(draw):
+    """
+    Generate a frame, note that the relations for this frame, namely
+    the FrameType and Orbit are not generated using this strategy.
+    """
+    return draw(
+        st.builds(
+            models.frame.Frame,
+            cadence_type=psql_small_integers(),
+            camera=tess_st.cameras(),
+            ccd=st.one_of(tess_st.ccds(), st.none()),
+            cadence=psql_integers(),
+            gps_time=st.floats(),
+            start_tjd=st.floats(),
+            mid_tjd=st.floats(),
+            end_tjd=st.floats(),
+            exp_time=st.floats(),
+            quality_bit=st.booleans(),
+            file_path=st.text()
         )
     )
