@@ -26,7 +26,8 @@ class __TEST_DB__(DB):
 
     def add(self, *args, **kwargs):
         try:
-            return super().add(*args, **kwargs)
+            val = super().add(*args, **kwargs)
+            return val
         except:
             self.session.rollback()
             raise
