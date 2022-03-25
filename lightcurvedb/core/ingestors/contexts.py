@@ -54,6 +54,13 @@ def make_shared_context(conn):
             " y REAL,"
             " z REAL)"
         )
+        conn.execute(
+            "CREATE TABLE tjd_map "
+            "(cadence INTEGER,"
+            " camera INTEGER,"
+            " tjd REAL,"
+            " PRIMARY KEY (cadence, camera))"
+        )
     # Tables have been made
 
 
@@ -120,6 +127,25 @@ def populate_ephemeris(conn, db):
         )
 
 
+@with_sqlite
+def populate_tjd_mapping(conn, db):
+    with conn:
+        q = (
+            db
+            .query(
+                Frame.cadence,
+                Frame.camera,
+                Frame.mid_tjd
+            )
+            .filter(
+                Frame.frame_type_id == "Raw FFI"
+            )
+        )
+        conn.executemany(
+            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)"
+        )
+
+
 def _none_to_nan(value):
     return float("nan") if value is None else value
 
@@ -132,6 +158,19 @@ def get_tic_parameters(conn, tic_id, *parameters):
     )
     result = q.fetchall()[0]
     return dict(zip(parameters, map(_none_to_nan, result)))
+
+
+@with_sqlite
+def get_tic_mapping(conn, *columns):
+    param_str = ", ".join("tic_id", *columns)
+    q = conn.execute(
+        f"SELECT {param_str} FROM tic_parameters"
+    )
+    mapping = {}
+    for tic_id, *parameters in q:
+        values = dict(zip(columns, map(_non_to_nan, parameters)))
+        mapping[tic_id] = values
+    return mapping
 
 
 @with_sqlite
@@ -160,3 +199,29 @@ def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
         q.fetchall(),
         dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
     )
+
+@with_sqlite
+def get_quality_flag_mapping(conn):
+    df = pd.read_sql(
+        "SELECT camera, ccd, cadence, quality_flag FROM quality_flags ORDER BY camera, ccd, cadence",
+        conn,
+        index_col=["camera", "ccd", "cadence"]
+    )
+    return df
+
+
+@with_sqlite
+def get_spacecraft_data(conn, col):
+    q = "SELECT :col FROM spacecraft_pos ORDER BY bjd"
+    q = conn.execute(q, {"col": col})
+    return np.array(val for val, in q)
+
+
+@with_sqlite
+def get_tjd_mapping(conn):
+    df = pd.read_sql(
+        "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
+        conn,
+        index_col=["camera", "cadence"]
+    )
+    return df
