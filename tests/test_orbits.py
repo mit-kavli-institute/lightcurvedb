@@ -1,4 +1,4 @@
-from hypothesis import given, settings, HealthCheck
+from hypothesis import given, settings, HealthCheck, assume
 from lightcurvedb.models import Orbit
 from .conftest import db
 from .strategies import orm
@@ -9,6 +9,9 @@ no_scope_check = HealthCheck.function_scoped_fixture
 @settings(suppress_health_check=[no_scope_check])
 @given(orm.orbits())
 def test_insert_orbit(db, orbit):
+    defined_ids = set(id_ for id_, in db.query(Orbit.id))
+    assume(orbit.id not in defined_ids)  # avoid clobbering other tests
+
     db.add(orbit)
     db.flush()
 

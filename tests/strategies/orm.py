@@ -3,9 +3,23 @@ from lightcurvedb import models
 from . import tess as tess_st
 
 @st.composite
-def psql_str(draw, **overrides):
-    return st.text(
-        **overrides
+def psql_integers(draw, **overrides):
+    return draw(
+        st.integers(
+            min_value=-2147483648,
+            max_value=2147483647,
+            **overrides
+        )
+    )
+
+@st.composite
+def psql_small_integers(draw, **overrides):
+    return draw(
+        st.integers(
+            min_value=-32768,
+            max_value=32767,
+            **overrides
+        )
     )
 
 @st.composite
@@ -13,7 +27,7 @@ def orbits(draw):
     return draw(
         st.builds(
             models.Orbit,
-            id=st.integers(),
+            id=psql_integers(),
             orbit_number=tess_st.orbits(),
             sector=tess_st.sectors(),
             right_ascension=st.floats(),
@@ -24,7 +38,7 @@ def orbits(draw):
             quaternion_z=st.floats(),
             quaternion_q=st.floats(),
             crm=st.booleans(),
-            crm_n=st.integers(),
+            crm_n=psql_integers(),
             basename=st.text(min_size=1, max_size=256)
         )
     )
