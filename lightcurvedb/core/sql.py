@@ -36,3 +36,21 @@ def _resolve_type(type_):
     if isinstance(type_, str):
         return _str_to_sql_type(type_)
     return type_
+
+
+def psql_safe_str(string):
+    """
+    Replace NULL char in a string with \uFFFD. A copy of a string will
+    be returned.
+
+    Parameters
+    ----------
+    string: str
+        The string to replace
+
+    Returns
+    -------
+    str
+        The psql safe string.
+    """
+    return string.replace("\x00", "\uFFFD")

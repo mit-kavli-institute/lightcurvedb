@@ -21,6 +21,7 @@ from sqlalchemy.orm import relationship
 from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.core.sql import psql_safe_str
 from lightcurvedb.models import CameraQuaternion, Frame, Observation
 
 
@@ -225,7 +226,7 @@ class Orbit(QLPReference):
     @basename.setter
     def basename(self, value):
         """Sanitize"""
-        self._basename = value.replace("\x00", "\uFFFD")
+        self._basename = psql_safe_str(value)
 
     def get_qlp_directory(self, base_path=QLP_ORBITS, suffixes=None):
         """
