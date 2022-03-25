@@ -15,7 +15,6 @@ def test_insert_orbit(db, orbit):
     db.add(orbit)
     db.flush()
 
-    assert db.query(Orbit).filter_by(id=orbit.id).count() == 1
     assert db.query(Orbit).filter_by(orbit_number=orbit.orbit_number).count() == 1
 
     db.rollback()
