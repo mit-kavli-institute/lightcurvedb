@@ -1,18 +1,54 @@
 import pytest
-from lightcurvedb import db_from_config, core
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import DBAPIError
+from functools import wraps
+from lightcurvedb import core
+from lightcurvedb.core.connection import DB
+from lightcurvedb.core.engines import engine_from_config
 from .constants import CONFIG_PATH
+
+
+class __TEST_DB__(DB):
+    @property
+    def session(self):
+        try:
+            return super().session
+        except DBAPIError:
+            self.session.rollback()
+            raise
+
+    def flush(self, *args, **kwargs):
+        try:
+            return self.session.flush(*args, **kwargs)
+        except:
+            self.session.rollback()
+            raise
+
+    def add(self, *args, **kwargs):
+        try:
+            return super().add(*args, **kwargs)
+        except:
+            self.session.rollback()
+            raise
+
+
 
 
 @pytest.fixture(scope="module")
 def db_with_schema():
-    db_ = db_from_config(CONFIG_PATH)
+    _engine = engine_from_config(CONFIG_PATH)
+    _factory = sessionmaker(bind=_engine)
+
+    db_ = __TEST_DB__(_factory)
     with db_:
-        core.base_model.QLPModel.meta.create_all(db_.dbin)
-    return db
+        core.base_model.QLPModel.metadata.create_all(db_.bind)
+    return db_
 
 
 @pytest.fixture
 def db(db_with_schema):
     with db_with_schema as db_:
-        yield db_
-        db_.rollback()
+        try:
+            yield db_
+        finally:
+            db_.rollback()
