@@ -74,3 +74,16 @@ def frames(draw):
             file_path=st.text()
         )
     )
+
+
+@st.composite
+def camera_quaternions(draw):
+    return st.builds(
+        models.CameraQuaternion,
+        date=st.datetimes(),
+        camera=tess_st.cameras(),
+        w=st.floats(),
+        x=st.floats(),
+        y=st.floats(),
+        z=st.floats()
+    )

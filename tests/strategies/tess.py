@@ -76,3 +76,28 @@ def tic_parameters(draw):
             vmag=st.floats(),
         )
     )
+
+
+@st.composite
+def gps_times(draw):
+    """
+    Minimum gathered from minimum GPS time stored in the production FRAME
+    database.
+
+    There are ~86400 seconds per day, on TESS as of 3/29/2022 selecting from
+    the minimum and maximum frames by date and getting the average rate of
+    passing time we get the rate of 86400.03756128799 seconds per "day".
+
+    Extrapolating for an additional 5 years we get the upper maximum gps time
+    1248116533.95987.
+
+
+    """
+    return draw(
+        st.floats(
+            min_value=1216580520.25,
+            max_value=1248116533.96,
+            allow_nan=False,
+            allow_infinity=False
+        )
+    )
