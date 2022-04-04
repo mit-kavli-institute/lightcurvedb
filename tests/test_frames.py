@@ -1,7 +1,20 @@
+import pathlib
 from hypothesis import given, settings, HealthCheck, assume
+from hypothesis.extra import numpy as np_st
 from lightcurvedb.models import Orbit, FrameType, Frame
 from .conftest import db
-from .strategies import orm
+from .strategies import orm, ingestion
+
+
+def _simulate_fits(draw, directory):
+    header = draw(ingestion.frame_headers())
+    data = draw(np_st.arrays(np.int32,(header["NAXIS1"], header["NAXIS2"])))
+    filename = f"TESS2022123456_ffi_cam_{header['CAM']}_{header['CADENCE']}")
+
+    hdu = fits.PrimaryHDU(data)
+    hdul = fits.HDUList([hdu])
+
+    raise NotImplementedError
 
 # We rollback all changes to remote db
 no_scope_check = HealthCheck.function_scoped_fixture
@@ -26,3 +39,8 @@ def test_frame_insertion(db, frame_type, orbit, frame):
     db.query(Frame).filter(Frame.orbit == orbit).count() == 1
 
     db.rollback()
+
+
+@settings(suppress_health_check=[no_scope_check])
+def test_frame_ingestion(db):
+    raise NotImplementedError

@@ -1,4 +1,6 @@
 import pytest
+import pathlib
+import tempfile
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DBAPIError
 from functools import wraps
@@ -46,10 +48,16 @@ def db_with_schema():
     return db_
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def db(db_with_schema):
     with db_with_schema as db_:
         try:
             yield db_
         finally:
             db_.rollback()
+
+
+@pytest.fixture(scope="module")
+def tempdir():
+    with tempfile.TemporaryDirectory() as tmp:
+        yield pathlib.Path(tmp)

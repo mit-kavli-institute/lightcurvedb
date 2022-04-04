@@ -101,3 +101,30 @@ def gps_times(draw):
             allow_infinity=False
         )
     )
+
+
+@st.composite
+def tjds(draw, **kwargs):
+    return draw(
+        st.floats(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=0.0
+        )
+    )
+
+@st.composite
+def right_ascensions(draw):
+    return draw(st.floats(min_value=-180, max_value=180))
+
+@st.composite
+def declinations(draw):
+    return draw(st.floats(min_value=-180, max_value=180))
+
+
+@st.composite
+def declinations(draw):
+    return draw(st.floats(min_value=-180, max_value=180))
+
+
+
