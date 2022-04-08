@@ -127,4 +127,6 @@ def declinations(draw):
     return draw(st.floats(min_value=-180, max_value=180))
 
 
-
+@st.composite
+def rolls(draw):
+    return draw(st.floats(min_value=-180, max_value=180))

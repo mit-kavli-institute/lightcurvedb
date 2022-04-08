@@ -1,6 +1,7 @@
 import pytest
 import pathlib
 import tempfile
+from click.testing import CliRunner
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DBAPIError
 from functools import wraps
@@ -61,3 +62,10 @@ def db(db_with_schema):
 def tempdir():
     with tempfile.TemporaryDirectory() as tmp:
         yield pathlib.Path(tmp)
+
+
+@pytest.fixture(scope="module")
+def clirunner():
+    runner = CliRunner()
+
+    return runner

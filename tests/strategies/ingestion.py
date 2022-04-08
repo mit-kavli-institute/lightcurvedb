@@ -58,7 +58,7 @@ def ffi_headers(draw):
             SC_QUATY=st.floats(min_value=0, max_value=1),
             SC_QUATZ=st.floats(min_value=0, max_value=1),
             SC_QUATQ=st.floats(min_value=0, max_value=1),
-            TJD_ZERO=st.just([2457000.0]),
+            TJD_ZERO=st.just(2457000.0),
             STARTTJD=st.floats(allow_nan=False, allow_infinity=False),
             MIDTJD=st.floats(allow_nan=False, allow_infinity=False),
             ENDTJD=st.floats(allow_nan=False, allow_infinity=False),
@@ -70,7 +70,7 @@ def ffi_headers(draw):
             QUAL_BIT=st.just(0),
             SPM=st.just(2),
             CAM=tess_st.cameras(),
-            CADENCE=tess_st.candences(),
+            CADENCE=tess_st.cadences(),
             CRM=st.just(True),
         )
     )
