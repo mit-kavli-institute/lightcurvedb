@@ -84,6 +84,6 @@ def test_frame_ingestion(db, tempdir, frame_type, data):
     q = db.query(Frame).filter_by(file_path=file_path).count()
     assert q == 1
     q = db.query(Frame.orbit_id).filter_by(file_path=file_path).first()[0]
-    assert q = frames[0].orbit.id
+    assert q == frames[0].orbit.id
 
     db.rollback()
