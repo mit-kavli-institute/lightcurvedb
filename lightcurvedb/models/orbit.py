@@ -1,3 +1,4 @@
+import itertools
 import os
 import re
 from multiprocessing import Pool
@@ -23,11 +24,6 @@ from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 from lightcurvedb.models import CameraQuaternion, Frame, Observation
-
-
-def _extr_fits_header(f):
-    return fits.open(f)[0].header
-
 
 ORBIT_DTYPE = [
     ("orbit_number", np.int32),
@@ -107,43 +103,6 @@ class Orbit(QLPReference):
         self.quaternion_q = other_orbit.quaternion_q
         self.crm = other_orbit.crm
         self.basename = other_orbit.basename
-
-    @classmethod
-    def generate_from_fits(cls, files, parallel=True):
-        if parallel:
-            with Pool() as p:
-                headers = p.map(_extr_fits_header, files)
-        else:
-            headers = [fit[0].header for fit in files]
-
-        # Check that all headers are congruent for the orbit
-        require_congruency_map = {
-            "ORBIT_ID": "orbit_number",
-            "SC_RA": "right_ascension",
-            "SC_DEC": "declination",
-            "SC_ROLL": "roll",
-            "SC_QUATX": "quaternion_x",
-            "SC_QUATY": "quaternion_y",
-            "SC_QUATZ": "quaternion_z",
-            "SC_QUATQ": "quaternion_q",
-            "CRM": "crm",
-            "CRM_N": "crm_n",
-        }
-
-        for column in require_congruency_map.keys():
-            assert all(
-                headers[0].get(column) == cmpr.get(column)
-                for cmpr in headers[1:]
-            )
-
-        basename = re.search(
-            r"(?P<basename>tess[0-9]+)", files[0]
-        ).groupdict()["basename"]
-
-        attrs = {v: headers[0][k] for k, v in require_congruency_map.items()}
-        attrs["basename"] = basename
-
-        return cls(**attrs)
 
     @hybrid_property
     def max_cadence(self):

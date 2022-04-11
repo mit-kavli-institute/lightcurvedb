@@ -64,6 +64,7 @@ def ffi_headers(draw):
             ENDTJD=st.floats(allow_nan=False, allow_infinity=False),
             EXPTIME=st.floats(allow_nan=False, allow_infinity=False),
             INT_TIME=st.integers(),
+            TIME=tess_st.gps_times(),
             PIX_CAT=st.just(0),
             REQUANT=st.just(405),
             DIFF_HUF=st.just(109),

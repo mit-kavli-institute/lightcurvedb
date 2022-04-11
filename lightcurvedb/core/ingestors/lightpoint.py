@@ -370,9 +370,6 @@ def ingest_merge_jobs(
         job_queue.put(job)
         distinct_run_setups.add((job.orbit_number, job.camera, job.ccd))
 
-    echo("Obtaining common contexts")
-    for orbit_number, camera, ccd in 
-
     with db:
         echo("Grabbing introspective processing tracker")
         stage = db.get_qlp_stage("lightpoint-ingestion")
