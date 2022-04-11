@@ -47,15 +47,13 @@ def _ffi_to_frame_kwargs(path):
     return kwargs
 
 
-def from_fits(path, cadence_type=30, frame_type=None, orbit=None):
+def from_fits(path, frame_type=None, orbit=None):
     """
     Generates a Frame instance from a FITS file.
     Parameters
     ----------
     path : str or pathlike
         The path to the FITS file.
-    cadence_type : int, optional
-        The cadence type of the FITS file.
     frame_type : FrameType, optional
         The FrameType relation for this Frame instance, by default this
         is not set (None).
@@ -70,11 +68,9 @@ def from_fits(path, cadence_type=30, frame_type=None, orbit=None):
     """
     abspath = os.path.abspath(path)
     header = fits.open(abspath)[0].header
-    if cadence_type is None:
-        cadence_type = header["INT_TIME"] // 60
     try:
         return Frame(
-            cadence_type=cadence_type,
+            cadence_type=header["INT_TIME"],
             camera=header.get("CAM", header.get("CAMNUM", None)),
             ccd=header.get("CCD", header.get("CCDNUM", None)),
             cadence=header["CADENCE"],

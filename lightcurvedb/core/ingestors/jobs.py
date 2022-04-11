@@ -567,7 +567,7 @@ class DirectoryPlan:
                 _file_iter = source_dir.rglob("*.h5")
             else:
                 _file_iter = source_dir.glob("*.h5")
-
+            i = 0
             for i, h5_path in enumerate(_file_iter):
                 context = extract_pdo_path_context(str(h5_path))
                 context["path"] = h5_path
@@ -595,12 +595,13 @@ class DirectoryPlan:
                         Orbit.orbit_number == job.orbit_number,
                     )
                 )
+                i = 0
                 for i, row in enumerate(q):
                     id_, orbit_number = row
                     observed.add((id_, orbit_number))
 
                 logger.debug(
-                    f"Tracking {i} entries from orbit {orbit_number}"
+                    f"Tracking {i} entries from orbit {job.orbit_number}"
                 )
 
                 _mask.add(job.orbit_number)

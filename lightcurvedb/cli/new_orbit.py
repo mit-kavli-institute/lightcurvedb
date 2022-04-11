@@ -89,7 +89,7 @@ def ingest_hk(ctx, session, path):
     return quaternions
 
 
-def ingest_directory(ctx, session, path, cadence_type):
+def ingest_directory(ctx, session, path):
     orbit_context = ORBIT_EXTR.search(path)
     orbit_number = int(orbit_context.groupdict()["orbit_number"])
 
@@ -176,11 +176,9 @@ def ingest_directory(ctx, session, path, cadence_type):
         if not ctx.obj["dryrun"]:
             session.commit()
 
-    func = partial(from_fits, cadence_type=cadence_type)
-
     p = Pool()
     click.echo("Generating frames")
-    frames = p.map(func, accepted)
+    frames = p.map(from_fits, accepted)
     for frame in frames:
         frame.orbit = orbit
         frame.frame_type = frame_type
@@ -197,14 +195,12 @@ def ingest_directory(ctx, session, path, cadence_type):
 @click.pass_context
 @click.argument("ingest_directories", nargs=-1)
 @click.option("--new-orbit/--no-new-orbit", default=False)
-@click.option("--cadence-type", default=30, type=int)
 @click.option("--ffi-subdir", type=str, default="ffi_fits")
 @click.option("--quaternion-subdir", type=str, default="hk")
 def ingest_frames(
     ctx,
     ingest_directories,
     new_orbit,
-    cadence_type,
     ffi_subdir,
     quaternion_subdir,
 ):
@@ -216,7 +212,7 @@ def ingest_frames(
             hk_path = os.path.join(directory, quaternion_subdir)
 
             try:
-                frames = ingest_directory(ctx, db, ffi_path, cadence_type)
+                frames = ingest_directory(ctx, db, ffi_path)
             except FileNotFoundError:
                 click.echo(
                     click.style(
