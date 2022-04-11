@@ -13,7 +13,8 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy.orm import relationship, hybrid_method
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
