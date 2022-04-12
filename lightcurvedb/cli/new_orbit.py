@@ -5,7 +5,7 @@ from multiprocessing import Pool
 
 import click
 
-from lightcurvedb.core.ingestors.frame_ingestor import from_fits
+from lightcurvedb.core.ingestors.frames import from_fits
 from lightcurvedb.models import CameraQuaternion, Frame, FrameType, Orbit
 from lightcurvedb.models.camera_quaternion import get_utc_time
 from lightcurvedb.util.contexts import get_parent_dir

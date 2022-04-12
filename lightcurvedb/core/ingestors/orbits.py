@@ -1,5 +1,12 @@
+import itertools
+from astropy.io import fits
+from collections import defaultdict
+from loguru import logger
+
 from lightcurvedb.models.orbit import Orbit
 from lightcurvedb.util.tess import sector_from_orbit_number
+
+from multiprocessing import Pool
 
 
 FITS_TO_ORBIT_MAP = {
@@ -31,22 +38,27 @@ ORBIT_CONSISTENCY_KEYS = (
 )
 
 def _basename_from_fits(path):
-    raise NotImplementedError
+    filename = path.stem
+    basename, *_ = filename.split("-")
+    return basename
 
 
 def _ffi_to_orbit_kwargs(f):
     with fits.open(f) as fin:
         kwargs = {}
         for key, value in fin[0].header.items():
-            kwargs[FITS_TO_ORBIT_MAP[key]] = value
+            try:
+                kwargs[FITS_TO_ORBIT_MAP[key]] = value
+            except KeyError:
+                continue
 
     kwargs["sector"] = sector_from_orbit_number(kwargs["orbit_number"])
     kwargs["basename"] = _basename_from_fits(f)
-    kwargs["file_path"] = str(f)
-    return header
+    kwargs["file_path"] = f
+    return kwargs
 
 
-def generate_from_fits(cls, files, parallel=True):
+def generate_from_fits(files, parallel=True):
     """
     Generate orbits from a list of astropy.fits file paths.
 
@@ -59,30 +71,30 @@ def generate_from_fits(cls, files, parallel=True):
 
     Returns
     -------
-    [Orbit]
+    [Orbit, [str]
         Returns a list of orbit models which have consistent
-        astrophysical parameters across their observed frames.
+        astrophysical parameters across their observed frames
+        and then the list of FITS files which have been used
+        to verify the orbit.
     """
     if parallel:
         with Pool() as p:
-            orbit_kwargs = p.map(_extr_fits_header, files)
+            orbit_kwargs = p.map(_ffi_to_orbit_kwargs, files)
     else:
         orbit_kwargs = [
             _ffi_to_orbit_kwargs(file)
             for file in files
         ]
 
-    orbit_kwargs = sorted(
-        orbit_kwargs,
-        key=lambda kwargs: kwargs["orbit_number"]
-    )
-    grouped = itertools.group(
-        orbit_kwargs, lambda kwargs: kwargs["orbit_number"]
-    )
+    grouped = defaultdict(list)
+
+    for kwargs in orbit_kwargs:
+        grouped[kwargs["orbit_number"]].append(kwargs)
 
     # Check that all headers are congruent for each found orbit
     new_orbits = []
-    for orbit_number, kwargs_array in grouped:
+    for orbit_number, kwargs_array in grouped.items():
+        files = [k.pop("file_path") for k in kwargs_array]
         for attr in ORBIT_CONSISTENCY_KEYS:
             ref = kwargs_array[0]
             check = all(
@@ -95,9 +107,12 @@ def generate_from_fits(cls, files, parallel=True):
                     )
                 return []
 
-            orbit = Orbit(**kwargs)
-            logger.debug(f"Generated orbit {orbit}")
+        orbit = Orbit(**kwargs)
+        logger.debug(f"Generated orbit {orbit}")
 
-            new_orbits.append(orbit)
+        new_orbits.append((
+            orbit,
+            files,
+        ))
 
-        return new_orbits
+    return new_orbits

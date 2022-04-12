@@ -12,11 +12,13 @@ from sqlalchemy import (
     SmallInteger,
     String,
 )
+from pathlib import Path
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
+from psycopg2 import extensions as ext
 
 from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
@@ -31,6 +33,13 @@ FRAME_DTYPE = [
     ("exp_time", np.float64),
     ("quality_bit", np.int32),
 ]
+
+
+def adapt_pathlib(path):
+    return ext.QuotedString(str(path))
+
+
+ext.register_adapter(Path, adapt_pathlib)
 
 
 class FrameType(QLPDataSubType):

@@ -3,7 +3,7 @@ import os
 from astropy.io import fits
 from loguru import logger
 
-from lightcurvedb.models.frame import Frame
+from lightcurvedb.models import Frame, Orbit
 
 from .orbits import generate_from_fits
 
@@ -93,12 +93,13 @@ def from_fits(path, frame_type=None, orbit=None):
 
 def ingest_directory(db, frame_type, directory, extension, update=False):
     parent_dir = directory.parent
-    files = directory.glob(extension)
+    files = list(directory.glob(extension))
     new_paths = []
     existing_paths = []
 
     for path in files:
-        if db.query(Frame).filter_by(file_path=str(path)).one() is None:
+        q = db.query(Frame).filter_by(file_path=str(path))
+        if q.one_or_none() is not None:
             # File Exists
             logger.warning(
                 f"Frame path already exists in database: {path}"
@@ -109,40 +110,42 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
                 f"New Frame path: {path}"
             )
             new_paths.append(path)
-    logger.info(
+
+    logger.debug(
         f"Found {len(new_paths)} new frame paths"
     )
-    logger.info(
+    logger.debug(
         f"Found {len(existing_paths)} existing frame paths"
     )
 
     orbit_map = {}
-    for orbit in generate_from_fits(files):
+    for orbit, paths in generate_from_fits(files, parallel=False):
         # Attempt to locate any existing orbit
         q = db.query(Orbit).filter_by(orbit_number=orbit.orbit_number)
-        remote_orbit = q.one()
+        remote_orbit = q.one_or_none()
         if remote_orbit is None:
             # Brand new orbit
             db.add(orbit)
-            orbit_map[orbit.orbit_number] = orbit
         else:
-            orbit_map[remote_orbit.orbit_number] = remote_orbit
+            orbit = remote_orbit
+
+        for path in paths:
+            orbit_map[path] = orbit
 
     frames = []
-
-    # Flush any pending changes so id sequences and parameters reflect the
-    # current transaction state.
-    db.flush()
+    logger.debug(orbit_map)
 
     # Now construct each frame and build relations
     for path in new_paths:
+        logger.debug(path)
         frame = from_fits(
             path,
             frame_type=frame_type,
-            orbit=orbit
+            orbit=orbit_map[path]
         )
         db.add(frame)
         db.flush()
+        frames.append(frame)
 
     if update:
         for path in existing_paths:

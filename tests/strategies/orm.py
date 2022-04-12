@@ -1,6 +1,19 @@
+import pathlib
 from hypothesis import strategies as st
 from lightcurvedb import models
+from lightcurvedb import db_from_config
 from . import tess as tess_st
+
+ORM_STRATEGY_FILE_PATH = pathlib.Path(__file__)
+STRATEGY_PATH = ORM_STRATEGY_FILE_PATH.parent
+CONFIG_PATH = STRATEGY_PATH.parent / pathlib.Path("config.conf")
+
+
+@st.composite
+def database(draw):
+    config_path = draw(st.just(CONFIG_PATH))
+    return db_from_config(config_path)
+
 
 @st.composite
 def psql_integers(draw, **overrides):

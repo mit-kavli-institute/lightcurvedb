@@ -1,6 +1,8 @@
 import pathlib
 import numpy as np
+from tempfile import TemporaryDirectory
 from astropy.io import fits
+from astropy.time import Time
 from hypothesis import given, settings, HealthCheck, assume, strategies as st
 from hypothesis.extra import numpy as np_st
 from lightcurvedb.models import Orbit, FrameType, Frame
@@ -19,8 +21,12 @@ def _simulate_fits(data, directory):
     )
     cam = header["CAM"]
     cadence = header["CADENCE"]
+
+    start = Time(header["TIME"], format="gps")
+    basename_time = str(start.iso).replace("-", "")
+
     filename = pathlib.Path(
-        f"TESS2022123456_ffi_cam_{cam}_{cadence}"
+        f"tess{basename_time}-{cadence:08}-{cam}-crm-ffi.fits"
     )
 
     hdu = fits.PrimaryHDU(ffi_data)
@@ -64,26 +70,31 @@ def test_from_fits(tempdir, data):
     frame = from_fits(path)
 
     assert header["INT_TIME"] == frame.cadence_type
-    assert header["CAM"] == frame.cam
-    assert header["CCD"] == frame.ccd
-    assert header["TIME"] == frame.gps_time
-    assert header["STARTTJD"] == frame.start_tjd
-    assert header["MIDTJD"] == frame.mid_tjd
-    assert header["EXPTIME"] == frame.exp_time
+    assert header["CAM"] == frame.camera
+    assert np.isclose(header["TIME"], frame.gps_time)
+    assert np.isclose(header["STARTTJD"], frame.start_tjd)
+    assert np.isclose(header["MIDTJD"], frame.mid_tjd)
+    assert np.isclose(header["EXPTIME"], frame.exp_time)
     assert header["QUAL_BIT"] == frame.quality_bit
-    assert path == frame.file_path
+    assert str(path) == str(frame.file_path)
 
 
-@settings(suppress_health_check=[no_scope_check])
-@given(orm.frame_types(), st.data())
-def test_frame_ingestion(db, tempdir, frame_type, data):
-    db.add(frame_type)
-    file_path, ffi_kwargs = _simulate_fits(data, tempdir)
-    frames = ingest_directory(db, frame_type, tempdir, "*.fits")
+@given(orm.database(), orm.frame_types(), st.data())
+def test_frame_ingestion(database, frame_type, data):
+    with database as db, TemporaryDirectory() as tempdir:
+        db.add(frame_type)
+        db.flush()
+        file_path, ffi_kwargs = _simulate_fits(
+            data, pathlib.Path(tempdir)
+        )
+        frames = ingest_directory(
+            db,
+            frame_type,
+            pathlib.Path(tempdir),
+            "*.fits"
+        )
 
-    q = db.query(Frame).filter_by(file_path=file_path).count()
-    assert q == 1
-    q = db.query(Frame.orbit_id).filter_by(file_path=file_path).first()[0]
-    assert q == frames[0].orbit.id
-
-    db.rollback()
+        q = db.query(Frame).filter_by(file_path=file_path).count()
+        assert q == 1
+        q = db.query(Frame.orbit_id).filter_by(file_path=file_path).first()[0]
+        assert q == frames[0].orbit.id

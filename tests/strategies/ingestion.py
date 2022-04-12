@@ -5,7 +5,7 @@ Generate data and push to a static file to test for ingestion correctness
 import pathlib
 from collections import namedtuple
 from hypothesis import strategies as st
-from . import tess as tess_st
+from . import tess as tess_st, orm as orm_st
 
 camera_quaternion = namedtuple(
     "camera_quaternion",
@@ -63,7 +63,7 @@ def ffi_headers(draw):
             MIDTJD=st.floats(allow_nan=False, allow_infinity=False),
             ENDTJD=st.floats(allow_nan=False, allow_infinity=False),
             EXPTIME=st.floats(allow_nan=False, allow_infinity=False),
-            INT_TIME=st.integers(),
+            INT_TIME=orm_st.psql_small_integers(),
             TIME=tess_st.gps_times(),
             PIX_CAT=st.just(0),
             REQUANT=st.just(405),
