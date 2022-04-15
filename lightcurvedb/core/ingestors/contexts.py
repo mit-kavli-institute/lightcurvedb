@@ -162,13 +162,13 @@ def get_tic_parameters(conn, tic_id, *parameters):
 
 @with_sqlite
 def get_tic_mapping(conn, *columns):
-    param_str = ", ".join("tic_id", *columns)
+    param_str = ", ".join(("tic_id", *columns))
     q = conn.execute(
         f"SELECT {param_str} FROM tic_parameters"
     )
     mapping = {}
-    for tic_id, *parameters in q:
-        values = dict(zip(columns, map(_non_to_nan, parameters)))
+    for tic_id, *parameters in q.fetchall():
+        values = dict(zip(columns, map(_none_to_nan, parameters)))
         mapping[tic_id] = values
     return mapping
 

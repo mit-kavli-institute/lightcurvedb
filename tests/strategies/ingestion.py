@@ -75,3 +75,42 @@ def ffi_headers(draw):
             CRM=st.just(True),
         )
     )
+
+@st.composite
+def apertures(draw):
+    return draw(
+        st.text(min_size=1, max_size=64)
+    )
+
+@st.composite
+def lightcurve_types(draw):
+    return draw(
+        st.text(min_size=1, max_size=64)
+    )
+
+
+@st.composite
+def lightpoints(draw):
+    return draw(
+        st.builds(
+            dict,
+            cadence=tess_st.cadences(),
+            barycentric_julian_date=tess_st.tjds(),
+            data=st.floats(),
+            error=st.floats(),
+            x_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            y_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            quality_flag=st.integers(min_value=0, max_value=1)
+        )
+    )
+
+@st.composite
+def lightcurves(draw, **overrides):
+    return draw(
+        st.builds(
+            dict,
+            tic_id=overrides.get("tic_id", tess_st.tic_ids()),
+            aperture_id=apertures(),
+            lightcurve_type_id=lightcurve_types()
+        )
+    )
