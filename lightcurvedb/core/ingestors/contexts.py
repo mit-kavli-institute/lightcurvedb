@@ -109,17 +109,17 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
 
 
 @with_sqlite
-def populate_ephemeris(conn, db):
+def populate_ephemris(conn, db):
     with conn:
         q = (
             db
             .query(
-               Spacecraft.barycentric_dynamical_time,
-               Spacecraft.x,
-               Spacecraft.y,
-               Spacecraft.z
+               SpacecraftEphemris.barycentric_dynamical_time,
+               SpacecraftEphemris.x,
+               SpacecraftEphemris.y,
+               SpacecraftEphemris.z
             )
-            .order_by(Spacecraft.barycentric_dynamical_time)
+            .order_by(SpacecraftEphemris.barycentric_dynamical_time)
         )
         conn.executemany(
             "INSERT INTO spacecraft_pos(bjd, x, y, z) VALUES (?, ?, ?, ?)",
@@ -212,9 +212,9 @@ def get_quality_flag_mapping(conn):
 
 @with_sqlite
 def get_spacecraft_data(conn, col):
-    q = "SELECT :col FROM spacecraft_pos ORDER BY bjd"
-    q = conn.execute(q, {"col": col})
-    return np.array(val for val, in q)
+    q = f"SELECT {col} FROM spacecraft_pos ORDER BY bjd"
+    q = conn.execute(q)
+    return np.array(list(val for val, in q))
 
 
 @with_sqlite

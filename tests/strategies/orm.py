@@ -100,3 +100,20 @@ def camera_quaternions(draw):
         y=st.floats(),
         z=st.floats()
     )
+
+
+@st.composite
+def spacecraft_ephemris(draw):
+    return draw(
+        st.builds(
+            models.SpacecraftEphemris,
+            barycentric_dynamical_time=tess_st.tjds(),
+            calendar_date=st.datetimes(),
+            x_coordinate=st.floats(allow_nan=False, allow_infinity=False),
+            y_coordinate=st.floats(allow_nan=False, allow_infinity=False),
+            z_coordinate=st.floats(allow_nan=False, allow_infinity=False),
+            light_travel_time=st.floats(allow_nan=False, allow_infinity=False),
+            range_to=st.floats(allow_nan=False, allow_infinity=False),
+            range_rate=st.floats(allow_nan=False, allow_infinity=False)
+        )
+    )
