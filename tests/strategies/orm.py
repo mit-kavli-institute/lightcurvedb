@@ -56,17 +56,17 @@ def orbits(draw):
     )
 
 @st.composite
-def frame_types(draw):
+def frame_types(draw, **overrides):
     return draw(
         st.builds(
             models.frame.FrameType,
-            name=st.text(min_size=1, max_size=64),
+            name=overrides.get("name", st.text(min_size=1, max_size=64)),
             description=st.text()
         )
     )
 
 @st.composite
-def frames(draw):
+def frames(draw, **overrides):
     """
     Generate a frame, note that the relations for this frame, namely
     the FrameType and Orbit are not generated using this strategy.
@@ -75,8 +75,8 @@ def frames(draw):
         st.builds(
             models.frame.Frame,
             cadence_type=psql_small_integers(),
-            camera=tess_st.cameras(),
-            ccd=st.one_of(tess_st.ccds(), st.none()),
+            camera=overrides.get("camera", tess_st.cameras()),
+            ccd=overrides.get("ccd", st.one_of(tess_st.ccds(), st.none())),
             cadence=psql_integers(),
             gps_time=st.floats(),
             start_tjd=st.floats(),
@@ -84,7 +84,8 @@ def frames(draw):
             end_tjd=st.floats(),
             exp_time=st.floats(),
             quality_bit=st.booleans(),
-            file_path=st.text()
+            file_path=st.text(),
+            orbit=overrides.get("orbit", st.none())
         )
     )
 
