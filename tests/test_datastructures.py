@@ -205,3 +205,36 @@ def test_spacecraft_eph_cache(database, eph_list):
         assert np.array_equal(check_x, ref_x)
         assert np.array_equal(check_y, ref_y)
         assert np.array_equal(check_z, ref_z)
+
+
+@given(
+    orm_st.database(),
+    orm_st.frame_types(name=st.just("Raw FFI")),
+    orm_st.orbits(),
+    st.lists(
+        orm_st.frames(ccd=st.just(None)),
+        min_size=1,
+        unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path)
+    )
+)
+def test_tjd_cache(database, raw_ffi_type, orbit, frames):
+    with database as db, tempfile.TemporaryDirectory() as tempdir:
+        cache_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
+        db.add(raw_ffi_type)
+        db.add(orbit)
+        for frame in frames:
+            frame.frame_type = raw_ffi_type
+            frame.orbit = orbit
+        db.session.add_all(frames)
+        db.flush()
+
+        ctx.make_shared_context(cache_path)
+        ctx.populate_tjd_mapping(cache_path, db)
+
+        tjd_check_df = ctx.get_tjd_mapping(cache_path)
+        for frame_ref in frames:
+            check = tjd_check_df.loc[(frame_ref.camera, frame_ref.cadence)].iloc[0]
+            if np.isnan(frame_ref.mid_tjd):
+                assert np.isnan(check)
+            else:
+                assert check == frame_ref.mid_tjd
