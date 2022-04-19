@@ -142,7 +142,8 @@ def populate_tjd_mapping(conn, db):
             )
         )
         conn.executemany(
-            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)"
+            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)",
+            q
         )
 
 
@@ -219,9 +220,13 @@ def get_spacecraft_data(conn, col):
 
 @with_sqlite
 def get_tjd_mapping(conn):
-    df = pd.read_sql(
-        "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
-        conn,
-        index_col=["camera", "cadence"]
+    df = (
+        pd
+        .read_sql(
+            "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
+            conn,
+            index_col=["camera", "cadence"]
+        )
+        .fillna(value=np.nan)
     )
     return df
