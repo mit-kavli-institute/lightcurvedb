@@ -3,7 +3,6 @@ from .apertures import add_aperture
 from .base import lcdbcli
 from .bls import bls
 from .frames import add_frametype, tica
-from .ingestion_cache import cache
 from .lightcurves import ingest_h5
 from .new_orbit import ingest_frames
 from .orbit import orbit
