@@ -195,7 +195,7 @@ def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
         filter_q += f" AND cadence <= {cadence_max}"
 
     q = conn.execute(base_q + filter_q + " ORDER BY cadence")
-    
+
     return np.array(
         q.fetchall(),
         dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
