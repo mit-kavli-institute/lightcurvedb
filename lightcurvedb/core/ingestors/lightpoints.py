@@ -28,7 +28,7 @@ from lightcurvedb.core.ingestors.lightcurve_ingestors import (
 from lightcurvedb.core.psql_tables import PGClass
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.io.pipeline.scope import scoped_block
-from lightcurvedb.legacy.timecorrect import TimeCorrector
+from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.models import Frame, Lightpoint, Observation, Orbit
 from lightcurvedb.models.metrics import QLPOperation, QLPProcess
 from lightcurvedb.models.table_track import RangedPartitionTrack
@@ -76,12 +76,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     def _load_contexts(self):
         with self.db as db, IngestionCache() as cache:
-            self.normalizer = TimeCorrector(db, cache)
-            self.log("Instantiated bjd normalizer")
-            self.quality_flag_map = cache.quality_flag_map
-            self.log("Instantiated quality-flag cadence map")
-            self.mid_tjd_map = db.get_mid_tjd_mapping()
-            self.log("Instantiated mid-tjd cadence map")
+            self.corrector = LightcurveCorrector(cache_path)
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
             self.rng = np.random.default_rng()
@@ -93,19 +88,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         if self.should_refresh_parameters:
             self.set_new_parameters(db)
-
-    def get_quality_flags(self, camera, ccd, cadences):
-        qflag_df = self.quality_flag_map[(camera, ccd)].loc[cadences]
-        return qflag_df.quality_flag.to_numpy()
-
-    def get_mid_tjd(self, camera, cadences):
-        return self.mid_tjd_map[camera].loc[cadences]["mid_tjd"].to_numpy()
-
-    def get_mag_alignment_offset(self, data, quality_flags, tmag):
-        mask = quality_flags == 0
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return np.nanmedian(data[mask]) - tmag
 
     def process_h5(self, id_, aperture, lightcurve_type, h5path):
         self.log(f"Processing {h5path}", level="trace")
@@ -130,10 +112,15 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         cadences = lightcurve["cadence"]
         data = lightcurve["data"]
 
-        quality_flags = self.get_quality_flags(camera, ccd, cadences)
-        mid_tjd = self.get_mid_tjd(camera, cadences)
-        bjd = self.normalizer.correct(tic_id, mid_tjd)
-        mag_offset = self.get_mag_alignment_offset(data, quality_flags, tmag)
+        # Time correct the lightcurve and perform tmag-alignment and qflag assignment
+        quality_flags = self.corrector.get_quality_flags(camera, ccd, cadences)
+        mid_tjd = self.corrector.get_mid_tjd(camera, cadences)
+        bjd = self.corrector.correct_for_earth_time(tic_id, mid_tjd)
+        mag_offset = self.corrector.get_magnitude_alignment_offset(
+            data,
+            quality_flags,
+            tmag
+        )
         if np.isnan(mag_offset):
             self.log(
                 f"{tic_id} {aperture} {lightcurve_type} orbit " 
