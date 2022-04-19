@@ -34,25 +34,6 @@ from lightcurvedb.models.metrics import QLPOperation, QLPProcess
 from lightcurvedb.models.table_track import RangedPartitionTrack
 
 
-def _load_tic_parameters(distinct_run_setups):
-    raise NotImplementedError
-
-
-@lru_cache(maxsize=16)
-def query_tic(tic, *fields):
-    logger.warning(
-        f"Could not find TIC {tic} in cache. "
-        f"Querying remote db for fields {fields}"
-    )
-    with TIC8_DB() as tic8:
-        ticentries = tic8.ticentries
-        columns = tuple(getattr(ticentries.c, field) for field in fields)
-
-        q = tic8.query(*columns).filter(ticentries.c.id == tic)
-        results = q.one()
-    return dict(zip(fields, results))
-
-
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
     normalizer = None
     quality_flag_map = None
@@ -331,7 +312,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
         lowest_sample_rate = min(samples.keys())
         possible_exp = samples[lowest_sample_rate]
-        
+
         # naively pick first
         exp = sample(possible_exp, 1)[0]
 
