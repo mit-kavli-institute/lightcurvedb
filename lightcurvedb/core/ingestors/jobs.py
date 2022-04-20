@@ -1,27 +1,18 @@
 import pathlib
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 from itertools import product
 
-import pandas as pd
 from click import echo
 from loguru import logger
-from sqlalchemy import select, text
-from sqlalchemy.orm import Bundle
 from tqdm import tqdm
 
-from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    allocate_lightcurve_ids,
-    get_missing_ids
-)
-from lightcurvedb.core.ingestors.temp_table import FileObservation
 from lightcurvedb.experimental.temp_table import TempTable
 from lightcurvedb.models import (
     Aperture,
     Lightcurve,
     LightcurveType,
-    Lightpoint,
     Observation,
-    Orbit
+    Orbit,
 )
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.util.iter import chunkify
@@ -118,7 +109,9 @@ def _tic_from_h5(path):
     return int(base.split(".")[0])
 
 
-def _get_or_create_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
+def _get_or_create_lightcurve_id(
+    db, id_map, tic_id, aperture, lightcurve_type
+):
     """
     Helper method to resolve lightcurve ids. If an ID is not found, a
     lightcurve object is created and sent to the database for a new ID.
@@ -132,13 +125,14 @@ def _get_or_create_lightcurve_id(db, id_map, tic_id, aperture, lightcurve_type):
         lc = Lightcurve(
             tic_id=tic_id,
             aperture_id=aperture,
-            lightcurve_type_id=lightcurve_type
+            lightcurve_type_id=lightcurve_type,
         )
         db.add(lc)
         db.commit()
         id_ = lc.id
 
     return id_
+
 
 def _get_smjs_from_paths(db, contexts):
     """
@@ -155,16 +149,12 @@ def _get_smjs_from_paths(db, contexts):
     with temp:
         temp.insert_many(tic_ids, scalar=True)
         for aperture, lightcurve_type in pairs:
-            logger.debug(f"Quering lightcurve ids for {aperture} and {lightcurve_type}")
+            logger.debug(
+                f"Quering lightcurve ids for {aperture} and {lightcurve_type}"
+            )
             q = (
-                db
-                .query(
-                    Lightcurve.tic_id,
-                    Lightcurve.id
-                )
-                .join(
-                    temp.table, temp["tic_id"] == Lightcurve.tic_id
-                )
+                db.query(Lightcurve.tic_id, Lightcurve.id)
+                .join(temp.table, temp["tic_id"] == Lightcurve.tic_id)
                 .filter(
                     Lightcurve.aperture_id == aperture,
                     Lightcurve.lightcurve_type_id == lightcurve_type,
@@ -176,16 +166,12 @@ def _get_smjs_from_paths(db, contexts):
 
     jobs = []
     logger.debug("Grabbing ids for each file")
-    for context in tqdm(contexts, unit = "paths"):
+    for context in tqdm(contexts, unit="paths"):
         path = context["path"]
         tic_id = int(_tic_from_h5(path))
         for aperture, lightcurve_type in pairs:
             id_ = _get_or_create_lightcurve_id(
-                db,
-                id_map,
-                tic_id,
-                aperture,
-                lightcurve_type
+                db, id_map, tic_id, aperture, lightcurve_type
             )
 
             smj = SingleMergeJob(
@@ -196,341 +182,10 @@ def _get_smjs_from_paths(db, contexts):
                 orbit_number=int(context["orbit_number"]),
                 camera=int(context["camera"]),
                 ccd=int(context["ccd"]),
-                file_path=str(path)
+                file_path=str(path),
             )
             jobs.append(smj)
     return jobs
-
-
-class IngestionPlan(object):
-    def __init__(
-        self,
-        db,
-        cache,
-        full_diff=True,
-        orbits=None,
-        cameras=None,
-        ccds=None,
-        tic_mask=None,
-        invert_mask=False,
-    ):
-        echo("Constructing LightcurveDB and Cache queries")
-
-        # Construct relevant TIC ID query from file observations in cache
-        cache_filters = []
-        obs_lightcurve_subquery = select(Observation.lightcurve_id)
-        current_obs_filters = []
-        if orbits:
-            cache_filters.append(FileObservation.orbit_number.in_(orbits))
-            o_ids = [
-                id_
-                for id_, in db.query(Orbit.id).filter(
-                    Orbit.orbit_number.in_(orbits)
-                )
-            ]
-            obs_lightcurve_subquery = (
-                obs_lightcurve_subquery.where(Observation.orbit_id.in_(o_ids))
-            )
-        else:
-            o_ids = []
-
-        if cameras:
-            cache_filters = apply_physical_filter(
-                cache_filters, FileObservation.camera, cameras
-            )
-            obs_lightcurve_subquery = (
-                obs_lightcurve_subquery.where(Observation.camera.in_(cameras))
-            )
-
-        if ccds:
-            cache_filters = apply_physical_filter(
-                cache_filters, FileObservation.ccd, ccds
-            )
-            obs_lightcurve_subquery = (
-                obs_lightcurve_subquery.where(Observation.ccd.in_(ccds))
-            )
-
-        file_obs_columns = Bundle(
-            "c",
-            FileObservation.tic_id,
-            FileObservation.orbit_number,
-            FileObservation.camera,
-            FileObservation.ccd,
-            FileObservation.file_path,
-        )
-        base_q = cache.query(file_obs_columns)
-        echo("Querying file cache")
-        if full_diff:
-            if tic_mask:
-                file_observations = sqlite_accumulator(
-                    tic_mask, FileObservation.tic_id, base_q
-                )
-            else:
-                subquery_tic_q = (
-                    select(FileObservation.tic_id)
-                    .where(*cache_filters)
-                )
-                cache_filters = (
-                    FileObservation.tic_id.in_(
-                        subquery_tic_q
-                    ),
-                )
-                file_observations = base_q.filter(*cache_filters)
-        else:
-            file_observations = base_q.filter(*cache_filters)
-
-        tic_ids = {file_obs.c.tic_id for file_obs in file_observations}
-        self.tics = tic_ids
-        db.execute(text("SET LOCAL work_mem TO '2GB'"))
-
-        echo("Performing lightcurve query")
-
-        lc_bn = Bundle(
-            "c",
-            Lightcurve.tic_id,
-            Lightcurve.aperture_id,
-            Lightcurve.lightcurve_type_id,
-            Lightcurve.id,
-        )
-
-        lightcurves = db.query(lc_bn).filter(Lightcurve.tic_id.in_(tic_ids))
-
-        id_map = {}
-        echo("Reading lightcurves for ID mapping")
-        for lc in tqdm(lightcurves, unit=" lightcurves"):
-            id_map[
-                (lc.c.tic_id, lc.c.aperture_id, lc.c.lightcurve_type_id)
-            ] = lc.c.id
-
-        plan = []
-        cur_tmp_id = -1
-
-        self.ignored_jobs = 0
-        echo("Reading current observations")
-        orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-        obs_q = (
-            db
-            .query(
-                Lightcurve.id,
-                Orbit.orbit_number
-            )
-            .join(
-                Lightcurve.observations,
-            )
-            .join(
-                Observation.orbit
-            )
-            .filter(
-                Lightcurve.tic_id.in_(tic_ids)
-            )
-        )
-
-        seen_obs = set()
-        for lightcurve_id, orbit_number in tqdm(obs_q, unit=" observations"):
-            seen_obs.add((lightcurve_id, orbit_number))
-
-        echo("Building job list")
-        pairs = list(_yield_lightcurve_fields(db))
-        for file_obs in tqdm(file_observations, unit=" file observations"):
-            for ap, lc_t in pairs:
-                lc_key = (file_obs.c.tic_id, ap, lc_t)
-                try:
-                    id_ = id_map[lc_key]
-                except KeyError:
-                    id_ = cur_tmp_id
-                    id_map[lc_key] = id_
-                    cur_tmp_id -= 1
-
-                if (id_, file_obs.c.orbit_number) in seen_obs:
-                    continue
-
-                ingest_job = {
-                    "lightcurve_id": id_,
-                    "tic_id": file_obs.c.tic_id,
-                    "aperture": ap,
-                    "lightcurve_type": lc_t,
-                    "orbit_number": file_obs.c.orbit_number,
-                    "camera": file_obs.c.camera,
-                    "ccd": file_obs.c.ccd,
-                    "file_path": file_obs.c.file_path,
-                }
-
-                plan.append(ingest_job)
-        echo("Converting plan to dataframe")
-        self._df = pd.DataFrame(plan)
-
-    def __repr__(self):
-        fmt = """
-        === Ingestion Plan ========================
-        Total TICs       = {0}
-        Total jobs       = {1}
-        Total partitions = {2}
-        -------------------------------------------
-        Total existing lightcurves =     {3}
-        Total new lightcurves =          {4}
-        Total Ignored Jobs (Duplicate) = {5}
-        """
-        if len(self._df) == 0:
-            return "No Ingestion Plan. Everything looks to be in order."
-
-        partitions = set(self._df.lightcurve_id.apply(lambda x: x // 1000))
-
-        return fmt.format(
-            len(set(self._df.tic_id)),
-            len(self._df),
-            len(partitions),
-            len(set(self._df[self._df.lightcurve_id > 0].lightcurve_id)),
-            len(set(self._df[self._df.lightcurve_id < 0].lightcurve_id)),
-            self.ignored_jobs,
-        )
-
-    def assign_new_lightcurves(self, db, fill_id_gaps=False):
-        if len(self._df) == 0:
-            # Nothing todo
-            return
-
-        new_jobs = self._df[self._df.lightcurve_id < 0]
-        new_ids = set(new_jobs.lightcurve_id)
-
-        if len(new_ids) == 0:
-            echo("No temporary lightcurve ids found")
-            return
-
-        echo("Need to allocate {0} lightcurve ids".format(len(new_ids)))
-        if fill_id_gaps:
-            echo("Attempting to find gaps in lightcurve id sequence")
-            usable_ids = get_missing_ids(db)
-            echo("\tObtained {0} usable ids".format(len(usable_ids)))
-        else:
-            usable_ids = set()
-
-        n_still_missing = len(new_ids) - len(usable_ids)
-        n_still_missing = n_still_missing if n_still_missing >= 0 else 0
-        usable_ids.update(allocate_lightcurve_ids(db, n_still_missing))
-
-        update_map = dict(zip(new_ids, usable_ids))
-
-        echo("Updating ingestion plan temporary IDs")
-        self._df["lightcurve_id"] = self._df["lightcurve_id"].map(
-            lambda id_: update_map.get(id_, id_)
-        )
-
-        echo("Submitting new lightcurve definitions to database")
-        param_df = self._df[self._df.lightcurve_id.isin(usable_ids)]
-
-        param_df = param_df[
-            ["lightcurve_id", "tic_id", "aperture", "lightcurve_type"]
-        ]
-        param_df.rename(
-            columns={
-                "lightcurve_id": "id",
-                "aperture": "aperture_id",
-                "lightcurve_type": "lightcurve_type_id",
-            },
-            inplace=True,
-        )
-
-        db.session.bulk_insert_mappings(
-            Lightcurve, param_df.drop_duplicates().to_dict("records")
-        )
-        db.commit()
-        echo("Committed new lightcurve definitions")
-
-    @property
-    def targets_across_many_cameras(self):
-        """
-        Return Lightcurve IDs that are found crossing multiple cameras per
-        orbit.
-        Targets can appear across multiple cameras due to slight overlap in
-        camera optics.
-
-        Returns
-        -------
-        list
-            A list of tuples containing (Lightcurve.id, Orbit.orbit_number) to
-            represent which Lightcurve in which orbit was found to cross
-            multiple cameras.
-        """
-
-        split_df = self._df.groupby(["lightcurve_id", "orbit_number"]).filter(
-            lambda g: len(g) > 1
-        )
-        return split_df
-
-    def get_jobs(self, db):
-        jobs = []
-        for row in tqdm(self._df.itertuples(index=False)):
-            job = SingleMergeJob(
-                lightcurve_id=row.lightcurve_id,
-                tic_id=row.tic_id,
-                aperture=row.aperture,
-                lightcurve_type=row.lightcurve_type,
-                orbit_number=row.orbit_number,
-                camera=row.camera,
-                ccd=row.ccd,
-                file_path=row.file_path
-            )
-            jobs.append(job)
-        return jobs
-
-    def get_jobs_by_partition(self, db, max_length):
-        buckets = defaultdict(list)
-        echo("Grabbing partition ranges...")
-        if len(self._df) == 0:
-            # No duplicates, partition is empty
-            return []
-
-        id_oid_map = dict(
-            db.map_values_to_partitions(Lightpoint, self._df["lightcurve_id"])
-        )
-
-        echo("Assigning lightcurve id -> table oids")
-        tqdm.pandas()
-        self._df["oid"] = self._df["lightcurve_id"].progress_apply(
-            lambda id_: int(id_oid_map[id_])
-        )
-
-        echo("Grouping by table oid")
-        tqdm.pandas()
-        for oid, group in self._df.groupby("oid"):
-            jobs = []
-            for row in group.to_dict("records"):
-                row.pop("oid")
-                jobs.append(SingleMergeJob(**row))
-            buckets[oid] = jobs
-
-        partition_jobs = []
-        echo("Constructing multiprocessing work")
-        with tqdm(total=len(buckets), unit=" partition jobs") as bar:
-            for partition_oid, jobs in buckets.items():
-                for job_chunk in chunkify(jobs, max_length):
-                    partition_jobs.append(
-                        PartitionJob(
-                            partition_oid=partition_oid,
-                            single_merge_jobs=job_chunk,
-                        )
-                    )
-                bar.update(1)
-        return partition_jobs
-
-    def get_jobs_by_lightcurve(self, db):
-        if len(self._df) == 0:
-            return []
-        self._df.drop_duplicates(
-            subset=["lightcurve_id", "orbit_number"], inplace=True
-        )
-        bucket = defaultdict(list)
-        echo("Grouping by lightcurve id")
-        jobs = []
-        for job in tqdm(self._df.to_dict("records")):
-            bucket[job["lightcurve_id"]].append(SingleMergeJob(**job))
-
-        lightcurve_jobs = []
-        for id_, jobs in bucket.items():
-            lightcurve_jobs.append(
-                LightcurveJob(lightcurve_id=id_, single_merge_jobs=jobs)
-            )
-        return lightcurve_jobs
 
 
 class DirectoryPlan:
@@ -548,7 +203,6 @@ class DirectoryPlan:
         self.db = db
         self._look_for_files()
         self._preprocess_files()
-
 
     def __repr__(self):
         file_msg = f"Considered {len(self.files)} files"
@@ -586,10 +240,7 @@ class DirectoryPlan:
                     f"Querying observation cache for orbit {job.orbit_number}"
                 )
                 q = (
-                    db
-                    .query(
-                        Observation.lightcurve_id, Orbit.orbit_number
-                    )
+                    db.query(Observation.lightcurve_id, Orbit.orbit_number)
                     .join(Observation.orbit)
                     .filter(
                         Orbit.orbit_number == job.orbit_number,
@@ -614,8 +265,10 @@ class DirectoryPlan:
             jobs = []
             naive_jobs = _get_smjs_from_paths(db, self.files)
             observed = self._get_observed(db, naive_jobs)
-            
-            logger.debug(f"Created {len(naive_jobs)} jobs requiring dedup check")
+
+            logger.debug(
+                f"Created {len(naive_jobs)} jobs requiring dedup check"
+            )
             for job in tqdm(naive_jobs, unit=" jobs"):
                 key = (job.lightcurve_id, job.orbit_number)
                 if key not in observed:

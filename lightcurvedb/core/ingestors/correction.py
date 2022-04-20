@@ -1,8 +1,12 @@
-from astropy import constants, time
-from scipy.interpolate import interp1d
-from lightcurvedb.core.ingestors import contexts
-from loguru import logger
+import warnings
 
+import numpy as np
+from astropy import constants as const
+from astropy import time
+from loguru import logger
+from scipy.interpolate import interp1d
+
+from lightcurvedb.core.ingestors import contexts
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
@@ -21,7 +25,9 @@ class LightcurveCorrector:
         self.z_pos_interpolator = interp1d(bjd, tess_z)
         logger.debug("Built spacecraft position interpolations")
 
-        self.tic_parameters = contexts.get_tic_mapping(sqlite_path, "ra", "dec", "tmag")
+        self.tic_parameters = contexts.get_tic_mapping(
+            sqlite_path, "ra", "dec", "tmag"
+        )
         logger.debug("Built tic catalog mapping")
         self.quality_flag_map = contexts.get_quality_flag_mapping(sqlite_path)
         logger.debug("Built quality flag mapping")
@@ -40,19 +46,17 @@ class LightcurveCorrector:
         orbit_vector = np.c_[orbit_x, orbit_y, orbit_z]
 
         parameters = self.tic_parameters[tic_id]
-        ra = np.radians(row["ra"])
-        dec = np.radians(row["dec"])
-        star_vector = np.array([
-            np.cos(dec) * np.cos(ra),
-            np.cos(dec) * np.sin(ra),
-            np.sin(dec)
-        ])
+        ra = np.radians(parameters["ra"])
+        dec = np.radians(parameters["dec"])
+        star_vector = np.array(
+            [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
+        )
 
         try:
             light_time_to_earth = time.TimeDelta(
                 np.dot(orbit_vector, star_vector) / LIGHTSPEED_AU_DAY,
                 format="jd",
-                scale="tdb"
+                scale="tdb",
             )
             bjd = tjd_time + light_time_to_earth - BJD_EPOC
         except (TypeError, ValueError):
@@ -60,7 +64,9 @@ class LightcurveCorrector:
             raise
         return bjd.jd
 
-    def get_magnitude_alignment_offset(self, tic_id, magnitudes, quality_flags):
+    def get_magnitude_alignment_offset(
+        self, tic_id, magnitudes, quality_flags
+    ):
         tmag = self.tic_parameter[tic_id]["tmag"]
         mask = quality_flags == 0
         with warnings.catch_warnings():

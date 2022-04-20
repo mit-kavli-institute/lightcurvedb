@@ -1,37 +1,24 @@
-import re
-import warnings
-from random import sample
 from collections import defaultdict
 from datetime import datetime
-from functools import lru_cache
 from multiprocessing import Manager
-from time import sleep, time
+from queue import Empty
+from random import sample
+from time import sleep
 
 import numpy as np
 from click import echo
 from loguru import logger
 from pgcopy import CopyManager
-from psycopg2.errors import InFailedSqlTransaction, UniqueViolation
-from queue import Empty
-from sqlalchemy import func, text, Integer
-from sqlalchemy.exc import InternalError
+from sqlalchemy import Integer, func
 from sqlalchemy.sql.expression import cast
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
-from lightcurvedb.core.ingestors.cache import IngestionCache
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
-from lightcurvedb.core.ingestors.lightcurve_ingestors import (
-    get_components,
-    h5_to_numpy,
-)
-from lightcurvedb.core.psql_tables import PGClass
-from lightcurvedb.core.tic8 import TIC8_DB
-from lightcurvedb.io.pipeline.scope import scoped_block
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
-from lightcurvedb.models import Frame, Lightpoint, Observation, Orbit
+from lightcurvedb.core.ingestors.lightcurves import get_components, h5_to_numpy
+from lightcurvedb.models import Lightpoint, Observation, Orbit
 from lightcurvedb.models.metrics import QLPOperation, QLPProcess
-from lightcurvedb.models.table_track import RangedPartitionTrack
 
 
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
@@ -50,14 +37,15 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     target_table = "lightpoints"
     buffer_order = ["lightpoints", "observations"]
 
-    def __init__(self, config, name, job_queue, stage_id):
+    def __init__(self, config, name, job_queue, stage_id, cache_path):
         super().__init__(config, name, job_queue)
+        self.cache_path = cache_path
         self.stage_id = stage_id
         self.log("Initialized")
 
     def _load_contexts(self):
-        with self.db as db, IngestionCache() as cache:
-            self.corrector = LightcurveCorrector(cache_path)
+        with self.db as db:
+            self.corrector = LightcurveCorrector(self.cache_path)
             self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
             self.log("Instantiated Orbit ID map")
             self.rng = np.random.default_rng()
@@ -93,21 +81,20 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         cadences = lightcurve["cadence"]
         data = lightcurve["data"]
 
-        # Time correct the lightcurve and perform tmag-alignment and qflag assignment
+        # Time correct the lightcurve and perform
+        # tmag-alignment and qflag assignment
         quality_flags = self.corrector.get_quality_flags(camera, ccd, cadences)
         mid_tjd = self.corrector.get_mid_tjd(camera, cadences)
         bjd = self.corrector.correct_for_earth_time(tic_id, mid_tjd)
         mag_offset = self.corrector.get_magnitude_alignment_offset(
-            data,
-            quality_flags,
-            tmag
+            data, quality_flags, tmag
         )
         if np.isnan(mag_offset):
             self.log(
-                f"{tic_id} {aperture} {lightcurve_type} orbit " 
+                f"{tic_id} {aperture} {lightcurve_type} orbit "
                 f"{context['orbit_number']} returned NaN for "
                 "alignment offset",
-                level="warning"
+                level="warning",
             )
         aligned_mag = data - mag_offset
 
@@ -121,7 +108,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         lightcurve_id = smj.lightcurve_id
 
         if (lightcurve_id, orbit_number) in self.seen_cache:
-            self.log(f"Ignoring duplicate job")
+            self.log("Ignoring duplicate job")
             return None
 
         try:
@@ -154,7 +141,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         lp_size = sum(len(chunk) for chunk in lps)
         self.log(
             f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
-            level="debug"
+            level="debug",
         )
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
@@ -200,17 +187,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             f"Updating runtime parameters to {process.runtime_parameters}"
         )
         if self.process is not None:
-            q = (
-                db
-                .query(QLPProcess)
-                .filter(
-                    QLPProcess.id == self.process.id
-                )
-            )
-            q.update(
-                {"state": "completed"},
-                synchronize_session=False
-            )
+            q = db.query(QLPProcess).filter(QLPProcess.id == self.process.id)
+            q.update({"state": "completed"}, synchronize_session=False)
 
         db.commit()
         self.process = process
@@ -237,10 +215,7 @@ class ImmediateLightpointIngestor(BaseLightpointIngestor):
         metric = self.flush_lightpoints(db)
         for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
             obs = Observation(
-                lightcurve_id=lc_id,
-                orbit_id=orbit_id,
-                camera=camera,
-                ccd=ccd
+                lightcurve_id=lc_id, orbit_id=orbit_id, camera=camera, ccd=ccd
             )
             db.add(obs)
         db.add(metric)
@@ -265,13 +240,14 @@ class ImmediateLightpointIngestor(BaseLightpointIngestor):
                 except KeyboardInterrupt:
                     self.log("Received keyboard interrupt")
                     break
-                except:
+                except Exception:
                     self.log("Breaking", level="exception")
                     break
         self.log("Finished, exiting main runtime")
 
     def determine_process_parameters(self):
         return {}
+
 
 class SamplingLightpointIngestor(BaseLightpointIngestor):
     max_lp_buffersize = 10e5
@@ -296,9 +272,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
         job_size_log2 = cast(func.log(2, QLPOperation.job_size), Integer)
 
         q = (
-            self
-            .db
-            .query(job_size_log2, func.Count(QLPOperation.id))
+            self.db.query(job_size_log2, func.Count(QLPOperation.id))
             .join(QLPOperation.process)
             .filter(QLPProcess.current_version())
             .group_by(job_size_log2)
@@ -328,10 +302,8 @@ def ingest_merge_jobs(
     workers = []
     manager = Manager()
     job_queue = manager.Queue()
-    total_single_jobs = 0
 
     echo("Enqueing multiprocessing work")
-    total_single_merge_jobs = len(jobs)
     distinct_run_setups = set()
 
     for job in tqdm(jobs, unit=" jobs"):

@@ -4,19 +4,26 @@ Generate data and push to a static file to test for ingestion correctness
 
 import pathlib
 from collections import namedtuple
+
 from hypothesis import strategies as st
-from . import tess as tess_st, orm as orm_st
+
+from . import orm as orm_st
+from . import tess as tess_st
 
 camera_quaternion = namedtuple(
     "camera_quaternion",
     [
         "gps_time",
-        "q1", "q2", "q3", "q4",
+        "q1",
+        "q2",
+        "q3",
+        "q4",
         "bit_check",
         "total_guide_stars",
         "valid_guide_stars",
-    ]
+    ],
 )
+
 
 @st.composite
 def camera_quaternions(draw):
@@ -30,7 +37,7 @@ def camera_quaternions(draw):
             q4=st.floats(allow_nan=False, allow_infinity=False),
             bit_check=st.integers(),
             total_guide_stars=st.integers(),
-            valid_guide_stars=st.integers()
+            valid_guide_stars=st.integers(),
         )
     )
 
@@ -76,17 +83,15 @@ def ffi_headers(draw):
         )
     )
 
+
 @st.composite
 def apertures(draw):
-    return draw(
-        st.text(min_size=1, max_size=64)
-    )
+    return draw(st.text(min_size=1, max_size=64))
+
 
 @st.composite
 def lightcurve_types(draw):
-    return draw(
-        st.text(min_size=1, max_size=64)
-    )
+    return draw(st.text(min_size=1, max_size=64))
 
 
 @st.composite
@@ -100,9 +105,10 @@ def lightpoints(draw):
             error=st.floats(),
             x_centroid=st.floats(allow_nan=False, allow_infinity=False),
             y_centroid=st.floats(allow_nan=False, allow_infinity=False),
-            quality_flag=st.integers(min_value=0, max_value=1)
+            quality_flag=st.integers(min_value=0, max_value=1),
         )
     )
+
 
 @st.composite
 def lightcurves(draw, **overrides):
@@ -111,6 +117,23 @@ def lightcurves(draw, **overrides):
             dict,
             tic_id=overrides.get("tic_id", tess_st.tic_ids()),
             aperture_id=apertures(),
-            lightcurve_type_id=lightcurve_types()
+            lightcurve_type_id=lightcurve_types(),
         )
     )
+
+
+# Begin Simulation Functions
+def simulate_hk_file(data, directory, camera, formatter=str):
+    quaternions = data.draw(
+        st.lists(camera_quaternions(), unique_by=lambda cq: cq[0])
+    )
+    camera = data.draw(tess_st.cameras())
+    filename = pathlib.Path(f"cam{camera}_quat.txt")
+    path = pathlib.Path(directory) / filename
+
+    with open(path, "wt") as fout:
+        for row in data:
+            line = " ".join(map(formatter, row))
+            fout.write(line)
+            fout.write("\n")
+    return path, camera, quaternions
