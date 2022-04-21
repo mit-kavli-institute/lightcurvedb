@@ -294,7 +294,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
 
 def ingest_merge_jobs(
-    db, jobs, n_processes, log_level="info", worker_class=None
+    db, jobs, n_processes, cache_path, log_level="info", worker_class=None
 ):
     """
     Process and ingest SingleMergeJob objects.
@@ -325,7 +325,7 @@ def ingest_merge_jobs(
         )
         for n in range(n_processes):
             p = ExponentialSamplingLightpointIngestor(
-                db._config, f"worker-{n}", job_queue, stage.id
+                db._config, f"worker-{n}", job_queue, stage.id, cache_path
             )
             p.start()
             workers.append(p)

@@ -1,8 +1,10 @@
+import tempfile
 from pathlib import Path
 
 import click
 
 from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors.jobs import DirectoryPlan
 from lightcurvedb.core.ingestors.lightpoints import ingest_merge_jobs
 
@@ -37,18 +39,30 @@ def lightcurve(ctx):
 @click.option("--recursive", "-r", is_flag=True, default=False)
 @click.option("--ingest/--plan", is_flag=True, default=True)
 def ingest_dir(ctx, paths, n_processes, recursive, ingest):
-    with ctx.obj["dbconf"] as db:
-        directories = [Path(path) for path in paths]
-        plan = DirectoryPlan(directories, db, recursive=recursive)
-        jobs = plan.get_jobs()
+    with tempfile.TemporaryDirectory as tempdir:
+        cache_path = Path(tempdir, "db.sqlite3")
+        contexts.make_shared_context(cache_path)
+        with ctx.obj["dbconf"] as db:
+            contexts.populate_ephemris(cache_path, db)
+            contexts.populate_tjd_mapping(cache_path, db)
 
-    if ingest:
-        ingest_merge_jobs(
-            ctx.obj["dbconf"],
-            jobs,
-            n_processes,
-            log_level=ctx.obj["log_level"],
-        )
-        click.echo("Done!")
-    else:
-        click.echo(plan)
+            directories = [Path(path) for path in paths]
+            plan = DirectoryPlan(directories, db, recursive=recursive)
+            jobs = plan.get_jobs()
+
+            for catalog in plan.yield_needed_tic_catalogs():
+                contexts.populate_tic_catalog(cache_path, catalog)
+
+            for args in plan.yield_needed_quality_flags():
+                contexts.populate_quality_flags(cache_path, *args)
+
+        if ingest:
+            ingest_merge_jobs(
+                ctx.obj["dbconf"],
+                jobs,
+                n_processes,
+                log_level=ctx.obj["log_level"],
+            )
+            click.echo("Done!")
+        else:
+            click.echo(plan)

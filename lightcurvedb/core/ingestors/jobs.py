@@ -278,5 +278,41 @@ class DirectoryPlan:
         logger.debug(f"Generated {len(jobs)} jobs, ignoring {ignored}")
         self.jobs = jobs
 
+    def _get_unique_observed(self, jobs):
+        unique_observed = set()
+        for job in self.jobs:
+            key = (job.unique_orbit_number, job.camera, job.ccd)
+            unique_observed.add(key)
+        return unique_observed
+
     def get_jobs(self):
         return self.jobs
+
+    def yield_needed_tic_catalogs(self, path_template=None):
+        if path_template is None:
+            path_template = pathlib.Path(
+                "/pdo/qlp-data/"
+                "orbit-{orbit_number}/"
+                "ffi/run/"
+                "catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+            )
+
+        for orbit_number, camera, ccd in self._get_unique_observed():
+            expected_path = path_template.format(
+                orbit_number=orbit_number, camera=camera, ccd=ccd
+            )
+            yield pathlib.Path(expected_path)
+
+    def yield_needed_quality_flags(self, path_template):
+        if path_template is None:
+            path_template = pathlib.Path(
+                "/pdo/qlp-data/"
+                "orbit-{orbit_number}/"
+                "ffi/run/"
+                "cam{camera}ccd{ccd}_qflag.txt"
+            )
+        for orbit_number, camera, ccd in self._get_unique_observed():
+            expected_path = path_template.format(
+                orbit_number=orbit_number, camera=camera, ccd=ccd
+            )
+            yield pathlib.Path(expected_path), camera, ccd
