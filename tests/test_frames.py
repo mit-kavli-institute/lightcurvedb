@@ -2,42 +2,14 @@ import pathlib
 from tempfile import TemporaryDirectory
 
 import numpy as np
-from astropy.io import fits
-from astropy.time import Time
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
-from hypothesis.extra import numpy as np_st
 
+from lightcurvedb.cli import lcdbcli
 from lightcurvedb.core.ingestors.frames import from_fits, ingest_directory
-from lightcurvedb.models import Frame
+from lightcurvedb.models import CameraQuaternion, Frame, FrameType, Orbit
 
 from .strategies import ingestion, orm
-
-
-def _simulate_fits(data, directory):
-    header = data.draw(ingestion.ffi_headers())
-    ffi_data = data.draw(
-        np_st.arrays(np.int32, (header["NAXIS1"], header["NAXIS2"]))
-    )
-    cam = header["CAM"]
-    cadence = header["CADENCE"]
-
-    start = Time(header["TIME"], format="gps")
-    basename_time = str(start.iso).replace("-", "")
-
-    filename = pathlib.Path(
-        f"tess{basename_time}-{cadence:08}-{cam}-crm-ffi.fits"
-    )
-
-    hdu = fits.PrimaryHDU(ffi_data)
-    hdr = hdu.header
-    hdul = fits.HDUList([hdu])
-
-    for key, value in header.items():
-        hdr[key] = value
-    hdul.writeto(directory / filename, overwrite=True)
-    return directory / filename, header
-
 
 # We rollback all changes to remote db
 no_scope_check = HealthCheck.function_scoped_fixture
@@ -66,7 +38,7 @@ def test_frame_insertion(database, frame_type, orbit, frame):
 
 @given(st.data())
 def test_from_fits(tempdir, data):
-    path, header = _simulate_fits(data, tempdir)
+    path, header = ingestion.simulate_fits(data, tempdir)
     frame = from_fits(path)
 
     assert header["INT_TIME"] == frame.cadence_type
@@ -84,7 +56,9 @@ def test_frame_ingestion(database, frame_type, data):
     with database as db, TemporaryDirectory() as tempdir:
         db.add(frame_type)
         db.flush()
-        file_path, ffi_kwargs = _simulate_fits(data, pathlib.Path(tempdir))
+        file_path, ffi_kwargs = ingestion.simulate_fits(
+            data, pathlib.Path(tempdir)
+        )
         frames = ingest_directory(
             db, frame_type, pathlib.Path(tempdir), "*.fits"
         )
@@ -95,29 +69,62 @@ def test_frame_ingestion(database, frame_type, data):
         assert q == frames[0].orbit.id
 
 
-# @given(orm.database(), st.data())
-# def test_new_orbit_cli(database, data, clirunner):
-#     # Simulate new frames
-#     try:
-#         with database as db, TemporaryDirectory() as tempdir:
-#             frame_type = data.draw(orm.frame_types())
-#             db.add(frame_type)
-#             db.commit()
-#
-#             # Simulate POC delivery
-#
-#             result = clirunner.invoke(
-#                 ingest_frames,
-#                 [
-#                     tempdir
-#                 ]
-#             )
-#     except Exception as e:
-#         # Complete catch, we want to try keep the test
-#         #database as clean as possible
-#         with database as db:
-#             opts = {"synchronize_session": False}
-#             db.query(Frame).delete(**opts)
-#             db.query(FrameType).delete(**opts)
-#             db.query(Orbit).delete(**opts)
-#             db.commit()
+@settings(deadline=None)
+@given(orm.database(), st.data())
+def test_new_orbit_cli(clirunner, database, data):
+    # Simulate new frames
+    try:
+        with database as db, TemporaryDirectory() as tempdir:
+            frame_type = data.draw(orm.frame_types())
+            ffi_path = pathlib.Path(tempdir, "ffi_fits")
+            hk_path = pathlib.Path(tempdir, "hk")
+
+            ffi_path.mkdir()
+            hk_path.mkdir()
+
+            db.add(frame_type)
+            db.commit()
+
+            # Simulate POC delivery
+            path, header = ingestion.simulate_fits(data, ffi_path)
+
+            quaternions = []
+            for cam in (1, 2, 3, 4):
+                _, _, camera_quaternions = ingestion.simulate_hk_file(
+                    data, hk_path, camera=st.just(cam)
+                )
+                quaternions.extend(camera_quaternions)
+
+            # Invoke Command Line
+            result = clirunner.invoke(
+                lcdbcli,
+                [
+                    "--dbconf",
+                    db._config,
+                    "ingest-frames",
+                    frame_type.name,
+                    tempdir,
+                ],
+                catch_exceptions=False,
+            )
+            note(result.stdout_bytes)
+            assert result.exit_code == 0
+            assert db.query(Frame).filter_by(file_path=path).count() == 1
+            assert (
+                db.query(Orbit)
+                .filter_by(orbit_number=header["ORBIT_ID"])
+                .count()
+                == 1
+            )
+            assert db.query(CameraQuaternion).count() == len(quaternions)
+
+    finally:
+        # Complete catch, we want to try keep the test
+        # database as clean as possible
+        with database as db:
+            opts = {"synchronize_session": False}
+            db.query(Frame).delete(**opts)
+            db.query(FrameType).delete(**opts)
+            db.query(Orbit).delete(**opts)
+            db.query(CameraQuaternion).delete(**opts)
+            db.commit()

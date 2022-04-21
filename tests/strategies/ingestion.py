@@ -1,11 +1,14 @@
 """
 Generate data and push to a static file to test for ingestion correctness
 """
-
 import pathlib
 from collections import namedtuple
 
+import numpy as np
+from astropy.io import fits
+from astropy.time import Time
 from hypothesis import strategies as st
+from hypothesis.extra import numpy as np_st
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -123,11 +126,11 @@ def lightcurves(draw, **overrides):
 
 
 # Begin Simulation Functions
-def simulate_hk_file(data, directory, formatter=str):
+def simulate_hk_file(data, directory, formatter=str, **overrides):
     quaternions = data.draw(
         st.lists(camera_quaternions(), unique_by=lambda cq: cq[0])
     )
-    camera = data.draw(tess_st.cameras())
+    camera = data.draw(overrides.get("camera", tess_st.cameras()))
     filename = pathlib.Path(f"cam{camera}_quat.txt")
     path = pathlib.Path(directory) / filename
 
@@ -137,3 +140,28 @@ def simulate_hk_file(data, directory, formatter=str):
             fout.write(line)
             fout.write("\n")
     return path, camera, quaternions
+
+
+def simulate_fits(data, directory):
+    header = data.draw(ffi_headers())
+    ffi_data = data.draw(
+        np_st.arrays(np.int32, (header["NAXIS1"], header["NAXIS2"]))
+    )
+    cam = header["CAM"]
+    cadence = header["CADENCE"]
+
+    start = Time(header["TIME"], format="gps")
+    basename_time = str(start.iso).replace("-", "")
+
+    filename = pathlib.Path(
+        f"tess{basename_time}-{cadence:08}-{cam}-crm-ffi.fits"
+    )
+
+    hdu = fits.PrimaryHDU(ffi_data)
+    hdr = hdu.header
+    hdul = fits.HDUList([hdu])
+
+    for key, value in header.items():
+        hdr[key] = value
+    hdul.writeto(directory / filename, overwrite=True)
+    return directory / filename, header

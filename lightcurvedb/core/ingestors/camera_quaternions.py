@@ -87,3 +87,8 @@ def ingest_quat_file(db, filepath):
         camera_quaternions.append(model)
     db.session.add_all(camera_quaternions)
     db.flush()
+
+
+def ingest_directory(db, directory):
+    for quat_file in directory.glob("*quat.txt"):
+        ingest_quat_file(db, quat_file)
