@@ -1,7 +1,7 @@
-from lightcurvedb.util.contexts import extract_pdo_path_context
-from lightcurvedb.models import CameraQuaternion
 from loguru import logger
 
+from lightcurvedb.models import CameraQuaternion
+from lightcurvedb.util.contexts import extract_pdo_path_context
 
 QUAT_FIELD_ORDER = (
     "gps_time",
@@ -27,7 +27,9 @@ QUAT_FIELD_TYPES = (
 
 def _parse_quat_str(string, delimiter=None):
     tokens = string.strip().split(" " if delimiter is None else delimiter)
-    tokens = tuple(cast(token) for cast, token in zip(QUAT_FIELD_TYPES, tokens))
+    tokens = tuple(
+        cast(token) for cast, token in zip(QUAT_FIELD_TYPES, tokens)
+    )
     kwargs = dict(zip(QUAT_FIELD_ORDER, tokens))
 
     model = CameraQuaternion()
@@ -60,16 +62,28 @@ def ingest_quat_file(db, filepath):
     try:
         camera = context["camera"]
     except (TypeError, KeyError):
-        raise ValueError(
-            f"Could not find camera context in {filepath}"
-        )
+        raise ValueError(f"Could not find camera context in {filepath}")
+    camera_quaternions = []
+
+    mask = set(
+        date
+        for date, in db.query(CameraQuaternion.date).filter_by(camera=camera)
+    )
+
     for line in open(filepath, "rt"):
         model = _parse_quat_str(line)
         model.camera = camera
 
-        q = db.query(CameraQuaternion).filter_by(date=model.date, camera=model.camera)
-        if q.count() > 0:
-            logger.warning(f"Camera Quaternion uniqueness failed check for {model}, ignoring")
+        if model.date in mask:
+            logger.warning(
+                f"Camera Quaternion uniqueness failed check for {model}, "
+                "ignoring"
+            )
             continue
-        db.add(model)
+        else:
+            # Update mask to avoid duplicates inside the file, if any
+            mask.add(model.date)
+
+        camera_quaternions.append(model)
+    db.session.add_all(camera_quaternions)
     db.flush()

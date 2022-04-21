@@ -18,7 +18,6 @@ no_scope_check = HealthCheck.function_scoped_fixture
 @given(orm.database(), st.data())
 def test_camera_quaternion_ingest(database, data):
     with database as db:
-        db.query(CameraQuaternion).delete(synchronize_session=False)
         with tempfile.TemporaryDirectory() as tempdir:
             quat_path, camera, quaternions = ingestion.simulate_hk_file(
                 data, tempdir
