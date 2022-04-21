@@ -123,7 +123,7 @@ def lightcurves(draw, **overrides):
 
 
 # Begin Simulation Functions
-def simulate_hk_file(data, directory, camera, formatter=str):
+def simulate_hk_file(data, directory, formatter=str):
     quaternions = data.draw(
         st.lists(camera_quaternions(), unique_by=lambda cq: cq[0])
     )
@@ -132,7 +132,7 @@ def simulate_hk_file(data, directory, camera, formatter=str):
     path = pathlib.Path(directory) / filename
 
     with open(path, "wt") as fout:
-        for row in data:
+        for row in quaternions:
             line = " ".join(map(formatter, row))
             fout.write(line)
             fout.write("\n")
