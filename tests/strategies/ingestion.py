@@ -1,12 +1,15 @@
 """
 Generate data and push to a static file to test for ingestion correctness
 """
+import itertools
 import pathlib
 from collections import namedtuple
 
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 from astropy.time import Time
+from h5py import File as H5File
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
 
@@ -98,12 +101,26 @@ def lightcurve_types(draw):
 
 
 @st.composite
-def lightpoints(draw):
+def lightpoints(draw, **overrides):
     return draw(
         st.builds(
             dict,
             cadence=tess_st.cadences(),
             barycentric_julian_date=tess_st.tjds(),
+            data=st.floats(),
+            error=st.floats(),
+            x_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            y_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            quality_flag=st.integers(min_value=0, max_value=1),
+        )
+    )
+
+
+@st.composite
+def shallow_lightpoints(draw):
+    return draw(
+        st.builds(
+            dict,
             data=st.floats(),
             error=st.floats(),
             x_centroid=st.floats(allow_nan=False, allow_infinity=False),
@@ -165,3 +182,55 @@ def simulate_fits(data, directory):
         hdr[key] = value
     hdul.writeto(directory / filename, overwrite=True)
     return directory / filename, header
+
+
+def simulate_h5_file(
+    data,
+    directory,
+    background_aperture,
+    background_type,
+    apertures,
+    lightcurve_types,
+    **overrides,
+):
+    tic_id = data.draw(overrides.get("tic_id", tess_st.tic_ids()))
+    filename = pathlib.Path(f"{tic_id}.h5")
+
+    length = data.draw(overrides.get("length", st.just(20)))
+
+    background_lc = pd.DataFrame(
+        data.draw(st.lists(lightpoints(), max_size=length, min_size=length))
+    )
+    data_gen_ref = {
+        "tic_id": tic_id,
+        "background": background_lc,
+        "photometry": {},
+    }
+
+    with H5File(directory / filename, "w") as h5:
+        lc = h5.create_group("LightCurve")
+        lc.create_dataset("Cadence", data=background_lc.cadence)
+        lc.create_dataset("BJD", data=background_lc.barycentric_julian_date)
+        lc.create_dataset("X", data=background_lc.x_centroid)
+        lc.create_dataset("Y", data=background_lc.y_centroid)
+
+        prod = itertools.product(apertures, lightcurve_types)
+
+        photometry = lc.create_group("AperturePhotometry")
+        for ap, lc_t in prod:
+            api = photometry.create_group(ap)
+
+            lc = pd.DataFrame(
+                data.draw(
+                    st.lists(
+                        shallow_lightpoints(), max_size=length, min_size=length
+                    )
+                )
+            )
+            data_gen_ref["photometry"][(ap, lc_t)] = lc
+            api.create_dataset(lc_t, data=lc.data)
+            api.create_dataset(f"{lc_t}Error", data=lc.error)
+            api.create_dataset("X", data=lc.x_centroid)
+            api.create_dataset("Y", data=lc.y_centroid)
+            api.create_dataset("QualityFlag", data=lc.quality_flag)
+    return directory / filename, data_gen_ref

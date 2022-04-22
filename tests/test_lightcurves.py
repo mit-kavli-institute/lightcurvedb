@@ -1,37 +1,45 @@
-import pathlib
+import itertools
 from tempfile import TemporaryDirectory
-from hypothesis import given, strategies as st
+
+import numpy as np
+from hypothesis import given
+from hypothesis import strategies as st
+
 from lightcurvedb.core.ingestors.lightcurves import h5_to_numpy
-from .strategies import tess as tess_st, ingestion as ing_st
 
-from h5py import File as H5File
-
-
-def _write_basic_info(h5, cadence, bjd, x, y):
-    lcground = h5["LightCurve"]
-    lcground.create_dataset("Cadence", data=cadence)
-    lcground.create_dataset("BJD", data=bjd)
-    lcground.create_dataset("X", data=x)
-    lcground.create_dataset("Y", data=y)
-    lcground.create_group("AperturePhotometry")
+from .strategies import ingestion
 
 
-def _write_aperture_photometry(h5, lightcurve, data):
-    ap = h5["LightCurve"]["AperturePhotometry"]
-    ap.create_group(
-        lightcurve["aperture_id"]
-    )
-
-
-def _simulate_h5(data, directory):
-    tic_id = data.draw(tess_st())
-    lightcurves = data.draw(
-        st.lists(
-            ing_st.lightcurves(tic_id=st.just(tic_id)),
-            min_size=1
+@given(
+    st.lists(st.text(min_size=1), min_size=1, max_size=5, unique=True),
+    st.lists(st.text(min_size=1), min_size=1, max_size=5, unique=True),
+    st.integers(),
+    st.data(),
+)
+def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
+    with TemporaryDirectory() as tempdir:
+        h5_path, data_gen_ref = ingestion.simulate_h5_file(
+            data,
+            tempdir,
+            "BackgroundAperture",
+            "Background",
+            apertures,
+            lightcurve_types,
         )
-    )
-    filename = pathlib.Path(f"{tic_id}.h5")
-    with H5File(directory / filename, "w") as h5:
-        for lightcurve in lightcurves:
-            raise NotImplementedError
+        bg = data_gen_ref["background"]
+        for ap, lc_t in itertools.product(apertures, lightcurve_types):
+            check = h5_to_numpy(lightcurve_id, ap, lc_t, h5_path)
+            ref = data_gen_ref["photometry"][(ap, lc_t)]
+            assert np.array_equal(check["cadence"], bg["cadence"].to_numpy())
+            assert np.array_equal(
+                check["barycentric_julian_date"],
+                bg["barycentric_julian_date"].to_numpy(),
+            )
+            assert np.array_equal(check["data"], ref["data"].to_numpy())
+            assert np.array_equal(check["error"], ref["error"].to_numpy())
+            assert np.array_equal(
+                check["x_centroid"], ref["x_centroid"].to_numpy()
+            )
+            assert np.array_equal(
+                check["y_centroid"], ref["y_centroid"].to_numpy()
+            )
