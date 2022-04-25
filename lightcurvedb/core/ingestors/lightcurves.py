@@ -1,9 +1,9 @@
 import re
-import warnings
 from functools import lru_cache
 
 import numpy as np
 import pandas as pd
+from h5py import File as H5File
 from sqlalchemy import text
 
 from lightcurvedb.core.connection import db_from_config
@@ -13,10 +13,6 @@ from lightcurvedb.models import Frame, Lightcurve
 from lightcurvedb.util.decorators import track_runtime
 
 LC_ERROR_TYPES = {"RawMagnitude"}
-
-from h5py import File as H5File
-
-
 path_components = re.compile(
     (
         r"orbit-(?P<orbit>[1-9][0-9]*)/"
@@ -106,7 +102,7 @@ def get_h5_data(merge_job):
     }
 
 
-lp_dtype = np.dtype(
+LP_DTYPE = np.dtype(
     [
         ("lightcurve_id", np.dtype("u8")),
         ("cadence", np.dtype("u4")),
@@ -125,7 +121,7 @@ def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
         lc = h5["LightCurve"]
         cadences = lc["Cadence"][()].astype(int)
 
-        arr = np.empty(len(cadences), dtype=lp_dtype)
+        arr = np.empty(len(cadences), dtype=LP_DTYPE)
         arr["lightcurve_id"] = np.full_like(
             cadences, lightcurve_id, dtype=np.dtype("u8")
         )
@@ -143,11 +139,10 @@ def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
             arr["x_centroid"] = lc["X"][()]
             arr["y_centroid"] = lc["Y"][()]
             arr["data"] = lc[type_][()]
-            arr["error"] = (
-                lc["{0}Error".format(type_)][()]
-                if type_ in LC_ERROR_TYPES
-                else np.full_like(cadences, np.nan, dtype=np.double)
-            )
+            try:
+                arr["error"] = lc[f"{type_}Error"][()]
+            except KeyError:
+                arr["error"] = np.full_like(cadences, np.nan, dtype=np.double)
     return arr
 
 

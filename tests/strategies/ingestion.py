@@ -1,17 +1,18 @@
 """
 Generate data and push to a static file to test for ingestion correctness
 """
-import itertools
 import pathlib
 from collections import namedtuple
 
 import numpy as np
-import pandas as pd
 from astropy.io import fits
 from astropy.time import Time
 from h5py import File as H5File
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
+from hypothesis.extra import pandas as pd_st
+
+from lightcurvedb.core.ingestors.lightcurves import LP_DTYPE
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -117,6 +118,23 @@ def lightpoints(draw, **overrides):
 
 
 @st.composite
+def lightpoint_dfs(draw):
+    return draw(
+        pd_st.data_frames(
+            [
+                pd_st.column("cadence", dtype=int),
+                pd_st.column("barycentric_julian_date", dtype=float),
+                pd_st.column("data", dtype=float),
+                pd_st.column("error", dtype=float),
+                pd_st.column("x_centroid", dtype=float),
+                pd_st.column("y_centroid", dtype=float),
+                pd_st.column("quality_flag", dtype=float),
+            ]
+        )
+    )
+
+
+@st.composite
 def shallow_lightpoints(draw):
     return draw(
         st.builds(
@@ -128,6 +146,43 @@ def shallow_lightpoints(draw):
             quality_flag=st.integers(min_value=0, max_value=1),
         )
     )
+
+
+@st.composite
+def shallow_lightpoint_dfs(draw):
+    return draw(
+        pd_st.data_frames(
+            [
+                pd_st.column("data", dtype=float),
+                pd_st.column("error", dtype=float),
+                pd_st.column("x_centroid", dtype=float),
+                pd_st.column("y_centroid", dtype=float),
+                pd_st.column("quality_flag", dtype=float),
+            ]
+        )
+    )
+
+
+@st.composite
+def lightpoint_arrays(draw, type=None):
+    if type == "full" or type is None:
+        return draw(np_st.arrays(LP_DTYPE, shape=(len(LP_DTYPE), 20)))
+    elif type == "shallow":
+        return draw(
+            np_st.arrays(
+                np.dtype(
+                    [
+                        ("data", np.dtype("f8")),
+                        ("error", np.dtype("f8")),
+                        ("x_centroid", np.dtype("f8")),
+                        ("y_centroid", np.dtype("f8")),
+                        ("quality_flag", np.dtype("u4")),
+                    ]
+                ),
+                shape=(5, 20),
+            )
+        )
+    raise NotImplementedError
 
 
 @st.composite
@@ -196,11 +251,7 @@ def simulate_h5_file(
     tic_id = data.draw(overrides.get("tic_id", tess_st.tic_ids()))
     filename = pathlib.Path(f"{tic_id}.h5")
 
-    length = data.draw(overrides.get("length", st.just(20)))
-
-    background_lc = pd.DataFrame(
-        data.draw(st.lists(lightpoints(), max_size=length, min_size=length))
-    )
+    background_lc = data.draw(lightpoint_arrays())
     data_gen_ref = {
         "tic_id": tic_id,
         "background": background_lc,
@@ -209,28 +260,27 @@ def simulate_h5_file(
 
     with H5File(directory / filename, "w") as h5:
         lc = h5.create_group("LightCurve")
-        lc.create_dataset("Cadence", data=background_lc.cadence)
-        lc.create_dataset("BJD", data=background_lc.barycentric_julian_date)
-        lc.create_dataset("X", data=background_lc.x_centroid)
-        lc.create_dataset("Y", data=background_lc.y_centroid)
-
-        prod = itertools.product(apertures, lightcurve_types)
+        lc.create_dataset("Cadence", data=background_lc["cadence"][0])
+        lc.create_dataset(
+            "BJD", data=background_lc["barycentric_julian_date"][0]
+        )
+        lc.create_dataset("X", data=background_lc["x_centroid"][0])
+        lc.create_dataset("Y", data=background_lc["y_centroid"][0])
 
         photometry = lc.create_group("AperturePhotometry")
-        for ap, lc_t in prod:
+        for ap in apertures:
             api = photometry.create_group(ap)
-
-            lc = pd.DataFrame(
-                data.draw(
-                    st.lists(
-                        shallow_lightpoints(), max_size=length, min_size=length
-                    )
-                )
+            api.create_dataset("X", data=background_lc["x_centroid"][0])
+            api.create_dataset("Y", data=background_lc["y_centroid"][0])
+            api.create_dataset(
+                "QualityFlag", data=background_lc["quality_flag"][0]
             )
-            data_gen_ref["photometry"][(ap, lc_t)] = lc
-            api.create_dataset(lc_t, data=lc.data)
-            api.create_dataset(f"{lc_t}Error", data=lc.error)
-            api.create_dataset("X", data=lc.x_centroid)
-            api.create_dataset("Y", data=lc.y_centroid)
-            api.create_dataset("QualityFlag", data=lc.quality_flag)
+
+            for lightcurve_type in lightcurve_types:
+                sample = data.draw(lightpoint_arrays(type="shallow"))
+                data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
+                api.create_dataset(lightcurve_type, data=sample["data"][0])
+                api.create_dataset(
+                    f"{lightcurve_type}Error", data=sample["error"][0]
+                )
     return directory / filename, data_gen_ref
