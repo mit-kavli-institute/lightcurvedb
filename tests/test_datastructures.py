@@ -1,101 +1,14 @@
-import tempfile
 import pathlib
+import tempfile
+
 import numpy as np
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
 
-from .strategies import tess as tess_st, orm as orm_st
-
-CATALOG_KEY_ORDER = (
-    "tic_id",
-    "ra",
-    "dec",
-    "tmag",
-    "pmra",
-    "pmdec",
-    "jmag",
-    "kmag",
-    "vmag"
-)
-
-
-def _simulate_tic_catalog(data, directory):
-    filename = data.draw(
-        st.from_regex(r"^catalog_[0-9]+_[1-4]_[1-4]_(bright|full)\.txt$")
-    )
-
-    tic_parameters = data.draw(
-        st.lists(
-            tess_st.tic_parameters(),
-            unique_by=lambda param: param["tic_id"]
-        )
-    )
-
-    with open(directory / pathlib.Path(filename), "wt") as fout:
-        for param in tic_parameters:
-            msg = " ".join(map(str, (param[key] for key in CATALOG_KEY_ORDER)))
-            fout.write(msg)
-            fout.write("\n")
-    return directory / pathlib.Path(filename), tic_parameters
-
-
-def _simulate_quality_flag_file(data, directory):
-    camera = data.draw(tess_st.cameras())
-    ccd = data.draw(tess_st.ccds())
-
-    quality_flags = data.draw(
-        st.lists(
-            st.tuples(
-                tess_st.cadences(),
-                st.integers(min_value=0, max_value=1)
-            ),
-            unique_by=lambda qflag: qflag[0]
-        )
-    )
-
-    filename = pathlib.Path(
-        f"cam{camera}ccd{ccd}_qflag.txt"
-    )
-
-    with open(directory / filename, "wt") as fout:
-        for cadence, flag in quality_flags:
-            fout.write(f"{cadence} {flag}\n")
-
-    return directory / filename, camera, ccd, quality_flags
-
-
-@given(st.data())
-def test_tic_catalog_caching(data):
-
-    columns = data.draw(
-        st.lists(
-            st.sampled_from(CATALOG_KEY_ORDER),
-            min_size=1,
-            max_size=len(CATALOG_KEY_ORDER)
-        )
-    )
-
-    with tempfile.TemporaryDirectory() as tempdir:
-        db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
-        ctx.make_shared_context(db_path)
-        catalog_path, parameter_ref = _simulate_tic_catalog(data, tempdir)
-        ctx.populate_tic_catalog(db_path, catalog_path)
-
-        for ref in parameter_ref:
-            tic_id = ref["tic_id"]
-
-            check = ctx.get_tic_parameters(
-                db_path,
-                tic_id,
-                *columns
-            )
-
-            for col in columns:
-                if np.isnan(ref[col]):
-                    assert np.isnan(check[col])
-                else:
-                    assert ref[col] == check[col]
+from .strategies import ingestion
+from .strategies import orm as orm_st
 
 
 @given(st.data())
@@ -103,24 +16,23 @@ def test_tic_catalog_mapping(data):
 
     columns = data.draw(
         st.lists(
-            st.sampled_from(CATALOG_KEY_ORDER),
+            st.sampled_from(ingestion.CATALOG_KEY_ORDER),
             min_size=1,
-            max_size=len(CATALOG_KEY_ORDER)
+            max_size=len(ingestion.CATALOG_KEY_ORDER),
         )
     )
 
     with tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
         ctx.make_shared_context(db_path)
-        catalog_path, parameter_ref = _simulate_tic_catalog(data, tempdir)
+        catalog_path, parameter_ref = ingestion.simulate_tic_catalog(
+            data, tempdir
+        )
         ctx.populate_tic_catalog(db_path, catalog_path)
 
         parameter_ref = {row["tic_id"]: row for row in parameter_ref}
 
-        tic_mapping = ctx.get_tic_mapping(
-            db_path,
-            *columns
-        )
+        tic_mapping = ctx.get_tic_mapping(db_path, *columns)
 
         for tic_id, values in parameter_ref.items():
             check = tic_mapping[tic_id]
@@ -138,10 +50,12 @@ def test_quality_flag_cache(data):
     with tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
 
-        path, camera, ccd, quality_flag_ref = _simulate_quality_flag_file(
-            data,
-            tempdir
-        )
+        (
+            path,
+            camera,
+            ccd,
+            quality_flag_ref,
+        ) = ingestion.simulate_quality_flag_file(data, tempdir)
         ctx.make_shared_context(db_path)
         ctx.populate_quality_flags(db_path, path, camera, ccd)
 
@@ -153,16 +67,19 @@ def test_quality_flag_cache(data):
                 ccd,
             )
             check == flag
+
 
 @given(st.data())
 def test_quality_flag_np(data):
     with tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
 
-        path, camera, ccd, quality_flag_ref = _simulate_quality_flag_file(
-            data,
-            tempdir
-        )
+        (
+            path,
+            camera,
+            ccd,
+            quality_flag_ref,
+        ) = ingestion.simulate_quality_flag_file(data, tempdir)
         ctx.make_shared_context(db_path)
         ctx.populate_quality_flags(db_path, path, camera, ccd)
 
@@ -175,13 +92,14 @@ def test_quality_flag_np(data):
             )
             check == flag
 
+
 @given(
     orm_st.database(),
     st.lists(
         orm_st.spacecraft_ephemris(),
         min_size=1,
-        unique_by=lambda eph: eph.barycentric_dynamical_time
-    )
+        unique_by=lambda eph: eph.barycentric_dynamical_time,
+    ),
 )
 def test_spacecraft_eph_cache(database, eph_list):
     with database as db, tempfile.TemporaryDirectory() as tempdir:
@@ -193,7 +111,9 @@ def test_spacecraft_eph_cache(database, eph_list):
         ctx.make_shared_context(db_path)
         ctx.populate_ephemris(db_path, db)
 
-        ref_eph = sorted(eph_list, key=lambda eph: eph.barycentric_dynamical_time)
+        ref_eph = sorted(
+            eph_list, key=lambda eph: eph.barycentric_dynamical_time
+        )
         ref_x = np.array([eph.x for eph in ref_eph])
         ref_y = np.array([eph.y for eph in ref_eph])
         ref_z = np.array([eph.z for eph in ref_eph])
@@ -214,8 +134,8 @@ def test_spacecraft_eph_cache(database, eph_list):
     st.lists(
         orm_st.frames(ccd=st.just(None)),
         min_size=1,
-        unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path)
-    )
+        unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path),
+    ),
 )
 def test_tjd_cache(database, raw_ffi_type, orbit, frames):
     with database as db, tempfile.TemporaryDirectory() as tempdir:
@@ -233,7 +153,9 @@ def test_tjd_cache(database, raw_ffi_type, orbit, frames):
 
         tjd_check_df = ctx.get_tjd_mapping(cache_path)
         for frame_ref in frames:
-            check = tjd_check_df.loc[(frame_ref.camera, frame_ref.cadence)].iloc[0]
+            check = tjd_check_df.loc[
+                (frame_ref.camera, frame_ref.cadence)
+            ].iloc[0]
             if np.isnan(frame_ref.mid_tjd):
                 assert np.isnan(check)
             else:

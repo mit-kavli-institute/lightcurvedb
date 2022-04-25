@@ -32,6 +32,19 @@ camera_quaternion = namedtuple(
 )
 
 
+CATALOG_KEY_ORDER = (
+    "tic_id",
+    "ra",
+    "dec",
+    "tmag",
+    "pmra",
+    "pmdec",
+    "jmag",
+    "kmag",
+    "vmag",
+)
+
+
 @st.composite
 def camera_quaternions(draw):
     return draw(
@@ -284,3 +297,44 @@ def simulate_h5_file(
                     f"{lightcurve_type}Error", data=sample["error"][0]
                 )
     return directory / filename, data_gen_ref
+
+
+def simulate_tic_catalog(data, directory):
+    filename = data.draw(
+        st.from_regex(r"^catalog_[0-9]+_[1-4]_[1-4]_(bright|full)\.txt$")
+    )
+
+    tic_parameters = data.draw(
+        st.lists(
+            tess_st.tic_parameters(), unique_by=lambda param: param["tic_id"]
+        )
+    )
+
+    with open(directory / pathlib.Path(filename), "wt") as fout:
+        for param in tic_parameters:
+            msg = " ".join(map(str, (param[key] for key in CATALOG_KEY_ORDER)))
+            fout.write(msg)
+            fout.write("\n")
+    return directory / pathlib.Path(filename), tic_parameters
+
+
+def simulate_quality_flag_file(data, directory):
+    camera = data.draw(tess_st.cameras())
+    ccd = data.draw(tess_st.ccds())
+
+    quality_flags = data.draw(
+        st.lists(
+            st.tuples(
+                tess_st.cadences(), st.integers(min_value=0, max_value=1)
+            ),
+            unique_by=lambda qflag: qflag[0],
+        )
+    )
+
+    filename = pathlib.Path(f"cam{camera}ccd{ccd}_qflag.txt")
+
+    with open(directory / filename, "wt") as fout:
+        for cadence, flag in quality_flags:
+            fout.write(f"{cadence} {flag}\n")
+
+    return directory / filename, camera, ccd, quality_flags
