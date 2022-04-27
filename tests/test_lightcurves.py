@@ -6,6 +6,7 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from lightcurvedb import models
+from lightcurvedb.cli import lcdbcli
 from lightcurvedb.core.ingestors.lightcurves import h5_to_numpy
 
 from .strategies import ingestion
@@ -60,12 +61,17 @@ def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
 
 @settings(deadline=None, suppress_health_check=(HealthCheck.too_slow,))
 @given(st.data())
-def test_h5_ingestion(data):
+def test_h5_ingestion(clirunner, data):
     database = data.draw(orm_st.database())
     try:
         with TemporaryDirectory() as tempdir, database as db:
             ingestion.simulate_lightcurve_ingestion_environment(
                 data, tempdir, db
+            )
+            clirunner.invoke(
+                lcdbcli,
+                ["--dbconf", db._config, "lightcurve", "ingest-dir", tempdir],
+                catch_exceptions=False,
             )
     finally:
         with database as db:

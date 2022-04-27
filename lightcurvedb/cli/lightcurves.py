@@ -39,7 +39,7 @@ def lightcurve(ctx):
 @click.option("--recursive", "-r", is_flag=True, default=False)
 @click.option("--ingest/--plan", is_flag=True, default=True)
 def ingest_dir(ctx, paths, n_processes, recursive, ingest):
-    with tempfile.TemporaryDirectory as tempdir:
+    with tempfile.TemporaryDirectory() as tempdir:
         cache_path = Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
         with ctx.obj["dbconf"] as db:
