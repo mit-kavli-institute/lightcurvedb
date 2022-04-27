@@ -8,10 +8,12 @@ import numpy as np
 from astropy.io import fits
 from astropy.time import Time
 from h5py import File as H5File
+from hypothesis import note
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
+from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors.lightcurves import LP_DTYPE
 
 from . import orm as orm_st
@@ -282,7 +284,11 @@ def simulate_h5_file(
 
         photometry = lc.create_group("AperturePhotometry")
         for ap in apertures:
-            api = photometry.create_group(ap)
+            note(photometry.keys())
+            try:
+                api = photometry.create_group(ap)
+            except ValueError:
+                raise ValueError(f"{photometry.keys()}")
             api.create_dataset("X", data=background_lc["x_centroid"][0])
             api.create_dataset("Y", data=background_lc["y_centroid"][0])
             api.create_dataset(
@@ -291,11 +297,15 @@ def simulate_h5_file(
 
             for lightcurve_type in lightcurve_types:
                 sample = data.draw(lightpoint_arrays(type="shallow"))
-                data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
-                api.create_dataset(lightcurve_type, data=sample["data"][0])
-                api.create_dataset(
-                    f"{lightcurve_type}Error", data=sample["error"][0]
-                )
+                try:
+                    data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
+                    api.create_dataset(lightcurve_type, data=sample["data"][0])
+                    api.create_dataset(
+                        f"{lightcurve_type}Error", data=sample["error"][0]
+                    )
+                except ValueError:
+                    raise ValueError(f"{api.keys()}")
+
     return directory / filename, data_gen_ref
 
 
@@ -318,16 +328,19 @@ def simulate_tic_catalog(data, directory):
     return directory / pathlib.Path(filename), tic_parameters
 
 
-def simulate_quality_flag_file(data, directory):
-    camera = data.draw(tess_st.cameras())
-    ccd = data.draw(tess_st.ccds())
+def simulate_quality_flag_file(data, directory, **overrides):
+    camera = data.draw(overrides.get("camera", tess_st.cameras()))
+    ccd = data.draw(overrides.get("ccd", tess_st.ccds()))
 
     quality_flags = data.draw(
-        st.lists(
-            st.tuples(
-                tess_st.cadences(), st.integers(min_value=0, max_value=1)
+        overrides.get(
+            "cadences",
+            st.lists(
+                st.tuples(
+                    tess_st.cadences(), st.integers(min_value=0, max_value=1)
+                ),
+                unique_by=lambda qflag: qflag[0],
             ),
-            unique_by=lambda qflag: qflag[0],
         )
     )
 
@@ -338,3 +351,141 @@ def simulate_quality_flag_file(data, directory):
             fout.write(f"{cadence} {flag}\n")
 
     return directory / filename, camera, ccd, quality_flags
+
+
+@contexts.with_sqlite
+def _add_quality_flag_to_cache(conn, camera, ccd, cadence, flag):
+    with conn:
+        conn.execute(
+            "INSERT INTO quality_flags(camera, ccd, cadence, quality_flag) "
+            "VALUES (?, ?, ?, ?)",
+            (camera, ccd, cadence, flag),
+        )
+
+
+@contexts.with_sqlite
+def _add_tic_parameters(conn, tic_parameters):
+    with conn:
+        conn.executemany(
+            "INSERT INTO tic_parameters("
+            "tic_id, ra, dec, tmag, pmra, pmdec, jmag, kmag, vmag"
+            ") VALUES ("
+            ":tic_id, :ra, :dec, :tmag, :pmra, :pmdec, :jmag, :kmag, :vmag"
+            ")",
+            tic_parameters,
+        )
+
+
+# manual cleanup!
+def simulate_lightcurve_ingestion_environment(
+    data,
+    directory,
+    db,
+    lightcurve_length=20,
+):
+    # Put critical assumptions here
+    cadences = np.arange(0, lightcurve_length)
+    exposure_time = data.draw(
+        st.floats(
+            min_value=2,
+            max_value=30 * 60,
+            allow_infinity=False,
+            allow_nan=False,
+        )
+    )
+
+    cache_name = pathlib.Path("db.sqlite3")
+    cache_path = directory / cache_name
+    camera = data.draw(tess_st.cameras())
+    ccd = data.draw(tess_st.ccds())
+
+    contexts.make_shared_context(cache_path)
+
+    cur_start_tjd = 0.0
+    cur_end_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24)
+
+    frame_type = data.draw(orm_st.frame_types())
+    orbit = data.draw(orm_st.orbits())
+    orbit.id = 1
+    db.add(orbit)
+    db.add(frame_type)
+
+    background_type, *magnitude_types = data.draw(
+        st.lists(
+            orm_st.lightcurve_types(),
+            min_size=2,
+            max_size=3,
+            unique_by=lambda lt: lt.name,
+        )
+    )
+
+    background_aperture, *photometric_apertures = data.draw(
+        st.lists(
+            orm_st.apertures(),
+            min_size=2,
+            max_size=5,
+            unique_by=(
+                lambda ap: ap.name,
+                lambda ap: (ap.star_radius, ap.outer_radius, ap.inner_radius),
+            ),
+        )
+    )
+    db.add(background_type)
+    db.add(background_aperture)
+    db.session.add_all(magnitude_types)
+    db.session.add_all(photometric_apertures)
+    db.flush()
+
+    for cadence in cadences:
+        cur_mid_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24 / 2)
+        frame = data.draw(
+            orm_st.frames(
+                cadence=st.just(cadence),
+                camera=st.just(camera),
+                exp_time=st.just(exposure_time),
+                start_tjd=st.just(cur_start_tjd),
+                mid_tjd=st.just(cur_mid_tjd),
+                end_tjd=st.just(cur_end_tjd),
+                orbit=st.just(orbit),
+                frame_type=st.just(frame_type),
+            )
+        )
+        frame.file_path = f"{frame.cadence}_{frame.file_path}"
+
+        cur_start_tjd = cur_end_tjd
+        cur_end_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24)
+
+        db.add(frame)
+        db.flush()
+        _add_quality_flag_to_cache(
+            cache_path, camera, ccd, cadence, int(frame.quality_bit)
+        )
+
+    eph = data.draw(
+        st.lists(
+            orm_st.spacecraft_ephemris(),
+            unique_by=lambda eph: eph.barycentric_dynamical_time,
+        )
+    )
+    db.session.add_all(eph)
+    db.flush()
+
+    contexts.populate_ephemris(cache_path, db)
+    contexts.populate_tjd_mapping(cache_path, db)
+
+    # Generate tic parameters
+    tic_parameters = data.draw(
+        st.lists(tess_st.tic_parameters(), min_size=1, max_size=1)
+    )
+    _add_tic_parameters(cache_path, tic_parameters)
+
+    for parameters in tic_parameters:
+        simulate_h5_file(
+            data,
+            directory,
+            background_aperture.name,
+            background_type.name,
+            [ap.name for ap in photometric_apertures],
+            [type.name for type in magnitude_types],
+            tic_id=st.just(parameters["tic_id"]),
+        )

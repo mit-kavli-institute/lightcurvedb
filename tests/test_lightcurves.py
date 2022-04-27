@@ -2,12 +2,14 @@ import itertools
 from tempfile import TemporaryDirectory
 
 import numpy as np
-from hypothesis import assume, given
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
+from lightcurvedb import models
 from lightcurvedb.core.ingestors.lightcurves import h5_to_numpy
 
 from .strategies import ingestion
+from .strategies import orm as orm_st
 
 FORBIDDEN_KEYWORDS = (
     "\x00",
@@ -54,3 +56,27 @@ def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
             )
             np.testing.assert_array_equal(check["data"], ref["data"][0])
             np.testing.assert_array_equal(check["error"], ref["error"][0])
+
+
+@settings(deadline=None, suppress_health_check=(HealthCheck.too_slow,))
+@given(st.data())
+def test_h5_ingestion(data):
+    database = data.draw(orm_st.database())
+    try:
+        with TemporaryDirectory() as tempdir, database as db:
+            ingestion.simulate_lightcurve_ingestion_environment(
+                data, tempdir, db
+            )
+    finally:
+        with database as db:
+            opt = {"synchronize_session": False}
+            db.query(models.Lightpoint).delete(**opt)
+            db.query(models.Lightcurve).delete(**opt)
+            db.query(models.Observation).delete(**opt)
+            db.query(models.Frame).delete(**opt)
+            db.query(models.FrameType).delete(**opt)
+            db.query(models.LightcurveType).delete(**opt)
+            db.query(models.Aperture).delete(**opt)
+            db.query(models.Orbit).delete(**opt)
+            db.query(models.SpacecraftEphemris).delete(**opt)
+            db.commit()
