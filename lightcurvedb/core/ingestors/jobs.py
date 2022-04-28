@@ -278,9 +278,9 @@ class DirectoryPlan:
         logger.debug(f"Generated {len(jobs)} jobs, ignoring {ignored}")
         self.jobs = jobs
 
-    def _get_unique_observed(self, jobs):
+    def _get_unique_observed(self):
         unique_observed = set()
-        for job in self.jobs:
+        for job in self.get_jobs():
             key = (job.unique_orbit_number, job.camera, job.ccd)
             unique_observed.add(key)
         return unique_observed
@@ -303,7 +303,7 @@ class DirectoryPlan:
             )
             yield pathlib.Path(expected_path)
 
-    def yield_needed_quality_flags(self, path_template):
+    def yield_needed_quality_flags(self, path_template=None):
         if path_template is None:
             path_template = pathlib.Path(
                 "/pdo/qlp-data/"

@@ -61,6 +61,7 @@ def ingest_dir(ctx, paths, n_processes, recursive, ingest):
                 ctx.obj["dbconf"],
                 jobs,
                 n_processes,
+                cache_path,
                 log_level=ctx.obj["log_level"],
             )
             click.echo("Done!")
