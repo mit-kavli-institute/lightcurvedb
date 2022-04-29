@@ -14,7 +14,7 @@ from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
 from lightcurvedb.core.ingestors import contexts
-from lightcurvedb.core.ingestors.lightcurves import LP_DTYPE
+from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -45,6 +45,23 @@ CATALOG_KEY_ORDER = (
     "kmag",
     "vmag",
 )
+
+
+@st.composite
+def cadences(draw, **overrides):
+    length = draw(overrides.get("length", st.just(20)))
+    cadences = np.arange(0, length, step=1, dtype=int)
+    return draw(st.just(cadences))
+
+
+@st.composite
+def julian_dates(draw, **overrides):
+    length = draw(overrides.get("length", st.just(20)))
+    exposure_time = draw(overrides.get("exposure_time", st.just(200)))
+    exposure_step_days = exposure_time / 60 / 60 / 24
+
+    julian_days = np.arange(0, length) * exposure_step_days
+    return draw(st.just(julian_days))
 
 
 @st.composite
@@ -179,25 +196,63 @@ def shallow_lightpoint_dfs(draw):
 
 
 @st.composite
-def lightpoint_arrays(draw, type=None):
-    if type == "full" or type is None:
-        return draw(np_st.arrays(LP_DTYPE, shape=(len(LP_DTYPE), 20)))
-    elif type == "shallow":
-        return draw(
-            np_st.arrays(
-                np.dtype(
-                    [
-                        ("data", np.dtype("f8")),
-                        ("error", np.dtype("f8")),
-                        ("x_centroid", np.dtype("f8")),
-                        ("y_centroid", np.dtype("f8")),
-                        ("quality_flag", np.dtype("u4")),
-                    ]
-                ),
-                shape=(5, 20),
-            )
-        )
-    raise NotImplementedError
+def lightpoint_arrays(draw, **overrides):
+    length = draw(overrides.get("length", st.just(20)))
+    cadence_sample = draw(cadences(length=st.just(length)))
+    bjd = draw(julian_dates(length=st.just(length)))
+    data = np.random.rand(length)
+    error = np.random.rand(length)
+    x_centroids = np.random.rand(length)
+    y_centroids = np.random.rand(length)
+    quality_flags = np.random.randint(2, size=length)
+
+    array = np.empty(
+        length,
+        dtype=get_lightpoint_dtypes(
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag",
+        ),
+    )
+    array["cadence"] = cadence_sample
+    array["barycentric_julian_date"] = bjd
+    array["data"] = data
+    array["error"] = error
+    array["x_centroid"] = x_centroids
+    array["y_centroid"] = y_centroids
+    array["quality_flag"] = quality_flags
+    return draw(st.just(array))
+
+
+@st.composite
+def shallow_lightpoint_arrays(draw, **overrides):
+    length = draw(overrides.get("length", st.just(20)))
+    data = np.random.rand(length)
+    error = np.random.rand(length)
+    x_centroids = np.random.rand(length)
+    y_centroids = np.random.rand(length)
+    quality_flags = np.random.randint(2, size=length)
+
+    array = np.empty(
+        length,
+        dtype=get_lightpoint_dtypes(
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag",
+        ),
+    )
+    array["data"] = data
+    array["error"] = error
+    array["x_centroid"] = x_centroids
+    array["y_centroid"] = y_centroids
+    array["quality_flag"] = quality_flags
+    return draw(st.just(array))
 
 
 @st.composite
@@ -296,7 +351,7 @@ def simulate_h5_file(
             )
 
             for lightcurve_type in lightcurve_types:
-                sample = data.draw(lightpoint_arrays(type="shallow"))
+                sample = data.draw(shallow_lightpoint_arrays())
                 try:
                     data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                     api.create_dataset(lightcurve_type, data=sample["data"][0])
