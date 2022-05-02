@@ -10,6 +10,7 @@ from click import echo
 from loguru import logger
 from pgcopy import CopyManager
 from sqlalchemy import Integer, func
+from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
 from tqdm import tqdm
 
@@ -18,7 +19,7 @@ from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.core.ingestors.lightcurves import get_components, h5_to_numpy
 from lightcurvedb.models import Lightpoint, Observation, Orbit
-from lightcurvedb.models.metrics import QLPOperation, QLPProcess
+from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
 
 
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
@@ -312,7 +313,16 @@ def ingest_merge_jobs(
 
     with db:
         echo("Grabbing introspective processing tracker")
-        stage = db.get_qlp_stage("lightpoint-ingestion")
+        try:
+            stage = db.get_qlp_stage("lightpoint-ingestion")
+        except NoResultFound:
+            db.rollback()
+            stage = QLPStage(
+                name="Lightpoint Ingestion", slug="lightpoint-ingestion"
+            )
+            db.add(stage)
+            db.commit()
+            db.session.refresh(stage)
 
     echo("Initializing workers, beginning processing...")
     with tqdm(total=len(jobs)) as bar:
