@@ -9,14 +9,14 @@ from lightcurvedb.models import FrameType
 
 @lcdbcli.command()
 @click.pass_context
-@click.argument("frame-type-name", type=str)
 @click.argument("ingest_directories", type=pathlib.Path, nargs=-1)
+@click.option("--frame-type-name", type=str, default="Raw FFI")
 @click.option("--ffi-subdir", type=pathlib.Path, default="ffi_fits")
 @click.option("--quaternion-subdir", type=pathlib.Path, default="hk")
 def ingest_frames(
     ctx,
-    frame_type_name: str,
     ingest_directories: list[pathlib.Path],
+    frame_type_name: str,
     ffi_subdir: pathlib.Path,
     quaternion_subdir: pathlib.Path,
 ):

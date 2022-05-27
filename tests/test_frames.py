@@ -102,8 +102,9 @@ def test_new_orbit_cli(clirunner, database, data):
                     "--dbconf",
                     db._config,
                     "ingest-frames",
-                    frame_type.name,
                     tempdir,
+                    "--frame-type-name",
+                    frame_type.name,
                 ],
                 catch_exceptions=False,
             )
