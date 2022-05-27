@@ -183,7 +183,7 @@ def populate_ephemris(conn, db):
         ).order_by(SpacecraftEphemris.barycentric_dynamical_time)
         conn.executemany(
             "INSERT INTO spacecraft_pos(bjd, x, y, z) VALUES (?, ?, ?, ?)",
-            q.all(),
+            q,
         )
 
 
