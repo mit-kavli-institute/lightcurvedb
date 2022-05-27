@@ -10,6 +10,7 @@ from click import echo
 from loguru import logger
 from pgcopy import CopyManager
 from sqlalchemy import Integer, func
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
 from tqdm import tqdm
@@ -45,13 +46,19 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.log("Initialized")
 
     def _load_contexts(self):
-        with self.db as db:
-            self.corrector = LightcurveCorrector(self.cache_path)
-            self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
-            self.log("Instantiated Orbit ID map")
-            self.rng = np.random.default_rng()
-            self.set_new_parameters(db)
-            self.log("Determined initial parameters")
+        try:
+            with self.db as db:
+                self.corrector = LightcurveCorrector(self.cache_path)
+                self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
+                self.log("Instantiated Orbit ID map")
+                self.rng = np.random.default_rng()
+                self.set_new_parameters(db)
+                self.log("Determined initial parameters")
+        except Exception as e:
+            self.log(
+                f"Unable to load contexts. Encountered {e}", level="exception"
+            )
+            raise
 
     def _postflush(self, db):
         self.n_samples += 1
@@ -68,19 +75,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             int(context["camera"]),
             int(context["ccd"]),
         )
-        row = self.normalizer.get_tic_params(tic_id)
-        tmag = row["tmag"]
-        ra, dec = row["ra"], row["dec"]
-
-        if np.isnan(ra) or np.isnan(dec):
-            self.log(
-                f"Star coordinates undefined for {tic_id} ({ra}, {dec})",
-                level="error",
-            )
-            raise ValueError
 
         cadences = lightcurve["cadence"]
-        data = lightcurve["data"]
+        magnitudes = lightcurve["data"]
 
         # Time correct the lightcurve and perform
         # tmag-alignment and qflag assignment
@@ -88,7 +85,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         mid_tjd = self.corrector.get_mid_tjd(camera, cadences)
         bjd = self.corrector.correct_for_earth_time(tic_id, mid_tjd)
         mag_offset = self.corrector.get_magnitude_alignment_offset(
-            data, quality_flags, tmag
+            tic_id, magnitudes, quality_flags
         )
         if np.isnan(mag_offset):
             self.log(
@@ -97,10 +94,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 "alignment offset",
                 level="warning",
             )
-        aligned_mag = data - mag_offset
+        aligned_mag = magnitudes - mag_offset
 
         lightcurve["quality_flag"] = quality_flags
-        lightcurve["barycentric_julian_date"] = bjd
+        lightcurve["barycentric_julian_date"] = bjd[0]
         lightcurve["data"] = aligned_mag
         return lightcurve
 
@@ -129,8 +126,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             self.buffers["observations"].append(observation)
         except OSError as e:
             self.log(f"Unable to open {smj.file_path}: {e}", level="exception")
-        except ValueError:
-            self.log(f"Unable to process {smj.file_path}", level="error")
+        except ValueError as e:
+            self.log(
+                f"Unable to process {smj.file_path}: {e}", level="exception"
+            )
         finally:
             self.seen_cache.add((lightcurve_id, orbit_number))
             self.job_queue.task_done()
@@ -278,8 +277,15 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
             .filter(QLPProcess.current_version())
             .group_by(job_size_log2)
         )
+        try:
+            current_samples = dict(q)
+        except DataError:
+            self.log(
+                "Unable to take logarithm, assuming no previous datapoints"
+            )
+            current_samples = {}
+            self.db.rollback()
 
-        current_samples = dict(q)
         samples = defaultdict(list)
         for exp in range(self.min_exponent, self.max_exponent + 1):
             n_samples = current_samples.get(exp, 0)
@@ -351,7 +357,16 @@ def ingest_merge_jobs(
 
         bar.update(prev)
         job_queue.join()
+
+        # Work queue is done, only allow workers ~10 minutes to wrap it up.
         for worker in workers:
-            worker.join()
-            logger.debug(str(worker))
-        logger.debug("Job queue empty, cleaning")
+            worker.join(10)
+
+            if worker.exitcode is None:
+                logger.error(f"Terminating worker {worker}, took too long")
+                worker.terminate()
+            else:
+                logger.debug(
+                    f"Worker {worker} finished with "
+                    f"exit code: {worker.exitcode}"
+                )

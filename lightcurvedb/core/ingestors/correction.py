@@ -61,22 +61,24 @@ class LightcurveCorrector:
             bjd = tjd_time + light_time_to_earth - BJD_EPOC
         except (TypeError, ValueError):
             logger.exception(f"Bad Star Vector {star_vector} for TIC {tic_id}")
-            raise
+            bjd = tjd_time
         return bjd.jd
 
     def get_magnitude_alignment_offset(
         self, tic_id, magnitudes, quality_flags
     ):
-        tmag = self.tic_parameter[tic_id]["tmag"]
+        tmag = self.tic_parameters[tic_id]["tmag"]
         mask = quality_flags == 0
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return np.nanmedian(magnitudes[mask]) - tmag
 
     def get_quality_flags(self, camera, ccd, cadences):
-        qflag_series = self.quality_flag_map[(camera, ccd)].loc[cadences]
+        qflag_series = self.quality_flag_map.loc[(camera, ccd)].loc[cadences][
+            "quality_flag"
+        ]
         return qflag_series.to_numpy()
 
     def get_mid_tjd(self, camera, cadences):
-        tjd_series = self.tjd_map[camera].loc[cadences]
-        return tjd_series.to_numpy()
+        tjd_series = self.tjd_map.loc[camera].loc[cadences]
+        return tjd_series.values

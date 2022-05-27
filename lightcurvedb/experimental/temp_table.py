@@ -6,10 +6,13 @@ be made.
 """
 
 from contextlib import ContextDecorator
-from loguru import logger
-from sqlalchemy import Table, Column, MetaData, exc as sqlexc, event, schema, types
-from lightcurvedb.core.sql import _str_to_sql_type
 
+from loguru import logger
+from sqlalchemy import Column, MetaData, Table
+from sqlalchemy import exc as sqlexc
+from sqlalchemy import schema
+
+from lightcurvedb.core.sql import _str_to_sql_type
 
 _tempmeta = MetaData()
 
@@ -28,6 +31,7 @@ class TempTable(ContextDecorator):
         t.insert(col2=2)
         print(open_db_inst.query(t.col2).all())
     """
+
     _db = None
     _table = None
 
@@ -93,7 +97,7 @@ class TempTable(ContextDecorator):
         else:
             sql_type = type_
         column = Column(name, sql_type, **kwargs)
-        self._table.append_column(column)
+        self._table.append_column(column, replace_existing=True)
 
     def insert(self, **values):
         """

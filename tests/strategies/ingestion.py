@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
-from lightcurvedb.core.ingestors import contexts
+from lightcurvedb import models
 from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
 
 from . import orm as orm_st
@@ -330,7 +330,7 @@ def simulate_h5_file(
 
     with H5File(directory / filename, "w") as h5:
         lc = h5.create_group("LightCurve")
-        lc.create_dataset("Cadence", data=background_lc["cadence"][0])
+        lc.create_dataset("Cadence", data=background_lc["cadence"])
         lc.create_dataset(
             "BJD", data=background_lc["barycentric_julian_date"][0]
         )
@@ -340,10 +340,7 @@ def simulate_h5_file(
         photometry = lc.create_group("AperturePhotometry")
         for ap in apertures:
             note(photometry.keys())
-            try:
-                api = photometry.create_group(ap)
-            except ValueError:
-                raise ValueError(f"{photometry.keys()}")
+            api = photometry.create_group(ap)
             api.create_dataset("X", data=background_lc["x_centroid"][0])
             api.create_dataset("Y", data=background_lc["y_centroid"][0])
             api.create_dataset(
@@ -352,16 +349,30 @@ def simulate_h5_file(
 
             for lightcurve_type in lightcurve_types:
                 sample = data.draw(shallow_lightpoint_arrays())
+                data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                 try:
-                    data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                     api.create_dataset(lightcurve_type, data=sample["data"][0])
-                    api.create_dataset(
-                        f"{lightcurve_type}Error", data=sample["error"][0]
-                    )
                 except ValueError:
-                    raise ValueError(f"{api.keys()}")
+                    raise ValueError(
+                        f"{api.keys()}, {lightcurve_type}, {lightcurve_types}"
+                    )
+                api.create_dataset(
+                    f"{lightcurve_type}Error", data=sample["error"][0]
+                )
+        bg = lc.create_group(background_type)
+        bg.create_dataset("Value", data=background_lc["data"][0])
+        bg.create_dataset("Error", data=background_lc["error"][0])
 
     return directory / filename, data_gen_ref
+
+
+def _write_tic_catalog(path, parameters):
+    with open(path, "wt") as fout:
+        for param in parameters:
+            msg = " ".join(map(str, (param[key] for key in CATALOG_KEY_ORDER)))
+            fout.write(msg)
+            fout.write("\n")
+    return path
 
 
 def simulate_tic_catalog(data, directory):
@@ -374,13 +385,16 @@ def simulate_tic_catalog(data, directory):
             tess_st.tic_parameters(), unique_by=lambda param: param["tic_id"]
         )
     )
+    catalog_path = _write_tic_catalog(directory / pathlib.Path(filename))
+    return catalog_path, tic_parameters
 
-    with open(directory / pathlib.Path(filename), "wt") as fout:
-        for param in tic_parameters:
-            msg = " ".join(map(str, (param[key] for key in CATALOG_KEY_ORDER)))
-            fout.write(msg)
-            fout.write("\n")
-    return directory / pathlib.Path(filename), tic_parameters
+
+def _write_quality_flag_file(path, quality_flags):
+    with open(path, "wt") as fout:
+        for cadence, flag in quality_flags:
+            fout.write(f"{cadence} {flag}\n")
+
+    return path
 
 
 def simulate_quality_flag_file(data, directory, **overrides):
@@ -401,37 +415,14 @@ def simulate_quality_flag_file(data, directory, **overrides):
 
     filename = pathlib.Path(f"cam{camera}ccd{ccd}_qflag.txt")
 
-    with open(directory / filename, "wt") as fout:
-        for cadence, flag in quality_flags:
-            fout.write(f"{cadence} {flag}\n")
+    quality_flag_path = _write_quality_flag_file(
+        quality_flags, directory / filename
+    )
 
-    return directory / filename, camera, ccd, quality_flags
-
-
-@contexts.with_sqlite
-def _add_quality_flag_to_cache(conn, camera, ccd, cadence, flag):
-    with conn:
-        conn.execute(
-            "INSERT INTO quality_flags(camera, ccd, cadence, quality_flag) "
-            "VALUES (?, ?, ?, ?)",
-            (camera, ccd, cadence, flag),
-        )
+    return quality_flag_path, camera, ccd, quality_flags
 
 
-@contexts.with_sqlite
-def _add_tic_parameters(conn, tic_parameters):
-    with conn:
-        conn.executemany(
-            "INSERT INTO tic_parameters("
-            "tic_id, ra, dec, tmag, pmra, pmdec, jmag, kmag, vmag"
-            ") VALUES ("
-            ":tic_id, :ra, :dec, :tmag, :pmra, :pmdec, :jmag, :kmag, :vmag"
-            ")",
-            tic_parameters,
-        )
-
-
-# manual cleanup!
+# requires manual cleanup!
 def simulate_lightcurve_ingestion_environment(
     data,
     directory,
@@ -449,12 +440,8 @@ def simulate_lightcurve_ingestion_environment(
         )
     )
 
-    cache_name = pathlib.Path("db.sqlite3")
-    cache_path = directory / cache_name
     camera = data.draw(tess_st.cameras())
     ccd = data.draw(tess_st.ccds())
-
-    contexts.make_shared_context(cache_path)
 
     cur_start_tjd = 0.0
     cur_end_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24)
@@ -465,32 +452,52 @@ def simulate_lightcurve_ingestion_environment(
     db.add(orbit)
     db.add(frame_type)
 
-    background_type, *magnitude_types = data.draw(
-        st.lists(
-            orm_st.lightcurve_types(),
-            min_size=2,
-            max_size=3,
-            unique_by=lambda lt: lt.name,
-        )
+    run_path = directory / pathlib.Path(
+        f"orbit-{orbit.orbit_number}", "ffi", "run"
+    )
+    run_path.mkdir(parents=True)
+
+    subpath = pathlib.Path(
+        f"orbit-{orbit.orbit_number}", "ffi", f"cam{camera}", f"ccd{ccd}", "LC"
     )
 
-    background_aperture, *photometric_apertures = data.draw(
-        st.lists(
-            orm_st.apertures(),
-            min_size=2,
-            max_size=5,
-            unique_by=(
-                lambda ap: ap.name,
-                lambda ap: (ap.star_radius, ap.outer_radius, ap.inner_radius),
-            ),
-        )
+    quality_flag_path = run_path / pathlib.Path(
+        f"cam{camera}ccd{ccd}_qflag.txt"
     )
+    tic_catalog_path = run_path / pathlib.Path(
+        f"catalog_{orbit.orbit_number}_{camera}_{ccd}_full.txt"
+    )
+
+    lightcurve_dump_path = directory / subpath
+    lightcurve_dump_path.mkdir(parents=True)
+
+    background_type = models.LightcurveType(name="Background")
+    magnitude_types = [
+        models.LightcurveType(name="RawMagnitude"),
+        models.LightcurveType(name="KSPMagnitude"),
+    ]
+
+    background_aperture = models.Aperture(
+        name="BackgroundAperture",
+        star_radius=0,
+        inner_radius=0,
+        outer_radius=0,
+    )
+    photometric_apertures = [
+        models.Aperture(
+            name=f"Aperture_00{i}",
+            star_radius=i + 1,
+            inner_radius=i + 1,
+            outer_radius=i + 1,
+        )
+        for i in range(5)
+    ]
     db.add(background_type)
     db.add(background_aperture)
     db.session.add_all(magnitude_types)
     db.session.add_all(photometric_apertures)
     db.flush()
-
+    quality_flags = []
     for cadence in cadences:
         cur_mid_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24 / 2)
         frame = data.draw(
@@ -512,35 +519,37 @@ def simulate_lightcurve_ingestion_environment(
 
         db.add(frame)
         db.flush()
-        _add_quality_flag_to_cache(
-            cache_path, camera, ccd, cadence, int(frame.quality_bit)
-        )
+        quality_flags.append((cadence, int(frame.quality_bit)))
 
-    eph = data.draw(
-        st.lists(
-            orm_st.spacecraft_ephemris(),
-            unique_by=lambda eph: eph.barycentric_dynamical_time,
-        )
-    )
+    eph = [
+        data.draw(
+            orm_st.spacecraft_ephemris(barycentric_dynamical_time=st.just(0.0))
+        ),
+        data.draw(
+            orm_st.spacecraft_ephemris(
+                barycentric_dynamical_time=st.just(2457000 + cur_end_tjd)
+            )
+        ),
+    ]
+
     db.session.add_all(eph)
     db.flush()
-
-    contexts.populate_ephemris(cache_path, db)
-    contexts.populate_tjd_mapping(cache_path, db)
 
     # Generate tic parameters
     tic_parameters = data.draw(
         st.lists(tess_st.tic_parameters(), min_size=1, max_size=1)
     )
-    _add_tic_parameters(cache_path, tic_parameters)
+    _write_tic_catalog(tic_catalog_path, tic_parameters)
+    _write_quality_flag_file(quality_flag_path, quality_flags)
 
     for parameters in tic_parameters:
         simulate_h5_file(
             data,
-            directory,
+            lightcurve_dump_path,
             background_aperture.name,
             background_type.name,
             [ap.name for ap in photometric_apertures],
-            [type.name for type in magnitude_types],
+            ["RawMagnitude", "KSPMagnitude"],
             tic_id=st.just(parameters["tic_id"]),
         )
+    return run_path, lightcurve_dump_path

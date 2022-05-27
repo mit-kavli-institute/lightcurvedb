@@ -9,12 +9,14 @@ There is a bit more overhead with these methods. But overall the impact
 is minimal.
 
 """
-import pandas as pd
 import sqlite3
-import numpy as np
-from lightcurvedb.util.iter import chunkify
-from lightcurvedb.models import Frame, SpacecraftEphemris
 from functools import wraps
+
+import numpy as np
+import pandas as pd
+
+from lightcurvedb.models import Frame, SpacecraftEphemris
+from lightcurvedb.util.iter import chunkify
 
 
 def with_sqlite(function):
@@ -24,10 +26,12 @@ def with_sqlite(function):
     changes within their function. The decorator does not call commits or
     rollbacks or give the connection within a contextual manager.
     """
+
     @wraps(function)
     def wrapper(db_path, *args, **kwargs):
         conn = sqlite3.connect(db_path)
         return function(conn, *args, **kwargs)
+
     return wrapper
 
 
@@ -126,8 +130,9 @@ def populate_tic_catalog(conn, catalog_path, chunksize=1024):
                 "INSERT INTO tic_parameters("
                 " tic_id, ra, dec, tmag, pmra, pmdec, jmag, kmag, vmag"
                 ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                chunk
+                chunk,
             )
+
 
 @with_sqlite
 def populate_quality_flags(conn, quality_flag_path, camera, ccd):
@@ -150,7 +155,7 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
             conn.executemany(
                 "INSERT INTO quality_flags(cadence, quality_flag, camera, ccd)"
                 " VALUES (?, ?, ?, ?)",
-                chunk
+                chunk,
             )
 
 
@@ -170,24 +175,20 @@ def populate_ephemris(conn, db):
         An open lcdb connection object to read from.
     """
     with conn:
-        q = (
-            db
-            .query(
-               SpacecraftEphemris.barycentric_dynamical_time,
-               SpacecraftEphemris.x,
-               SpacecraftEphemris.y,
-               SpacecraftEphemris.z
-            )
-            .order_by(SpacecraftEphemris.barycentric_dynamical_time)
-        )
+        q = db.query(
+            SpacecraftEphemris.barycentric_dynamical_time,
+            SpacecraftEphemris.x,
+            SpacecraftEphemris.y,
+            SpacecraftEphemris.z,
+        ).order_by(SpacecraftEphemris.barycentric_dynamical_time)
         conn.executemany(
             "INSERT INTO spacecraft_pos(bjd, x, y, z) VALUES (?, ?, ?, ?)",
-            q.all()
+            q.all(),
         )
 
 
 @with_sqlite
-def populate_tjd_mapping(conn, db):
+def populate_tjd_mapping(conn, db, frame_type=None):
     """Populate the cache with tjd data.
 
     This method also requires a postgresql connection and will only
@@ -202,20 +203,12 @@ def populate_tjd_mapping(conn, db):
         An open lcdb connection object to read from.
     """
     with conn:
-        q = (
-            db
-            .query(
-                Frame.cadence,
-                Frame.camera,
-                Frame.mid_tjd
-            )
-            .filter(
-                Frame.frame_type_id == "Raw FFI"
-            )
+        q = db.query(Frame.cadence, Frame.camera, Frame.mid_tjd).filter(
+            Frame.frame_type_id
+            == ("Raw FFI" if frame_type is None else frame_type)
         )
         conn.executemany(
-            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)",
-            q
+            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)", q
         )
 
 
@@ -276,9 +269,7 @@ def get_tic_mapping(conn, parameter, *parameters):
     """
     param_order = ("tic_id", parameter, *parameters)
     param_str = ", ".join(param_order)
-    q = conn.execute(
-        f"SELECT {param_str} FROM tic_parameters"
-    )
+    q = conn.execute(f"SELECT {param_str} FROM tic_parameters")
     mapping = {}
     for tic_id, *parameters in q.fetchall():
         values = dict(zip(param_order[1:], map(_none_to_nan, parameters)))
@@ -359,9 +350,9 @@ def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
     q = conn.execute(base_q + filter_q + " ORDER BY cadence")
 
     return np.array(
-        q.fetchall(),
-        dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
+        q.fetchall(), dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
     )
+
 
 @with_sqlite
 def get_quality_flag_mapping(conn):
@@ -380,9 +371,10 @@ def get_quality_flag_mapping(conn):
         resulting dataframe is not sorted.
     """
     df = pd.read_sql(
-        "SELECT camera, ccd, cadence, quality_flag FROM quality_flags ORDER BY camera, ccd, cadence",
+        "SELECT camera, ccd, cadence, quality_flag FROM quality_flags "
+        "ORDER BY camera, ccd, cadence",
         conn,
-        index_col=["camera", "ccd", "cadence"]
+        index_col=["camera", "ccd", "cadence"],
     )
     return df
 
@@ -428,13 +420,9 @@ def get_tjd_mapping(conn):
         dataframe is not ordered and all NULL values will be forced into
         NaN values.
     """
-    df = (
-        pd
-        .read_sql(
-            "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
-            conn,
-            index_col=["camera", "cadence"]
-        )
-        .fillna(value=np.nan)
-    )
+    df = pd.read_sql(
+        "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
+        conn,
+        index_col=["camera", "cadence"],
+    ).fillna(value=np.nan)
     return df

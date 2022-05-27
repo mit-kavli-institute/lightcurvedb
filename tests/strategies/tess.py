@@ -66,8 +66,8 @@ def tic_parameters(draw):
         st.builds(
             dict,
             tic_id=tic_ids(),
-            ra=st.floats(min_value=-180, max_value=180),
-            dec=st.floats(min_value=-180, max_value=180),
+            ra=st.floats(min_value=0, max_value=180),
+            dec=st.floats(min_value=0, max_value=180),
             tmag=st.floats(allow_nan=False, allow_infinity=False),
             pmra=st.floats(min_value=-180, max_value=180),
             pmdec=st.floats(min_value=-180, max_value=180),
@@ -98,7 +98,7 @@ def gps_times(draw):
             min_value=1216580520.25,
             max_value=1248116533.96,
             allow_nan=False,
-            allow_infinity=False
+            allow_infinity=False,
         )
     )
 
@@ -106,19 +106,12 @@ def gps_times(draw):
 @st.composite
 def tjds(draw, **kwargs):
     return draw(
-        st.floats(
-            allow_nan=False,
-            allow_infinity=False,
-            min_value=0.0
-        )
+        st.floats(allow_nan=False, allow_infinity=False, min_value=0.0)
     )
+
 
 @st.composite
 def right_ascensions(draw):
-    return draw(st.floats(min_value=-180, max_value=180))
-
-@st.composite
-def declinations(draw):
     return draw(st.floats(min_value=-180, max_value=180))
 
 

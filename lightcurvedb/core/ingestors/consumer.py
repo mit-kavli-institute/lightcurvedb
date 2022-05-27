@@ -26,6 +26,9 @@ class BufferedDatabaseIngestor(Process):
         full_msg = f"{self.name} {msg}"
         getattr(logger, level, logger.debug)(full_msg)
 
+    def _create_db(self):
+        self.db = db_from_config(self.db_config)
+
     def _load_contexts(self):
         return
 
@@ -71,7 +74,7 @@ class BufferedDatabaseIngestor(Process):
 
     def run(self):
         self.log("Entering main runtime")
-        self.db = db_from_config(self.db_config)
+        self._create_db()
         self._load_contexts()
         while not self.job_queue.empty():
             try:
@@ -83,10 +86,10 @@ class BufferedDatabaseIngestor(Process):
             except KeyboardInterrupt:
                 self.log("Received keyboard interrupt")
                 break
-            except:
+            except Exception:
                 self.log(
-                    "Unhandled exeception, cowardly exiting...", 
-                    level="exception"
+                    "Unhandled exeception, cowardly exiting...",
+                    level="exception",
                 )
                 break
 
@@ -96,7 +99,7 @@ class BufferedDatabaseIngestor(Process):
                 self.flush(db)
 
         if self.job_queue.empty():
-            self.log(f"Successfully finished all jobs", level="success")
+            self.log("Successfully finished all jobs", level="success")
 
         self.log("Finished, exiting main runtime")
 

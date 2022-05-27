@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 import click
+from loguru import logger
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
@@ -37,8 +38,24 @@ def lightcurve(ctx):
 )
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
-@click.option("--ingest/--plan", is_flag=True, default=True)
-def ingest_dir(ctx, paths, n_processes, recursive, ingest):
+@click.option(
+    "--tic-catalog-template",
+    type=str,
+    default=DirectoryPlan.DEFAULT_TIC_CATALOG_TEMPLATE,
+)
+@click.option(
+    "--quality-flag-template",
+    type=str,
+    default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+)
+def ingest_dir(
+    ctx,
+    paths,
+    n_processes,
+    recursive,
+    tic_catalog_template,
+    quality_flag_template,
+):
     with tempfile.TemporaryDirectory() as tempdir:
         cache_path = Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
@@ -47,23 +64,29 @@ def ingest_dir(ctx, paths, n_processes, recursive, ingest):
             contexts.populate_tjd_mapping(cache_path, db)
 
             directories = [Path(path) for path in paths]
+            for directory in directories:
+                click.echo(f"Considering {directory}")
+
             plan = DirectoryPlan(directories, db, recursive=recursive)
             jobs = plan.get_jobs()
 
-            for catalog in plan.yield_needed_tic_catalogs():
+            for catalog in plan.yield_needed_tic_catalogs(
+                path_template=tic_catalog_template
+            ):
+                logger.debug(f"Requiring catalog {catalog}")
                 contexts.populate_tic_catalog(cache_path, catalog)
 
-            for args in plan.yield_needed_quality_flags():
+            for args in plan.yield_needed_quality_flags(
+                path_template=quality_flag_template
+            ):
+                logger.debug(r"Requiring qualit flags {args}")
                 contexts.populate_quality_flags(cache_path, *args)
 
-        if ingest:
-            ingest_merge_jobs(
-                ctx.obj["dbconf"],
-                jobs,
-                n_processes,
-                cache_path,
-                log_level=ctx.obj["log_level"],
-            )
-            click.echo("Done!")
-        else:
-            click.echo(plan)
+        ingest_merge_jobs(
+            ctx.obj["dbconf"],
+            jobs,
+            n_processes,
+            cache_path,
+            log_level=ctx.obj["log_level"],
+        )
+        click.echo("Done!")

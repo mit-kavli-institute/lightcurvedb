@@ -1,13 +1,15 @@
-import pytest
 import pathlib
 import tempfile
+
+import pytest
 from click.testing import CliRunner
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import DBAPIError
-from functools import wraps
+from sqlalchemy.orm import sessionmaker
+
 from lightcurvedb import core
 from lightcurvedb.core.connection import DB
 from lightcurvedb.core.engines import engine_from_config
+
 from .constants import CONFIG_PATH
 
 
@@ -23,7 +25,7 @@ class __TEST_DB__(DB):
     def flush(self, *args, **kwargs):
         try:
             return self.session.flush(*args, **kwargs)
-        except:
+        except Exception:
             self.session.rollback()
             raise
 
@@ -31,11 +33,9 @@ class __TEST_DB__(DB):
         try:
             val = super().add(*args, **kwargs)
             return val
-        except:
+        except Exception:
             self.session.rollback()
             raise
-
-
 
 
 @pytest.fixture(scope="module")
@@ -66,6 +66,6 @@ def tempdir():
 
 @pytest.fixture(scope="module")
 def clirunner():
-    runner = CliRunner()
+    runner = CliRunner(mix_stderr=True)
 
     return runner

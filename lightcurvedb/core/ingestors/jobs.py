@@ -121,7 +121,7 @@ def _get_or_create_lightcurve_id(
     try:
         id_ = id_map[key]
     except KeyError:
-        logger.trace(f"Need new id for {tic_id}")
+        logger.debug(f"Need new id for {tic_id}: {aperture} {lightcurve_type}")
         lc = Lightcurve(
             tic_id=tic_id,
             aperture_id=aperture,
@@ -130,6 +130,7 @@ def _get_or_create_lightcurve_id(
         db.add(lc)
         db.commit()
         id_ = lc.id
+        logger.debug(f"{tic_id}: {aperture} {lightcurve_type} assigned {id_}")
 
     return id_
 
@@ -144,7 +145,7 @@ def _get_smjs_from_paths(db, contexts):
     tic_ids = set(_tic_from_h5(context["path"]) for context in contexts)
     id_map = {}
 
-    temp = TempTable(db, "tic_ids")
+    temp = TempTable(db, "temp_tic_ids")
     temp.add_column("tic_id", "bigint", primary_key=True)
     with temp:
         temp.insert_many(tic_ids, scalar=True)
@@ -191,6 +192,20 @@ def _get_smjs_from_paths(db, contexts):
 class DirectoryPlan:
     files = None
     jobs = None
+
+    DEFAULT_TIC_CATALOG_TEMPLATE = (
+        "/pdo/qlp-data/"
+        "orbit-{orbit_number}/"
+        "ffi/run/"
+        "catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+    )
+
+    DEFAULT_QUALITY_FLAG_TEMPLATE = (
+        "/pdo/qlp-data/"
+        "orbit-{orbit_number}/"
+        "ffi/run/"
+        "cam{camera}ccd{ccd}_qflag.txt"
+    )
 
     def __init__(
         self,
@@ -281,7 +296,7 @@ class DirectoryPlan:
     def _get_unique_observed(self):
         unique_observed = set()
         for job in self.get_jobs():
-            key = (job.unique_orbit_number, job.camera, job.ccd)
+            key = (job.orbit_number, job.camera, job.ccd)
             unique_observed.add(key)
         return unique_observed
 
@@ -290,12 +305,7 @@ class DirectoryPlan:
 
     def yield_needed_tic_catalogs(self, path_template=None):
         if path_template is None:
-            path_template = pathlib.Path(
-                "/pdo/qlp-data/"
-                "orbit-{orbit_number}/"
-                "ffi/run/"
-                "catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-            )
+            path_template = self.DEFAULT_TIC_CATALOG_TEMPLATE
 
         for orbit_number, camera, ccd in self._get_unique_observed():
             expected_path = path_template.format(
@@ -305,12 +315,7 @@ class DirectoryPlan:
 
     def yield_needed_quality_flags(self, path_template=None):
         if path_template is None:
-            path_template = pathlib.Path(
-                "/pdo/qlp-data/"
-                "orbit-{orbit_number}/"
-                "ffi/run/"
-                "cam{camera}ccd{ccd}_qflag.txt"
-            )
+            path_template = self.DEFAULT_QUALITY_FLAG_TEMPLATE
         for orbit_number, camera, ccd in self._get_unique_observed():
             expected_path = path_template.format(
                 orbit_number=orbit_number, camera=camera, ccd=ccd
