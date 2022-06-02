@@ -88,7 +88,7 @@ class BufferedDatabaseIngestor(Process):
                 break
             except Exception:
                 self.log(
-                    "Unhandled exeception, cowardly exiting...",
+                    "Unhandled exception, cowardly exiting...",
                     level="exception",
                 )
                 break
