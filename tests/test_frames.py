@@ -69,7 +69,7 @@ def test_frame_ingestion(database, frame_type, data):
         assert q == frames[0].orbit.id
 
 
-@settings(deadline=None)
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(orm.database(), st.data())
 def test_new_orbit_cli(clirunner, database, data):
     # Simulate new frames
