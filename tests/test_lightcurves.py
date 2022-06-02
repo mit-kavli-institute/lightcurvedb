@@ -86,7 +86,7 @@ def test_corrector_instantiation(database, data):
             )
             cache_path = pathlib.Path(tempdir, "db.sqlite3")
             contexts.make_shared_context(cache_path)
-            contexts.populate_ephemris(cache_path, db)
+            contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
             plan = DirectoryPlan([directory], db)
@@ -118,7 +118,7 @@ def test_corrector_instantiation(database, data):
             db.query(models.LightcurveType).delete(**opt)
             db.query(models.Aperture).delete(**opt)
             db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemris).delete(**opt)
+            db.query(models.SpacecraftEphemeris).delete(**opt)
             db.commit()
 
 
@@ -141,7 +141,7 @@ def test_ingestor_instantiation(database, data):
             )
             cache_path = pathlib.Path(tempdir, "db.sqlite3")
             contexts.make_shared_context(cache_path)
-            contexts.populate_ephemris(cache_path, db)
+            contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
             plan = DirectoryPlan([directory], db)
@@ -176,7 +176,7 @@ def test_ingestor_instantiation(database, data):
             db.query(models.LightcurveType).delete(**opt)
             db.query(models.Aperture).delete(**opt)
             db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemris).delete(**opt)
+            db.query(models.SpacecraftEphemeris).delete(**opt)
             db.commit()
 
 
@@ -201,7 +201,7 @@ def test_ingestor_processing(database, data):
                 frame_type = db.query(models.FrameType).first().name
                 cache_path = pathlib.Path(tempdir, "db.sqlite3")
                 contexts.make_shared_context(cache_path)
-                contexts.populate_ephemris(cache_path, db)
+                contexts.populate_ephemeris(cache_path, db)
                 contexts.populate_tjd_mapping(
                     cache_path, db, frame_type=frame_type
                 )
@@ -257,5 +257,5 @@ def test_ingestor_processing(database, data):
             db.query(models.LightcurveType).delete(**opt)
             db.query(models.Aperture).delete(**opt)
             db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemris).delete(**opt)
+            db.query(models.SpacecraftEphemeris).delete(**opt)
             db.commit()

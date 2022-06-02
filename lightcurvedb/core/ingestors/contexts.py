@@ -15,7 +15,7 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 
-from lightcurvedb.models import Frame, SpacecraftEphemris
+from lightcurvedb.models import Frame, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
 
 
@@ -160,8 +160,8 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
 
 
 @with_sqlite
-def populate_ephemris(conn, db):
-    """Populate the cache with spacecraft ephemris data.
+def populate_ephemeris(conn, db):
+    """Populate the cache with spacecraft ephemeris data.
 
     This method also requires a postgresql connection and will only
     represent a static snapshot of the state of the database during
@@ -170,17 +170,17 @@ def populate_ephemris(conn, db):
     Parameters
     ----------
     conn: pathlike
-        A path to a sqlite3 database to push ephemris data to.
+        A path to a sqlite3 database to push ephemeris data to.
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
     with conn:
         q = db.query(
-            SpacecraftEphemris.barycentric_dynamical_time,
-            SpacecraftEphemris.x,
-            SpacecraftEphemris.y,
-            SpacecraftEphemris.z,
-        ).order_by(SpacecraftEphemris.barycentric_dynamical_time)
+            SpacecraftEphemeris.barycentric_dynamical_time,
+            SpacecraftEphemeris.x,
+            SpacecraftEphemeris.y,
+            SpacecraftEphemeris.z,
+        ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
         conn.executemany(
             "INSERT INTO spacecraft_pos(bjd, x, y, z) VALUES (?, ?, ?, ?)",
             q,
@@ -198,7 +198,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     Parameters
     ----------
     conn: pathlike
-        A path to a sqlite3 database to push ephemris data to.
+        A path to a sqlite3 database to push ephemeris data to.
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
@@ -381,14 +381,14 @@ def get_quality_flag_mapping(conn):
 
 @with_sqlite
 def get_spacecraft_data(conn, col):
-    """Create a numpy array of values from spacecraft ephemris data.
+    """Create a numpy array of values from spacecraft ephemeris data.
     The data is ordered by their corresponding barycentric julian date
     (ascending).
 
     Parameters
     ----------
     conn: pathlike
-        The path to a sqlite3 database to read ephemris data from.
+        The path to a sqlite3 database to read ephemeris data from.
     col: str
         The column to retrieve.
 

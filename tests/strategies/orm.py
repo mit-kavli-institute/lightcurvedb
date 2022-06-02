@@ -146,10 +146,10 @@ def camera_quaternions(draw):
 
 
 @st.composite
-def spacecraft_ephemris(draw, **overrides):
+def spacecraft_ephemeris(draw, **overrides):
     return draw(
         st.builds(
-            models.SpacecraftEphemris,
+            models.SpacecraftEphemeris,
             barycentric_dynamical_time=overrides.get(
                 "barycentric_dynamical_time", tess_st.tjds()
             ),

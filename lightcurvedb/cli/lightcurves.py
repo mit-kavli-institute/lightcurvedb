@@ -60,7 +60,7 @@ def ingest_dir(
         cache_path = Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
         with ctx.obj["dbconf"] as db:
-            contexts.populate_ephemris(cache_path, db)
+            contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
             directories = [Path(path) for path in paths]

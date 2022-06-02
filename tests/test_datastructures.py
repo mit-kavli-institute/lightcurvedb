@@ -96,7 +96,7 @@ def test_quality_flag_np(data):
 @given(
     orm_st.database(),
     st.lists(
-        orm_st.spacecraft_ephemris(),
+        orm_st.spacecraft_ephemeris(),
         min_size=1,
         unique_by=lambda eph: eph.barycentric_dynamical_time,
     ),
@@ -109,7 +109,7 @@ def test_spacecraft_eph_cache(database, eph_list):
         db.flush()
 
         ctx.make_shared_context(db_path)
-        ctx.populate_ephemris(db_path, db)
+        ctx.populate_ephemeris(db_path, db)
 
         ref_eph = sorted(
             eph_list, key=lambda eph: eph.barycentric_dynamical_time

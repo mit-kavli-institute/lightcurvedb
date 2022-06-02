@@ -5,7 +5,7 @@ from lightcurvedb.core.base_model import QLPReference
 from lightcurvedb.core.fields import high_precision_column
 
 
-class SpacecraftEphemris(QLPReference):
+class SpacecraftEphemeris(QLPReference):
     __tablename__ = "spacecraftephemeris"
 
     barycentric_dynamical_time = Column(Float, primary_key=True)

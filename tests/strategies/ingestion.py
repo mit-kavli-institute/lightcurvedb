@@ -525,10 +525,12 @@ def simulate_lightcurve_ingestion_environment(
 
     eph = [
         data.draw(
-            orm_st.spacecraft_ephemris(barycentric_dynamical_time=st.just(0.0))
+            orm_st.spacecraft_ephemeris(
+                barycentric_dynamical_time=st.just(0.0)
+            )
         ),
         data.draw(
-            orm_st.spacecraft_ephemris(
+            orm_st.spacecraft_ephemeris(
                 barycentric_dynamical_time=st.just(2457000 + cur_end_tjd)
             )
         ),
