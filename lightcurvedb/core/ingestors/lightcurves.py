@@ -7,8 +7,6 @@ from h5py import File as H5File
 from sqlalchemy import text
 
 from lightcurvedb.core.connection import db_from_config
-from lightcurvedb.core.ingestors.cache import IngestionCache
-from lightcurvedb.core.ingestors.temp_table import QualityFlags
 from lightcurvedb.models import Frame, Lightcurve
 from lightcurvedb.util.decorators import track_runtime
 
@@ -39,21 +37,6 @@ def get_components(path):
         "camera": int(components["camera"]),
         "ccd": int(components["ccd"]),
     }
-
-
-@lru_cache(maxsize=32)
-def get_qflags(min_cadence, max_cadence, camera, ccd):
-    with IngestionCache() as cache:
-        q = cache.query(
-            QualityFlags.cadence, QualityFlags.quality_flag
-        ).filter(
-            QualityFlags.cadence.between(int(min_cadence), int(max_cadence)),
-            QualityFlags.camera == camera,
-            QualityFlags.ccd == ccd,
-        )
-        return pd.read_sql(
-            q.statement, cache.session.bind, index_col=["cadence"]
-        )
 
 
 @lru_cache(maxsize=32)
@@ -153,22 +136,6 @@ def job_to_numpy(single_merge_job):
         single_merge_job.lightcurve_type,
         single_merge_job.file_path,
     )
-
-
-def get_correct_qflags(merge_job, cadences):
-    """
-    Grab the user-assigned quality flags from cache usiing a single merge job
-    as a filter as well as a list of reference cadences.
-
-    Returns
-    -------
-    np.ndarray
-        A numpy array of quality flag integers in order of the provided
-        cadences.
-    """
-    min_c, max_c = min(cadences), max(cadences)
-    qflag_df = get_qflags(min_c, max_c, merge_job.camera, merge_job.ccd)
-    return qflag_df.loc[list(cadences)]["quality_flag"].to_numpy()
 
 
 def get_tjd(merge_job, cadences, config_override=None):
