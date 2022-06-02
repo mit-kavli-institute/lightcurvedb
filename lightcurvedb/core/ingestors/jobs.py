@@ -6,7 +6,7 @@ from click import echo
 from loguru import logger
 from tqdm import tqdm
 
-from lightcurvedb.experimental.temp_table import TempTable
+from lightcurvedb.io.temp_table import TempTable
 from lightcurvedb.models import (
     Aperture,
     Lightcurve,
