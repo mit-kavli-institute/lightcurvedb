@@ -3,7 +3,7 @@ import tempfile
 from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
 
-from lightcurvedb.core.ingestors.camera_quaternion import ingest_quat_file
+from lightcurvedb.core.ingestors.camera_quaternions import ingest_quat_file
 from lightcurvedb.models.camera_quaternion import (
     CameraQuaternion,
     get_utc_time,

@@ -385,7 +385,9 @@ def simulate_tic_catalog(data, directory):
             tess_st.tic_parameters(), unique_by=lambda param: param["tic_id"]
         )
     )
-    catalog_path = _write_tic_catalog(directory / pathlib.Path(filename))
+    catalog_path = _write_tic_catalog(
+        directory / pathlib.Path(filename), tic_parameters
+    )
     return catalog_path, tic_parameters
 
 
@@ -416,7 +418,7 @@ def simulate_quality_flag_file(data, directory, **overrides):
     filename = pathlib.Path(f"cam{camera}ccd{ccd}_qflag.txt")
 
     quality_flag_path = _write_quality_flag_file(
-        quality_flags, directory / filename
+        directory / filename, quality_flags
     )
 
     return quality_flag_path, camera, ccd, quality_flags

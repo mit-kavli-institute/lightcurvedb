@@ -89,6 +89,6 @@ def ingest_quat_file(db, filepath):
     db.flush()
 
 
-def ingest_directory(db, directory):
-    for quat_file in directory.glob("*quat.txt"):
+def ingest_directory(db, directory, extension):
+    for quat_file in directory.glob(extension):
         ingest_quat_file(db, quat_file)

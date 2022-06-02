@@ -38,7 +38,7 @@ def ingest_frames(
         for orbit_directory in ingest_directories:
             # Ingest Camera Quaternion Files
             camera_quaternions.ingest_directory(
-                db, orbit_directory / quaternion_subdir
+                db, orbit_directory / quaternion_subdir, "*quat.txt"
             )
 
             # Ingest FITS frames
