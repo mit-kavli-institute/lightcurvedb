@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from astropy.io import fits
+from psycopg2 import extensions as ext
 from sqlalchemy import (
     Boolean,
     Column,
@@ -12,13 +14,11 @@ from sqlalchemy import (
     SmallInteger,
     String,
 )
-from pathlib import Path
 from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
-from psycopg2 import extensions as ext
 
 from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
@@ -170,7 +170,11 @@ class Frame(QLPDataProduct):
         -------
         >>> with db:
             # Get Frames with a 30 minute cadence type
-            q = db.query(Frame).filter(Frame.cadence_type_in_minutes(clamp=True) == 30)
+            q = (
+                db
+                .query(Frame)
+                .filter(Frame.cadence_type_in_minutes(clamp=True) == 30)
+            )
             print(q.all())
         """
         param = cls.cadence_type / 60
