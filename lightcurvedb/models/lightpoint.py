@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from sqlalchemy import (
     BigInteger,
@@ -54,6 +55,11 @@ LIGHTPOINT_NP_DTYPES = {
     "y_centroid": "float64",
     "quality_flag": "uint16",
 }
+
+
+def get_lightpoint_dtypes(*fields):
+    types = list((field, LIGHTPOINT_NP_DTYPES[field]) for field in fields)
+    return np.dtype(types)
 
 
 class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):

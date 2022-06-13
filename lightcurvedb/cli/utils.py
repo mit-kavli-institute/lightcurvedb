@@ -1,4 +1,5 @@
 import os
+import pathlib
 from glob import glob
 from itertools import groupby, product
 
@@ -121,3 +122,19 @@ def tabulate_query(q, **tabulate_kwargs):
 
     column_names = [c["name"] for c in query_info]
     return tabulate(results, headers=column_names, **tabulate_kwargs)
+
+
+def directory(exists=True):
+    """
+    A quick alias to click.Path to enforce pathlib usage, Restricted to
+    allow only directories
+    """
+    return click.Path(file_okay=False, exists=exists, path_type=pathlib.Path)
+
+
+def file(exists=True):
+    """
+    A quick alias to click.Path to enforce pathlib usage, Restricted to
+    allow only files
+    """
+    return click.Path(dir_okay=False, exists=exists, path_type=pathlib.Path)

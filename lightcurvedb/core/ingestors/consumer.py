@@ -26,6 +26,9 @@ class BufferedDatabaseIngestor(Process):
         full_msg = f"{self.name} {msg}"
         getattr(logger, level, logger.debug)(full_msg)
 
+    def _create_db(self):
+        self.db = db_from_config(self.db_config)
+
     def _load_contexts(self):
         return
 
@@ -47,6 +50,7 @@ class BufferedDatabaseIngestor(Process):
     def flush(self, db):
         self._preflush(db)
         metrics = []
+
         for buffer_key in self.buffer_order:
             method_name = f"flush_{buffer_key}"
             flush_method = getattr(self, method_name)
@@ -59,6 +63,7 @@ class BufferedDatabaseIngestor(Process):
         # Emplace metrics
         for metric in metrics:
             db.add(metric)
+
         db.commit()
 
         # Clear buffers
@@ -69,10 +74,8 @@ class BufferedDatabaseIngestor(Process):
 
     def run(self):
         self.log("Entering main runtime")
-        self.db = db_from_config(self.db_config)
+        self._create_db()
         self._load_contexts()
-        job = self.job_queue.get()
-        self._execute_job(job)
         while not self.job_queue.empty():
             try:
                 job = self.job_queue.get(timeout=10)
@@ -83,11 +86,20 @@ class BufferedDatabaseIngestor(Process):
             except KeyboardInterrupt:
                 self.log("Received keyboard interrupt")
                 break
+            except Exception:
+                self.log(
+                    "Unhandled exception, cowardly exiting...",
+                    level="exception",
+                )
+                break
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")
             with self.db as db:
                 self.flush(db)
+
+        if self.job_queue.empty():
+            self.log("Successfully finished all jobs", level="success")
 
         self.log("Finished, exiting main runtime")
 

@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from astropy.io import fits
+from psycopg2 import extensions as ext
 from sqlalchemy import (
     Boolean,
     Column,
@@ -13,13 +15,14 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy.ext.associationproxy import association_proxy
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
 from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
 from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.core.sql import psql_safe_str
 
 FRAME_DTYPE = [
     ("cadence", np.int64),
@@ -30,6 +33,13 @@ FRAME_DTYPE = [
     ("exp_time", np.float64),
     ("quality_bit", np.int32),
 ]
+
+
+def adapt_pathlib(path):
+    return ext.QuotedString(str(path))
+
+
+ext.register_adapter(Path, adapt_pathlib)
 
 
 class FrameType(QLPDataSubType):
@@ -98,7 +108,7 @@ class Frame(QLPDataProduct):
 
     quality_bit = Column(Boolean, nullable=False)
 
-    file_path = Column(String, nullable=False, unique=True)
+    _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
     orbit_id = Column(
@@ -160,7 +170,11 @@ class Frame(QLPDataProduct):
         -------
         >>> with db:
             # Get Frames with a 30 minute cadence type
-            q = db.query(Frame).filter(Frame.cadence_type_in_minutes(clamp=True) == 30)
+            q = (
+                db
+                .query(Frame)
+                .filter(Frame.cadence_type_in_minutes(clamp=True) == 30)
+            )
             print(q.all())
         """
         param = cls.cadence_type / 60
@@ -208,6 +222,18 @@ class Frame(QLPDataProduct):
             print("===LOADED HEADER===")
             print(repr(header))
             raise
+
+    @hybrid_property
+    def file_path(self):
+        return self._file_path
+
+    @file_path.setter
+    def file_path(self, value):
+        self._file_path = psql_safe_str(value)
+
+    @file_path.expression
+    def file_path(cls):
+        return cls._file_path
 
     @property
     def data(self):

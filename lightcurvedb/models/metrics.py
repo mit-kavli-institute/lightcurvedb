@@ -99,6 +99,11 @@ class QLPProcess(QLPMetric):
             f"Cannot assign completion date as it already exists for {self}"
         )
 
+    @classmethod
+    def current_version(cls):
+        from lightcurvedb import __version__
+        return cls.lcdb_version == __version__
+
 
 class QLPOperation(QLPMetric):
     """

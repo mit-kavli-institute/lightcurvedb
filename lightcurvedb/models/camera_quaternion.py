@@ -130,7 +130,7 @@ class CameraQuaternion(QLPReference):
 
     @hybrid_property
     def z(self):
-        return self._x
+        return self._z
 
     # Begin extended conversions handled by pyquaternions
     @hybrid_property
@@ -148,6 +148,22 @@ class CameraQuaternion(QLPReference):
     @hybrid_property
     def q4(self):
         return self.z
+
+    @q1.setter
+    def q1(self, value):
+        self._w = value
+
+    @q2.setter
+    def q2(self, value):
+        self._x = value
+
+    @q3.setter
+    def q3(self, value):
+        self._y = value
+
+    @q4.setter
+    def q4(self, value):
+        self._z = value
 
     @hybrid_property
     def gps_time(self):

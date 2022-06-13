@@ -12,6 +12,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.sql import psql_safe_str
 
 
 class Aperture(QLPReference):
@@ -48,7 +49,7 @@ class Aperture(QLPReference):
 
     # Model Attributes
     id = Column(SmallInteger)
-    name = Column(String(64), primary_key=True)
+    _name = Column("name", String(64), primary_key=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)
     outer_radius = Column(Numeric, nullable=False)
@@ -79,6 +80,18 @@ class Aperture(QLPReference):
     @hybrid_property
     def outer_r(self):
         return self.outer_radius
+
+    @hybrid_property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = psql_safe_str(value)
+
+    @name.expression
+    def name(cls):
+        return cls._name
 
     @hybrid_property
     def id(self):

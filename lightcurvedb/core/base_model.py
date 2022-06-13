@@ -9,6 +9,7 @@ from sqlalchemy.sql import func
 
 from lightcurvedb.core.admin import get_psql_catalog_tables
 from lightcurvedb.core.psql_tables import PGClass
+from lightcurvedb.core.sql import psql_safe_str
 
 
 @as_declarative()
@@ -118,13 +119,41 @@ class QLPDataSubType(QLPModel):
 
     __abstract__ = True
 
-    name = Column(String(64), primary_key=True, nullable=False)
-    description = Column(String)
+    _name = Column("name", String(64), primary_key=True, nullable=False)
+    _description = Column("description", String)
     created_on = Column(DateTime, server_default=func.now())
 
-    @property
+    @hybrid_property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = psql_safe_str(value)
+
+    @name.expression
+    def name(cls):
+        return cls._name
+
+    @hybrid_property
+    def description(self):
+        return self._description
+
+    @description.setter
+    def description(self, value):
+        self._description = psql_safe_str(value)
+
+    @description.expression
+    def description(cls):
+        return cls._description
+
+    @hybrid_property
     def id(self):
         return self.name
+
+    @id.expression
+    def id(cls):
+        return cls.name
 
 
 class QLPReference(QLPModel):

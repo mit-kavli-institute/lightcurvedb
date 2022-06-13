@@ -6,7 +6,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from lightcurvedb.cli.base import lcdbcli
-from lightcurvedb.core.ingestors.frame_ingestor import from_fits
+from lightcurvedb.core.ingestors.frames import from_fits
 from lightcurvedb.models import Orbit
 from lightcurvedb.models.frame import Frame, FrameType
 from lightcurvedb.util.contexts import extract_pdo_path_context

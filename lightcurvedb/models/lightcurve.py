@@ -66,7 +66,7 @@ class LightcurveType(QLPDataSubType):
         return self.name
 
     def __repr__(self):
-        return "<Lightcurve Type {0} >".format(self.name)
+        return f"<Lightcurve Type '{self.name}'>"
 
 
 class LightcurveFrameMap(QLPModel):

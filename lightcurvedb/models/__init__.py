@@ -8,7 +8,7 @@ from .lightpoint import Lightpoint
 from .metrics import QLPOperation, QLPProcess, QLPStage
 from .observations import Observation
 from .orbit import Orbit
-from .spacecraft import SpacecraftEphemris
+from .spacecraft import SpacecraftEphemeris
 
 __all__ = [
     "Aperture",
@@ -23,7 +23,7 @@ __all__ = [
     "LightcurveType",
     "Lightpoint",
     "Observation",
-    "SpacecraftEphemris",
+    "SpacecraftEphemeris",
     "QLPStage",
     "QLPProcess",
     "QLPOperation",
