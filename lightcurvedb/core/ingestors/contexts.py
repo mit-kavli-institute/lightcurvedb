@@ -104,7 +104,7 @@ def _iter_quality_flags(quality_flag_path, *constants):
     with open(quality_flag_path, "rt") as fin:
         for line in fin:
             cadence, quality_flag = line.strip().split()
-            yield int(cadence), int(quality_flag), *constants
+            yield int(float(cadence)), int(float(quality_flag)), *constants
 
 
 @with_sqlite
@@ -127,7 +127,7 @@ def populate_tic_catalog(conn, catalog_path, chunksize=1024):
     with conn:
         for chunk in chunkify(_iter_tic_catalog(catalog_path), chunksize):
             conn.executemany(
-                "INSERT INTO tic_parameters("
+                "INSERT OR IGNORE INTO tic_parameters("
                 " tic_id, ra, dec, tmag, pmra, pmdec, jmag, kmag, vmag"
                 ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 chunk,
