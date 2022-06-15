@@ -265,7 +265,7 @@ class SamplingLightpointIngestor(BaseLightpointIngestor):
 
 class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
     max_exponent = 24
-    min_exponent = 9
+    min_exponent = 11
 
     def determine_process_parameters(self):
         # Force to python int, np.int64 is not JSON compatible

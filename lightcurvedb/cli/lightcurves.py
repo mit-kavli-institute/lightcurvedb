@@ -79,7 +79,7 @@ def ingest_dir(
             for args in plan.yield_needed_quality_flags(
                 path_template=quality_flag_template
             ):
-                logger.debug(r"Requiring qualit flags {args}")
+                logger.debug(f"Requiring quality flags {args}")
                 contexts.populate_quality_flags(cache_path, *args)
 
         ingest_merge_jobs(
