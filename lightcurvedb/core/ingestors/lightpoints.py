@@ -7,6 +7,7 @@ from time import sleep
 
 import numpy as np
 from click import echo
+from h5py import File as H5File
 from loguru import logger
 from pgcopy import CopyManager
 from sqlalchemy import Integer, func
@@ -18,7 +19,12 @@ from tqdm import tqdm
 from lightcurvedb import db_from_config
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
-from lightcurvedb.core.ingestors.lightcurves import get_components, h5_to_numpy
+from lightcurvedb.core.ingestors.lightcurves import (
+    bjd_from_h5_fd,
+    cadences_from_h5_fd,
+    get_components,
+    h5_fd_to_numpy,
+)
 from lightcurvedb.models import Lightpoint, Observation, Orbit
 from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
 
@@ -66,24 +72,15 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         if self.should_refresh_parameters:
             self.set_new_parameters(db)
 
-    def process_h5(self, id_, aperture, lightcurve_type, h5path):
-        self.log(f"Processing {h5path}", level="trace")
-        lightcurve = h5_to_numpy(id_, aperture, lightcurve_type, h5path)
-        context = get_components(h5path)
-        tic_id, camera, ccd = (
-            int(context["tic_id"]),
-            int(context["camera"]),
-            int(context["ccd"]),
-        )
+    def read_lightcurve(
+        self, id_, aperture, lightcurve_type, quality_flags, context, h5
+    ):
+        lightcurve = h5_fd_to_numpy(id_, aperture, lightcurve_type, h5)
+        tic_id = int(context["tic_id"])
 
-        cadences = lightcurve["cadence"]
         magnitudes = lightcurve["data"]
 
-        # Time correct the lightcurve and perform
-        # tmag-alignment and qflag assignment
-        quality_flags = self.corrector.get_quality_flags(camera, ccd, cadences)
-        mid_tjd = self.corrector.get_mid_tjd(camera, cadences)
-        bjd = self.corrector.correct_for_earth_time(tic_id, mid_tjd)
+        # tmag-alignment
         mag_offset = self.corrector.get_magnitude_alignment_offset(
             tic_id, magnitudes, quality_flags
         )
@@ -96,43 +93,66 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             )
         aligned_mag = magnitudes - mag_offset
 
-        lightcurve["quality_flag"] = quality_flags
-        lightcurve["barycentric_julian_date"] = bjd[0]
         lightcurve["data"] = aligned_mag
         return lightcurve
 
-    def process_job(self, smj):
-        orbit_number = smj.orbit_number
-        lightcurve_id = smj.lightcurve_id
+    def process_job(self, h5_job):
+        self.log(f"Processing {h5_job.file_path}", level="trace")
+        context = get_components(h5_job.file_path)
+        with H5File(h5_job.file_path, "r") as h5:
+            cadences = cadences_from_h5_fd(h5)
+            bjd = bjd_from_h5_fd(h5)
+            tic_id, camera, ccd = (
+                int(context["tic_id"]),
+                int(context["camera"]),
+                int(context["ccd"]),
+            )
+            mid_tjd = self.corrector.get_mid_tjd(camera, cadences)
+            bjd = self.corrector.correct_for_earth_time(tic_id, mid_tjd)
+            quality_flags = self.corrector.get_quality_flags(
+                camera, ccd, cadences
+            )
 
-        if (lightcurve_id, orbit_number) in self.seen_cache:
-            self.log("Ignoring duplicate job")
-            return None
+            for smj in h5_job.single_merge_jobs:
+                orbit_number = smj.orbit_number
+                lightcurve_id = smj.lightcurve_id
+                if (lightcurve_id, orbit_number) in self.seen_cache:
+                    self.log("Ignoring duplicate job")
+                    return None
 
-        try:
-            lightpoint_array = self.process_h5(
-                smj.lightcurve_id,
-                smj.aperture,
-                smj.lightcurve_type,
-                smj.file_path,
-            )
-            observation = (
-                smj.lightcurve_id,
-                self.orbit_map[smj.orbit_number],
-                smj.camera,
-                smj.ccd,
-            )
-            self.buffers["lightpoints"].append(lightpoint_array)
-            self.buffers["observations"].append(observation)
-        except OSError as e:
-            self.log(f"Unable to open {smj.file_path}: {e}", level="exception")
-        except ValueError as e:
-            self.log(
-                f"Unable to process {smj.file_path}: {e}", level="exception"
-            )
-        finally:
-            self.seen_cache.add((lightcurve_id, orbit_number))
-            self.job_queue.task_done()
+                try:
+                    lightpoint_array = self.read_lightcurve(
+                        smj.lightcurve_id,
+                        smj.aperture,
+                        smj.lightcurve_type,
+                        quality_flags,
+                        context,
+                        h5,
+                    )
+                    lightpoint_array["barycentric_julian_date"] = bjd[0]
+                    lightpoint_array["quality_flag"] = quality_flags
+                    observation = (
+                        smj.lightcurve_id,
+                        self.orbit_map[smj.orbit_number],
+                        smj.camera,
+                        smj.ccd,
+                    )
+                    self.buffers["lightpoints"].append(lightpoint_array)
+                    self.buffers["observations"].append(observation)
+                except OSError as e:
+                    self.log(
+                        f"Unable to open {smj.file_path}: {e}",
+                        level="exception",
+                    )
+                except ValueError as e:
+                    self.log(
+                        f"Unable to process {smj.file_path}: {e}",
+                        level="exception",
+                    )
+                finally:
+                    self.seen_cache.add((lightcurve_id, orbit_number))
+
+        self.job_queue.task_done()
 
     def flush_lightpoints(self, db):
         lps = self.buffers.get("lightpoints")
@@ -269,7 +289,17 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
     def determine_process_parameters(self):
         # Force to python int, np.int64 is not JSON compatible
-        job_size_log2 = cast(func.log(2, QLPOperation.job_size), Integer)
+        job_size_log2 = cast(
+            func.log(
+                2,
+                (
+                    QLPProcess.runtime_parameters["lp_buffer_threshold"].cast(
+                        Integer
+                    )
+                ),
+            ),
+            Integer,
+        )
 
         q = (
             self.db.query(job_size_log2, func.Count(QLPOperation.id))
@@ -315,7 +345,8 @@ def ingest_merge_jobs(
 
     for job in tqdm(jobs, unit=" jobs"):
         job_queue.put(job)
-        distinct_run_setups.add((job.orbit_number, job.camera, job.ccd))
+        for smj in job.single_merge_jobs:
+            distinct_run_setups.add((smj.orbit_number, smj.camera, smj.ccd))
 
     with db:
         echo("Grabbing introspective processing tracker")
