@@ -415,7 +415,7 @@ class Lightcurve(QLPDataProduct):
             session = inspect(self).session
             q = (
                 session.query(*(getattr(Lightpoint, col) for col in cols))
-                .filter(Lightpoint.lightcurve_id.in_((self.id, -1)))
+                .filter(Lightpoint.lightcurve_id == self.id)
                 .distinct(Lightpoint.lightcurve_id, Lightpoint.cadence)
                 .order_by(Lightpoint.cadence)
             )
