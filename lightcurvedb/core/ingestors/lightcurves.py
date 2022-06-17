@@ -99,34 +99,48 @@ LP_DTYPE = np.dtype(
 )
 
 
+def cadences_from_h5_fd(h5):
+    cadences = h5["LightCurve"]["Cadence"][()].astype(int)
+    return cadences
+
+
+def bjd_from_h5_fd(h5):
+    bjd = h5["LightCurve"]["BJD"][()]
+    return bjd
+
+
+def h5_fd_to_numpy(lightcurve_id, aperture, type_, h5):
+    lc = h5["LightCurve"]
+    cadences = cadences_from_h5_fd(h5)
+
+    arr = np.empty(len(cadences), dtype=LP_DTYPE)
+    arr["lightcurve_id"] = np.full_like(
+        cadences, lightcurve_id, dtype=np.dtype("u8")
+    )
+    arr["cadence"] = cadences
+    arr["barycentric_julian_date"] = bjd_from_h5_fd(h5)
+
+    if type_ == "Background":
+        arr["x_centroid"] = lc["X"][()]
+        arr["y_centroid"] = lc["Y"][()]
+        lc = lc["Background"]
+        arr["data"] = lc["Value"][()]
+        arr["error"] = lc["Error"][()]
+    else:
+        lc = lc["AperturePhotometry"][aperture]
+        arr["x_centroid"] = lc["X"][()]
+        arr["y_centroid"] = lc["Y"][()]
+        arr["data"] = lc[type_][()]
+        try:
+            arr["error"] = lc[f"{type_}Error"][()]
+        except KeyError:
+            arr["error"] = np.full_like(cadences, np.nan, dtype=np.double)
+    return arr
+
+
 def h5_to_numpy(lightcurve_id, aperture, type_, filepath):
     with H5File(filepath, "r") as h5:
-        lc = h5["LightCurve"]
-        cadences = lc["Cadence"][()].astype(int)
-
-        arr = np.empty(len(cadences), dtype=LP_DTYPE)
-        arr["lightcurve_id"] = np.full_like(
-            cadences, lightcurve_id, dtype=np.dtype("u8")
-        )
-        arr["cadence"] = cadences
-        arr["barycentric_julian_date"] = lc["BJD"][()]
-
-        if type_ == "Background":
-            arr["x_centroid"] = lc["X"][()]
-            arr["y_centroid"] = lc["Y"][()]
-            lc = lc["Background"]
-            arr["data"] = lc["Value"][()]
-            arr["error"] = lc["Error"][()]
-        else:
-            lc = lc["AperturePhotometry"][aperture]
-            arr["x_centroid"] = lc["X"][()]
-            arr["y_centroid"] = lc["Y"][()]
-            arr["data"] = lc[type_][()]
-            try:
-                arr["error"] = lc[f"{type_}Error"][()]
-            except KeyError:
-                arr["error"] = np.full_like(cadences, np.nan, dtype=np.double)
-    return arr
+        return h5_fd_to_numpy(lightcurve_id, aperture, type_, h5)
 
 
 def job_to_numpy(single_merge_job):

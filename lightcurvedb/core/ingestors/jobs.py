@@ -1,5 +1,5 @@
 import pathlib
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from itertools import product
 
 from click import echo
@@ -28,6 +28,16 @@ SingleMergeJob = namedtuple(
         "camera",
         "ccd",
         "file_path",
+    ),
+)
+
+
+H5Job = namedtuple(
+    "H5Job",
+    (
+        "file_path",
+        "tic_id",
+        "single_merge_jobs",
     ),
 )
 
@@ -276,28 +286,41 @@ class DirectoryPlan:
 
     def _preprocess_files(self):
         logger.debug(f"Preprocessing {len(self.files)} files")
+        buckets = defaultdict(list)
         with self.db as db:
-            jobs = []
             naive_jobs = _get_smjs_from_paths(db, self.files)
             observed = self._get_observed(db, naive_jobs)
 
             logger.debug(
                 f"Created {len(naive_jobs)} jobs requiring dedup check"
             )
+            n_accepted = 0
             for job in tqdm(naive_jobs, unit=" jobs"):
                 key = (job.lightcurve_id, job.orbit_number)
                 if key not in observed:
-                    jobs.append(job)
+                    buckets[job.file_path].append(job)
                     observed.add(key)
-        ignored = len(naive_jobs) - len(jobs)
-        logger.debug(f"Generated {len(jobs)} jobs, ignoring {ignored}")
+                    n_accepted += 1
+
+        ignored = len(naive_jobs) - n_accepted
+        logger.debug(f"Generated {len(naive_jobs)} jobs, ignoring {ignored}")
+        jobs = []
+        for file_path, single_merge_jobs in buckets.items():
+            job = H5Job(
+                file_path=file_path,
+                tic_id=single_merge_jobs[0].tic_id,
+                single_merge_jobs=single_merge_jobs,
+            )
+            jobs.append(job)
+
         self.jobs = jobs
 
     def _get_unique_observed(self):
         unique_observed = set()
         for job in self.get_jobs():
-            key = (job.orbit_number, job.camera, job.ccd)
-            unique_observed.add(key)
+            for smj in job.single_merge_jobs:
+                key = (smj.orbit_number, smj.camera, smj.ccd)
+                unique_observed.add(key)
         return unique_observed
 
     def get_jobs(self):
