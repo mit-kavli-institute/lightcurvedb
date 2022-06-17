@@ -391,7 +391,7 @@ def ingest_merge_jobs(
 
         # Work queue is done, only allow workers ~10 minutes to wrap it up.
         for worker in workers:
-            worker.join(10)
+            worker.join(60 * 10)
 
             if worker.exitcode is None:
                 logger.error(f"Terminating worker {worker}, took too long")
