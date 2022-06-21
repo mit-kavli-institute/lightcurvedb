@@ -131,7 +131,6 @@ def _get_or_create_lightcurve_id(
     try:
         id_ = id_map[key]
     except KeyError:
-        logger.debug(f"Need new id for {tic_id}: {aperture} {lightcurve_type}")
         lc = Lightcurve(
             tic_id=tic_id,
             aperture_id=aperture,
@@ -140,7 +139,7 @@ def _get_or_create_lightcurve_id(
         db.add(lc)
         db.commit()
         id_ = lc.id
-        logger.debug(f"{tic_id}: {aperture} {lightcurve_type} assigned {id_}")
+        id_map[key] = id_
 
     return id_
 
