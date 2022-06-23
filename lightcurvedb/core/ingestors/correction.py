@@ -33,7 +33,6 @@ class LightcurveCorrector:
         logger.debug("Built quality flag mapping")
         self.tjd_map = contexts.get_tjd_mapping(sqlite_path)
         logger.debug("Built tjd mapping")
-        logger.debug(self.tjd_map)
 
     def correct_for_earth_time(self, tic_id, tjd_time_array):
         # Offset the bjd epoc for Earth time
