@@ -80,5 +80,6 @@ class LightcurveCorrector:
         return qflag_series.to_numpy()
 
     def get_mid_tjd(self, camera, cadences):
-        tjd_series = self.tjd_map.loc[camera].loc[cadences]
-        return tjd_series.values
+        camera_tjds = self.tjd_map.loc[camera]
+        tjd = camera_tjds.loc[cadences]["tjd"]
+        return tjd.to_numpy()
