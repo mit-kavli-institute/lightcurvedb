@@ -20,7 +20,6 @@ from lightcurvedb import db_from_config
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.core.ingestors.lightcurves import (
-    bjd_from_h5_fd,
     cadences_from_h5_fd,
     get_components,
     h5_fd_to_numpy,
@@ -101,7 +100,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         context = get_components(h5_job.file_path)
         with H5File(h5_job.file_path, "r") as h5:
             cadences = cadences_from_h5_fd(h5)
-            bjd = bjd_from_h5_fd(h5)
             tic_id, camera, ccd = (
                 int(context["tic_id"]),
                 int(context["camera"]),
@@ -129,7 +127,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                         context,
                         h5,
                     )
-                    lightpoint_array["barycentric_julian_date"] = bjd[0]
+                    lightpoint_array["barycentric_julian_date"] = bjd
                     lightpoint_array["quality_flag"] = quality_flags
                     observation = (
                         smj.lightcurve_id,
