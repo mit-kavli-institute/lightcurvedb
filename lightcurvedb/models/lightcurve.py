@@ -453,3 +453,15 @@ class Lightcurve(QLPDataProduct):
             data.append(result)
 
         session.bulk_insert_mappings(Lightpoint, data)
+
+
+class OrbitLightcurve(QLPDataProduct):
+    __tablename__ = "orbit_lightcurves"
+
+    id = Column(BigInteger, Sequence("orbit_lightcurve_id_seq"), primary_key=True)
+    tic_id = Column(BigInteger)
+    camera = Column(SmallInt)
+    ccd = Column(SmallInt)
+    orbit_id = Column(Integer, ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"))
+    aperture_id = Column(SmallInteger, ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"))
+    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurve_types.id"))
