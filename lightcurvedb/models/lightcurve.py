@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     ForeignKey,
     Sequence,
+    Integer,
     SmallInteger,
     func,
     inspect,
@@ -23,9 +24,9 @@ from sqlalchemy.orm import backref, relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from lightcurvedb.core.base_model import (
-    QLPDataProduct,
-    QLPDataSubType,
     QLPModel,
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
 )
 from lightcurvedb.core.collection import CadenceTracked
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
@@ -54,7 +55,7 @@ def lp_structured_array(q, columns):
     return np.array(list(map(tuple, q)), dtype=dtypes)
 
 
-class LightcurveType(QLPDataSubType):
+class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous lightcurve types"""
 
     __tablename__ = "lightcurvetypes"
@@ -69,27 +70,7 @@ class LightcurveType(QLPDataSubType):
         return f"<Lightcurve Type '{self.name}'>"
 
 
-class LightcurveFrameMap(QLPModel):
-    __tablename__ = "lightcurveframemapping"
-    lightcurve_type_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    frame_id = Column(
-        ForeignKey("frames.id"),
-        primary_key=True,
-    )
-
-    lightcurve = relationship(
-        "Lightcurve",
-        backref=backref(
-            "lightcurveframemapping", cascade="all, delete-orphan"
-        ),
-    )
-    frame = relationship("Frame")
-
-
-class Lightcurve(QLPDataProduct):
+class Lightcurve(QLPModel, CreatedOnMixin):
     """
     This SQLAlchemy model is used to represent the magnitude or flux
     information as a time series. Each lightcurve instance represents
@@ -227,8 +208,6 @@ class Lightcurve(QLPDataProduct):
 
     aperture = relationship("Aperture", back_populates="lightcurves")
     observations = relationship("Observation", back_populates="lightcurve")
-
-    frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
     def __len__(self):
         """
@@ -455,13 +434,13 @@ class Lightcurve(QLPDataProduct):
         session.bulk_insert_mappings(Lightpoint, data)
 
 
-class OrbitLightcurve(QLPDataProduct):
+class OrbitLightcurve(QLPModel, CreatedOnMixin):
     __tablename__ = "orbit_lightcurves"
 
     id = Column(BigInteger, Sequence("orbit_lightcurve_id_seq"), primary_key=True)
     tic_id = Column(BigInteger)
-    camera = Column(SmallInt)
-    ccd = Column(SmallInt)
+    camera = Column(SmallInteger)
+    ccd = Column(SmallInteger)
     orbit_id = Column(Integer, ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"))
     aperture_id = Column(SmallInteger, ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"))
     lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurve_types.id"))

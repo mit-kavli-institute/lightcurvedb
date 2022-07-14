@@ -20,7 +20,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
-from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin, NameAndDescriptionMixin
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
@@ -42,7 +42,7 @@ def adapt_pathlib(path):
 ext.register_adapter(Path, adapt_pathlib)
 
 
-class FrameType(QLPDataSubType):
+class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
@@ -55,7 +55,7 @@ class FrameType(QLPDataSubType):
         )
 
 
-class Frame(QLPDataProduct):
+class Frame(QLPModel, CreatedOnMixin):
     """
     Provides ORM implementation of various Frame models
     """

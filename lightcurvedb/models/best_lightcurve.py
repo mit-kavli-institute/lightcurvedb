@@ -3,12 +3,11 @@ from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 from lightcurvedb.models.frame import Frame
-from lightcurvedb.models.lightpoint import Lightpoint
 
 
-class BestOrbitLightcurve(QLPReference):
+class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     """
     A mapping of lightcurves to orbits to define the best detrending method
     used. This allows a heterogenous mix of lightcurves to coalese into a
@@ -62,27 +61,3 @@ class BestOrbitLightcurve(QLPReference):
     @hybrid_method
     def lightpoints(self, frame_type="Raw FFI"):
         raise NotImplementedError
-
-    @lightpoints.expression
-    def lightpoints(cls, frame_type="Raw FFI"):
-        return (
-            select(
-                Lightpoint.lightcurve_id,
-                Lightpoint.cadence,
-                Lightpoint.barycentric_julian_date,
-                Lightpoint.data,
-                Lightpoint.error,
-                Lightpoint.x_centroid,
-                Lightpoint.y_centroid,
-                Lightpoint.quality_flag,
-            )
-            .where(
-                and_(
-                    Lightpoint.lightcurve_id == cls.lightcurve_id,
-                    Lightpoint.cadence.between(
-                        cls.min_cadence, cls.max_cadence
-                    ),
-                )
-            )
-            .label("lightpoints")
-        )

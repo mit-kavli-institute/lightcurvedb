@@ -11,11 +11,11 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin, NameAndDescriptionMixin
 from lightcurvedb.core.sql import psql_safe_str
 
 
-class Aperture(QLPReference):
+class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """
     Provides ORM implementation of an aperture used by QLP.
 
@@ -121,7 +121,7 @@ class Aperture(QLPReference):
         return star_r, inner_r, outer_r
 
 
-class BestApertureMap(QLPReference):
+class BestApertureMap(QLPModel, CreatedOnMixin):
     """
     A mapping of lightcurves to their 'best' aperture. This model
     is defined so TICs will contain 1 best aperture. This is enforced

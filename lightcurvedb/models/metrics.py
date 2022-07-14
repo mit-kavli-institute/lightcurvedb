@@ -19,10 +19,10 @@ from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 
 from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPMetric
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 
 
-class QLPStage(QLPMetric):
+class QLPStage(QLPModel, CreatedOnMixin):
     """
     This model encompasses a stage of the QLP pipeline that we wish to
     record for analysis later.
@@ -30,14 +30,12 @@ class QLPStage(QLPMetric):
 
     __tablename__ = "qlpstages"
     id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
-    name = Column(String(64), unique=True)
     slug = Column(String(64), unique=True)
-    description = Column(Text)
 
     processes = relationship("QLPProcess", backref="stage")
 
 
-class QLPProcess(QLPMetric):
+class QLPProcess(QLPModel, CreatedOnMixin):
     """
     This model is used to describe various processes interacting on the
     database. The job type, description and use is up to the user to
@@ -105,7 +103,7 @@ class QLPProcess(QLPMetric):
         return cls.lcdb_version == __version__
 
 
-class QLPOperation(QLPMetric):
+class QLPOperation(QLPModel, CreatedOnMixin):
     """
     This model is used to describe various alterations performed on. This
     is best used to describe atomic operations, like single insert,

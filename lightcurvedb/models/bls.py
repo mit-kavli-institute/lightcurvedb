@@ -12,10 +12,10 @@ from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.schema import Index
 
-from lightcurvedb.core.base_model import QLPDataProduct, QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 
 
-class BLSResultLookup(QLPReference):
+class BLSResultLookup(QLPModel, CreatedOnMixin):
     """ """
 
     __tablename__ = "bls_result_lookups"
@@ -26,7 +26,7 @@ class BLSResultLookup(QLPReference):
     best_detrending_method_id = Column(ForeignKey("best_orbit_lightcurves.id"))
 
 
-class BLS(QLPDataProduct):
+class BLS(QLPModel, CreatedOnMixin):
 
     __tablename__ = "bls"
 

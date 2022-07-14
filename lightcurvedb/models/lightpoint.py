@@ -73,10 +73,11 @@ class Lightpoint(QLPModel, Blobable):
 
     lightcurve_id = Column(
         BigInteger,
-        ForeignKey("orbit_lightcurves.id", onupdate="CASCADE", ondelete="CASCADE")
+        ForeignKey("orbit_lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
+        primary_key=True
     )
 
-    cadence = Column(Integer,)
+    cadence = Column(Integer, primary_key=True)
     barycentric_julian_date = Column(Float, nullable=False)
     data = Column(DOUBLE_PRECISION)
     error = Column(DOUBLE_PRECISION)

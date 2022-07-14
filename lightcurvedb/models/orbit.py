@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
-from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
@@ -38,7 +38,7 @@ ORBIT_DTYPE = [
 ]
 
 
-class Orbit(QLPReference):
+class Orbit(QLPModel, CreatedOnMixin):
     """
     Provides ORM implementation of an orbit completed by TESS
     """

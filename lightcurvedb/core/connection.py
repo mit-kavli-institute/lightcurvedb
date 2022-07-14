@@ -1248,4 +1248,7 @@ def db_from_config(config_path=None, **engine_kwargs):
 
 
 # Try and instantiate "global" lcdb
-db = db_from_config()
+try:
+    db = db_from_config()
+except KeyError:
+    db = None

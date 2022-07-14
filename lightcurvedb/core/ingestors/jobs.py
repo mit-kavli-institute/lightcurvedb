@@ -1,4 +1,6 @@
 import pathlib
+from typing import List
+from dataclasses import dataclass
 from collections import defaultdict, namedtuple
 from itertools import product
 
@@ -16,6 +18,7 @@ from lightcurvedb.models import (
 )
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.util.iter import chunkify
+from h5py import File as H5File
 
 SingleMergeJob = namedtuple(
     "SingleMergeJob",
@@ -31,6 +34,23 @@ SingleMergeJob = namedtuple(
     ),
 )
 
+@dataclass
+class OrbitLightcurveJob:
+    lightcurve_id: int
+    tic_id: int
+    aperture: str
+    lightcurve_type: str
+    orbit_number: int
+    camera: int
+    ccd: int
+
+
+@dataclass
+class H5Job:
+    file_path: str
+    tic_id: int
+    orbit_lightcurve_jobs: List[OrbitLightcurveJob]
+
 
 H5Job = namedtuple(
     "H5Job",
@@ -39,10 +59,6 @@ H5Job = namedtuple(
         "tic_id",
         "single_merge_jobs",
     ),
-)
-
-PartitionJob = namedtuple(
-    "PartitionJob", ("partition_oid", "single_merge_jobs")
 )
 
 PHYSICAL_LIMIT = {1, 2, 3, 4}
@@ -262,11 +278,10 @@ class DirectoryPlan:
         for job in jobs:
             if job.orbit_number not in _mask:
                 logger.debug(
-                    f"Querying observation cache for orbit {job.orbit_number}"
+                    f"Querying existing lightcurves for {job.orbit_number}"
                 )
                 q = (
-                    db.query(Observation.lightcurve_id, Orbit.orbit_number)
-                    .join(Observation.orbit)
+                    db.query(OrbitLight)
                     .filter(
                         Orbit.orbit_number == job.orbit_number,
                     )
