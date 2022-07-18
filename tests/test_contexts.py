@@ -87,6 +87,7 @@ def test_quality_flag_loading(quality_flags, camera, ccd):
             assert remote_flag == quality_flag
 
 
+@settings(deadline=None)
 @given(
     st.lists(
         st.tuples(

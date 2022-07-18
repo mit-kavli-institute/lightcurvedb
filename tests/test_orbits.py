@@ -1,6 +1,5 @@
 from hypothesis import given, settings, HealthCheck, assume
 from lightcurvedb.models import Orbit
-from .conftest import db
 from .strategies import orm
 
 # We rollback all changes to remote db

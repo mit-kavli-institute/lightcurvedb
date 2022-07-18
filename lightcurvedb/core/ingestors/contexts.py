@@ -288,7 +288,8 @@ def get_tic_mapping(conn, parameter, *parameters):
         keys.
     """
     param_order = ("tic_id", parameter, *parameters)
-    stmt = TicParameter.dynamic_select(param_order)
+    stmt = TicParameter.dynamic_select(*param_order)
+    mapping = {}
     for tic_id, *parameters in conn.execute(stmt).fetchall():
         values = dict(zip(param_order[1:], map(_none_to_nan, parameters)))
         mapping[tic_id] = values
@@ -377,8 +378,9 @@ def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
     )
 
     q = conn.execute(stmt)
+    df = pd.read_sql(stmt, conn.bind)
     return np.array(
-        list(q.fetchall()), dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
+        df.to_records(index=False), dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
     )
 
 

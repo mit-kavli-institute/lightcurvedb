@@ -60,7 +60,7 @@ class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     __tablename__ = "lightcurvetypes"
 
-    id = Column(SmallInteger)
+    id = Column(SmallInteger, primary_key=True)
     lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):
@@ -201,9 +201,6 @@ class Lightcurve(QLPModel, CreatedOnMixin):
     # Relationships
     lightcurve_type = relationship(
         "LightcurveType", back_populates="lightcurves"
-    )
-    lightpoint_q = relationship(
-        "Lightpoint", collection_class=CadenceTracked, lazy="dynamic"
     )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
@@ -443,4 +440,4 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
     ccd = Column(SmallInteger)
     orbit_id = Column(Integer, ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"))
     aperture_id = Column(SmallInteger, ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"))
-    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurve_types.id"))
+    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurvetypes.id"))
