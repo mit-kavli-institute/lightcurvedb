@@ -60,7 +60,7 @@ class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     __tablename__ = "lightcurvetypes"
 
-    id = Column(SmallInteger, primary_key=True)
+    id = Column(SmallInteger, primary_key=True, unique=True)
     lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):
@@ -187,7 +187,7 @@ class Lightcurve(QLPModel, CreatedOnMixin):
     # Foreign Keys
     lightcurve_type_id = Column(
         ForeignKey(
-            "lightcurvetypes.name", onupdate="CASCADE", ondelete="RESTRICT"
+            LightcurveType.id, onupdate="CASCADE", ondelete="RESTRICT"
         ),
         index=True,
     )

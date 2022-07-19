@@ -46,7 +46,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-
+    id = Column(SmallInteger, primary_key=True, unique=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -118,7 +118,7 @@ class Frame(QLPModel, CreatedOnMixin):
         index=True,
     )
     frame_type_id = Column(
-        ForeignKey("frametypes.name", ondelete="RESTRICT"),
+        ForeignKey(FrameType.id, ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

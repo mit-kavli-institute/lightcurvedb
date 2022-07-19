@@ -113,7 +113,7 @@ class NameAndDescriptionMixin:
     Mixin for describing QLP data subtypes such as lightcurve types.
     """
 
-    _name = Column("name", String(64), primary_key=True, nullable=False)
+    _name = Column("name", String(64), unique=True, nullable=False)
     _description = Column("description", String)
 
     @hybrid_property

@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Integer,
+    SmallInteger,
     UniqueConstraint,
     func,
 )
@@ -84,7 +85,7 @@ class CameraQuaternion(QLPModel, CreatedOnMixin):
 
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, index=True, nullable=False)
-    camera = Column(Integer, index=True, nullable=False)
+    camera = Column(SmallInteger, index=True, nullable=False)
 
     _w = high_precision_column(name="w", nullable=False)
     _x = high_precision_column(name="x", nullable=False)

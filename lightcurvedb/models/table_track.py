@@ -23,7 +23,7 @@ class PartitionTrack(QLPModel, CreatedOnMixin):
 
     id = Column(Integer, Sequence("partition_tracks_id_seq"), primary_key=True)
     model = Column(String(64), index=True)
-    oid = Column(ForeignKey(PGClass.oid), index=True, unique=True)
+    oid = Column(Integer, index=True, unique=True)
     tracker_type = Column(String(64), index=True)
 
     __mapper_args__ = {
@@ -31,7 +31,8 @@ class PartitionTrack(QLPModel, CreatedOnMixin):
         "polymorphic_on": tracker_type,
     }
 
-    pgclass = relationship(PGClass)
+
+    pgclass = relationship(PGClass, foreign_keys=(PGClass.oid,), primaryjoin=PGClass.oid == oid)
 
     @hybrid_method
     def same_model(self, Model):

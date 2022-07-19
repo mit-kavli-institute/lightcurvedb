@@ -48,7 +48,7 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     )
 
     # Model Attributes
-    id = Column(SmallInteger, primary_key=True)
+    id = Column(SmallInteger, primary_key=True, unique=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)
     outer_radius = Column(Numeric, nullable=False)
@@ -130,7 +130,7 @@ class BestApertureMap(QLPModel, CreatedOnMixin):
     __table_args__ = (UniqueConstraint("tic_id", name="best_ap_unique_tic"),)
 
     aperture_id = Column(
-        ForeignKey(Aperture.name, onupdate="CASCADE", ondelete="RESTRICT"),
+        ForeignKey(Aperture.id, onupdate="CASCADE", ondelete="RESTRICT"),
         primary_key=True,
     )
     tic_id = Column(BigInteger, primary_key=True)
@@ -142,10 +142,10 @@ class BestApertureMap(QLPModel, CreatedOnMixin):
         q = insert(cls.__table__)
         if isinstance(aperture, Aperture):
             q = q.values(
-                tic_id=tic_id, aperture_id=aperture.name
+                tic_id=tic_id, aperture_id=aperture.id
             ).on_conflict_do_update(
                 constraint="best_ap_unique_tic",
-                set_={"aperture_id": aperture.name},
+                set_={"aperture_id": aperture.id},
             )
         else:
             q = q.values(
