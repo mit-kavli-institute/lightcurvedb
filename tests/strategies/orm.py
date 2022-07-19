@@ -1,9 +1,5 @@
 import pathlib
 import os
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from psycopg2 import sql
-import psycopg2
-import configparser
 
 from hypothesis import strategies as st
 
@@ -27,61 +23,24 @@ FORBIDDEN_KEYWORDS = {
     "/",
 }
 
-def _db_connection(database):
-    conn = psycopg2.connect(
-        dbname=database,
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-        host=os.environ["HOST"],
-        port=os.environ["PORT"]
-    )
-    return conn
-
-
-def _create_testdb(testdb_name):
-    postgres_conn = _db_connection("postgres")
-    postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    with postgres_conn.cursor() as cur:
-        drop = (
-            sql
-            .SQL("DROP DATABASE IF EXISTS {}")
-            .format(sql.Identifier(testdb_name))
-        )
-        create = (
-            sql
-            .SQL("CREATE DATABASE {}")
-            .format(sql.Identifier(testdb_name))
-        )
-        cur.execute(drop)
-        cur.execute(create)
-    postgres_conn.close()
-
-
-
-def _populate_configuration(testdb_name):
-    TEST_PATH = os.path.dirname(os.path.relpath(__file__))
-    CONFIG_PATH = os.path.join(TEST_PATH, "config.conf")
-    parser = configparser.ConfigParser()
-    parser["Credentials"] = {
-        "username": os.environ["POSTGRES_USER"],
-        "password": os.environ["POSTGRES_PASSWORD"],
-        "database_name": testdb_name,
-        "database_host": os.environ["HOST"],
-        "database_port": os.environ["PORT"],
-    }
-    with open(CONFIG_PATH, "wt") as fout:
-        parser.write(fout)
-    return CONFIG_PATH
-
 
 @st.composite
 def database(draw):
-    path = _populate_configuration("lightpoint_testing_db")
-    _create_testdb("lightpoint_testing_db")
-    config_path = draw(st.just(path))
+    TEST_PATH = os.path.dirname(os.path.relpath(__file__))
+    CONFIG_PATH = os.path.join(TEST_PATH, "..", "config.conf")
+    config_path = draw(st.just(CONFIG_PATH))
     db = db_from_config(config_path)
-    with db:
-        QLPModel.metadata.create_all(db.bind)
+
+    def close(self):
+        if self.depth == 1:
+            session = self._session_stack[0]
+            for table in reversed(QLPModel.metadata.sorted_tables):
+                session.execute(table.delete())
+            session.commit()
+            session.close()
+        super().close()
+    db.close = close
+
     return db
 
 
