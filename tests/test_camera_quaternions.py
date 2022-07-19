@@ -14,7 +14,7 @@ from .strategies import ingestion, orm
 no_scope_check = HealthCheck.function_scoped_fixture
 
 
-@settings(deadline=None, suppress_health_check=[no_scope_check])
+@settings(deadline=None, suppress_health_check=[no_scope_check, HealthCheck.too_slow])
 @given(orm.database(), st.data())
 def test_camera_quaternion_ingest(database, data):
     with database as db:

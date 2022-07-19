@@ -2,7 +2,7 @@ import pathlib
 import tempfile
 
 import numpy as np
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
@@ -11,6 +11,7 @@ from .strategies import ingestion
 from .strategies import orm as orm_st
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_tic_catalog_mapping(data):
 
@@ -45,6 +46,7 @@ def test_tic_catalog_mapping(data):
                     assert check.get(key, None) == values[key]
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_quality_flag_cache(data):
     with tempfile.TemporaryDirectory() as tempdir:
@@ -69,6 +71,7 @@ def test_quality_flag_cache(data):
             check == flag
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_quality_flag_np(data):
     with tempfile.TemporaryDirectory() as tempdir:
@@ -93,6 +96,7 @@ def test_quality_flag_np(data):
             check == flag
 
 
+@settings(deadline=None)
 @given(
     orm_st.database(),
     st.lists(
@@ -127,6 +131,7 @@ def test_spacecraft_eph_cache(database, eph_list):
         assert np.array_equal(check_z, ref_z)
 
 
+@settings(deadline=None)
 @given(
     orm_st.database(),
     orm_st.frame_types(name=st.just("Raw FFI")),
