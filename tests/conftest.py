@@ -56,15 +56,16 @@ def _populate_configuration(testdb_name):
     with open(CONFIG_PATH, "wt") as fout:
         parser.write(fout)
 
+
     db = db_from_config(CONFIG_PATH)
     with db:
         QLPModel.metadata.create_all(db.bind)
 
     return CONFIG_PATH
 
-
-_populate_configuration("lightpoint_testing_db")
-_create_testdb("lightpoint_testing")
+TESTNAME = "lightpoint_testing_db"
+_create_testdb(TESTNAME)
+_populate_configuration(TESTNAME)
 
 
 @pytest.fixture(scope="module")
