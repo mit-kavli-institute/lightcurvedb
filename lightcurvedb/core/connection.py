@@ -73,8 +73,9 @@ class ORM_DB(contextlib.AbstractContextManager):
                     session = self._sessionmaker()
                     self._session_stack.append(session)
                 elif 0 < self.depth < self._max_depth:
-                    nested_session = self.session.begin_nested()
-                    self._session_stack.append(nested_session)
+                    #nested_session = self.session.begin_nested()
+                    #self._session_stack.append(nested_session)
+                    pass
                 else:
                     raise RuntimeError("Database nested too far! Cowardly refusing")
                 return self
@@ -1222,7 +1223,7 @@ class DB(
         )
 
 
-def db_from_config(config_path=None, **engine_kwargs):
+def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
 
@@ -1240,9 +1241,11 @@ def db_from_config(config_path=None, **engine_kwargs):
         **engine_kwargs
     )
 
+    db_class = DB if db_class is None else db_class
+
     factory = sessionmaker(bind=engine)
 
-    new_db = DB(factory)
+    new_db = db_class(factory)
     new_db._config = config_path
     return new_db
 

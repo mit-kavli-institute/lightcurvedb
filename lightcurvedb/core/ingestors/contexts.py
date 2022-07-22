@@ -201,13 +201,19 @@ def populate_ephemeris(conn, db):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
+    cols = (
+        "barycentric_dynamical_time",
+        "x",
+        "y",
+        "z",
+    )
     q = db.query(
-        SpacecraftEphemeris.barycentric_dynamical_time,
-        SpacecraftEphemeris.x,
-        SpacecraftEphemeris.y,
-        SpacecraftEphemeris.z,
+            *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
-    stmt = SpacecraftPosition.insert().values(q)
+
+    stmt = SpacecraftPosition.insert().values(
+        [dict(zip(cols, row)) for row in q]
+    )
     conn.execute(stmt)
     conn.commit()
 

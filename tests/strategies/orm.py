@@ -25,26 +25,6 @@ FORBIDDEN_KEYWORDS = {
 
 
 @st.composite
-def database(draw):
-    TEST_PATH = os.path.dirname(os.path.relpath(__file__))
-    CONFIG_PATH = os.path.join(TEST_PATH, "..", "config.conf")
-    config_path = draw(st.just(CONFIG_PATH))
-    db = db_from_config(config_path)
-
-    def close(self):
-        if self.depth == 1:
-            session = self._session_stack[0]
-            for table in reversed(QLPModel.metadata.sorted_tables):
-                session.execute(table.delete())
-            session.commit()
-            session.close()
-        super().close()
-    db.close = close
-
-    return db
-
-
-@st.composite
 def psql_integers(draw, **overrides):
     return draw(
         st.integers(min_value=-2147483648, max_value=2147483647, **overrides)

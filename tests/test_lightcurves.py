@@ -74,10 +74,10 @@ def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
-@given(orm_st.database(), st.data())
-def test_corrector_instantiation(database, data):
+@given(st.data())
+def test_corrector_instantiation(db, data):
     try:
-        with TemporaryDirectory() as tempdir, database as db:
+        with TemporaryDirectory() as tempdir, db:
             (
                 run_path,
                 directory,
@@ -108,7 +108,7 @@ def test_corrector_instantiation(database, data):
             corrector = LightcurveCorrector(cache_path)
             assert corrector is not None
     finally:
-        with database as db:
+        with db:
             opt = {"synchronize_session": False}
             db.query(models.Lightpoint).delete(**opt)
             db.query(models.Lightcurve).delete(**opt)
@@ -129,10 +129,10 @@ def test_corrector_instantiation(database, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
-@given(orm_st.database(), st.data())
-def test_ingestor_instantiation(database, data):
+@given(st.data())
+def test_ingestor_instantiation(db, data):
     try:
-        with TemporaryDirectory() as tempdir, database as db:
+        with TemporaryDirectory() as tempdir, db:
             (
                 run_path,
                 directory,
@@ -166,7 +166,7 @@ def test_ingestor_instantiation(database, data):
             assert process is not None
 
     finally:
-        with database as db:
+        with db:
             opt = {"synchronize_session": False}
             db.query(models.Lightpoint).delete(**opt)
             db.query(models.Lightcurve).delete(**opt)
@@ -187,11 +187,11 @@ def test_ingestor_instantiation(database, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
-@given(orm_st.database(), st.data())
-def test_ingestor_processing(database, data):
+@given(st.data())
+def test_ingestor_processing(db, data):
     try:
         with TemporaryDirectory() as tempdir:
-            with database as db:
+            with db:
                 (
                     run_path,
                     directory,
@@ -243,11 +243,11 @@ def test_ingestor_processing(database, data):
                 for job in jobs:
                     process.process_job(job)
                     process.flush(db)
-            with database as db:
+            with db:
                 assert db.query(models.Lightpoint).count() > 0
 
     finally:
-        with database as db:
+        with db:
             opt = {"synchronize_session": False}
             db.query(models.Lightpoint).delete(**opt)
             db.query(models.Lightcurve).delete(**opt)

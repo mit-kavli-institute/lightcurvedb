@@ -98,15 +98,14 @@ def test_quality_flag_np(data):
 
 @settings(deadline=None)
 @given(
-    orm_st.database(),
     st.lists(
         orm_st.spacecraft_ephemeris(),
         min_size=1,
         unique_by=lambda eph: eph.barycentric_dynamical_time,
     ),
 )
-def test_spacecraft_eph_cache(database, eph_list):
-    with database as db, tempfile.TemporaryDirectory() as tempdir:
+def test_spacecraft_eph_cache(db, eph_list):
+    with db, tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
 
         db.session.add_all(eph_list)
@@ -133,7 +132,6 @@ def test_spacecraft_eph_cache(database, eph_list):
 
 @settings(deadline=None)
 @given(
-    orm_st.database(),
     orm_st.frame_types(name=st.just("Raw FFI")),
     orm_st.orbits(),
     st.lists(
@@ -142,8 +140,8 @@ def test_spacecraft_eph_cache(database, eph_list):
         unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path),
     ),
 )
-def test_tjd_cache(database, raw_ffi_type, orbit, frames):
-    with database as db, tempfile.TemporaryDirectory() as tempdir:
+def test_tjd_cache(db, raw_ffi_type, orbit, frames):
+    with db, tempfile.TemporaryDirectory() as tempdir:
         cache_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
         db.add(raw_ffi_type)
         db.add(orbit)

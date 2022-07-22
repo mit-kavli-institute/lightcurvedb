@@ -1,6 +1,9 @@
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from psycopg2 import sql
+from sqlalchemy import text
 import psycopg2
+from lightcurvedb.core.connection import DB
+from lightcurvedb import __version__ as version
 from lightcurvedb import db_from_config, models
 from lightcurvedb.core.base_model import QLPModel
 import configparser
@@ -63,8 +66,16 @@ def _populate_configuration(testdb_name):
     return CONFIG_PATH
 
 
-_populate_configuration("lightpoint_testing_db")
-_create_testdb("lightpoint_testing")
+class TestDB(DB):
+    def close(self):
+        self.session.rollback()
+        for table in reversed(QLPModel.metadata.sorted_tables):
+            q = text(f"TRUNCATE TABLE {table.name} CASCADE")
+            self.session.execute(q)
+        self.session.commit()
+        return super().close()
+
+
 
 
 @pytest.fixture(scope="module")
@@ -78,3 +89,16 @@ def clirunner():
     runner = CliRunner(mix_stderr=True)
 
     return runner
+
+
+@pytest.fixture(scope="module")
+def db():
+    testdbname = "lightpointtesting_" + version.replace(".", "_")
+    _create_testdb(testdbname)
+    _populate_configuration(testdbname)
+
+    test_path = os.path.dirname(os.path.relpath(__file__))
+    config_path = os.path.join(test_path, "config.conf")
+    database = db_from_config(config_path, db_class=TestDB)
+
+    yield database

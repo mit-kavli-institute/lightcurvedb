@@ -270,7 +270,7 @@ def lightcurves(draw, **overrides):
 # Begin Simulation Functions
 def simulate_hk_file(data, directory, formatter=str, **overrides):
     quaternions = data.draw(
-        st.lists(camera_quaternions(), unique_by=lambda cq: cq[0])
+        st.lists(camera_quaternions(), unique_by=lambda cq: cq.date)
     )
     camera = data.draw(overrides.get("camera", tess_st.cameras()))
     filename = pathlib.Path(f"cam{camera}_quat.txt")
@@ -523,18 +523,14 @@ def simulate_lightcurve_ingestion_environment(
         db.flush()
         quality_flags.append((cadence, int(frame.quality_bit)))
 
-    eph = [
-        data.draw(
-            orm_st.spacecraft_ephemeris(
-                barycentric_dynamical_time=st.just(0.0)
-            )
-        ),
-        data.draw(
-            orm_st.spacecraft_ephemeris(
-                barycentric_dynamical_time=st.just(2457000 + cur_end_tjd)
-            )
-        ),
-    ]
+    data_lim_st = st.floats(min_value=0.0, max_value=2457000 + cur_end_tjd)
+    eph = data.draw(
+        st.lists(
+            orm_st.spacecraft_ephemeris(barycentric_dynamical_time=data_lim-st),
+            min_size=2,
+            unique_by=lambda eph: eph.barycentric_dynamical_time
+        )
+    )
 
     db.session.add_all(eph)
     db.flush()
