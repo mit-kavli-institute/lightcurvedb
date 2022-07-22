@@ -59,6 +59,7 @@ def _populate_configuration(testdb_name):
     with open(CONFIG_PATH, "wt") as fout:
         parser.write(fout)
 
+
     db = db_from_config(CONFIG_PATH)
     with db:
         QLPModel.metadata.create_all(db.bind)
@@ -74,8 +75,6 @@ class TestDB(DB):
             self.session.execute(q)
         self.session.commit()
         return super().close()
-
-
 
 
 @pytest.fixture(scope="module")
