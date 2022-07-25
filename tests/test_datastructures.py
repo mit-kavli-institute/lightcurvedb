@@ -2,10 +2,11 @@ import pathlib
 import tempfile
 
 import numpy as np
-from hypothesis import given, settings
+from hypothesis import given, settings, note
 from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
+from lightcurvedb.models import Frame, FrameType
 
 from .strategies import ingestion
 from .strategies import orm as orm_st
@@ -107,8 +108,7 @@ def test_quality_flag_np(data):
 def test_spacecraft_eph_cache(db, eph_list):
     with db, tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
-
-        db.session.add_all(eph_list)
+        db.session.add_all(sorted(eph_list, key=lambda eph: eph.barycentric_dynamical_time))
         db.flush()
 
         ctx.make_shared_context(db_path)
@@ -150,11 +150,14 @@ def test_tjd_cache(db, raw_ffi_type, orbit, frames):
             frame.orbit = orbit
         db.session.add_all(frames)
         db.flush()
-
+        state_q = db.query(Frame.cadence, Frame.camera, Frame.tjd).join(Frame.frame_type).filter(FrameType.name == raw_ffi_type.name)
+        print(state_q.all())
+        print(db.query(Frame.frame_type_id, Frame.camera, Frame.cadence).all())
         ctx.make_shared_context(cache_path)
-        ctx.populate_tjd_mapping(cache_path, db)
+        ctx.populate_tjd_mapping(cache_path, db, frame_type=raw_ffi_type.name)
 
         tjd_check_df = ctx.get_tjd_mapping(cache_path)
+        note(tjd_check_df)
         for frame_ref in frames:
             check = tjd_check_df.loc[
                 (frame_ref.camera, frame_ref.cadence)

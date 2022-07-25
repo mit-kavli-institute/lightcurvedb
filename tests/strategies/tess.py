@@ -106,7 +106,13 @@ def gps_times(draw):
 @st.composite
 def tjds(draw, **kwargs):
     return draw(
-        st.floats(allow_nan=False, allow_infinity=False, min_value=0.0)
+        st.floats(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=0.0,
+            max_value=2460077.5,
+            width=32
+            )
     )
 
 

@@ -15,7 +15,7 @@ from .strategies import ingestion, orm
 no_scope_check = HealthCheck.function_scoped_fixture
 
 
-@settings(suppress_health_check=[no_scope_check])
+@settings(deadline=None, suppress_health_check=[no_scope_check])
 @given(orm.frame_types(), orm.orbits(), orm.frames())
 def test_frame_insertion(db, frame_type, orbit, frame):
     with db:
@@ -51,6 +51,7 @@ def test_from_fits(tempdir, data):
     assert str(path) == str(frame.file_path)
 
 
+@settings(deadline=None)
 @given(orm.frame_types(), st.data())
 def test_frame_ingestion(db, frame_type, data):
     with db, TemporaryDirectory() as tempdir:

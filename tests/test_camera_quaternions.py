@@ -13,6 +13,7 @@ from .strategies import ingestion, orm
 no_scope_check = HealthCheck.function_scoped_fixture
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_camera_quaternion_ingest(db, data):
     with tempfile.TemporaryDirectory() as tempdir, db:

@@ -16,8 +16,10 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 
-from lightcurvedb.models import Frame, SpacecraftEphemeris
+from lightcurvedb.models import Frame, SpacecraftEphemeris, FrameType
 from lightcurvedb.util.iter import chunkify
+
+from sqlalchemy.ext.hybrid import hybrid_property
 import sqlalchemy as sa
 import pathlib
 from sqlalchemy.orm import as_declarative, declared_attr, Session
@@ -75,6 +77,15 @@ class TJDMapping(ContextBase):
     camera = sa.Column(sa.SmallInteger, primary_key=True)
     tjd = sa.Column(sa.Float)
 
+    @hybrid_property
+    def mid_tjd(self):
+        # Keyword compatibility with Frame
+        return self.tjd
+
+    @mid_tjd.expression
+    def mid_tjd(cls):
+        # Keyword compatibility with Frame
+        return cls.tjd
 
 class LightcurveIDMapping(ContextBase):
     id = sa.Column(sa.BigInteger, primary_key=True)
@@ -202,7 +213,7 @@ def populate_ephemeris(conn, db):
         An open lcdb connection object to read from.
     """
     cols = (
-        "barycentric_dynamical_time",
+        "bjd",
         "x",
         "y",
         "z",
@@ -233,11 +244,16 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
-    q = db.query(Frame.cadence, Frame.camera, Frame.mid_tjd).filter(
-        Frame.frame_type_id
-        == ("Raw FFI" if frame_type is None else frame_type)
+    cols = ("cadence", "camera", "tjd")
+    q = (
+        db
+        .query(Frame.cadence, Frame.camera, Frame.mid_tjd)
+        .join(Frame.frame_type)
+        .filter(
+            FrameType.name == ("Raw FFI" if frame_type is None else frame_type)
+        )
     )
-    stmt = TJDMapping.insert().values(q)
+    stmt = TJDMapping.insert().values([dict(zip(cols, row)) for row in q])
     conn.execute(stmt)
     conn.commit()
 
@@ -457,7 +473,7 @@ def get_tjd_mapping(conn):
         dataframe is not ordered and all NULL values will be forced into
         NaN values.
     """
-    stmt = TJDMapping.dynamic_select("cadence", "camera").order_by(TJDMapping.camera, TJDMapping.cadence)
+    stmt = TJDMapping.dynamic_select("cadence", "camera", "tjd").order_by(TJDMapping.camera, TJDMapping.cadence)
     df = pd.read_sql(
         stmt,
         conn.bind,

@@ -239,6 +239,14 @@ class Frame(QLPModel, CreatedOnMixin):
     def data(self):
         return fits.open(self.file_path)[0].data
 
+    @hybrid_property
+    def tjd(self):
+        return self.mid_tjd
+
+    @tjd.expression
+    def tjd(cls):
+        return cls.mid_tjd
+
 
 class FrameAPIMixin(object):
     """

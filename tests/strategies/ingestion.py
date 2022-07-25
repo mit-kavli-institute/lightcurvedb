@@ -270,7 +270,7 @@ def lightcurves(draw, **overrides):
 # Begin Simulation Functions
 def simulate_hk_file(data, directory, formatter=str, **overrides):
     quaternions = data.draw(
-        st.lists(camera_quaternions(), unique_by=lambda cq: cq.date)
+        st.lists(camera_quaternions(), unique_by=lambda cq: cq.gps_time)
     )
     camera = data.draw(overrides.get("camera", tess_st.cameras()))
     filename = pathlib.Path(f"cam{camera}_quat.txt")
