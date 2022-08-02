@@ -245,15 +245,22 @@ def populate_tjd_mapping(conn, db, frame_type=None):
         An open lcdb connection object to read from.
     """
     cols = ("cadence", "camera", "tjd")
+    type_name = "Raw FFI" if frame_type is None else frame_type
     q = (
         db
         .query(Frame.cadence, Frame.camera, Frame.mid_tjd)
         .join(Frame.frame_type)
         .filter(
-            FrameType.name == ("Raw FFI" if frame_type is None else frame_type)
+            FrameType.name == type_name
         )
     )
-    stmt = TJDMapping.insert().values([dict(zip(cols, row)) for row in q])
+    payload = [dict(zip(cols, row)) for row in q]
+    if len(payload) == 0:
+        raise RuntimeError(
+            "Unable to find any TJD values from frame query using: "
+            f"frame type name: {type_name}"
+        )
+    stmt = TJDMapping.insert().values(payload)
     conn.execute(stmt)
     conn.commit()
 
