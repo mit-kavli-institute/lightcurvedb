@@ -36,6 +36,7 @@ def test_frame_insertion(db, frame_type, orbit, frame):
         db.query(Frame).filter(Frame.orbit == orbit).count() == 1
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_from_fits(tempdir, data):
     path, header = ingestion.simulate_fits(data, tempdir)

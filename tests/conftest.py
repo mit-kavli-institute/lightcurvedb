@@ -69,7 +69,8 @@ def _populate_configuration(testdb_name):
 
 class TestDB(DB):
     def close(self):
-        self.session.rollback()
+        if self.is_active:
+            self.session.rollback()
         for table in reversed(QLPModel.metadata.sorted_tables):
             q = text(f"TRUNCATE TABLE {table.name} CASCADE")
             self.session.execute(q)

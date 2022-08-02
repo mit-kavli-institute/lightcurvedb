@@ -15,6 +15,7 @@ from hypothesis.extra import pandas as pd_st
 
 from lightcurvedb import models
 from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
+from lightcurvedb.models.camera_quaternion import get_utc_time
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -142,8 +143,8 @@ def lightpoints(draw, **overrides):
             barycentric_julian_date=tess_st.tjds(),
             data=st.floats(),
             error=st.floats(),
-            x_centroid=st.floats(allow_nan=False, allow_infinity=False),
-            y_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            x_centroid=st.floats(allow_nan=False, allow_infinity=False, width=32),
+            y_centroid=st.floats(allow_nan=False, allow_infinity=False, width=32),
             quality_flag=st.integers(min_value=0, max_value=1),
         )
     )
@@ -267,10 +268,15 @@ def lightcurves(draw, **overrides):
     )
 
 
+def _unique_gps(camera_quat_model):
+    gps_time = camera_quat_model.gps_time
+    return get_utc_time(gps_time).datetime.replace(microsecond=0)
+
+
 # Begin Simulation Functions
 def simulate_hk_file(data, directory, formatter=str, **overrides):
     quaternions = data.draw(
-        st.lists(camera_quaternions(), unique_by=lambda cq: cq.gps_time)
+        st.lists(camera_quaternions(), min_size=1, unique_by=_unique_gps)
     )
     camera = data.draw(overrides.get("camera", tess_st.cameras()))
     filename = pathlib.Path(f"cam{camera}_quat.txt")
@@ -526,7 +532,7 @@ def simulate_lightcurve_ingestion_environment(
     data_lim_st = st.floats(min_value=0.0, max_value=2457000 + cur_end_tjd)
     eph = data.draw(
         st.lists(
-            orm_st.spacecraft_ephemeris(barycentric_dynamical_time=data_lim-st),
+            orm_st.spacecraft_ephemeris(barycentric_dynamical_time=data_lim_st),
             min_size=2,
             unique_by=lambda eph: eph.barycentric_dynamical_time
         )
