@@ -242,3 +242,8 @@ class Orbit(QLPModel, CreatedOnMixin):
         elif len(cameras) > 1:
             q = q.filter(CameraQuaternion.camera.in_(cameras))
         return q
+
+
+class OrbitAPIMixin:
+    def get_orbit_id(self, orbit_number):
+        return self.query(Orbit.id).filter_by(orbit_number=orbit_number).one()[0]

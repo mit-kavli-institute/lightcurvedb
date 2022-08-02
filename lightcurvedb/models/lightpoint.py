@@ -48,11 +48,11 @@ LIGHTPOINT_ALIASES = {
 LIGHTPOINT_NP_DTYPES = {
     "lightcurve_id": "uint64",
     "cadence": "uint32",
-    "barycentric_julian_date": "float64",
+    "barycentric_julian_date": "float32",
     "data": "float64",
     "error": "float64",
-    "x_centroid": "float64",
-    "y_centroid": "float64",
+    "x_centroid": "float32",
+    "y_centroid": "float32",
     "quality_flag": "uint16",
 }
 
@@ -69,7 +69,6 @@ class Lightpoint(QLPModel, Blobable):
     """
 
     __tablename__ = "hyper_lightpoints"
-    __abstract__ = False
 
     lightcurve_id = Column(
         BigInteger,

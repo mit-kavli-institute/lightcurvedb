@@ -3,7 +3,7 @@ from .bls import BLS
 from .camera_quaternion import CameraQuaternion
 from .frame import Frame, FrameType
 from .lightpoint import Lightpoint
-from .lightcurve import Lightcurve, LightcurveType
+from .lightcurve import Lightcurve, LightcurveType, OrbitLightcurve
 from .best_lightcurve import BestOrbitLightcurve
 from .metrics import QLPOperation, QLPProcess, QLPStage
 from .observations import Observation
@@ -19,6 +19,7 @@ __all__ = [
     "FrameType",
     "Frame",
     "Orbit",
+    "OrbitLightcurve",
     "Lightcurve",
     "LightcurveType",
     "Lightpoint",
