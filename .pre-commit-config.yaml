@@ -18,11 +18,11 @@ repos:
     hooks:
     -   id: isort
 -   repo: https://github.com/hadialqattan/pycln
-    rev: v2.0.2
+    rev: v2.1.1
     hooks:
     -   id: pycln
         args: [--config=pyproject.toml]
 -   repo: https://github.com/pycqa/flake8
-    rev: 4.0.1
+    rev: 5.0.3
     hooks:
     -   id: flake8
