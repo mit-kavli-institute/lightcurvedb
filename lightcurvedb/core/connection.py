@@ -17,7 +17,7 @@ from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
-from lightcurvedb.models.orbit import ORBIT_DTYPE
+from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.type_check import isiterable
@@ -73,8 +73,8 @@ class ORM_DB(contextlib.AbstractContextManager):
                     session = self._sessionmaker()
                     self._session_stack.append(session)
                 elif 0 < self.depth < self._max_depth:
-                    #nested_session = self.session.begin_nested()
-                    #self._session_stack.append(nested_session)
+                    nested_session = self.session.begin_nested()
+                    self._session_stack.append(nested_session)
                     pass
                 else:
                     raise RuntimeError("Database nested too far! Cowardly refusing")
@@ -301,6 +301,7 @@ class DB(
     ORM_DB,
     FrameAPIMixin,
     TableTrackerAPIMixin,
+    OrbitAPIMixin,
     PGCatalogMixin,
     QLPMetricAPIMixin,
 ):
