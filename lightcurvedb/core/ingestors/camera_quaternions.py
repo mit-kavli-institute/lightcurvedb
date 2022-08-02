@@ -76,8 +76,8 @@ def ingest_quat_file(db, filepath):
 
         if model.date in mask:
             logger.warning(
-                f"Camera Quaternion uniqueness failed check for {model}, "
-                "ignoring"
+                "Camera Quaternion time uniqueness failed check "
+                f"on camera {camera}: date {model.date}"
             )
             continue
         else:
