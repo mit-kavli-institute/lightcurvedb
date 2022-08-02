@@ -18,7 +18,7 @@ def extract_pdo_path_context(path):
     """
     found_contexts = {}
     for regex in CONTEXTS:
-        result = regex.search(path)
+        result = regex.search(str(path))
         if result:
             found_contexts.update(result.groupdict())
     return found_contexts
