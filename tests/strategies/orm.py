@@ -1,10 +1,8 @@
 import pathlib
-import os
 
 from hypothesis import strategies as st
 
-from lightcurvedb import db_from_config, models
-from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb import models
 
 from . import tess as tess_st
 
@@ -114,9 +112,9 @@ def frames(draw, **overrides):
             ccd=overrides.get("ccd", st.one_of(tess_st.ccds(), st.none())),
             cadence=overrides.get("cadence", psql_integers()),
             gps_time=st.floats(),
-            start_tjd=overrides.get("start_tjd", st.floats()),
-            mid_tjd=overrides.get("mid_tjd", st.floats()),
-            end_tjd=overrides.get("end_tjd", st.floats()),
+            start_tjd=overrides.get("start_tjd", tess_st.tjds()),
+            mid_tjd=overrides.get("mid_tjd", tess_st.tjds()),
+            end_tjd=overrides.get("end_tjd", tess_st.tjds()),
             exp_time=overrides.get("exp_time", st.floats()),
             quality_bit=st.booleans(),
             file_path=st.text(),
@@ -156,5 +154,17 @@ def spacecraft_ephemeris(draw, **overrides):
             light_travel_time=st.floats(allow_nan=False, allow_infinity=False),
             range_to=st.floats(allow_nan=False, allow_infinity=False),
             range_rate=st.floats(allow_nan=False, allow_infinity=False),
+        )
+    )
+
+
+@st.composite
+def qlpstages(draw, **overrides):
+    return draw(
+        st.builds(
+            models.QLPStage,
+            slug=st.text(min_size=1, max_size=64).filter(
+                lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
+            ),
         )
     )

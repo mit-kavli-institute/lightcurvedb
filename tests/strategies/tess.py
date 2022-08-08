@@ -1,5 +1,7 @@
 from hypothesis import strategies as st
 
+MIN_TJD, MAX_TJD = 1325.29, 2796.12
+
 
 @st.composite
 def ccds(draw):
@@ -109,10 +111,9 @@ def tjds(draw, **kwargs):
         st.floats(
             allow_nan=False,
             allow_infinity=False,
-            min_value=0.0,
-            max_value=2460077.5,
-            width=32
-            )
+            min_value=MIN_TJD,
+            max_value=MAX_TJD,
+        )
     )
 
 
