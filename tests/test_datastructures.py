@@ -2,11 +2,11 @@ import pathlib
 import tempfile
 
 import numpy as np
-from hypothesis import given, settings, note
+from hypothesis import given, note, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
-from lightcurvedb.models import Frame, FrameType
+from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 
 from .strategies import ingestion
 from .strategies import orm as orm_st
@@ -97,23 +97,14 @@ def test_quality_flag_np(data):
             check == flag
 
 
-@settings(deadline=None)
-@given(
-    st.lists(
-        orm_st.spacecraft_ephemeris(),
-        min_size=1,
-        unique_by=lambda eph: eph.barycentric_dynamical_time,
-    ),
-)
-def test_spacecraft_eph_cache(db, eph_list):
+def test_spacecraft_eph_cache(db):
     with db, tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
-        db.session.add_all(sorted(eph_list, key=lambda eph: eph.barycentric_dynamical_time))
-        db.flush()
 
         ctx.make_shared_context(db_path)
         ctx.populate_ephemeris(db_path, db)
 
+        eph_list = db.query(SpacecraftEphemeris).all()
         ref_eph = sorted(
             eph_list, key=lambda eph: eph.barycentric_dynamical_time
         )
@@ -150,7 +141,11 @@ def test_tjd_cache(db, raw_ffi_type, orbit, frames):
             frame.orbit = orbit
         db.session.add_all(frames)
         db.flush()
-        state_q = db.query(Frame.cadence, Frame.camera, Frame.tjd).join(Frame.frame_type).filter(FrameType.name == raw_ffi_type.name)
+        state_q = (
+            db.query(Frame.cadence, Frame.camera, Frame.tjd)
+            .join(Frame.frame_type)
+            .filter(FrameType.name == raw_ffi_type.name)
+        )
         print(state_q.all())
         print(db.query(Frame.frame_type_id, Frame.camera, Frame.cadence).all())
         ctx.make_shared_context(cache_path)
