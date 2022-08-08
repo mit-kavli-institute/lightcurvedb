@@ -10,9 +10,6 @@ from lightcurvedb import db_from_config
 class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
-    db_config = None
-    db = None
-    buffers = defaultdict(list)
     buffer_order = []
 
     def __init__(self, config, name, job_queue):
@@ -21,6 +18,7 @@ class BufferedDatabaseIngestor(Process):
         self.name = name
         self.job_queue = job_queue
         self.log("Initialized")
+        self.buffers = defaultdict(list)
 
     def log(self, msg, level="debug"):
         full_msg = f"{self.name} {msg}"

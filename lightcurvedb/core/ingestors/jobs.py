@@ -1,26 +1,18 @@
 import pathlib
-from sqlalchemy import sql
-from typing import List
+from collections import defaultdict
 from dataclasses import dataclass
-from collections import defaultdict, namedtuple
 from itertools import product
+from typing import List
 
 from click import echo
 from loguru import logger
+from sqlalchemy import sql
 from tqdm import tqdm
 
-from lightcurvedb.io.temp_table import TempTable
-from lightcurvedb.io.pipeline import db_scope
-from lightcurvedb.models import (
-    Aperture,
-    OrbitLightcurve,
-    LightcurveType,
-    Observation,
-    Orbit,
-)
+from lightcurvedb.models import Aperture, LightcurveType, OrbitLightcurve
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.util.iter import chunkify
-from h5py import File as H5File
+
 
 @dataclass
 class OrbitLightcurveJob:
@@ -39,7 +31,7 @@ class OrbitLightcurveJob:
             self.ccd,
             self.orbit_number,
             self.aperture,
-            self.lightcurve_type
+            self.lightcurve_type,
         )
 
 
@@ -137,12 +129,12 @@ def get_orbit_jobs_from_paths(db, contexts):
         for aperture, lightcurve_type in pairs:
             job = OrbitLightcurveJob(
                 tic_id=tic_id,
-                camera=context["camera"],
-                ccd=context["ccd"],
-                orbit_number=context["orbit_number"],
+                camera=int(context["camera"]),
+                ccd=int(context["ccd"]),
+                orbit_number=int(context["orbit_number"]),
                 aperture=aperture,
                 lightcurve_type=lightcurve_type,
-                file_path=path
+                file_path=path,
             )
             jobs.append(job)
     return jobs
@@ -155,7 +147,7 @@ def get_observed_from_path(db, path):
         "ccd",
         "orbit_id",
         "aperture_id",
-        "lightcurve_type_id"
+        "lightcurve_type_id",
     )
     path_context = extract_pdo_path_context(path)
     constants_from_path = []
@@ -173,17 +165,8 @@ def get_observed_from_path(db, path):
             column = getattr(OrbitLightcurve, context)
         columns.append(column)
 
-    q = (
-        db
-        .query(
-            *columns
-        )
-        .filter(
-            *constants_from_path
-        )
-    )
+    q = db.query(*columns).filter(*constants_from_path)
     return q.all()
-
 
 
 class DirectoryPlan:
@@ -245,9 +228,7 @@ class DirectoryPlan:
     def _get_observed(self, db):
         observed = set()
         for source_dir in self.source_dirs:
-            logger.debug(
-                f"Interpreting {source_dir} for observations"
-            )
+            logger.debug(f"Interpreting {source_dir} for observations")
             observed.update(get_observed_from_path(db, source_dir))
 
         return observed
