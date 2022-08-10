@@ -273,7 +273,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
             f"frame type name: {type_name}"
         )
     for chunk in chunkify(payload, MAX_PARAM // len(cols)):
-        stmt = TJDMapping.insert().values(payload)
+        stmt = TJDMapping.insert().values(chunk)
         conn.execute(stmt)
     conn.commit()
 
