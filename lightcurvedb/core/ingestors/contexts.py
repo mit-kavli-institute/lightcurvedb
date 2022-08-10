@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session, as_declarative, declared_attr
 from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
 
+MAX_PARAM = 999
+
 
 @as_declarative()
 class ContextBase:
@@ -163,7 +165,7 @@ def _iter_quality_flags(quality_flag_path, camera, ccd):
 
 
 @with_sqlite
-def populate_tic_catalog(conn, catalog_path, chunksize=1024):
+def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
     """
     Pull the tic catalog into the sqlite3 temporary database.
 
@@ -201,7 +203,7 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
         The ccd of the quality flags.
     """
     _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
-    for chunk in chunkify(_iter, 1024):
+    for chunk in chunkify(_iter, MAX_PARAM // 4):
         stmt = QualityFlag.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
@@ -232,7 +234,9 @@ def populate_ephemeris(conn, db):
         *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
 
-    chunks = chunkify((dict(zip(cols, row)) for row in q), 999 // len(cols))
+    chunks = chunkify(
+        (dict(zip(cols, row)) for row in q), MAX_PARAM // len(cols)
+    )
 
     for chunk in chunks:
         stmt = SpacecraftPosition.insert().values(chunk)
@@ -268,8 +272,9 @@ def populate_tjd_mapping(conn, db, frame_type=None):
             "Unable to find any TJD values from frame query using: "
             f"frame type name: {type_name}"
         )
-    stmt = TJDMapping.insert().values(payload)
-    conn.execute(stmt)
+    for chunk in chunkify(payload, MAX_PARAM // len(cols)):
+        stmt = TJDMapping.insert().values(payload)
+        conn.execute(stmt)
     conn.commit()
 
 
