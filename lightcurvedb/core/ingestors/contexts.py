@@ -259,7 +259,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     type_name = "Raw FFI" if frame_type is None else frame_type
     q = (
         db.query(Frame.cadence, Frame.camera, Frame.mid_tjd)
-        .join(Frame.frame_type)
+        .join(FrameType, FrameType.name == Frame.frame_type_id)
         .filter(FrameType.name == type_name)
     )
     payload = [dict(zip(cols, row)) for row in q]
