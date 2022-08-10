@@ -232,7 +232,7 @@ def populate_ephemeris(conn, db):
         *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
 
-    chunks = chunkify((dict(zip(cols, row)) for row in q), 999)
+    chunks = chunkify((dict(zip(cols, row)) for row in q), 999 // len(cols))
 
     for chunk in chunks:
         stmt = SpacecraftPosition.insert().values(chunk)
