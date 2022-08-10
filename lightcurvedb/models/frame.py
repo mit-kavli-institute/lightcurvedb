@@ -20,7 +20,11 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin, NameAndDescriptionMixin
+from lightcurvedb.core.base_model import (
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
+    QLPModel,
+)
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
@@ -118,7 +122,7 @@ class Frame(QLPModel, CreatedOnMixin):
         index=True,
     )
     frame_type_id = Column(
-        ForeignKey(FrameType.id, ondelete="RESTRICT"),
+        ForeignKey(FrameType.name, ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
