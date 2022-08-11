@@ -184,7 +184,7 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         incredibly long query strings the population process is chunkified
         with length of this parameter.
     """
-    mask = set()
+    mask = {tic_id for tic_id, in conn.query(TicParameter.tic_id)}
     chunks = chunkify(_iter_tic_catalog(catalog_path, mask), chunksize // 9)
 
     for chunk in chunks:
