@@ -143,6 +143,7 @@ def _iter_tic_catalog(catalog_path, mask, field_order=None):
     with open(catalog_path, "rt") as fin:
         for line in fin:
             tic_id, *data = line.strip().split()
+            tic_id = int(tic_id)
             if tic_id in mask:
                 continue
             fields = (tic_id, *data)
