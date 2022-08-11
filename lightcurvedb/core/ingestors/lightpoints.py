@@ -333,7 +333,11 @@ def ingest_merge_jobs(
         )
         for n in range(n_processes):
             p = ExponentialSamplingLightpointIngestor(
-                db._config, f"worker-{n}", job_queue, stage.id, cache_path
+                db._config,
+                f"worker-{n}",
+                job_queue,
+                "lightpoint-ingestion",
+                cache_path,
             )
             p.start()
             workers.append(p)
