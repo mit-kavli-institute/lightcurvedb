@@ -123,7 +123,7 @@ def make_shared_context(session):
     ContextBase.metadata.create_all(bind=session.bind)
 
 
-def _iter_tic_catalog(catalog_path, field_order=None):
+def _iter_tic_catalog(catalog_path, mask, field_order=None):
     """
     Yield paramters within the catalog path. The file should be whitespace
     delimited with the TIC_ID parameter as the first column.
@@ -143,8 +143,11 @@ def _iter_tic_catalog(catalog_path, field_order=None):
     with open(catalog_path, "rt") as fin:
         for line in fin:
             tic_id, *data = line.strip().split()
+            if tic_id in mask:
+                continue
             fields = (tic_id, *data)
             yield dict(zip(field_order, fields))
+            mask.add(tic_id)
 
 
 def _iter_quality_flags(quality_flag_path, camera, ccd):
@@ -181,7 +184,10 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         incredibly long query strings the population process is chunkified
         with length of this parameter.
     """
-    for chunk in chunkify(_iter_tic_catalog(catalog_path), chunksize // 9):
+    mask = set()
+    chunks = chunkify(_iter_tic_catalog(catalog_path, mask), chunksize // 9)
+
+    for chunk in chunks:
         stmt = TicParameter.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
