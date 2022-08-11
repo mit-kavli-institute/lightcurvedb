@@ -61,7 +61,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
                 stage = (
                     self.db.query(QLPStage)
-                    .filter_by(slug=self.stage_slug)
+                    .filter_by(slug=str(self.stage_slug))
                     .one()
                 )
                 self.stage_id = stage.id
