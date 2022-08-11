@@ -181,7 +181,7 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         incredibly long query strings the population process is chunkified
         with length of this parameter.
     """
-    for chunk in chunkify(_iter_tic_catalog(catalog_path), chunksize):
+    for chunk in chunkify(_iter_tic_catalog(catalog_path), chunksize // 9):
         stmt = TicParameter.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
