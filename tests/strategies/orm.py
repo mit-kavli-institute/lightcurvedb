@@ -23,6 +23,15 @@ FORBIDDEN_KEYWORDS = {
 
 
 @st.composite
+def psql_texts(draw, **kwargs):
+    alphabet = st.characters(
+        blacklist_categories=["C"],
+    )
+
+    return draw(st.text(alphabet=alphabet, **kwargs))
+
+
+@st.composite
 def psql_integers(draw, **overrides):
     return draw(
         st.integers(min_value=-2147483648, max_value=2147483647, **overrides)
@@ -163,8 +172,6 @@ def qlpstages(draw, **overrides):
     return draw(
         st.builds(
             models.QLPStage,
-            slug=st.text(min_size=1, max_size=64).filter(
-                lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
-            ),
+            slug=psql_texts(min_size=1, max_size=64),
         )
     )
