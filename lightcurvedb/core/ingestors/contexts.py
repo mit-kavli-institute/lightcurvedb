@@ -15,6 +15,7 @@ from functools import wraps
 import numpy as np
 import pandas as pd
 import sqlalchemy as sa
+from loguru import logger
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, as_declarative, declared_attr
 from tqdm import tqdm
@@ -121,6 +122,7 @@ def make_shared_context(session):
     """
     Creates the expected tables needed for ingestion contexts.
     """
+    logger.debug("Creating SQLite Cache")
     ContextBase.metadata.create_all(bind=session.bind)
 
 
@@ -186,6 +188,7 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         incredibly long query strings the population process is chunkified
         with length of this parameter.
     """
+    logger.debug(f"Loading {catalog_path}")
     mask = {tic_id for tic_id, in conn.query(TicParameter.tic_id)}
     parameters = list(_iter_tic_catalog(catalog_path, mask))
     chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
@@ -211,6 +214,7 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
     ccd: int
         The ccd of the quality flags.
     """
+    logger.debug(f"Loading {quality_flag_path}")
     _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
     parameters = list(_iter)
     for chunk in chunkify(tqdm(parameters, unit=" qflags"), MAX_PARAM // 4):
@@ -234,6 +238,7 @@ def populate_ephemeris(conn, db):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
+    logger.debug("Loading spacecraft position data")
     cols = (
         "bjd",
         "x",
@@ -267,6 +272,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
+    logger.debug("Loading Frame TJD data")
     cols = ("cadence", "camera", "tjd")
     type_name = "Raw FFI" if frame_type is None else frame_type
     q = (
