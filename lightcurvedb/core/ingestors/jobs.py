@@ -9,7 +9,12 @@ from loguru import logger
 from sqlalchemy import sql
 from tqdm import tqdm
 
-from lightcurvedb.models import Aperture, LightcurveType, OrbitLightcurve
+from lightcurvedb.models import (
+    Aperture,
+    LightcurveType,
+    Orbit,
+    OrbitLightcurve,
+)
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.util.iter import chunkify
 
@@ -149,6 +154,10 @@ def get_observed_from_path(db, path):
         "aperture_id",
         "lightcurve_type_id",
     )
+    aperture_map = dict(db.query(Aperture.id, Aperture.name))
+    type_map = dict(db.query(LightcurveType.id, LightcurveType.name))
+    orbit_map = dict(db.query(Orbit.id, Orbit.orbit_number))
+
     path_context = extract_pdo_path_context(path)
     constants_from_path = []
 
@@ -170,6 +179,19 @@ def get_observed_from_path(db, path):
 
     q = db.query(*columns).filter(*constants_from_path)
     logger.debug(f"Getting observations with {str(q)}")
+
+    result = []
+    for tic_id, camera, ccd, orbit_id, aperture_id, lightcurve_type_id in q:
+        result.append(
+            (
+                tic_id,
+                camera,
+                ccd,
+                orbit_map[orbit_id],
+                aperture_map[aperture_id],
+                type_map[lightcurve_type_id],
+            )
+        )
     return list(q)
 
 
