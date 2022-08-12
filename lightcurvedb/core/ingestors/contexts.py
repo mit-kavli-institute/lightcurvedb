@@ -243,8 +243,8 @@ def populate_ephemeris(conn, db):
     q = db.query(
         *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
-
-    chunks = chunkify(tqdm(q.all(), unit=" positions"), MAX_PARAM // len(cols))
+    payload = [(bjd, x, y, z) for bjd, x, y, z in q]
+    chunks = chunkify(tqdm(payload, unit=" positions"), MAX_PARAM // len(cols))
 
     for chunk in chunks:
         stmt = SpacecraftPosition.insert().values(chunk)
