@@ -192,7 +192,7 @@ def get_observed_from_path(db, path):
                 type_map[lightcurve_type_id],
             )
         )
-    return list(q)
+    return result
 
 
 class DirectoryPlan:
