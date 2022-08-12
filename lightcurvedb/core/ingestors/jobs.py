@@ -161,6 +161,9 @@ def get_observed_from_path(db, path):
     for context in required_contexts:
         try:
             column = sql.expression.literal_column(path_context[context])
+            constants_from_path.append(
+                getattr(OrbitLightcurve, context) == path_context[context]
+            )
         except KeyError:
             column = getattr(OrbitLightcurve, context)
         columns.append(column)
