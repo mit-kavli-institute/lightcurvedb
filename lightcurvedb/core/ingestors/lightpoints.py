@@ -89,7 +89,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 q = db.query(Aperture.id).filter_by(name=name)
                 id_ = q.one()[0]
                 self.apertures[name] = id_
-                self.log(f"Resolved aperture {name} with id {id_}")
         return id_
 
     def get_lightcurve_type_id(self, name):
