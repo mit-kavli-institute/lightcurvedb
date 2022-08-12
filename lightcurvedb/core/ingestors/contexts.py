@@ -17,6 +17,7 @@ import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, as_declarative, declared_attr
+from tqdm import tqdm
 
 from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
@@ -186,7 +187,8 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         with length of this parameter.
     """
     mask = {tic_id for tic_id, in conn.query(TicParameter.tic_id)}
-    chunks = chunkify(_iter_tic_catalog(catalog_path, mask), chunksize // 9)
+    parameters = list(_iter_tic_catalog(catalog_path, mask))
+    chunks = chunkify(tqdm(parameters, units=" tics"), chunksize // 9)
 
     for chunk in chunks:
         stmt = TicParameter.insert().values(chunk)
@@ -210,7 +212,8 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
         The ccd of the quality flags.
     """
     _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
-    for chunk in chunkify(_iter, MAX_PARAM // 4):
+    parameters = list(_iter)
+    for chunk in chunkify(tqdm(parameters, units=" qflags"), MAX_PARAM // 4):
         stmt = QualityFlag.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
@@ -242,7 +245,7 @@ def populate_ephemeris(conn, db):
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
 
     chunks = chunkify(
-        (dict(zip(cols, row)) for row in q), MAX_PARAM // len(cols)
+        tqdm(q.all(), units=" positions"), MAX_PARAM // len(cols)
     )
 
     for chunk in chunks:
@@ -279,7 +282,8 @@ def populate_tjd_mapping(conn, db, frame_type=None):
             "Unable to find any TJD values from frame query using: "
             f"frame type name: {type_name}"
         )
-    for chunk in chunkify(payload, MAX_PARAM // len(cols)):
+    chunksize = MAX_PARAM // len(cols)
+    for chunk in chunkify(tqdm(payload, units=" tjds"), chunksize):
         stmt = TJDMapping.insert().values(chunk)
         conn.execute(stmt)
     conn.commit()
