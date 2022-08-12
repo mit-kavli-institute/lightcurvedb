@@ -169,6 +169,7 @@ def get_observed_from_path(db, path):
         columns.append(column)
 
     q = db.query(*columns).filter(*constants_from_path)
+    logger.debug(f"Getting observations with {str(q)}")
     return q.all()
 
 
@@ -232,7 +233,9 @@ class DirectoryPlan:
         observed = set()
         for source_dir in self.source_dirs:
             logger.debug(f"Interpreting {source_dir} for observations")
-            observed.update(get_observed_from_path(db, source_dir))
+            seen_in_dir = get_observed_from_path(db, source_dir)
+            logger.debug(f"Found {len(seen_in_dir)} current observations")
+            observed.update(seen_in_dir)
 
         return observed
 
