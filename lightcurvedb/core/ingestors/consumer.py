@@ -67,7 +67,8 @@ class BufferedDatabaseIngestor(Process):
                     f"and performing backoff. {tries} tries remaining."
                 )
                 db.rollback()
-                time.sleep(2)
+                wait_time = 2 ** (5 - tries)
+                time.sleep(wait_time)
                 tries -= 1
         if tries == 0:
             raise RuntimeError(f"{self.name} could not push payload. Exciting")
