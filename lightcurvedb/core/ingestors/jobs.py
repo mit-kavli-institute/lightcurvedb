@@ -157,7 +157,7 @@ def get_observed_from_path(db, path):
         constants_from_path.append(
             OrbitLightcurve.orbit_id == db.get_orbit_id(orbit_number)
         )
-    columns = [OrbitLightcurve.id]
+    columns = []
     for context in required_contexts:
         try:
             column = sql.expression.literal_column(path_context[context])
@@ -170,7 +170,7 @@ def get_observed_from_path(db, path):
 
     q = db.query(*columns).filter(*constants_from_path)
     logger.debug(f"Getting observations with {str(q)}")
-    return q.all()
+    return list(q)
 
 
 class DirectoryPlan:
