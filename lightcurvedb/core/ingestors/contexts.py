@@ -188,7 +188,7 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
     """
     mask = {tic_id for tic_id, in conn.query(TicParameter.tic_id)}
     parameters = list(_iter_tic_catalog(catalog_path, mask))
-    chunks = chunkify(tqdm(parameters, units=" tics"), chunksize // 9)
+    chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
 
     for chunk in chunks:
         stmt = TicParameter.insert().values(chunk)
@@ -213,7 +213,7 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
     """
     _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
     parameters = list(_iter)
-    for chunk in chunkify(tqdm(parameters, units=" qflags"), MAX_PARAM // 4):
+    for chunk in chunkify(tqdm(parameters, unit=" qflags"), MAX_PARAM // 4):
         stmt = QualityFlag.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
@@ -244,9 +244,7 @@ def populate_ephemeris(conn, db):
         *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
     ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
 
-    chunks = chunkify(
-        tqdm(q.all(), units=" positions"), MAX_PARAM // len(cols)
-    )
+    chunks = chunkify(tqdm(q.all(), unit=" positions"), MAX_PARAM // len(cols))
 
     for chunk in chunks:
         stmt = SpacecraftPosition.insert().values(chunk)
@@ -283,7 +281,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
             f"frame type name: {type_name}"
         )
     chunksize = MAX_PARAM // len(cols)
-    for chunk in chunkify(tqdm(payload, units=" tjds"), chunksize):
+    for chunk in chunkify(tqdm(payload, unit=" tjds"), chunksize):
         stmt = TJDMapping.insert().values(chunk)
         conn.execute(stmt)
     conn.commit()
