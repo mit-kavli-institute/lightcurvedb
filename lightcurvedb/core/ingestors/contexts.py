@@ -149,7 +149,14 @@ def _iter_tic_catalog(catalog_path, mask, field_order=None):
             tic_id = int(tic_id)
             if tic_id in mask:
                 continue
-            fields = (tic_id, *data)
+            parsed = []
+            for token in data:
+                if token == "None" or token is None:
+                    parsed.append(float("NaN"))
+                else:
+                    parsed.append(token)
+
+            fields = (tic_id, *parsed)
             yield dict(zip(field_order, fields))
             mask.add(tic_id)
 
