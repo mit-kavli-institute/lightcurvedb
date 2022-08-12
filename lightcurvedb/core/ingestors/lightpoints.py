@@ -186,10 +186,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
-        for orbit_lightcurve, chunk in zip(lcs, lps):
+        for orbit_lightcurve, lp_arr in zip(lcs, lps):
             id_ = orbit_lightcurve.id
-            chunk["lightcurve_id"] = id_
-            mgr.threading_copy(chunk)
+            lp_arr["lightcurve_id"] = id_
+            mgr.copy(lp_arr)
 
         end = datetime.now()
 
