@@ -1,8 +1,10 @@
+import time
 from collections import defaultdict
 from multiprocessing import Process
 from queue import Empty
 
 from loguru import logger
+from psycopg2.errors import DeadlockDetected
 
 from lightcurvedb import db_from_config
 
@@ -48,13 +50,27 @@ class BufferedDatabaseIngestor(Process):
     def flush(self, db):
         self._preflush(db)
         metrics = []
-
-        for buffer_key in self.buffer_order:
-            method_name = f"flush_{buffer_key}"
-            flush_method = getattr(self, method_name)
-            metric = flush_method(db)
-            if metric is not None:
-                metrics.append(metric)
+        tries = 5
+        while tries > 0:
+            try:
+                for buffer_key in self.buffer_order:
+                    method_name = f"flush_{buffer_key}"
+                    flush_method = getattr(self, method_name)
+                    metric = flush_method(db)
+                    if metric is not None:
+                        metrics.append(metric)
+                # Successful push
+                break
+            except DeadlockDetected:
+                self.log(
+                    "Encountered deadlock state, rolling back "
+                    f"and performing backoff. {tries} tries remaining."
+                )
+                db.rollback()
+                time.sleep(2)
+                tries -= 1
+        if tries == 0:
+            raise RuntimeError(f"{self.name} could not push payload. Exciting")
 
         db.commit()
 
