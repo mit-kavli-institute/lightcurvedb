@@ -298,6 +298,34 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
         return {"lp_buffer_threshold": 2**exp}
 
 
+class StepSamplingLightpointIngestor(BaseLightpointIngestor):
+    step_size = 800
+    max_steps = 20976
+
+    def determine_process_parameters(self):
+        q = (
+            self.db.query(
+                cast(QLPOperation.job_size // self.step_size).label("bucket"),
+                func.count(QLPOperation.id),
+            )
+            .join(QLPOperation.process)
+            .filter(QLPProcess.current_version())
+            .group_by(cast(QLPOperation.job_size // self.step_size))
+        )
+        current_samples = dict(q)
+        samples = defaultdict(list)
+
+        for step in range(1, self.max_steps + 1):
+            n_samples = current_samples.get(step, 0)
+            samples[n_samples].append(step)
+        lowest_sample_rate = min(samples.keys())
+        possible_steps = samples[lowest_sample_rate]
+
+        step = sample(possible_steps, 1)[0]
+
+        return {"lp_buffer_threshold": self.step_size * step}
+
+
 def ingest_merge_jobs(
     db, jobs, n_processes, cache_path, log_level="info", worker_class=None
 ):
@@ -336,7 +364,7 @@ def ingest_merge_jobs(
             enqueue=True,
         )
         for n in range(n_processes):
-            p = ExponentialSamplingLightpointIngestor(
+            p = StepSamplingLightpointIngestor(
                 db._config,
                 f"worker-{n}",
                 job_queue,
