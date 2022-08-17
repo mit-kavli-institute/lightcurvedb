@@ -305,7 +305,9 @@ class StepSamplingLightpointIngestor(BaseLightpointIngestor):
     def determine_process_parameters(self):
         q = (
             self.db.query(
-                cast(QLPOperation.job_size / self.step_size).label("bucket"),
+                cast(QLPOperation.job_size / self.step_size, Integer).label(
+                    "bucket"
+                ),
                 func.count(QLPOperation.id),
             )
             .join(QLPOperation.process)
