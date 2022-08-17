@@ -182,13 +182,18 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
             level="debug",
         )
-        mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         start = datetime.now()
 
-        for orbit_lightcurve, lp_arr in zip(lcs, lps):
-            id_ = orbit_lightcurve.id
-            lp_arr["lightcurve_id"] = id_
-            mgr.copy(lp_arr)
+        # Assign retrieved ids from the database
+        for orbit_lightcurve, lp in zip(lcs, lps):
+            lp["lightcurve_id"] = np.full(
+                len(lp["lightcurve_id"]), orbit_lightcurve.id
+            )
+
+        payload = np.concatenate(lps)
+
+        mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
+        mgr.copy(payload)
 
         end = datetime.now()
 
