@@ -303,16 +303,16 @@ class StepSamplingLightpointIngestor(BaseLightpointIngestor):
     max_steps = 20976
 
     def determine_process_parameters(self):
+        step_col = cast(QLPOperation.job_size / self.step_size, Integer)
+
         q = (
             self.db.query(
-                cast(QLPOperation.job_size / self.step_size, Integer).label(
-                    "bucket"
-                ),
+                step_col.label("bucket"),
                 func.count(QLPOperation.id),
             )
             .join(QLPOperation.process)
             .filter(QLPProcess.current_version())
-            .group_by(cast(QLPOperation.job_size // self.step_size))
+            .group_by(step_col)
         )
         current_samples = dict(q)
         samples = defaultdict(list)
