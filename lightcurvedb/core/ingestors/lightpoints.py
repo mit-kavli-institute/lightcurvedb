@@ -218,7 +218,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         # Ids should now be assigned.
 
         metric = QLPOperation(
-            process_id=self.process_id,
+            process_id=self.process.id,
             time_start=start,
             time_end=end,
             job_size=len(lightcurves),
