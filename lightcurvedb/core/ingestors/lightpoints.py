@@ -300,7 +300,7 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
 
 class StepSamplingLightpointIngestor(BaseLightpointIngestor):
     step_size = 800
-    max_steps = 20976
+    max_steps = 62500
 
     def determine_process_parameters(self):
         step_col = cast(QLPOperation.job_size / self.step_size, Integer)
