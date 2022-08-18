@@ -178,12 +178,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
-        self.log(
-            f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
-            level="debug",
-        )
         start = datetime.now()
 
+        self.log("Prepping lightpoint payload, assigning ids")
         # Assign retrieved ids from the database
         for orbit_lightcurve, lp in zip(lcs, lps):
             lp["lightcurve_id"] = np.full(
@@ -191,6 +188,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             )
 
         payload = np.concatenate(lps)
+        self.log(
+            f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
+            level="debug",
+        )
 
         mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
         mgr.copy(payload)
@@ -209,9 +210,21 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     def flush_orbit_lightcurves(self, db):
         lightcurves = self.buffers.get("orbit_lightcurves")
         self.log(f"Flushing {len(lightcurves)} orbit lightcurves to remote")
+
+        start = datetime.now()
         db.session.add_all(lightcurves)
         db.flush()
+        end = datetime.now()
         # Ids should now be assigned.
+
+        metric = QLPOperation(
+            process_id=self.process_id,
+            time_start=start,
+            time_end=end,
+            job_size=len(lightcurves),
+            unit="lightcurve",
+        )
+        return metric
 
     def determine_process_parameters(self):
         raise NotImplementedError
