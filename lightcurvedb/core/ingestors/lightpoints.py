@@ -199,8 +199,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 conn, self.target_table, Lightpoint.get_columns()
             )
             mgr.threading_copy(payload)
-            conn.execute("SELECT 1")
-            _healthcheck = conn.fetchall()  # noqa F841
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                _healthcheck = cur.fetchall()  # noqa F841
         except InFailedSqlTransaction:
             # threading failed silently, raise:
             raise RuntimeError
