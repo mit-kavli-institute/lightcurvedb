@@ -4,7 +4,6 @@ from multiprocessing import Process
 from queue import Empty
 
 from loguru import logger
-from psycopg2.errors import DeadlockDetected
 
 from lightcurvedb import db_from_config
 
@@ -61,7 +60,7 @@ class BufferedDatabaseIngestor(Process):
                         metrics.append(metric)
                 # Successful push
                 break
-            except DeadlockDetected:
+            except RuntimeError:
                 self.log(
                     "Encountered deadlock state, rolling back "
                     f"and performing backoff. {tries} tries remaining."
