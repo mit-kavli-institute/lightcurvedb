@@ -64,7 +64,8 @@ class BufferedDatabaseIngestor(Process):
             except DeadlockDetected:
                 self.log(
                     "Encountered deadlock state, rolling back "
-                    f"and performing backoff. {tries} tries remaining."
+                    f"and performing backoff. {tries} tries remaining.",
+                    level="warning",
                 )
                 db.rollback()
                 wait_time = 2 ** (5 - tries)
