@@ -9,6 +9,7 @@ from click import echo
 from h5py import File as H5File
 from loguru import logger
 from pgcopy import CopyManager
+from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, func
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
@@ -193,8 +194,16 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             level="debug",
         )
 
-        mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
-        mgr.copy(payload)
+        try:
+            mgr = CopyManager(
+                conn, self.target_table, Lightpoint.get_columns()
+            )
+            mgr.threading_copy(payload)
+            conn.execute("SELECT 1")
+            _healthcheck = conn.fetchall()  # noqa F841
+        except InFailedSqlTransaction:
+            # threading failed silently, raise:
+            raise RuntimeError
 
         end = datetime.now()
 
