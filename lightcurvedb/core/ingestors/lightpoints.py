@@ -366,6 +366,21 @@ class StepSamplingLightpointIngestor(BaseLightpointIngestor):
         return {"lp_buffer_threshold": self.step_size * step}
 
 
+def _queue_is_empty(queue):
+    wait = 1
+    while True:
+        try:
+            return queue.empty()
+        except ConnectionResetError:
+            unit = "second" if wait == 1 else "seconds"
+            logger.warning(
+                "Main thread could not communicate with queue, "
+                f"waiting {wait} {unit}."
+            )
+            sleep(wait)
+            wait += 1
+
+
 def ingest_merge_jobs(
     db, jobs, n_processes, cache_path, log_level="info", worker_class=None
 ):
@@ -416,7 +431,7 @@ def ingest_merge_jobs(
 
         # Wait until all jobs have been pulled off queue
         prev = job_queue.qsize()
-        while not job_queue.empty():
+        while not _queue_is_empty(job_queue):
             cur = job_queue.qsize()
             diff = prev - cur
             bar.update(diff)
