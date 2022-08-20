@@ -166,7 +166,22 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                         f"Unable to process {orbit_job.file_path}: {e}",
                         level="exception",
                     )
-        self.job_queue.task_done()
+
+        queue_tries = 5
+        while queue_tries > 0:
+            try:
+                self.job_queue.task_done()
+                break
+            except ConnectionResetError:
+                self.log("Could not mark job as done, waiting...")
+                wait_time = 2 ** (5 - queue_tries)
+                sleep(wait_time)
+                queue_tries -= 1
+
+        if queue_tries == 0:
+            raise RuntimeError(
+                f"{self.name} could not properly communicate with job queue"
+            )
 
     def flush_lightpoints(self, db):
         """
