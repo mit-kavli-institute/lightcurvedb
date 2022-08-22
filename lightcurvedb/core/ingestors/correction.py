@@ -27,6 +27,7 @@ TIC_PARAM_FIELDS = (
 
 class LightcurveCorrector:
     def __init__(self, sqlite_path):
+        self.sqlite_path = sqlite_path
         bjd = contexts.get_spacecraft_data(sqlite_path, "bjd")
         tess_x = contexts.get_spacecraft_data(sqlite_path, "x")
         tess_y = contexts.get_spacecraft_data(sqlite_path, "y")
@@ -37,11 +38,6 @@ class LightcurveCorrector:
         self.y_pos_interpolator = interp1d(bjd, tess_y)
         self.z_pos_interpolator = interp1d(bjd, tess_z)
         logger.debug("Built spacecraft position interpolations")
-
-        self.tic_parameters = contexts.get_tic_mapping(
-            sqlite_path, "ra", "dec", "tmag"
-        )
-        logger.debug("Built tic catalog mapping")
         self.quality_flag_map = contexts.get_quality_flag_mapping(sqlite_path)
         logger.debug("Built quality flag mapping")
         self.tjd_map = contexts.get_tjd_mapping(sqlite_path)
@@ -51,12 +47,13 @@ class LightcurveCorrector:
 
     def resolve_tic_parameters(self, tic_id, *fields):
         try:
-            row = self.tic_parameters[tic_id]
+            row = contexts.get_tic_parameters(
+                self.sqlite_path, tic_id, *fields
+            )
             result = tuple(row[field] for field in fields)
         except KeyError:
             result = one_off(tic_id, *TIC_PARAM_FIELDS)
             row = dict(zip(TIC_PARAM_FIELDS, result))
-            self.tic_parameters[tic_id] = row
             result = tuple(row[field] for field in fields)
 
             if self._last_tic_miss is None:
