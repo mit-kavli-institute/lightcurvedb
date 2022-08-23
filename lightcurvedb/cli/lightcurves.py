@@ -48,6 +48,7 @@ def lightcurve(ctx):
     type=str,
     default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
 )
+@click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 def ingest_dir(
     ctx,
     paths,
@@ -55,6 +56,7 @@ def ingest_dir(
     recursive,
     tic_catalog_template,
     quality_flag_template,
+    scratch,
 ):
     with tempfile.TemporaryDirectory() as tempdir:
         cache_path = Path(tempdir, "db.sqlite3")
@@ -87,6 +89,7 @@ def ingest_dir(
             jobs,
             n_processes,
             cache_path,
+            scratch,
             log_level=ctx.obj["log_level"],
         )
         click.echo("Done!")

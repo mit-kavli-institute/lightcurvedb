@@ -1,7 +1,9 @@
+import pathlib
 from collections import defaultdict
 from datetime import datetime
 from multiprocessing import Manager
 from random import sample
+from tempfile import TemporaryDirectory
 from time import sleep
 
 import numpy as np
@@ -37,7 +39,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     target_table = Lightpoint.__tablename__
     buffer_order = ["orbit_lightcurves", "lightpoints"]
 
-    def __init__(self, config, name, job_queue, stage_slug, cache_path):
+    def __init__(
+        self, config, name, job_queue, stage_slug, cache_path, lp_cache
+    ):
         super().__init__(config, name, job_queue)
         self.cache_path = cache_path
         self.stage_slug = stage_slug
@@ -52,6 +56,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.n_samples = 0
         self.rng = None
         self.process = None
+        self.lp_cache = pathlib.Path(lp_cache)
 
     def _load_contexts(self):
         try:
@@ -154,7 +159,11 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                     )
                     lightpoint_array["barycentric_julian_date"] = bjd
                     lightpoint_array["quality_flag"] = quality_flags
-                    self.buffers["lightpoints"].append(lightpoint_array)
+
+                    file_path = self.lp_cache / f"{pos}_lp_blob.npy"
+                    np.save(file_path, lightpoint_array)
+
+                    self.buffers["lightpoints"].append(file_path)
                     self.buffers["orbit_lightcurves"].append(lightcurve)
                 except OSError as e:
                     self.log(
@@ -189,8 +198,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         have temporary lightcurve ids assigned and must be updated with the
         ids assigned from remote.
         """
-        lps = self.buffers.get("lightpoints")
+        files = self.buffers["lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
+
+        lps = [np.load(f) for f in files]
 
         conn = db.session.connection().connection
         lp_size = sum(len(chunk) for chunk in lps)
@@ -382,7 +393,13 @@ def _queue_is_empty(queue):
 
 
 def ingest_merge_jobs(
-    db, jobs, n_processes, cache_path, log_level="info", worker_class=None
+    db,
+    jobs,
+    n_processes,
+    cache_path,
+    lp_scratch,
+    log_level="info",
+    worker_class=None,
 ):
     """
     Process and ingest SingleMergeJob objects.
@@ -410,7 +427,9 @@ def ingest_merge_jobs(
             db.session.refresh(stage)
 
     echo("Initializing workers, beginning processing...")
-    with tqdm(total=len(jobs)) as bar:
+    with tqdm(total=len(jobs)) as bar, TemporaryDirectory(
+        dir=lp_scratch
+    ) as tmpdir:
         logger.remove()
         logger.add(
             lambda msg: tqdm.write(msg, end=""),
@@ -425,6 +444,7 @@ def ingest_merge_jobs(
                 job_queue,
                 "lightpoint-ingestion",
                 cache_path,
+                tmpdir,
             )
             p.start()
             workers.append(p)
