@@ -142,7 +142,7 @@ def test_ingestor_instantiation(db, data):
             contexts.populate_quality_flags(cache_path, *args)
 
         process = ExponentialSamplingLightpointIngestor(
-            db._config, "test-worker", None, 0, cache_path
+            db._config, "test-worker", None, 0, cache_path, tempdir
         )
         assert process is not None
 
@@ -201,7 +201,12 @@ def test_ingestor_processing(db, data):
             slug = stage.slug
 
             process = ExponentialSamplingLightpointIngestor(
-                db._config, "test-worker", MockQueue(), slug, cache_path
+                db._config,
+                "test-worker",
+                MockQueue(),
+                slug,
+                cache_path,
+                tempdir,
             )
             note("Apertures")
             note(db.query(models.Aperture).all())
