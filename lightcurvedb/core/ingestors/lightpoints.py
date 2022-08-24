@@ -2,6 +2,7 @@ import pathlib
 from collections import defaultdict
 from datetime import datetime
 from multiprocessing import Manager
+from os import getpid
 from random import sample
 from tempfile import TemporaryDirectory
 from time import sleep
@@ -160,7 +161,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                     lightpoint_array["barycentric_julian_date"] = bjd
                     lightpoint_array["quality_flag"] = quality_flags
 
-                    file_path = self.lp_cache / f"{pos}_lp_blob.npy"
+                    file_path = self.lp_cache / f"{pos}_{getpid()}_lp_blob.npy"
                     np.save(file_path, lightpoint_array)
 
                     self.buffers["lightpoints"].append(file_path)
