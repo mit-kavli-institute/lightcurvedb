@@ -216,8 +216,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         lp_size = self.n_lightpoints
 
         self.log(
-            f"Flushing {lp_size} lightpoints over "
-            f"{self.n_lightpoints} jobs to remote",
+            f"Flushing {lp_size:,} lightpoints over "
+            f"{len(files):,} jobs to remote",
             level="debug",
         )
 
@@ -251,7 +251,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
     def flush_orbit_lightcurves(self, db):
         lightcurves = self.buffers.get("orbit_lightcurves")
-        self.log(f"Flushing {len(lightcurves)} orbit lightcurves to remote")
+        self.log(f"Flushing {len(lightcurves):,} orbit lightcurves to remote")
 
         start = datetime.now()
         db.session.add_all(lightcurves)
