@@ -1,10 +1,9 @@
-from sqlalchemy import BigInteger, Column, ForeignKey, and_, func, select
-from sqlalchemy.ext.hybrid import hybrid_method
+from sqlalchemy import BigInteger, Column, ForeignKey, and_
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
-from lightcurvedb.models.frame import Frame
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
+from lightcurvedb.models.lightcurve import OrbitLightcurve
 
 
 class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
@@ -23,41 +22,28 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     )
 
     id = Column(BigInteger, primary_key=True)
-    lightcurve_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"), nullable=False
+    aperture_id = Column(ForeignKey("apertures.id", ondelete="RESTRICT"))
+    lightcurve_type_id = Column(
+        ForeignKey("lightcurvetypes.id", ondelete="RESTRICT")
     )
     orbit_id = Column(
         ForeignKey("orbits.id", ondelete="RESTRICT"), nullable=False
     )
 
-    lightcurve = relationship("Lightcurve")
-
+    aperture = relationship("Aperture")
+    lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
-    @hybrid_method
-    def max_cadence(self, frame_type="Raw FFI"):
-        return self.orbit.max_cadence()
 
-    @max_cadence.expression
-    def max_cadence(cls, frame_type="Raw FFI"):
-        return (
-            select(func.max(Frame.cadence))
-            .where(Frame.orbit_id == cls.orbit_id)
-            .label("max_cadence")
+class BestOrbitLightcurveAPIMixin:
+    def get_best_lightcurve_q(self):
+        q = self.query(OrbitLightcurve).join(
+            BestOrbitLightcurve.orbit_lightcurve,
+            and_(
+                BestOrbitLightcurve.orbit_id == OrbitLightcurve.orbit_id,
+                BestOrbitLightcurve.aperture_id == OrbitLightcurve.aperture_id,
+                BestOrbitLightcurve.lightcurve_type_id
+                == OrbitLightcurve.lightcurve_type_id,
+            ),
         )
-
-    @hybrid_method
-    def min_cadence(self, frame_type="Raw FFI"):
-        return self.orbit.min_cadence()
-
-    @min_cadence.expression
-    def min_cadence(cls, frame_type="Raw FFI"):
-        return (
-            select(func.min(Frame.cadence))
-            .where(Frame.orbit_id == cls.orbit_id)
-            .label("min_cadence")
-        )
-
-    @hybrid_method
-    def lightpoints(self, frame_type="Raw FFI"):
-        raise NotImplementedError
+        return q
