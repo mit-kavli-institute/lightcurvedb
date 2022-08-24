@@ -58,6 +58,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.rng = None
         self.process = None
         self.lp_cache = pathlib.Path(lp_cache)
+        self.n_lightpoints = 0
 
     def _load_contexts(self):
         try:
@@ -163,6 +164,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
                     file_path = self.lp_cache / f"{pos}_{getpid()}_lp_blob.npy"
                     np.save(file_path, lightpoint_array)
+                    self.n_lightpoints += len(lightpoint_array)
 
                     self.buffers["lightpoints"].append(file_path)
                     self.buffers["orbit_lightcurves"].append(lightcurve)
@@ -238,6 +240,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         # Remove files there was a successful push
         for f in files:
             f.unlink()
+        self.n_lightpoints = 0
 
         metric = QLPOperation(
             process_id=self.process.id,
@@ -296,7 +299,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     @property
     def should_flush(self):
         return (
-            sum(len(array) for array in self.buffers["lightpoints"])
+            self.n_lightpoints
             >= self.runtime_parameters["lp_buffer_threshold"]
         )
 
