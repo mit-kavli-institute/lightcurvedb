@@ -234,6 +234,10 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
         end = datetime.now()
 
+        # Remove files there was a successful push
+        for f in files:
+            f.unlink()
+
         metric = QLPOperation(
             process_id=self.process.id,
             time_start=start,
