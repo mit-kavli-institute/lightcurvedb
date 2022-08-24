@@ -36,6 +36,14 @@ from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
 from lightcurvedb.util.contexts import extract_pdo_path_context
 
 
+def _yield_lightpoints(files, lightcurves):
+    for f, orbit_lightcurve in zip(files, lightcurves):
+        id_ = orbit_lightcurve.id
+        array = np.load(f)
+        for _, cadence, bjd, data, err, x, y, flag in array:
+            yield (id_, cadence, bjd, data, err, x, y, flag)
+
+
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
     target_table = Lightpoint.__tablename__
     buffer_order = ["orbit_lightcurves", "lightpoints"]
@@ -51,7 +59,6 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.lightcurve_types = {}
         self.runtime_parameters = {}
         self.tmp_lc_id_map = {}
-        self.seen_cache = set()
         self.orbit_map = {}
         self.current_sample = 0
         self.n_samples = 0
@@ -204,22 +211,13 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         files = self.buffers["lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
 
-        lps = [np.load(f) for f in files]
-
         conn = db.session.connection().connection
-        lp_size = sum(len(chunk) for chunk in lps)
         start = datetime.now()
+        lp_size = self.n_lightpoints
 
-        self.log("Prepping lightpoint payload, assigning ids")
-        # Assign retrieved ids from the database
-        for orbit_lightcurve, lp in zip(lcs, lps):
-            lp["lightcurve_id"] = np.full(
-                len(lp["lightcurve_id"]), orbit_lightcurve.id
-            )
-
-        payload = np.concatenate(lps)
         self.log(
-            f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
+            f"Flushing {lp_size} lightpoints over "
+            f"{self.n_lightpoints} jobs to remote",
             level="debug",
         )
 
@@ -227,7 +225,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             mgr = CopyManager(
                 conn, self.target_table, Lightpoint.get_columns()
             )
-            mgr.threading_copy(payload)
+            mgr.threading_copy(_yield_lightpoints(files, lcs))
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 _healthcheck = cur.fetchall()  # noqa F841
