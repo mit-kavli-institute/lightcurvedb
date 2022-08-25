@@ -1,7 +1,7 @@
 import pathlib
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import product
+from itertools import chain, product
 from typing import List, Optional
 
 from click import echo
@@ -325,7 +325,9 @@ class DirectoryPlan:
             yield pathlib.Path(expected_path), camera, ccd
 
     def fill_id_gaps(self):
-        job_iter = iter(self.job)
+        job_iter = iter(
+            chain.from_iterable([j.orbit_lightcurve_jobs for j in self.jobs])
+        )
         n_preassigned = 0
         logger.debug(
             "Preassigning orbit lightcurve ids with gaps in id sequence"
