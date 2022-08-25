@@ -17,6 +17,7 @@ from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
+from lightcurvedb.models.lightcurve import OrbitLightcurveAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
 from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
@@ -305,6 +306,7 @@ class DB(
     FrameAPIMixin,
     TableTrackerAPIMixin,
     OrbitAPIMixin,
+    OrbitLightcurveAPIMixin,
     PGCatalogMixin,
     QLPMetricAPIMixin,
 ):
