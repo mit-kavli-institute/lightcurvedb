@@ -49,6 +49,7 @@ def lightcurve(ctx):
     default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
+@click.option("--fill-id-gaps", is_flag=True)
 def ingest_dir(
     ctx,
     paths,
@@ -57,6 +58,7 @@ def ingest_dir(
     tic_catalog_template,
     quality_flag_template,
     scratch,
+    fill_id_gaps,
 ):
     with tempfile.TemporaryDirectory() as tempdir:
         cache_path = Path(tempdir, "db.sqlite3")
@@ -70,6 +72,10 @@ def ingest_dir(
                 click.echo(f"Considering {directory}")
 
             plan = DirectoryPlan(directories, db, recursive=recursive)
+
+            if fill_id_gaps:
+                plan.fill_id_gaps()
+
             jobs = plan.get_jobs()
 
             for catalog in plan.yield_needed_tic_catalogs(

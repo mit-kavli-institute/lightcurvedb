@@ -323,3 +323,21 @@ class DirectoryPlan:
                 orbit_number=orbit_number, camera=camera, ccd=ccd
             )
             yield pathlib.Path(expected_path), camera, ccd
+
+    def fill_id_gaps(self):
+        job_iter = iter(self.job)
+        n_preassigned = 0
+        logger.debug(
+            "Preassigning orbit lightcurve ids with gaps in id sequence"
+        )
+        with self.db as db:
+            try:
+                for min_id, max_id in db.get_missing_id_ranges():
+                    for id_ in range(min_id, max_id + 1):
+                        job = next(job_iter)
+                        job.preassigned_id = id_
+                        n_preassigned += 1
+            except StopIteration:
+                # Out of jobs to assign ids to
+                pass
+        logger.debug(f"Preassigned {n_preassigned} ids")
