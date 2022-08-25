@@ -146,7 +146,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 orbit_number = orbit_job.orbit_number
                 orbit_id = self.orbit_map[orbit_number]
                 try:
-                    pos = len(self.buffers["lightcurves"])
+                    pos = len(self.buffers["orbit_lightcurves"])
                     lightpoint_array = self.read_lightcurve(
                         pos,
                         orbit_job.aperture,
