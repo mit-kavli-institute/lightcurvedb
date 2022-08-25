@@ -146,10 +146,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 orbit_number = orbit_job.orbit_number
                 orbit_id = self.orbit_map[orbit_number]
                 try:
-                    # Assign temporary positional id
-                    pos = len(self.buffers["orbit_lightcurves"])
-                    self.tmp_lc_id_map[pos] = pos
-
+                    pos = len(self.buffers["lightcurves"])
                     lightpoint_array = self.read_lightcurve(
                         pos,
                         orbit_job.aperture,
@@ -166,6 +163,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                         lightcurve_type_id=lightcurve_type_id,
                         orbit_id=orbit_id,
                     )
+                    if orbit_job.preassigned_id is not None:
+                        lightcurve.id = orbit_job.preassigned_id
+
                     lightpoint_array["barycentric_julian_date"] = bjd
                     lightpoint_array["quality_flag"] = quality_flags
 

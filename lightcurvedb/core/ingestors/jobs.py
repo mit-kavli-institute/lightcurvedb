@@ -2,7 +2,7 @@ import pathlib
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
-from typing import List
+from typing import List, Optional
 
 from click import echo
 from loguru import logger
@@ -28,6 +28,8 @@ class OrbitLightcurveJob:
     aperture: str
     lightcurve_type: str
     file_path: str
+
+    preassigned_id: Optional[int] = None
 
     def as_key(self):
         return (
