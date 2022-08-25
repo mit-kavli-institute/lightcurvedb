@@ -108,6 +108,23 @@ def lightcurve_types(draw, **overrides):
 
 
 @st.composite
+def orbit_lightcurves(draw, **overrides):
+    return draw(
+        st.builds(
+            models.OrbitLightcurve,
+            tic_id=overrides.get("tic_id", tess_st.tic_ids()),
+            camera=overrides.get("camera", tess_st.cameras()),
+            ccd=overrides.get("ccd", tess_st.ccds()),
+            orbit=overrides.get("orbit", orbits()),
+            aperture=overrides.get("aperture", apertures()),
+            lightcurve_type=overrides.get(
+                "lightcurve_type", lightcurve_types()
+            ),
+        )
+    )
+
+
+@st.composite
 def frames(draw, **overrides):
     """
     Generate a frame, note that the relations for this frame, namely
