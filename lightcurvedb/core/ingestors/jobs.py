@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from click import echo
 from loguru import logger
-from sqlalchemy import sql
+from sqlalchemy import select, sql
 from tqdm import tqdm
 
 from lightcurvedb.models import (
@@ -343,3 +343,55 @@ class DirectoryPlan:
                 # Out of jobs to assign ids to
                 pass
         logger.debug(f"Preassigned {n_preassigned} ids")
+
+
+class TICListPlan(DirectoryPlan):
+    def __init__(self, tic_ids, db):
+        self.db = db
+        self.tic_ids = set(tic_ids)
+
+    def _look_for_files(self):
+        logger.debug(f"Looking for files relevant to {len(self.tic_ids)} tics")
+        cameras = [1, 2, 3, 4]
+        ccds = [1, 2, 3, 4]
+        with self.db as db:
+            orbits = [
+                number
+                for number, in db.query(Orbit.orbit_number).order_by(
+                    Orbit.orbit_number
+                )
+            ]
+        contexts = []
+        orbit_dir = pathlib.Path("/pdo/qlp-data")
+        for orbit_number, camera, ccd in product(orbits, cameras, ccds):
+            orbit_path = orbit_dir / f"orbit-{orbit_number}" / "ffi"
+            lc_path = orbit_path / f"cam{camera}/ccd{ccd}" / "LC"
+            context = extract_pdo_path_context(lc_path)
+            n_accepted = 0
+            for path in lc_path.glob("*h5"):
+                tic_id = int(path.name.split(".")[0])
+                if tic_id in self.tic_ids:
+                    context["tic_id"] = tic_id
+                    context["path"] = path
+                    contexts.append(context)
+                    n_accepted += 1
+            logger.debug(f"Found {n_accepted} relevant files in {lc_path}")
+        self.files = contexts
+
+    def _get_observed(self, db):
+        q = (
+            select(
+                OrbitLightcurve.tic_id,
+                OrbitLightcurve.camera,
+                OrbitLightcurve.tic_id,
+                Orbit.orbit_number,
+                Aperture.name,
+                LightcurveType.name,
+            )
+            .join(OrbitLightcurve.aperture)
+            .join(OrbitLightcurve.lightcurve_type)
+            .join(OrbitLightcurve.orbit)
+            .where(OrbitLightcurve.tic_id.in_(self.tic_ids))
+        )
+
+        return set(db.execute(q).fetchall())
