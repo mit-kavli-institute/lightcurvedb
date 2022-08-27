@@ -349,6 +349,8 @@ class TICListPlan(DirectoryPlan):
     def __init__(self, tic_ids, db):
         self.db = db
         self.tic_ids = set(tic_ids)
+        self._look_for_files()
+        self._preprocess_files()
 
     def _look_for_files(self):
         logger.debug(f"Looking for files relevant to {len(self.tic_ids)} tics")
