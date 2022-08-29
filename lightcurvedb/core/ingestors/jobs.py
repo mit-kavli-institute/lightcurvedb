@@ -271,7 +271,8 @@ class DirectoryPlan:
             observed = self._get_observed(db)
 
             logger.debug(
-                f"Created {len(naive_jobs)} jobs requiring dedup check"
+                f"Created {len(naive_jobs)} jobs requiring dedup check "
+                f"against {len(observed)} observed lightcurves"
             )
             n_accepted = 0
             for job in tqdm(naive_jobs, unit=" jobs"):
