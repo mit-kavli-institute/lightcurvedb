@@ -106,11 +106,6 @@ def ingest_dir(
 @click.argument("tic_file", type=click.Path(dir_okay=False, exists=True))
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option(
-    "--tic-catalog-template",
-    type=str,
-    default=DirectoryPlan.DEFAULT_TIC_CATALOG_TEMPLATE,
-)
-@click.option(
     "--quality-flag-template",
     type=str,
     default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
@@ -121,7 +116,6 @@ def ingest_tic_list(
     ctx,
     tic_file,
     n_processes,
-    tic_catalog_template,
     quality_flag_template,
     scratch,
     fill_id_gaps,
@@ -133,16 +127,13 @@ def ingest_tic_list(
         with ctx.obj["dbconf"] as db:
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
+
             plan = TICListPlan(tic_ids, db)
             if fill_id_gaps:
                 plan.fill_id_gaps()
             jobs = plan.get_jobs()
 
-            for catalog in plan.yield_needed_tic_catalogs(
-                path_template=tic_catalog_template
-            ):
-                logger.debug(f"Requiring catalog {catalog}")
-                contexts.populate_tic_catalog(cache_path, catalog)
+            contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
 
             for args in plan.yield_needed_quality_flags(
                 path_template=quality_flag_template

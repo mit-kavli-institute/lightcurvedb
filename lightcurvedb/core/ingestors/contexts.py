@@ -16,10 +16,12 @@ import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, as_declarative, declared_attr
 from tqdm import tqdm
 
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
 
@@ -161,6 +163,23 @@ def _iter_tic_catalog(catalog_path, mask, field_order=None):
             mask.add(tic_id)
 
 
+def _iter_tic_db(ticdb, q, field_order=None):
+    if field_order is None:
+        field_order = (
+            "tic_id",
+            "ra",
+            "dec",
+            "tmag",
+            "pmra",
+            "pmdec",
+            "jmag",
+            "kmag",
+            "vmag",
+        )
+    for row in ticdb.execute(q).fetchall():
+        yield dict(zip(field_order, row))
+
+
 def _iter_quality_flags(quality_flag_path, camera, ccd):
     """
     Yield quality flag cadence and flag values. The file should be
@@ -204,6 +223,29 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
         stmt = TicParameter.insert().values(chunk)
         conn.execute(stmt)
         conn.commit()
+
+
+@with_sqlite
+def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
+    with TIC8_DB() as tic8:
+        columns = tic8.ticentries.c
+        q = select(
+            columns.id,
+            columns.ra,
+            columns.dec,
+            columns.tmag,
+            columns.pmra,
+            columns.pmdec,
+            columns.jmag,
+            columns.kmag,
+            columns.vmag,
+        ).where(columns.id.in_(tic_ids))
+        parameters = list(_iter_tic_db(tic8, q))
+        chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
+        for chunk in chunks:
+            stmt = TicParameter.insert().values(chunk)
+            conn.execute(stmt)
+            conn.commit()
 
 
 @with_sqlite
