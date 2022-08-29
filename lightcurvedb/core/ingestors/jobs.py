@@ -385,7 +385,7 @@ class TICListPlan(DirectoryPlan):
             select(
                 OrbitLightcurve.tic_id,
                 OrbitLightcurve.camera,
-                OrbitLightcurve.tic_id,
+                OrbitLightcurve.ccd,
                 Orbit.orbit_number,
                 Aperture.name,
                 LightcurveType.name,
