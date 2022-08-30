@@ -345,6 +345,10 @@ class DirectoryPlan:
                 pass
         logger.debug(f"Preassigned {n_preassigned} ids")
 
+    @property
+    def tic_ids(self):
+        return set(job.tic_id for job in self.jobs)
+
 
 class TICListPlan(DirectoryPlan):
     def __init__(self, tic_ids, db):

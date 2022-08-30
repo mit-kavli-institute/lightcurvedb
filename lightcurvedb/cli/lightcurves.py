@@ -39,11 +39,6 @@ def lightcurve(ctx):
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
 @click.option(
-    "--tic-catalog-template",
-    type=str,
-    default=DirectoryPlan.DEFAULT_TIC_CATALOG_TEMPLATE,
-)
-@click.option(
     "--quality-flag-template",
     type=str,
     default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
@@ -55,7 +50,6 @@ def ingest_dir(
     paths,
     n_processes,
     recursive,
-    tic_catalog_template,
     quality_flag_template,
     scratch,
     fill_id_gaps,
@@ -77,13 +71,8 @@ def ingest_dir(
                 plan.fill_id_gaps()
 
             jobs = plan.get_jobs()
-
-            for catalog in plan.yield_needed_tic_catalogs(
-                path_template=tic_catalog_template
-            ):
-                logger.debug(f"Requiring catalog {catalog}")
-                contexts.populate_tic_catalog(cache_path, catalog)
-
+            tic_ids = plan.tic_ids
+            contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
             for args in plan.yield_needed_quality_flags(
                 path_template=quality_flag_template
             ):
