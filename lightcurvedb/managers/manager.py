@@ -33,6 +33,9 @@ class BaseManager:
         for key, value in self._cache.items():
             yield key, value
 
+    def interpret_data(self, data_aggregate):
+        return data_aggregate
+
     def map(self, func):
         for _, value in self:
             yield func(value)
@@ -44,4 +47,4 @@ class BaseManager:
         with self.db as db:
             q = self.query_template.filter(self.identity_column == id)
             for id_, *data in db.execute(q):
-                self._cache[id] = data
+                self._cache[id] = self.interpret_data(data)
