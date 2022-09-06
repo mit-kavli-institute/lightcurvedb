@@ -15,6 +15,13 @@ def _agg_lightpoint_col(*cols):
     return aggs
 
 
+def _make_dtype(*names):
+    dtype = []
+    for name in names:
+        dtype.append((name, LIGHTPOINT_NP_DTYPES[name]))
+    return dtype
+
+
 class BestLightcurveManager(BaseManager):
     def __init__(self, db_config):
         template = (
@@ -40,14 +47,15 @@ class BestLightcurveManager(BaseManager):
     def interpret_data(self, data_aggregate):
         arr = np.array(
             data_aggregate,
-            dtype=[
-                LIGHTPOINT_NP_DTYPES["cadence"],
-                LIGHTPOINT_NP_DTYPES["barycentric_julian_date"],
-                LIGHTPOINT_NP_DTYPES["data"],
-                LIGHTPOINT_NP_DTYPES["error"],
-                LIGHTPOINT_NP_DTYPES["x_centroid"],
-                LIGHTPOINT_NP_DTYPES["y_centroid"],
-                LIGHTPOINT_NP_DTYPES["quality_flag"],
-            ],
+            dtype=_make_dtype(
+                "lightcurve_id",
+                "cadence",
+                "barycentric_julian_date",
+                "data",
+                "error",
+                "x_centroid",
+                "y_centroid",
+                "quality_flag",
+            ),
         )
         return arr
