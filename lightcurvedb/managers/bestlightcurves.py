@@ -45,8 +45,9 @@ class BestLightcurveManager(BaseManager):
         super().__init__(db_config, template, OrbitLightcurve.id)
 
     def interpret_data(self, data_aggregate):
+        _iter = zip(*data_aggregate)
         arr = np.array(
-            data_aggregate,
+            _iter,
             dtype=_make_dtype(
                 "cadence",
                 "barycentric_julian_date",
