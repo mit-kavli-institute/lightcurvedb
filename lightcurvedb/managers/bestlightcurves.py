@@ -48,7 +48,6 @@ class BestLightcurveManager(BaseManager):
         arr = np.array(
             data_aggregate,
             dtype=_make_dtype(
-                "lightcurve_id",
                 "cadence",
                 "barycentric_julian_date",
                 "data",
