@@ -16,16 +16,15 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     __tablename__ = "best_orbit_lightcurves"
     __table_args = (
         UniqueConstraint(
-            "lightcurve_id",
+            "tic_id",
             "orbit_id",
         ),
     )
 
     id = Column(BigInteger, primary_key=True)
+    tic_id = Column(BigInteger, nullable=False)
+
     aperture_id = Column(ForeignKey("apertures.id", ondelete="RESTRICT"))
-    lightcurve_type_id = Column(
-        ForeignKey("lightcurvetypes.id", ondelete="RESTRICT")
-    )
     orbit_id = Column(
         ForeignKey("orbits.id", ondelete="RESTRICT"), nullable=False
     )
@@ -33,6 +32,15 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     aperture = relationship("Aperture")
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
+
+    @classmethod
+    def orbitlightcurve_join_condition(cls):
+        return and_(
+            cls.tic_id == OrbitLightcurve.tic_id,
+            cls.aperture_id == OrbitLightcurve.aperture_id,
+            cls.lightcurve_type_id == OrbitLightcurve.lightcurve_type_id,
+            cls.orbit_id == OrbitLightcurve.orbit_id,
+        )
 
 
 class BestOrbitLightcurveAPIMixin:
