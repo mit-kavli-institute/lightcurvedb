@@ -43,5 +43,5 @@ class BaseManager:
     def load(self, id):
         with self.db as db:
             q = self.query_template.filter(self.identity_column == id)
-            for id_, *data in db.execute(q).fetch():
+            for id_, *data in db.execute(q):
                 self._cache[id] = data
