@@ -20,7 +20,7 @@ table = "best_orbit_lightcurves"
 def upgrade():
     op.alter_column(table, "lightcurve_id", new_column_name="tic_id")
     op.drop_constraint(
-        "best_orbit_lightcurves_lightcurve_id_fke", table, type_="foreignkey"
+        "best_orbit_lightcurves_lightcurve_id_fkey", table, type_="foreignkey"
     )
     op.add_column(
         table,
