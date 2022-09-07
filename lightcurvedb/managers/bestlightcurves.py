@@ -73,7 +73,7 @@ class BestLightcurveManager(BaseManager):
                     mask = lp["quality_flag"] == 0
                     median = np.nanmedian(lp[mask]["data"])
                     offset = median - tmag
-                    lp["data"] += offset
+                    lp["data"] -= offset
                 lps.append(lp)
             self._cache[tic_id] = np.concatenate(lps)
 
