@@ -22,11 +22,13 @@ from tqdm import tqdm
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.core.ingestors.lightcurves import (
+    best_detrending_from_h5_fd,
     cadences_from_h5_fd,
     h5_fd_to_numpy,
 )
 from lightcurvedb.models import (
     Aperture,
+    BestOrbitLightcurve,
     LightcurveType,
     Lightpoint,
     Orbit,
@@ -46,7 +48,11 @@ def _yield_lightpoints(files, lightcurves):
 
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
     target_table = Lightpoint.__tablename__
-    buffer_order = ["orbit_lightcurves", "lightpoints"]
+    buffer_order = [
+        "orbit_lightcurves",
+        "best_orbit_lightcurves",
+        "lightpoints",
+    ]
 
     def __init__(
         self, config, name, job_queue, stage_slug, cache_path, lp_cache
@@ -57,6 +63,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.log("Initialized")
         self.apertures = {}
         self.lightcurve_types = {}
+        self.bestap_cache = {}
         self.runtime_parameters = {}
         self.tmp_lc_id_map = {}
         self.orbit_map = {}
@@ -116,6 +123,42 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 self.lightcurve_types[name] = id_
         return id_
 
+    def get_best_aperture_id(self, tic_id):
+        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")
+        magbins = np.array([6, 7, 8, 9, 10, 11, 12])
+        bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
+        index = np.searchsorted(magbins, tmag)
+        if index == 0:
+            bestap = bestaps[0]
+        elif index >= len(magbins):
+            bestap = bestaps[-1]
+        else:
+            if tmag > magbins[index] - 0.5:
+                bestap = bestaps[index]
+            else:
+                bestap = bestaps[index - 1]
+
+        try:
+            id_ = self.bestap_cache[bestap]
+        except KeyError:
+            self.log(f"Best Aperture cache miss for {bestap}, tmag of {tmag}")
+            with self.db as db:
+                id_ = db.resolve_best_aperture_id(bestap)
+            self.bestap_cache[bestap] = id_
+
+        return id_
+
+    def get_best_detrend_id(self, h5_file):
+        name = best_detrending_from_h5_fd(h5_file)
+        try:
+            id_ = self.best_detrend_cache[name]
+        except KeyError:
+            self.log(f"Best Detrending cache miss for {name}, resolving")
+            with self.db as db:
+                id_ = db.resolve_beset_lightcurve_type_id(name)
+            self.best_detrend_cache[name] = id_
+        return id_
+
     def read_lightcurve(
         self, id_, aperture, lightcurve_type, quality_flags, context, h5
     ):
@@ -137,6 +180,8 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             quality_flags = self.corrector.get_quality_flags(
                 camera, ccd, cadences
             )
+            bestap_id = self.get_best_aperture_id(tic_id)
+            best_detrend_id = self.get_best_detrend_id(h5)
 
             for orbit_job in h5_job.orbit_lightcurve_jobs:
                 aperture_id = self.get_aperture_id(orbit_job.aperture)
@@ -145,6 +190,14 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 )
                 orbit_number = orbit_job.orbit_number
                 orbit_id = self.orbit_map[orbit_number]
+
+                best_lightcurve_definition = {
+                    "orbit_id": orbit_id,
+                    "aperture_id": bestap_id,
+                    "lightcurve_id": best_detrend_id,
+                    "tic_id": tic_id,
+                }
+
                 try:
                     pos = len(self.buffers["orbit_lightcurves"])
                     lightpoint_array = self.read_lightcurve(
@@ -175,6 +228,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
 
                     self.buffers["lightpoints"].append(file_path)
                     self.buffers["orbit_lightcurves"].append(lightcurve)
+                    self.buffers["best_orbit_lightcurves"].append(
+                        best_lightcurve_definition
+                    )
                 except OSError as e:
                     self.log(
                         f"Unable to open {orbit_job.file_path}: {e}",
@@ -265,6 +321,26 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             time_end=end,
             job_size=len(lightcurves),
             unit="lightcurve",
+        )
+        return metric
+
+    def flush_best_orbit_lightcurves(self, db):
+        best_lcs = self.buffers["best_orbit_lightcurves"]
+        self.log(
+            "Updating best orbit lightcurve table with "
+            f"{len(best_lcs)} entries"
+        )
+
+        start = datetime.now()
+        db.session.bulk_insert_mapping(BestOrbitLightcurve, best_lcs)
+        end = datetime.now()
+
+        metric = QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=len(best_lcs),
+            unit="best_lightcurves",
         )
         return metric
 

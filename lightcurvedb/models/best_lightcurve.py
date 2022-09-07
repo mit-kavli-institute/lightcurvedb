@@ -1,9 +1,10 @@
-from sqlalchemy import BigInteger, Column, ForeignKey, and_
+from sqlalchemy import BigInteger, Column, ForeignKey, and_, select
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
-from lightcurvedb.models.lightcurve import OrbitLightcurve
+from lightcurvedb.models.aperture import Aperture
+from lightcurvedb.models.lightcurve import LightcurveType, OrbitLightcurve
 
 
 class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
@@ -58,3 +59,15 @@ class BestOrbitLightcurveAPIMixin:
             ),
         )
         return q
+
+    def resolve_best_aperture_id(self, bestap):
+        q = select(Aperture.id).filter(Aperture.name.ilike(f"%{bestap}%"))
+        id_ = self.execute(q).fetchone()[0]
+        return id_
+
+    def resolve_best_lightcurve_type_id(self, detrend_name):
+        q = select(LightcurveType.id).filter(
+            LightcurveType.name.ilike(detrend_name.lower())
+        )
+        id_ = self.execute(q).fetchone()[0]
+        return id_
