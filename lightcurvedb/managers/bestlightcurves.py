@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
@@ -76,7 +75,7 @@ class BestLightcurveManager(BaseManager):
                     offset = median - tmag
                     lp["data"] += offset
                 lps.append(lp)
-            self._cache[tic_id] = pd.concat(lps)
+            self._cache[tic_id] = np.concatenate(lps)
 
     def interpret_data(self, result):
         arr = np.array(
