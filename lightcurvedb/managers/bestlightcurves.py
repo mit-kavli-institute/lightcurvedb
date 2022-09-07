@@ -29,7 +29,9 @@ class BestLightcurveManager(BaseManager):
 
     def load(self, tic_id):
         with self.db as db:
-            q = db.query(OrbitLightcurve.id).filter_by(tic_id=tic_id)
+            q = db.get_best_lightcurve_q().filter(
+                OrbitLightcurve.tic_id == tic_id
+            )
             ids = [id_ for id_, in q]
             q = self.query_template.filter(self.identity_column.in_(ids))
             result = db.execute(q)

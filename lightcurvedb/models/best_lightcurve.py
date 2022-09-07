@@ -56,6 +56,7 @@ class BestOrbitLightcurveAPIMixin:
                 BestOrbitLightcurve.aperture_id == OrbitLightcurve.aperture_id,
                 BestOrbitLightcurve.lightcurve_type_id
                 == OrbitLightcurve.lightcurve_type_id,
+                BestOrbitLightcurve.tic_id == OrbitLightcurve.tic_id,
             ),
         )
         return q
