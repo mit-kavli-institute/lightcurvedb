@@ -71,7 +71,8 @@ class BestLightcurveManager(BaseManager):
             for id_, *data in result:
                 lp = self.interpret_data(data)
                 if self.normalize:
-                    median = np.nanmedian(lp[lp.quality_flag == 0]["data"])
+                    mask = lp["quality_flag"] == 0
+                    median = np.nanmedian(lp[mask]["data"])
                     offset = median - tmag
                     lp["data"] += offset
                 lps.append(lp)
