@@ -1,11 +1,9 @@
-import numpy as np
-from loguru import logger
+import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb.managers.manager import BaseManager
 from lightcurvedb.models import Lightpoint, OrbitLightcurve
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 
 
 def _agg_lightpoint_col(*cols):
@@ -14,13 +12,6 @@ def _agg_lightpoint_col(*cols):
         for col in cols
     )
     return aggs
-
-
-def _make_dtype(*names):
-    dtype = []
-    for name in names:
-        dtype.append((name, LIGHTPOINT_NP_DTYPES[name]))
-    return dtype
 
 
 class BestLightcurveManager(BaseManager):
@@ -45,20 +36,16 @@ class BestLightcurveManager(BaseManager):
             self._cache[tic_id] = self.interpret_data(list(result))
 
     def interpret_data(self, result):
-        try:
-            arr = np.array(
-                result,
-                dtype=_make_dtype(
-                    "cadence",
-                    "barycentric_julian_date",
-                    "data",
-                    "error",
-                    "x_centroid",
-                    "y_centroid",
-                    "quality_flag",
-                ),
-            )
-        except ValueError:
-            logger.error(f"Could not load database return: {result}")
-            raise
+        arr = pd.DataFrame(
+            result,
+            columns=(
+                "cadence",
+                "barycentric_julian_date",
+                "data",
+                "error",
+                "x_centroid",
+                "y_centroid",
+                "quality_flag",
+            ),
+        )
         return arr
