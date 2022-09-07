@@ -79,7 +79,7 @@ class BestLightcurveManager(BaseManager):
     def interpret_data(self, result):
         arr = np.array(
             list(zip(*result)),
-            columns=list(
+            dtype=list(
                 _np_dtype(
                     "cadence",
                     "barycentric_julian_date",
