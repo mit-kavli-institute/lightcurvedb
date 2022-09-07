@@ -56,6 +56,23 @@ def _load_best_lightcurve(db_config, lp_q, id_col, tic_id):
 
 
 class BestLightcurveManager(BaseManager):
+    """
+    A class for managing "best" lightcurves. This class is accessed by
+    tic ids.
+
+    Example
+    -------
+    ```python
+
+    mgr = BestLightcurveManager(db_config, normalize=True)
+    lc = mgr[38696575]  # Emits query
+
+    lc["cadence"] # np.array([1, 2, 3, 4])
+    lc["data"] # np.array([0.0, 10.0, 4.0, nan])
+    lc["quality_flag"] # np.array([0, 0, 0, 1])
+    ```
+    """
+
     def __init__(self, db_config, normalize=True):
         """
         Initialize a best-lightcurve manager.
