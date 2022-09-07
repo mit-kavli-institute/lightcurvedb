@@ -90,6 +90,25 @@ class BestLightcurveManager(BaseManager):
         super().__init__(db_config, template, Lightpoint.lightcurve_id)
 
     def normalize_lightpoints(self, tmag, lp):
+        """
+        Normalize the lightpoint array to a common tmag. If thie manager
+        instance was set to not normalize then this function will be a simple
+        pass through.
+
+        If set to normalize, the original lp array will be mutated.
+
+        Parameters
+        ----------
+        tmag: float
+            The common tmag
+        lp: np.ndarray
+            A structured lightpoint array
+
+        Returns
+        -------
+        np.ndarray
+            The modified lightpoint array.
+        """
         if not self.normalize:
             return lp
 
@@ -101,6 +120,9 @@ class BestLightcurveManager(BaseManager):
         return lp
 
     def load(self, tic_id):
+        """
+        Attempt to load the given tic_id.
+        """
         if self.normalize:
             tmag = one_off(tic_id, "tmag")
         else:
@@ -115,6 +137,19 @@ class BestLightcurveManager(BaseManager):
         self._cache[tic_id] = np.concatenate(lps)
 
     def interpret_data(self, result):
+        """
+        Cast the aggregate lightpoint arrays into a single
+        structured numpy array.
+
+        Parameters
+        ----------
+        result: List[List]
+            The returned row containing aggregates.
+
+        Returns
+        -------
+        np.ndarray
+        """
         arr = np.array(
             list(zip(*result)),
             dtype=list(
