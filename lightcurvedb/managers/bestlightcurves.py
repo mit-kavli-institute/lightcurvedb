@@ -141,7 +141,7 @@ class BestLightcurveManager(BaseManager):
                 result = tic8.execute(
                     select(t.id, t.tmag).filter(t.id.in_(tic_ids))
                 )
-                tmag_map = dict(result)
+                tmag_map = dict(result.fetchall())
 
         else:
             tmag_map = {}
