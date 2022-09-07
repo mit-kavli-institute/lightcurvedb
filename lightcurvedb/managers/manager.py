@@ -2,7 +2,6 @@
 This module describes the base manager class and its utility functions.
 """
 
-from lightcurvedb import db_from_config
 from lightcurvedb.exceptions import LightcurveDBException
 
 
@@ -54,7 +53,7 @@ class BaseManager:
             A related column to the query template which can be considered
             "identifying" or unique.
         """
-        self.db = db_from_config(db_config)
+        self.db_config = db_config
         self.query_template = query_template
         self.identity_column = identity_column
         self._cache = {}

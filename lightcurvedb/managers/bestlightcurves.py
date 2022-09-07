@@ -1,15 +1,15 @@
 """
 This module describes the best-orbit lightcurve manager subclasses
 """
-
 from functools import partial
+from multiprocessing import Pool
 
 import numpy as np
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb import db_from_config
-from lightcurvedb.core.tic8 import one_off
+from lightcurvedb.core.tic8 import TIC8_DB, one_off
 from lightcurvedb.managers.manager import BaseManager
 from lightcurvedb.models import (
     BestOrbitLightcurve,
@@ -52,7 +52,7 @@ def _load_best_lightcurve(db_config, lp_q, id_col, tic_id):
         ids = [id_ for id_, in q]
         q = lp_q.filter(id_col.in_(ids))
         results = db.execute(q)
-        return results.fetchall()
+        return tic_id, results.fetchall()
 
 
 class BestLightcurveManager(BaseManager):
@@ -89,20 +89,28 @@ class BestLightcurveManager(BaseManager):
         )
         super().__init__(db_config, template, Lightpoint.lightcurve_id)
 
+    def normalize_lightpoints(self, tmag, lp):
+        if not self.normalize:
+            return lp
+
+        mask = lp["quality_flag"] == 0
+        median = np.nanmedian(lp[mask]["data"])
+        offset = median - tmag
+        lp["data"] -= offset
+
+        return lp
+
     def load(self, tic_id):
         if self.normalize:
             tmag = one_off(tic_id, "tmag")
+        else:
+            tmag = None
 
-        result = self.query_func(tic_id)
+        _, result = self.query_func(tic_id)
         lps = []
         for id_, *data in result:
             lp = self.interpret_data(data)
-            if self.normalize:
-                mask = lp["quality_flag"] == 0
-                median = np.nanmedian(lp[mask]["data"])
-                offset = median - tmag
-                lp["data"] -= offset
-            lps.append(lp)
+            lps.append(self.normalize_lightpoints(tmag, lp))
 
         self._cache[tic_id] = np.concatenate(lps)
 
@@ -122,3 +130,26 @@ class BestLightcurveManager(BaseManager):
             ),
         )
         return arr
+
+    def parallel_load(self, tic_ids, n_readers=None):
+        if n_readers is None:
+            n_readers = min([16, len(tic_ids)])
+
+        if self.normalize:
+            with TIC8_DB() as tic8:
+                t = tic8.ticentries.c
+                tmag_map = dict(select(t.id, t.tmag).filter(t.id.in_(tic_ids)))
+
+        else:
+            tmag_map = {}
+
+        with Pool(n_readers) as pool:
+            all_results = pool.imap_unordered(self.query_func, tic_ids)
+            for tic_id, result in all_results:
+                lps = []
+                for id_, *data in result:
+                    lp = self.interpret_data(data)
+                    tmag = tmag_map.get(tic_id, None)
+                    lps.append(self.normalize_lightpoints(tmag, lp))
+
+                self._cache[tic_id] = np.concatenate(lps)
