@@ -1,3 +1,7 @@
+"""
+This module describes the best-orbit lightcurve manager subclasses
+"""
+
 import numpy as np
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -27,6 +31,17 @@ def _agg_lightpoint_col(*cols):
 
 class BestLightcurveManager(BaseManager):
     def __init__(self, db_config, normalize=True):
+        """
+        Initialize a best-lightcurve manager.
+
+        Parameters
+        ----------
+        db_config: pathlike
+            A path to an lcdb configuration file
+        normalize: bool, optional
+            If true, normalize returned lightcurves to their
+            corresponding tmag values.
+        """
         template = select(
             Lightpoint.lightcurve_id,
             *_agg_lightpoint_col(

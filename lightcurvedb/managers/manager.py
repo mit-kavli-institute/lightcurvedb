@@ -1,3 +1,7 @@
+"""
+This module describes the base manager class and its utility functions.
+"""
+
 from lightcurvedb import db_from_config
 from lightcurvedb.exceptions import LightcurveDBException
 
@@ -20,7 +24,36 @@ class DuplicateEntryException(LightcurveDBException):
 
 
 class BaseManager:
+    """
+    A manager wraps around a query template in order for it to represent
+    an in-memory key-value datastructure. Upon key access the query is resolved
+    eagerly unless a cache-hit results in the requested data being immediately
+    returned.
+
+    Subclasses will define their query templates as part of their inheritance.
+
+    Examples
+    --------
+    ```python
+    mgr = ManagerClass(db_config)
+    x = mgr[identity_value]
+
+    # print(x)
+    ```
+    """
+
     def __init__(self, db_config, query_template, identity_column):
+        """
+        Parameters
+        ----------
+        db_config: pathlike
+            A path to an lcdb configuration file
+        query_template: sqlalchemy.Query
+            A query object which serves as a template.
+        identity_column: sqlalchemy.Column
+            A related column to the query template which can be considered
+            "identifying" or unique.
+        """
         self.db = db_from_config(db_config)
         self.query_template = query_template
         self.identity_column = identity_column
