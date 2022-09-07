@@ -451,20 +451,6 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
-    best = relationship(
-        "BestOrbitLightcurve",
-        back_populates="orbit_lightcurve",
-        primaryjoin=(
-            "and_("
-            "BestOrbitLightcurve.orbit_id==OrbitLightcurve.orbit_id,"
-            "BestOrbitLightcurve.aperture_id==OrbitLightcurve.aperture_id,"
-            "BestOrbitLightcurve.lightcurve_type_id=="
-            "OrbitLightcurve.lightcurve_type_id,"
-            "BestOrbitLightcurve.tic_id==OrbitLightcurve.tic_id"
-            ")"
-        ),
-    )
-
 
 class OrbitLightcurveAPIMixin:
     def get_missing_id_ranges(self):
