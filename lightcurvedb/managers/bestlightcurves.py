@@ -10,6 +10,12 @@ from lightcurvedb.models import (
     Lightpoint,
     OrbitLightcurve,
 )
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
+
+
+def _np_dtype(*cols):
+    for col in cols:
+        yield col, LIGHTPOINT_NP_DTYPES[col]
 
 
 def _agg_lightpoint_col(*cols):
@@ -71,16 +77,18 @@ class BestLightcurveManager(BaseManager):
             self._cache[tic_id] = pd.concat(lps)
 
     def interpret_data(self, result):
-        arr = pd.DataFrame(
-            result,
-            columns=(
-                "cadence",
-                "barycentric_julian_date",
-                "data",
-                "error",
-                "x_centroid",
-                "y_centroid",
-                "quality_flag",
+        arr = np.array(
+            list(zip(*result)),
+            columns=list(
+                _np_dtype(
+                    "cadence",
+                    "barycentric_julian_date",
+                    "data",
+                    "error",
+                    "x_centroid",
+                    "y_centroid",
+                    "quality_flag",
+                )
             ),
         )
         return arr
