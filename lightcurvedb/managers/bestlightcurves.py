@@ -40,7 +40,7 @@ class BestLightcurveManager(BaseManager):
             q = db.query(OrbitLightcurve.id).filter_by(tic_id=tic_id)
             ids = [id_ for id_, in q]
             q = self.query_template.filter(self.identity_column.in_(ids))
-            self._cache[tic_id] = self.interpret_data(q)
+            self._cache[tic_id] = self.interpret_data(list(q))
 
     def interpret_data(self, result):
         arr = np.array(
