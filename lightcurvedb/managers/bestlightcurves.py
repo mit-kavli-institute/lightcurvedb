@@ -1,4 +1,5 @@
 import numpy as np
+from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
@@ -44,16 +45,20 @@ class BestLightcurveManager(BaseManager):
             self._cache[tic_id] = self.interpret_data(list(result))
 
     def interpret_data(self, result):
-        arr = np.array(
-            result,
-            dtype=_make_dtype(
-                "cadence",
-                "barycentric_julian_date",
-                "data",
-                "error",
-                "x_centroid",
-                "y_centroid",
-                "quality_flag",
-            ),
-        )
+        try:
+            arr = np.array(
+                result,
+                dtype=_make_dtype(
+                    "cadence",
+                    "barycentric_julian_date",
+                    "data",
+                    "error",
+                    "x_centroid",
+                    "y_centroid",
+                    "quality_flag",
+                ),
+            )
+        except ValueError:
+            logger.error(f"Could not load database return: {result}")
+            raise
         return arr
