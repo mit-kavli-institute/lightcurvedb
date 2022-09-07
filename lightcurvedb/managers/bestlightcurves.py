@@ -1,9 +1,13 @@
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb.managers.manager import BaseManager
-from lightcurvedb.models import Lightpoint, OrbitLightcurve
+from lightcurvedb.models import (
+    BestOrbitLightcurve,
+    Lightpoint,
+    OrbitLightcurve,
+)
 
 
 def _agg_lightpoint_col(*cols):
@@ -31,7 +35,18 @@ class BestLightcurveManager(BaseManager):
         with self.db as db:
             q = (
                 db.query(OrbitLightcurve.id)
-                .join(OrbitLightcurve.best)
+                .join(
+                    BestOrbitLightcurve,
+                    and_(
+                        BestOrbitLightcurve.orbit_id
+                        == OrbitLightcurve.orbit_id,
+                        BestOrbitLightcurve.aperture_id
+                        == OrbitLightcurve.aperture_id,
+                        BestOrbitLightcurve.lightcurve_type_id
+                        == OrbitLightcurve.lightcurve_type_id,
+                        BestOrbitLightcurve.tic_id == OrbitLightcurve.tic_id,
+                    ),
+                )
                 .filter(OrbitLightcurve.tic_id == tic_id)
             )
             ids = [id_ for id_, in q]
