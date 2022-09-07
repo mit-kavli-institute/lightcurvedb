@@ -29,6 +29,7 @@ def _agg_lightpoint_col(*cols):
 class BestLightcurveManager(BaseManager):
     def __init__(self, db_config, normalize=True):
         template = select(
+            Lightpoint.lightcurve_id,
             *_agg_lightpoint_col(
                 Lightpoint.cadence,
                 Lightpoint.barycentric_julian_date,
