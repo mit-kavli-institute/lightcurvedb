@@ -48,7 +48,7 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
             "BestOrbitLightcurve.tic_id==OrbitLightcurve.tic_id"
             ")"
         ),
-        backref="best",
+        back_populates="best",
     )
 
     @classmethod
