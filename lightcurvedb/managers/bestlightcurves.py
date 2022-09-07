@@ -33,7 +33,7 @@ class BestLightcurveManager(BaseManager):
             Lightpoint.y_centroid,
             Lightpoint.quality_flag,
         ).order_by(Lightpoint.cadence)
-        super().__init__(db_config, template, OrbitLightcurve.id)
+        super().__init__(db_config, template, Lightpoint.lightcurve_id)
 
     def load(self, tic_id):
         with self.db as db:
