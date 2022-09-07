@@ -1,7 +1,9 @@
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
+from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.managers.manager import BaseManager
 from lightcurvedb.models import (
     BestOrbitLightcurve,
@@ -19,19 +21,25 @@ def _agg_lightpoint_col(*cols):
 
 
 class BestLightcurveManager(BaseManager):
-    def __init__(self, db_config):
+    def __init__(self, db_config, normalize=True):
         template = select(
-            Lightpoint.cadence,
-            Lightpoint.barycentric_julian_date,
-            Lightpoint.data,
-            Lightpoint.error,
-            Lightpoint.x_centroid,
-            Lightpoint.y_centroid,
-            Lightpoint.quality_flag,
-        ).order_by(Lightpoint.cadence)
+            *_agg_lightpoint_col(
+                Lightpoint.cadence,
+                Lightpoint.barycentric_julian_date,
+                Lightpoint.data,
+                Lightpoint.error,
+                Lightpoint.x_centroid,
+                Lightpoint.y_centroid,
+                Lightpoint.quality_flag,
+            )
+        ).group_by(Lightpoint.lightcurve_id)
+        self.normalize = normalize
         super().__init__(db_config, template, Lightpoint.lightcurve_id)
 
     def load(self, tic_id):
+        if self.normalize:
+            tmag = one_off(tic_id, "tmag")
+
         with self.db as db:
             q = (
                 db.query(OrbitLightcurve.id)
@@ -52,7 +60,15 @@ class BestLightcurveManager(BaseManager):
             ids = [id_ for id_, in q]
             q = self.query_template.filter(self.identity_column.in_(ids))
             result = db.execute(q)
-            self._cache[tic_id] = self.interpret_data(list(result))
+            lps = []
+            for id_, *data in result:
+                lp = self.interpret_data(data)
+                if self.normalize:
+                    median = np.nanmedian(lp[lp.quality_flag == 0]["data"])
+                    offset = median - tmag
+                    lp["data"] += offset
+                lps.append(lp)
+            self._cache[tic_id] = pd.concat(lps)
 
     def interpret_data(self, result):
         arr = pd.DataFrame(
