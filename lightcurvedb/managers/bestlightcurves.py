@@ -6,6 +6,7 @@ import numpy as np
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
+from lightcurvedb import db_from_config
 from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.managers.manager import BaseManager
 from lightcurvedb.models import (
@@ -27,6 +28,29 @@ def _agg_lightpoint_col(*cols):
         for col in cols
     )
     return aggs
+
+
+def _load_best_lightcurve(db_config, lp_q, id_col, tic_id):
+    with db_from_config(db_config) as db:
+        q = (
+            db.query(OrbitLightcurve.id)
+            .join(
+                BestOrbitLightcurve,
+                and_(
+                    BestOrbitLightcurve.orbit_id == OrbitLightcurve.orbit_id,
+                    BestOrbitLightcurve.aperture_id
+                    == OrbitLightcurve.aperture_id,
+                    BestOrbitLightcurve.lightcurve_type_id
+                    == OrbitLightcurve.lightcurve_type_id,
+                    BestOrbitLightcurve.tic_id == OrbitLightcurve.tic_id,
+                ),
+            )
+            .filter(OrbitLightcurve.tic_id == tic_id)
+        )
+        ids = [id_ for id_, in q]
+        q = lp_q.filter(id_col.in_(ids))
+        results = db.execute(q)
+        return results.fetchall()
 
 
 class BestLightcurveManager(BaseManager):
@@ -61,36 +85,20 @@ class BestLightcurveManager(BaseManager):
         if self.normalize:
             tmag = one_off(tic_id, "tmag")
 
-        with self.db as db:
-            q = (
-                db.query(OrbitLightcurve.id)
-                .join(
-                    BestOrbitLightcurve,
-                    and_(
-                        BestOrbitLightcurve.orbit_id
-                        == OrbitLightcurve.orbit_id,
-                        BestOrbitLightcurve.aperture_id
-                        == OrbitLightcurve.aperture_id,
-                        BestOrbitLightcurve.lightcurve_type_id
-                        == OrbitLightcurve.lightcurve_type_id,
-                        BestOrbitLightcurve.tic_id == OrbitLightcurve.tic_id,
-                    ),
-                )
-                .filter(OrbitLightcurve.tic_id == tic_id)
-            )
-            ids = [id_ for id_, in q]
-            q = self.query_template.filter(self.identity_column.in_(ids))
-            result = db.execute(q)
-            lps = []
-            for id_, *data in result:
-                lp = self.interpret_data(data)
-                if self.normalize:
-                    mask = lp["quality_flag"] == 0
-                    median = np.nanmedian(lp[mask]["data"])
-                    offset = median - tmag
-                    lp["data"] -= offset
-                lps.append(lp)
-            self._cache[tic_id] = np.concatenate(lps)
+        result = _load_best_lightcurve(
+            self.db_config, self.query_template, self.identity_column, tic_id
+        )
+        lps = []
+        for id_, *data in result:
+            lp = self.interpret_data(data)
+            if self.normalize:
+                mask = lp["quality_flag"] == 0
+                median = np.nanmedian(lp[mask]["data"])
+                offset = median - tmag
+                lp["data"] -= offset
+            lps.append(lp)
+
+        self._cache[tic_id] = np.concatenate(lps)
 
     def interpret_data(self, result):
         arr = np.array(
