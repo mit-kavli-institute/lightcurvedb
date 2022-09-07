@@ -24,24 +24,15 @@ def _make_dtype(*names):
 
 class BestLightcurveManager(BaseManager):
     def __init__(self, db_config):
-        template = (
-            select(
-                OrbitLightcurve.tic_id,
-                *_agg_lightpoint_col(
-                    Lightpoint.cadence,
-                    Lightpoint.barycentric_julian_date,
-                    Lightpoint.data,
-                    Lightpoint.error,
-                    Lightpoint.x_centroid,
-                    Lightpoint.y_centroid,
-                    Lightpoint.quality_flag,
-                )
-            )
-            .join(
-                OrbitLightcurve, OrbitLightcurve.id == Lightpoint.lightcurve_id
-            )
-            .group_by(OrbitLightcurve.tic_id)
-        )
+        template = select(
+            Lightpoint.cadence,
+            Lightpoint.barycentric_julian_date,
+            Lightpoint.data,
+            Lightpoint.error,
+            Lightpoint.x_centroid,
+            Lightpoint.y_centroid,
+            Lightpoint.quality_flag,
+        ).order_by(Lightpoint.cadence)
         super().__init__(db_config, template, OrbitLightcurve.id)
 
     def load(self, tic_id):
@@ -49,13 +40,11 @@ class BestLightcurveManager(BaseManager):
             q = db.query(OrbitLightcurve.id).filter_by(tic_id=tic_id)
             ids = [id_ for id_, in q]
             q = self.query_template.filter(self.identity_column.in_(ids))
-            for tic_id, *data in db.execute(q):
-                self._cache[tic_id] = self.interpret_data(data)
+            self._cache[tic_id] = self.interpret_data(q)
 
-    def interpret_data(self, data_aggregate):
-        _iter = zip(*data_aggregate)
+    def interpret_data(self, result):
         arr = np.array(
-            list(_iter),
+            result,
             dtype=_make_dtype(
                 "cadence",
                 "barycentric_julian_date",
