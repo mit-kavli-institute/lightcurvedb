@@ -27,7 +27,11 @@ class BaseManager:
         self._cache = {}
 
     def __getitem__(self, key):
-        raise NotImplementedError
+        try:
+            return self._cache[key]
+        except KeyError:
+            self.load(key)
+            return self._cache[key]
 
     def __iter__(self):
         for key, value in self._cache.items():
