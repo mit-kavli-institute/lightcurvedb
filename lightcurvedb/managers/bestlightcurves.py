@@ -26,7 +26,7 @@ class BestLightcurveManager(BaseManager):
     def __init__(self, db_config):
         template = (
             select(
-                OrbitLightcurve.id,
+                OrbitLightcurve.tic_id,
                 *_agg_lightpoint_col(
                     Lightpoint.cadence,
                     Lightpoint.barycentric_julian_date,
@@ -40,9 +40,16 @@ class BestLightcurveManager(BaseManager):
             .join(
                 OrbitLightcurve, OrbitLightcurve.id == Lightpoint.lightcurve_id
             )
-            .group_by(OrbitLightcurve.id)
+            .group_by(OrbitLightcurve.tic_id)
         )
         super().__init__(db_config, template, OrbitLightcurve.id)
+
+    def load(self, tic_id):
+        with self.db as db:
+            ids = [id_ for id_, in db.query(OrbitLightcurve.id)]
+            q = self.query_template.filter(self.identity_column.in_(ids))
+            for tic_id, *data in db.execute(q):
+                self._cache[tic_id] = self.interpret_data(data)
 
     def interpret_data(self, data_aggregate):
         _iter = zip(*data_aggregate)
