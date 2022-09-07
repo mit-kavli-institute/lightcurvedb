@@ -2,6 +2,8 @@
 This module describes the best-orbit lightcurve manager subclasses
 """
 
+from functools import partial
+
 import numpy as np
 from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -79,15 +81,19 @@ class BestLightcurveManager(BaseManager):
             )
         ).group_by(Lightpoint.lightcurve_id)
         self.normalize = normalize
+        self.query_func = partial(
+            _load_best_lightcurve,
+            db_config,
+            template,
+            Lightpoint.lightcurve_id,
+        )
         super().__init__(db_config, template, Lightpoint.lightcurve_id)
 
     def load(self, tic_id):
         if self.normalize:
             tmag = one_off(tic_id, "tmag")
 
-        result = _load_best_lightcurve(
-            self.db_config, self.query_template, self.identity_column, tic_id
-        )
+        result = self.query_func(tic_id)
         lps = []
         for id_, *data in result:
             lp = self.interpret_data(data)
