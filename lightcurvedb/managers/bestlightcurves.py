@@ -138,7 +138,10 @@ class BestLightcurveManager(BaseManager):
         if self.normalize:
             with TIC8_DB() as tic8:
                 t = tic8.ticentries.c
-                tmag_map = dict(select(t.id, t.tmag).filter(t.id.in_(tic_ids)))
+                result = tic8.execute(
+                    select(t.id, t.tmag).filter(t.id.in_(tic_ids))
+                )
+                tmag_map = dict(result)
 
         else:
             tmag_map = {}
