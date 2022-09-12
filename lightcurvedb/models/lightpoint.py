@@ -1,25 +1,11 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    ForeignKey,
-    Float,
-    Index,
-    Integer,
-    event,
-    func,
-)
+from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.datastructures.blob import Blobable
-from lightcurvedb.core.partitioning import (
-    Partitionable,
-    emit_ranged_partition_ddl,
-)
-from lightcurvedb.util.iter import keyword_zip
 
 UPDATEABLE_PARAMS = [
     "barycentric_julian_date",
@@ -72,8 +58,10 @@ class Lightpoint(QLPModel, Blobable):
 
     lightcurve_id = Column(
         BigInteger,
-        ForeignKey("orbit_lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
-        primary_key=True
+        ForeignKey(
+            "orbit_lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"
+        ),
+        primary_key=True,
     )
 
     cadence = Column(Integer, primary_key=True)
@@ -248,6 +236,42 @@ class Lightpoint(QLPModel, Blobable):
             "y_centroid": self.y,
             "quality_flag": self.quality_flag,
         }
+
+    @classmethod
+    def _array_aggregate(cls, col):
+        if isinstance(col, str):
+            orm_col = getattr(cls, col)
+        orm_col = col
+
+        return func.array_agg(aggregate_order_by(orm_col, cls.cadence.asc()))
+
+    @classmethod
+    def cadence_array(cls):
+        return cls._array_aggregate(cls.cadence)
+
+    @classmethod
+    def barycentric_julian_date_array(cls):
+        return cls._array_aggregate(cls.barycentric_julian_date)
+
+    @classmethod
+    def data_array(cls):
+        return cls._array_aggregate(cls.data)
+
+    @classmethod
+    def error_array(cls):
+        return cls._array_aggregate(cls.error)
+
+    @classmethod
+    def x_centroid_array(cls):
+        return cls._array_aggregate(cls.x_centroid)
+
+    @classmethod
+    def y_centroid_array(cls):
+        return cls._array_aggregate(cls.y_centroid)
+
+    @classmethod
+    def quality_flag_array(cls):
+        return cls._array_aggregate(cls.quality_flag)
 
     def update_with(self, data):
         """
