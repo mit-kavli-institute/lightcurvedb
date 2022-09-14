@@ -69,7 +69,7 @@ def _baked_best_lightcurve(db_config, tic_id):
         )
         ids = [id_ for id_, in q]
         q = (
-            db.query(
+            select(
                 Lightpoint.lightcurve_id,
                 Lightpoint.cadence_array(),
                 Lightpoint.barycentric_julian_date_array(),
@@ -82,7 +82,7 @@ def _baked_best_lightcurve(db_config, tic_id):
             .group_by(Lightpoint.lightcurve_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
-        return tic_id, q.fetchall()
+        return tic_id, db.execute(q).fetchall()
 
 
 class BestLightcurveManager(BaseManager):
