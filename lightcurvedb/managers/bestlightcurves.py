@@ -79,7 +79,7 @@ def _baked_best_lightcurve(db_config, tic_id):
                 Lightpoint.y_centroid_array(),
                 Lightpoint.quality_flag_array(),
             )
-            .join(OrbitLightcurve.id == Lightpoint.lightpoint_id)
+            .join(OrbitLightcurve.id == Lightpoint.lightcurve_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
         result = q.one()
