@@ -70,7 +70,7 @@ def _baked_best_lightcurve(db_config, tic_id):
         ids = [id_ for id_, in q]
         q = (
             db.query(
-                OrbitLightcurve.tic_id,
+                Lightpoint.lightcurve_id,
                 Lightpoint.cadence_array(),
                 Lightpoint.barycentric_julian_date_array(),
                 Lightpoint.data_array(),
@@ -79,9 +79,7 @@ def _baked_best_lightcurve(db_config, tic_id):
                 Lightpoint.y_centroid_array(),
                 Lightpoint.quality_flag_array(),
             )
-            .join(
-                OrbitLightcurve, OrbitLightcurve.id == Lightpoint.lightcurve_id
-            )
+            .group_by(Lightpoint.lightcurve_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
         return q.all()[0]
