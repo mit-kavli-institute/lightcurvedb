@@ -59,7 +59,7 @@ def _baked_best_lightcurve(db_config, tic_id):
     with db_from_config(db_config) as db:
         q = db.query(
             BestOrbitLightcurve,
-            BestOrbitLightcurve.orbit_lightcurve_join_condition(),
+            BestOrbitLightcurve.orbitlightcurve_join_condition(),
         ).filter(OrbitLightcurve.tic_id == tic_id)
         ids = [id_ for id_, in q]
         q = (
