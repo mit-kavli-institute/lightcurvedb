@@ -1,6 +1,7 @@
 """
 This module describes the base manager class and its utility functions.
 """
+import cachetools
 
 from lightcurvedb.exceptions import LightcurveDBException
 
@@ -41,7 +42,14 @@ class BaseManager:
     ```
     """
 
-    def __init__(self, db_config, query_template, identity_column):
+    def __init__(
+        self,
+        db_config,
+        query_template,
+        identity_column,
+        cache_class,
+        cache_size=1024,
+    ):
         """
         Parameters
         ----------
@@ -56,7 +64,9 @@ class BaseManager:
         self.db_config = db_config
         self.query_template = query_template
         self.identity_column = identity_column
-        self._cache = {}
+
+        CacheClass = getattr(cachetools, cache_class)
+        self._cache = CacheClass(cache_size)
 
     def __getitem__(self, key):
         try:

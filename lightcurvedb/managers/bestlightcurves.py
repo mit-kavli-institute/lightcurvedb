@@ -103,7 +103,9 @@ class BestLightcurveManager(BaseManager):
     ```
     """
 
-    def __init__(self, db_config, normalize=True):
+    def __init__(
+        self, db_config, normalize=True, cache_class=None, cache_size=1024
+    ):
         """
         Initialize a best-lightcurve manager.
 
@@ -134,7 +136,14 @@ class BestLightcurveManager(BaseManager):
             template,
             Lightpoint.lightcurve_id,
         )
-        super().__init__(db_config, template, Lightpoint.lightcurve_id)
+        cache_class = "FIFOCache" if cache_class is None else cache_class
+        super().__init__(
+            db_config,
+            template,
+            Lightpoint.lightcurve_id,
+            cache_class=cache_class,
+            cache_size=cache_size,
+        )
 
     def normalize_lightpoints(self, tmag, lp):
         """
