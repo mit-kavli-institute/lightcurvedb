@@ -76,7 +76,8 @@ def _baked_best_lightcurve(db_config, tic_id):
             .join(OrbitLightcurve.id == Lightpoint.lightpoint_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
-        return *q.fetchone()
+        result = q.one()
+        return *result
 
 
 class BestLightcurveManager(BaseManager):
