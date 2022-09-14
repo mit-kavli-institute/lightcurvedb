@@ -77,7 +77,7 @@ def _baked_best_lightcurve(db_config, tic_id):
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
         result = q.one()
-        return *result
+        return result
 
 
 class BestLightcurveManager(BaseManager):
