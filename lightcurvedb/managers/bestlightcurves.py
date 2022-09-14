@@ -237,5 +237,5 @@ class BestLightcurveManager(BaseManager):
                     lp = self.interpret_data(data)
                     tmag = tmag_map.get(tic_id, None)
                     lps.append(self.normalize_lightpoints(tmag, lp))
-
-                self._cache[tic_id] = np.concatenate(lps)
+                if len(lps) > 0:
+                    self._cache[tic_id] = np.concatenate(lps)
