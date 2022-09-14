@@ -77,7 +77,7 @@ def _baked_best_lightcurve(db_config, tic_id):
                 Lightpoint.error_array(),
                 Lightpoint.x_centroid_array(),
                 Lightpoint.y_centroid_array(),
-                Lightpoint.quality_flag(),
+                Lightpoint.quality_flag_array(),
             )
             .join(OrbitLightcurve.id == Lightpoint.lightpoint_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
