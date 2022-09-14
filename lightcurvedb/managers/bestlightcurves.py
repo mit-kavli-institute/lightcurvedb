@@ -55,6 +55,30 @@ def _load_best_lightcurve(db_config, lp_q, id_col, tic_id):
         return tic_id, results.fetchall()
 
 
+def _baked_best_lightcurve(db_config, tic_id):
+    with db_from_config(db_config) as db:
+        q = db.query(
+            BestOrbitLightcurve,
+            BestOrbitLightcurve.orbit_lightcurve_join_condition(),
+        ).filter(OrbitLightcurve.tic_id == tic_id)
+        ids = [id_ for id_, in q]
+        q = (
+            db.query(
+                OrbitLightcurve.tic_id,
+                Lightpoint.cadence_array(),
+                Lightpoint.barycentric_julian_date_array(),
+                Lightpoint.data_array(),
+                Lightpoint.error_array(),
+                Lightpoint.x_centroid_array(),
+                Lightpoint.y_centroid_array(),
+                Lightpoint.quality_flag(),
+            )
+            .join(OrbitLightcurve.id == Lightpoint.lightpoint_id)
+            .filter(Lightpoint.lightcurve_id.in_(ids))
+        )
+        return *q.fetchone()
+
+
 class BestLightcurveManager(BaseManager):
     """
     A class for managing "best" lightcurves. This class is accessed by
@@ -199,7 +223,8 @@ class BestLightcurveManager(BaseManager):
             tmag_map = {}
 
         with Pool(n_readers) as pool:
-            all_results = pool.imap_unordered(self.query_func, tic_ids)
+            f = partial(_baked_best_lightcurve, self.config)
+            all_results = pool.imap_unordered(f, tic_ids)
             for tic_id, result in all_results:
                 lps = []
                 for id_, *data in result:
