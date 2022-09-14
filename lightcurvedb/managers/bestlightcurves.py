@@ -82,7 +82,7 @@ def _baked_best_lightcurve(db_config, tic_id):
             .group_by(Lightpoint.lightcurve_id)
             .filter(Lightpoint.lightcurve_id.in_(ids))
         )
-        return q.all()[0]
+        return tic_id, q.fetchall()
 
 
 class BestLightcurveManager(BaseManager):
