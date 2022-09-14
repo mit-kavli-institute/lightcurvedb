@@ -224,7 +224,7 @@ class BestLightcurveManager(BaseManager):
             tmag_map = {}
 
         with Pool(n_readers) as pool:
-            f = partial(_baked_best_lightcurve, self.config)
+            f = partial(_baked_best_lightcurve, self.db_config)
             all_results = pool.imap_unordered(f, tic_ids)
             for tic_id, result in all_results:
                 lps = []
