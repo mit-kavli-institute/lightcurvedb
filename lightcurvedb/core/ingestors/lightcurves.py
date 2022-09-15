@@ -122,7 +122,7 @@ def best_detrending_from_h5_fd(h5, fallback_name=None):
     str
         The string name of the best detrending method.
     """
-    photometry = h5["Lightcurve"]["AperturePhotometry"]
+    photometry = h5["LightCurve"]["AperturePhotometry"]
     if fallback_name is None:
         fallback = "KSPMagnitude"
     else:
