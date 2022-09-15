@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from itertools import chain, product
 from typing import List, Optional
 
+import pandas as pd
 from click import echo
 from loguru import logger
 from sqlalchemy import select, sql
@@ -401,4 +402,56 @@ class TICListPlan(DirectoryPlan):
             .where(OrbitLightcurve.tic_id.in_(self.tic_ids))
         )
 
+        return set(db.execute(q).fetchall())
+
+
+class FilePlan(DirectoryPlan):
+    def __init__(self, plan_file_path, db):
+        self.db = db
+        self.plan_file_path = plan_file_path
+
+        self._look_for_files()
+        self._preprocess_files()
+
+    def _parse_for_context(self, row):
+        base = pathlib.Path("/pdo/qlp-data")
+        path = (
+            base
+            / f"orbit-{row['orbit_number']}"
+            / "ffi"
+            / f"cam{row['camera']}"
+            / f"ccd{row['ccd']}"
+            / "LC"
+            / f"{row['tic_id']}.h5"
+        )
+
+        return {
+            "tic_id": row["tic_id"],
+            "orbit_number": row["orbit_number"],
+            "camera": row["camera"],
+            "ccd": row["ccd"],
+            "path": path,
+        }
+
+    def _look_for_files(self):
+        df = pd.read_csv(self.plan_file_path)
+        df["expected_file_path"] = df.map()
+        self.files = df.map(self._parse_for_context).tolist()
+
+    def _get_observed(self, db):
+        unique_orbits = {c["orbit_number"] for c in self.files}
+        q = (
+            select(
+                OrbitLightcurve.tic_id,
+                OrbitLightcurve.camera,
+                OrbitLightcurve.ccd,
+                Orbit.orbit_number,
+                Aperture.name,
+                LightcurveType.name,
+            )
+            .join(OrbitLightcurve.aperture)
+            .join(OrbitLightcurve.lightcurve_type)
+            .join(OrbitLightcurve.orbit)
+            .where(Orbit.orbit_number.in_(unique_orbits))
+        )
         return set(db.execute(q).fetchall())
