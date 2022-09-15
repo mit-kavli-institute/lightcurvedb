@@ -436,7 +436,7 @@ class FilePlan(DirectoryPlan):
     def _look_for_files(self):
         df = pd.read_csv(self.plan_file_path)
         df["expected_file_path"] = df.map()
-        self.files = df.map(self._parse_for_context).tolist()
+        self.files = df.apply(self._parse_for_context, axis=1).tolist()
 
     def _get_observed(self, db):
         unique_orbits = {c["orbit_number"] for c in self.files}
