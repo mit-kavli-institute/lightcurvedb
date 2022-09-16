@@ -64,6 +64,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.apertures = {}
         self.lightcurve_types = {}
         self.bestap_cache = {}
+        self.best_detrend_cache = {}
         self.runtime_parameters = {}
         self.tmp_lc_id_map = {}
         self.orbit_map = {}
