@@ -124,7 +124,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         return id_
 
     def get_best_aperture_id(self, tic_id):
-        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")
+        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")[0]
         magbins = np.array([6, 7, 8, 9, 10, 11, 12])
         bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
         index = np.searchsorted(magbins, tmag)
