@@ -14,6 +14,7 @@ from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, func
+from sqlalchemy.dialects.postgresql import psql_insert
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
@@ -333,7 +334,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         )
 
         start = datetime.now()
-        db.session.bulk_insert_mapping(BestOrbitLightcurve, best_lcs)
+        q = (
+            psql_insert(BestOrbitLightcurve)
+            .values(best_lcs)
+            .on_conflict_do_nothing()
+        )
+        db.session.execute(q)
         end = datetime.now()
 
         metric = QLPOperation(
