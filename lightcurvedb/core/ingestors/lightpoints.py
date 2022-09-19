@@ -156,7 +156,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         except KeyError:
             self.log(f"Best Detrending cache miss for {name}, resolving")
             with self.db as db:
-                id_ = db.resolve_beset_lightcurve_type_id(name)
+                id_ = db.resolve_best_lightcurve_type_id(name)
             self.best_detrend_cache[name] = id_
         return id_
 
