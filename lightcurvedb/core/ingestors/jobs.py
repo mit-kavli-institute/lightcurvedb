@@ -414,28 +414,32 @@ class FilePlan(DirectoryPlan):
         self._preprocess_files()
 
     def _parse_for_context(self, row):
+        orbit_number, camera, ccd, tic_id = row
         base = pathlib.Path("/pdo/qlp-data")
         path = (
             base
-            / f"orbit-{row['orbit_number']}"
+            / f"orbit-{orbit_number}"
             / "ffi"
-            / f"cam{row['camera']}"
-            / f"ccd{row['ccd']}"
+            / f"cam{camera}"
+            / f"ccd{ccd}"
             / "LC"
-            / f"{row['tic_id']}.h5"
+            / f"{tic_id}.h5"
         )
 
         return {
-            "tic_id": row["tic_id"],
-            "orbit_number": row["orbit_number"],
-            "camera": row["camera"],
-            "ccd": row["ccd"],
+            "tic_id": tic_id,
+            "orbit_number": orbit_number,
+            "camera": camera,
+            "ccd": ccd,
             "path": path,
         }
 
     def _look_for_files(self):
-        df = pd.read_csv(self.plan_file_path)
-        self.files = df.apply(self._parse_for_context, axis=1).tolist()
+        df = pd.read_csv(self.plan_file_path)[
+            ["orbit_number", "camera", "ccd", "tic_id"]
+        ]
+        reduction = map(self._parse_for_context, df.itertuples(index=False))
+        self.files = list(tqdm(reduction, total=len(df)))
 
     def _get_observed(self, db):
         unique_orbits = {c["orbit_number"] for c in self.files}

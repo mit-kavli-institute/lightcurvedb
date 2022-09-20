@@ -14,7 +14,7 @@ from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, func
-from sqlalchemy.dialects.postgresql import psql_insert
+from sqlalchemy.dialects.postgresql import insert as psql_insert
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
@@ -196,7 +196,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 best_lightcurve_definition = {
                     "orbit_id": orbit_id,
                     "aperture_id": bestap_id,
-                    "lightcurve_id": best_detrend_id,
+                    "lightcurve_type_id": best_detrend_id,
+                    "camera": camera,
+                    "ccd": ccd,
                     "tic_id": tic_id,
                 }
 
