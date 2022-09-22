@@ -14,6 +14,7 @@ from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, func
+from sqlalchemy.dialects.postgresql import insert as psql_insert
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
@@ -64,6 +65,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         self.apertures = {}
         self.lightcurve_types = {}
         self.bestap_cache = {}
+        self.best_detrend_cache = {}
         self.runtime_parameters = {}
         self.tmp_lc_id_map = {}
         self.orbit_map = {}
@@ -124,7 +126,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         return id_
 
     def get_best_aperture_id(self, tic_id):
-        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")
+        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")[0]
         magbins = np.array([6, 7, 8, 9, 10, 11, 12])
         bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
         index = np.searchsorted(magbins, tmag)
@@ -155,7 +157,7 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         except KeyError:
             self.log(f"Best Detrending cache miss for {name}, resolving")
             with self.db as db:
-                id_ = db.resolve_beset_lightcurve_type_id(name)
+                id_ = db.resolve_best_lightcurve_type_id(name)
             self.best_detrend_cache[name] = id_
         return id_
 
@@ -194,7 +196,9 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 best_lightcurve_definition = {
                     "orbit_id": orbit_id,
                     "aperture_id": bestap_id,
-                    "lightcurve_id": best_detrend_id,
+                    "lightcurve_type_id": best_detrend_id,
+                    "camera": camera,
+                    "ccd": ccd,
                     "tic_id": tic_id,
                 }
 
@@ -332,7 +336,12 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         )
 
         start = datetime.now()
-        db.session.bulk_insert_mapping(BestOrbitLightcurve, best_lcs)
+        q = (
+            psql_insert(BestOrbitLightcurve)
+            .values(best_lcs)
+            .on_conflict_do_nothing()
+        )
+        db.session.execute(q)
         end = datetime.now()
 
         metric = QLPOperation(
