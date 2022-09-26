@@ -91,9 +91,12 @@ class BufferedDatabaseIngestor(Process):
         self.log("Entering main runtime")
         self._create_db()
         self._load_contexts()
+
+        job = self.job_queue.get()
+        self._execute_job(job)
         while not self.job_queue.empty():
             try:
-                job = self.job_queue.get(timeout=10)
+                job = self.job_queue.get(timeout=120)
                 self._execute_job(job)
             except Empty:
                 self.log("Timed out", level="error")
