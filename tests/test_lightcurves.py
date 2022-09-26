@@ -8,7 +8,6 @@ from hypothesis import strategies as st
 
 from lightcurvedb import models
 from lightcurvedb.core.ingestors import contexts
-from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.core.ingestors.jobs import DirectoryPlan
 from lightcurvedb.core.ingestors.lightcurves import h5_to_numpy
 from lightcurvedb.core.ingestors.lightpoints import (
@@ -35,7 +34,7 @@ FORBIDDEN_KEYWORDS = (
 @given(
     st.lists(st.text(min_size=1), min_size=1, max_size=5, unique=True),
     st.lists(st.text(min_size=1), min_size=1, max_size=5, unique=True),
-    st.integers(min_value=0, max_value=2 ** 64),
+    st.integers(min_value=0, max_value=2**63),
     st.data(),
 )
 def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
@@ -74,22 +73,109 @@ def test_h5_to_numpy(apertures, lightcurve_types, lightcurve_id, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
-@given(orm_st.database(), st.data())
-def test_corrector_instantiation(database, data):
-    try:
-        with TemporaryDirectory() as tempdir, database as db:
+@given(st.data())
+def test_corrector_instantiation(db, data):
+    with TemporaryDirectory() as tempdir, db:
+        (
+            run_path,
+            directory,
+        ) = ingestion.simulate_lightcurve_ingestion_environment(
+            data, tempdir, db
+        )
+        frame_type = db.query(models.FrameType.name).first()[0]
+        cache_path = pathlib.Path(tempdir, "db.sqlite3")
+        contexts.make_shared_context(cache_path)
+        contexts.populate_ephemeris(cache_path, db)
+        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
+
+        plan = DirectoryPlan([directory], db)
+        catalog_template = (
+            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+        )
+        quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
+
+        for catalog in plan.yield_needed_tic_catalogs(
+            path_template=catalog_template
+        ):
+            contexts.populate_tic_catalog(cache_path, catalog)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_template
+        ):
+            contexts.populate_quality_flags(cache_path, *args)
+
+
+@settings(
+    deadline=None,
+    suppress_health_check=(
+        HealthCheck.too_slow,
+        HealthCheck.function_scoped_fixture,
+    ),
+)
+@given(st.data())
+def test_ingestor_instantiation(db, data):
+    with TemporaryDirectory() as tempdir, db:
+        (
+            run_path,
+            directory,
+        ) = ingestion.simulate_lightcurve_ingestion_environment(
+            data, tempdir, db
+        )
+        frame_type = db.query(models.FrameType.name).first()[0]
+        cache_path = pathlib.Path(tempdir, "db.sqlite3")
+        contexts.make_shared_context(cache_path)
+        contexts.populate_ephemeris(cache_path, db)
+        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
+
+        plan = DirectoryPlan([directory], db)
+        catalog_template = (
+            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+        )
+        quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
+
+        for catalog in plan.yield_needed_tic_catalogs(
+            path_template=catalog_template
+        ):
+            contexts.populate_tic_catalog(cache_path, catalog)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_template
+        ):
+            contexts.populate_quality_flags(cache_path, *args)
+
+        process = ExponentialSamplingLightpointIngestor(
+            db._config, "test-worker", None, 0, cache_path, tempdir
+        )
+        assert process is not None
+
+
+@settings(
+    deadline=None,
+    suppress_health_check=(
+        HealthCheck.too_slow,
+        HealthCheck.function_scoped_fixture,
+    ),
+)
+@given(st.data())
+def test_ingestor_processing(db, data):
+    with TemporaryDirectory() as tempdir:
+        with db:
             (
                 run_path,
                 directory,
             ) = ingestion.simulate_lightcurve_ingestion_environment(
                 data, tempdir, db
             )
+            frame_type = db.query(models.FrameType).first().name
             cache_path = pathlib.Path(tempdir, "db.sqlite3")
             contexts.make_shared_context(cache_path)
             contexts.populate_ephemeris(cache_path, db)
-            contexts.populate_tjd_mapping(cache_path, db)
+            contexts.populate_tjd_mapping(
+                cache_path, db, frame_type=frame_type
+            )
+
+            note(contexts.get_tjd_mapping(cache_path))
 
             plan = DirectoryPlan([directory], db)
+            jobs = plan.get_jobs()
             catalog_template = (
                 str(run_path)
                 + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
@@ -105,157 +191,35 @@ def test_corrector_instantiation(database, data):
             ):
                 contexts.populate_quality_flags(cache_path, *args)
 
-            corrector = LightcurveCorrector(cache_path)
-            assert corrector is not None
-    finally:
-        with database as db:
-            opt = {"synchronize_session": False}
-            db.query(models.Lightpoint).delete(**opt)
-            db.query(models.Lightcurve).delete(**opt)
-            db.query(models.Observation).delete(**opt)
-            db.query(models.Frame).delete(**opt)
-            db.query(models.FrameType).delete(**opt)
-            db.query(models.LightcurveType).delete(**opt)
-            db.query(models.Aperture).delete(**opt)
-            db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemeris).delete(**opt)
+            class MockQueue:
+                def task_done(self):
+                    pass
+
+            stage = data.draw(orm_st.qlpstages())
+            db.add(stage)
             db.commit()
-
-
-@settings(
-    deadline=None,
-    suppress_health_check=(
-        HealthCheck.too_slow,
-        HealthCheck.function_scoped_fixture,
-    ),
-)
-@given(orm_st.database(), st.data())
-def test_ingestor_instantiation(database, data):
-    try:
-        with TemporaryDirectory() as tempdir, database as db:
-            (
-                run_path,
-                directory,
-            ) = ingestion.simulate_lightcurve_ingestion_environment(
-                data, tempdir, db
-            )
-            cache_path = pathlib.Path(tempdir, "db.sqlite3")
-            contexts.make_shared_context(cache_path)
-            contexts.populate_ephemeris(cache_path, db)
-            contexts.populate_tjd_mapping(cache_path, db)
-
-            plan = DirectoryPlan([directory], db)
-            catalog_template = (
-                str(run_path)
-                + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-            )
-            quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
-
-            for catalog in plan.yield_needed_tic_catalogs(
-                path_template=catalog_template
-            ):
-                contexts.populate_tic_catalog(cache_path, catalog)
-            for args in plan.yield_needed_quality_flags(
-                path_template=quality_template
-            ):
-                contexts.populate_quality_flags(cache_path, *args)
+            slug = stage.slug
 
             process = ExponentialSamplingLightpointIngestor(
-                db._config, "test-worker", None, 0, cache_path
+                db._config,
+                "test-worker",
+                MockQueue(),
+                slug,
+                cache_path,
+                tempdir,
             )
-            assert process is not None
-
-    finally:
-        with database as db:
-            opt = {"synchronize_session": False}
-            db.query(models.Lightpoint).delete(**opt)
-            db.query(models.Lightcurve).delete(**opt)
-            db.query(models.Observation).delete(**opt)
-            db.query(models.Frame).delete(**opt)
-            db.query(models.FrameType).delete(**opt)
-            db.query(models.LightcurveType).delete(**opt)
-            db.query(models.Aperture).delete(**opt)
-            db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemeris).delete(**opt)
-            db.commit()
-
-
-@settings(
-    deadline=None,
-    suppress_health_check=(
-        HealthCheck.too_slow,
-        HealthCheck.function_scoped_fixture,
-    ),
-)
-@given(orm_st.database(), st.data())
-def test_ingestor_processing(database, data):
-    try:
-        with TemporaryDirectory() as tempdir:
-            with database as db:
-                (
-                    run_path,
-                    directory,
-                ) = ingestion.simulate_lightcurve_ingestion_environment(
-                    data, tempdir, db
-                )
-                frame_type = db.query(models.FrameType).first().name
-                cache_path = pathlib.Path(tempdir, "db.sqlite3")
-                contexts.make_shared_context(cache_path)
-                contexts.populate_ephemeris(cache_path, db)
-                contexts.populate_tjd_mapping(
-                    cache_path, db, frame_type=frame_type
-                )
-
-                note(contexts.get_tjd_mapping(cache_path))
-
-                plan = DirectoryPlan([directory], db)
-                jobs = plan.get_jobs()
-                catalog_template = (
-                    str(run_path)
-                    + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-                )
-                quality_template = (
-                    str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
-                )
-
-                for catalog in plan.yield_needed_tic_catalogs(
-                    path_template=catalog_template
-                ):
-                    contexts.populate_tic_catalog(cache_path, catalog)
-                for args in plan.yield_needed_quality_flags(
-                    path_template=quality_template
-                ):
-                    contexts.populate_quality_flags(cache_path, *args)
-
-                class MockQueue:
-                    def task_done(self):
-                        pass
-
-                stage_id = db.query(models.QLPStage.id).first()[0]
-                db.commit()
-            process = ExponentialSamplingLightpointIngestor(
-                db._config, "test-worker", MockQueue(), stage_id, cache_path
-            )
+            note("Apertures")
+            note(db.query(models.Aperture).all())
+            note("Types")
+            note(db.query(models.LightcurveType).all())
 
             process._create_db()
             process._load_contexts()
-            with process.db as db:
-                for job in jobs:
-                    process.process_job(job)
-                    process.flush(db)
-            with database as db:
-                assert db.query(models.Lightpoint).count() > 0
+            note(jobs)
 
-    finally:
-        with database as db:
-            opt = {"synchronize_session": False}
-            db.query(models.Lightpoint).delete(**opt)
-            db.query(models.Lightcurve).delete(**opt)
-            db.query(models.Observation).delete(**opt)
-            db.query(models.Frame).delete(**opt)
-            db.query(models.FrameType).delete(**opt)
-            db.query(models.LightcurveType).delete(**opt)
-            db.query(models.Aperture).delete(**opt)
-            db.query(models.Orbit).delete(**opt)
-            db.query(models.SpacecraftEphemeris).delete(**opt)
-            db.commit()
+            for job in jobs:
+                process.process_job(job)
+
+            with process.db as proc_db:
+                process.flush(proc_db)
+            assert db.query(models.Lightpoint).count() > 0

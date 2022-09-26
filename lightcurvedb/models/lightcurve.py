@@ -11,23 +11,23 @@ from sqlalchemy import (
     BigInteger,
     Column,
     ForeignKey,
+    Integer,
     Sequence,
     SmallInteger,
     func,
     inspect,
+    select,
 )
 from sqlalchemy.dialects.postgresql import aggregate_order_by
-from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import backref, relationship
+from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from lightcurvedb.core.base_model import (
-    QLPDataProduct,
-    QLPDataSubType,
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
     QLPModel,
 )
-from lightcurvedb.core.collection import CadenceTracked
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
 
@@ -54,12 +54,12 @@ def lp_structured_array(q, columns):
     return np.array(list(map(tuple, q)), dtype=dtypes)
 
 
-class LightcurveType(QLPDataSubType):
+class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous lightcurve types"""
 
     __tablename__ = "lightcurvetypes"
 
-    id = Column(SmallInteger)
+    id = Column(SmallInteger, primary_key=True, unique=True)
     lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
 
     def __str__(self):
@@ -69,27 +69,7 @@ class LightcurveType(QLPDataSubType):
         return f"<Lightcurve Type '{self.name}'>"
 
 
-class LightcurveFrameMap(QLPModel):
-    __tablename__ = "lightcurveframemapping"
-    lightcurve_type_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    frame_id = Column(
-        ForeignKey("frames.id"),
-        primary_key=True,
-    )
-
-    lightcurve = relationship(
-        "Lightcurve",
-        backref=backref(
-            "lightcurveframemapping", cascade="all, delete-orphan"
-        ),
-    )
-    frame = relationship("Frame")
-
-
-class Lightcurve(QLPDataProduct):
+class Lightcurve(QLPModel, CreatedOnMixin):
     """
     This SQLAlchemy model is used to represent the magnitude or flux
     information as a time series. Each lightcurve instance represents
@@ -197,7 +177,7 @@ class Lightcurve(QLPDataProduct):
 
     id = Column(
         BigInteger,
-        Sequence("lightcurves_id_seq", cache=10 ** 6),
+        Sequence("lightcurves_id_seq", cache=10**6),
         primary_key=True,
     )
     tic_id = Column(BigInteger, index=True)
@@ -205,9 +185,7 @@ class Lightcurve(QLPDataProduct):
 
     # Foreign Keys
     lightcurve_type_id = Column(
-        ForeignKey(
-            "lightcurvetypes.name", onupdate="CASCADE", ondelete="RESTRICT"
-        ),
+        ForeignKey(LightcurveType.id, onupdate="CASCADE", ondelete="RESTRICT"),
         index=True,
     )
     aperture_id = Column(
@@ -221,14 +199,9 @@ class Lightcurve(QLPDataProduct):
     lightcurve_type = relationship(
         "LightcurveType", back_populates="lightcurves"
     )
-    lightpoint_q = relationship(
-        "Lightpoint", collection_class=CadenceTracked, lazy="dynamic"
-    )
 
     aperture = relationship("Aperture", back_populates="lightcurves")
     observations = relationship("Observation", back_populates="lightcurve")
-
-    frames = association_proxy(LightcurveFrameMap.__tablename__, "frame")
 
     def __len__(self):
         """
@@ -453,3 +426,60 @@ class Lightcurve(QLPDataProduct):
             data.append(result)
 
         session.bulk_insert_mappings(Lightpoint, data)
+
+
+class OrbitLightcurve(QLPModel, CreatedOnMixin):
+    __tablename__ = "orbit_lightcurves"
+
+    id = Column(
+        BigInteger, Sequence("orbit_lightcurve_id_seq"), primary_key=True
+    )
+    tic_id = Column(BigInteger)
+    camera = Column(SmallInteger)
+    ccd = Column(SmallInteger)
+    orbit_id = Column(
+        Integer,
+        ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"),
+    )
+    aperture_id = Column(
+        SmallInteger,
+        ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"),
+    )
+    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurvetypes.id"))
+
+    aperture = relationship("Aperture")
+    lightcurve_type = relationship("LightcurveType")
+    orbit = relationship("Orbit")
+
+
+class OrbitLightcurveAPIMixin:
+    def get_missing_id_ranges(self):
+        """
+        Parse through all orbit lightcurves to find gaps in the primary key
+        sequence.
+
+        Returns
+        -------
+        List[(int, int)]
+        Returns a list of tuples indicating lack of assigned ids in the range
+        of [start, end].
+
+        Note
+        ----
+        This query must parse all ids and hence can take a few minutes to
+        complete. As such, if pipeline operations are occuring, this list
+        may not include the newest gaps.
+        """
+        subq = select(
+            OrbitLightcurve.id,
+            (
+                func.lead(OrbitLightcurve.id)
+                .over(order_by=OrbitLightcurve.id)
+                .label("next_id")
+            ),
+        ).subquery()
+        q = select(
+            (subq.c.id + 1).label("gap_start"),
+            (subq.c.next_id - 1).label("gap_end"),
+        ).where(subq.c.id + 1 != subq.c.next_id)
+        return self.execute(q).fetchall()

@@ -1,49 +1,75 @@
 import pathlib
-from collections import defaultdict, namedtuple
-from itertools import product
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import chain, product
+from multiprocessing import Pool
+from typing import List, Optional
 
+import pandas as pd
 from click import echo
 from loguru import logger
+from sqlalchemy import select, sql
 from tqdm import tqdm
 
-from lightcurvedb.io.temp_table import TempTable
 from lightcurvedb.models import (
     Aperture,
-    Lightcurve,
     LightcurveType,
-    Observation,
     Orbit,
+    OrbitLightcurve,
 )
 from lightcurvedb.util.contexts import extract_pdo_path_context
 from lightcurvedb.util.iter import chunkify
 
-SingleMergeJob = namedtuple(
-    "SingleMergeJob",
-    (
-        "lightcurve_id",
-        "tic_id",
-        "aperture",
-        "lightcurve_type",
-        "orbit_number",
-        "camera",
-        "ccd",
-        "file_path",
-    ),
-)
+
+@dataclass
+class OrbitLightcurveJob:
+    tic_id: int
+    camera: int
+    ccd: int
+    orbit_number: int
+    aperture: str
+    lightcurve_type: str
+    file_path: str
+
+    preassigned_id: Optional[int] = None
+
+    def as_key(self):
+        return (
+            self.tic_id,
+            self.camera,
+            self.ccd,
+            self.orbit_number,
+            self.aperture,
+            self.lightcurve_type,
+        )
 
 
-H5Job = namedtuple(
-    "H5Job",
-    (
-        "file_path",
-        "tic_id",
-        "single_merge_jobs",
-    ),
-)
+@dataclass
+class EM2_H5_Job:
+    file_path: pathlib.Path
+    tic_id: int
+    camera: int
+    ccd: int
+    orbit_number: int
 
-PartitionJob = namedtuple(
-    "PartitionJob", ("partition_oid", "single_merge_jobs")
-)
+    @classmethod
+    def from_path_context(cls, context):
+        job = cls(
+            path=pathlib.Path(context["file_path"]),
+            tic_id=int(context["tic_id"]),
+            camera=int(context["camera"]),
+            ccd=int(context["ccd"]),
+            orbit_number=int(context["orbit_number"]),
+        )
+        return job
+
+
+@dataclass
+class H5Job:
+    file_path: str
+    tic_id: int
+    orbit_lightcurve_jobs: List[OrbitLightcurveJob]
+
 
 PHYSICAL_LIMIT = {1, 2, 3, 4}
 
@@ -119,84 +145,78 @@ def _tic_from_h5(path):
     return int(base.split(".")[0])
 
 
-def _get_or_create_lightcurve_id(
-    db, id_map, tic_id, aperture, lightcurve_type
-):
-    """
-    Helper method to resolve lightcurve ids. If an ID is not found, a
-    lightcurve object is created and sent to the database for a new ID.
-    """
-    key = (tic_id, aperture, lightcurve_type)
-
-    try:
-        id_ = id_map[key]
-    except KeyError:
-        logger.debug(f"Need new id for {tic_id}: {aperture} {lightcurve_type}")
-        lc = Lightcurve(
-            tic_id=tic_id,
-            aperture_id=aperture,
-            lightcurve_type_id=lightcurve_type,
-        )
-        db.add(lc)
-        db.commit()
-        id_ = lc.id
-        logger.debug(f"{tic_id}: {aperture} {lightcurve_type} assigned {id_}")
-
-    return id_
-
-
-def _get_smjs_from_paths(db, contexts):
+def get_orbit_jobs_from_paths(db, contexts):
     """
     Given a list of h5 paths, convert each one into the corresponding
     single merge jobs.
     """
     pairs = list(_yield_lightcurve_fields(db))
-
-    tic_ids = set(_tic_from_h5(context["path"]) for context in contexts)
-    id_map = {}
-
-    temp = TempTable(db, "temp_tic_ids")
-    temp.add_column("tic_id", "bigint", primary_key=True)
-    with temp:
-        temp.insert_many(tic_ids, scalar=True)
-        for aperture, lightcurve_type in pairs:
-            logger.debug(
-                f"Quering lightcurve ids for {aperture} and {lightcurve_type}"
-            )
-            q = (
-                db.query(Lightcurve.tic_id, Lightcurve.id)
-                .join(temp.table, temp["tic_id"] == Lightcurve.tic_id)
-                .filter(
-                    Lightcurve.aperture_id == aperture,
-                    Lightcurve.lightcurve_type_id == lightcurve_type,
-                )
-            )
-            for tic_id, lightcurve_id in q:
-                key = (tic_id, aperture, lightcurve_type)
-                id_map[key] = lightcurve_id
-
     jobs = []
-    logger.debug("Grabbing ids for each file")
     for context in tqdm(contexts, unit="paths"):
         path = context["path"]
         tic_id = int(_tic_from_h5(path))
         for aperture, lightcurve_type in pairs:
-            id_ = _get_or_create_lightcurve_id(
-                db, id_map, tic_id, aperture, lightcurve_type
-            )
-
-            smj = SingleMergeJob(
-                lightcurve_id=id_,
+            job = OrbitLightcurveJob(
                 tic_id=tic_id,
-                aperture=aperture,
-                lightcurve_type=lightcurve_type,
-                orbit_number=int(context["orbit_number"]),
                 camera=int(context["camera"]),
                 ccd=int(context["ccd"]),
-                file_path=str(path),
+                orbit_number=int(context["orbit_number"]),
+                aperture=aperture,
+                lightcurve_type=lightcurve_type,
+                file_path=path,
             )
-            jobs.append(smj)
+            jobs.append(job)
     return jobs
+
+
+def get_observed_from_path(db, path):
+    required_contexts = (
+        "tic_id",
+        "camera",
+        "ccd",
+        "orbit_id",
+        "aperture_id",
+        "lightcurve_type_id",
+    )
+    aperture_map = dict(db.query(Aperture.id, Aperture.name))
+    type_map = dict(db.query(LightcurveType.id, LightcurveType.name))
+    orbit_map = dict(db.query(Orbit.id, Orbit.orbit_number))
+
+    path_context = extract_pdo_path_context(path)
+    constants_from_path = []
+
+    if "orbit_number" in path_context:
+        orbit_number = path_context.pop("orbit_number")
+        constants_from_path.append(
+            OrbitLightcurve.orbit_id == db.get_orbit_id(orbit_number)
+        )
+    columns = []
+    for context in required_contexts:
+        try:
+            column = sql.expression.literal_column(path_context[context])
+            constants_from_path.append(
+                getattr(OrbitLightcurve, context) == path_context[context]
+            )
+        except KeyError:
+            column = getattr(OrbitLightcurve, context)
+        columns.append(column)
+
+    q = db.query(*columns).filter(*constants_from_path)
+    logger.debug(f"Getting observations with {str(q)}")
+
+    result = []
+    for tic_id, camera, ccd, orbit_id, aperture_id, lightcurve_type_id in q:
+        result.append(
+            (
+                tic_id,
+                camera,
+                ccd,
+                orbit_map[orbit_id],
+                aperture_map[aperture_id],
+                type_map[lightcurve_type_id],
+            )
+        )
+    return result
 
 
 class DirectoryPlan:
@@ -255,32 +275,13 @@ class DirectoryPlan:
 
         self.files = contexts
 
-    def _get_observed(self, db, jobs):
-        _mask = set()
+    def _get_observed(self, db):
         observed = set()
-
-        for job in jobs:
-            if job.orbit_number not in _mask:
-                logger.debug(
-                    f"Querying observation cache for orbit {job.orbit_number}"
-                )
-                q = (
-                    db.query(Observation.lightcurve_id, Orbit.orbit_number)
-                    .join(Observation.orbit)
-                    .filter(
-                        Orbit.orbit_number == job.orbit_number,
-                    )
-                )
-                i = 0
-                for i, row in enumerate(q):
-                    id_, orbit_number = row
-                    observed.add((id_, orbit_number))
-
-                logger.debug(
-                    f"Tracking {i} entries from orbit {job.orbit_number}"
-                )
-
-                _mask.add(job.orbit_number)
+        for source_dir in self.source_dirs:
+            logger.debug(f"Interpreting {source_dir} for observations")
+            seen_in_dir = get_observed_from_path(db, source_dir)
+            logger.debug(f"Found {len(seen_in_dir)} current observations")
+            observed.update(seen_in_dir)
 
         return observed
 
@@ -288,15 +289,16 @@ class DirectoryPlan:
         logger.debug(f"Preprocessing {len(self.files)} files")
         buckets = defaultdict(list)
         with self.db as db:
-            naive_jobs = _get_smjs_from_paths(db, self.files)
-            observed = self._get_observed(db, naive_jobs)
+            naive_jobs = get_orbit_jobs_from_paths(db, self.files)
+            observed = self._get_observed(db)
 
             logger.debug(
-                f"Created {len(naive_jobs)} jobs requiring dedup check"
+                f"Created {len(naive_jobs)} jobs requiring dedup check "
+                f"against {len(observed)} observed lightcurves"
             )
             n_accepted = 0
             for job in tqdm(naive_jobs, unit=" jobs"):
-                key = (job.lightcurve_id, job.orbit_number)
+                key = job.as_key()
                 if key not in observed:
                     buckets[job.file_path].append(job)
                     observed.add(key)
@@ -305,11 +307,11 @@ class DirectoryPlan:
         ignored = len(naive_jobs) - n_accepted
         logger.debug(f"Generated {len(naive_jobs)} jobs, ignoring {ignored}")
         jobs = []
-        for file_path, single_merge_jobs in buckets.items():
+        for file_path, orbit_jobs in buckets.items():
             job = H5Job(
                 file_path=file_path,
-                tic_id=single_merge_jobs[0].tic_id,
-                single_merge_jobs=single_merge_jobs,
+                tic_id=orbit_jobs[0].tic_id,
+                orbit_lightcurve_jobs=orbit_jobs,
             )
             jobs.append(job)
 
@@ -318,7 +320,7 @@ class DirectoryPlan:
     def _get_unique_observed(self):
         unique_observed = set()
         for job in self.get_jobs():
-            for smj in job.single_merge_jobs:
+            for smj in job.orbit_lightcurve_jobs:
                 key = (smj.orbit_number, smj.camera, smj.ccd)
                 unique_observed.add(key)
         return unique_observed
@@ -344,3 +346,237 @@ class DirectoryPlan:
                 orbit_number=orbit_number, camera=camera, ccd=ccd
             )
             yield pathlib.Path(expected_path), camera, ccd
+
+    def fill_id_gaps(self):
+        job_iter = iter(
+            chain.from_iterable([j.orbit_lightcurve_jobs for j in self.jobs])
+        )
+        n_preassigned = 0
+        logger.debug(
+            "Preassigning orbit lightcurve ids with gaps in id sequence"
+        )
+        with self.db as db:
+            try:
+                for min_id, max_id in db.get_missing_id_ranges():
+                    for id_ in range(min_id, max_id + 1):
+                        job = next(job_iter)
+                        job.preassigned_id = id_
+                        n_preassigned += 1
+            except StopIteration:
+                # Out of jobs to assign ids to
+                pass
+        logger.debug(f"Preassigned {n_preassigned} ids")
+
+    @property
+    def tic_ids(self):
+        return set(job.tic_id for job in self.jobs)
+
+
+class TICListPlan(DirectoryPlan):
+    def __init__(self, tic_ids, db):
+        self.db = db
+        self.tic_ids = set(tic_ids)
+        self._look_for_files()
+        self._preprocess_files()
+
+    def _look_for_files(self):
+        logger.debug(f"Looking for files relevant to {len(self.tic_ids)} tics")
+        cameras = [1, 2, 3, 4]
+        ccds = [1, 2, 3, 4]
+        with self.db as db:
+            orbits = [
+                number
+                for number, in db.query(Orbit.orbit_number).order_by(
+                    Orbit.orbit_number
+                )
+            ]
+        contexts = []
+        orbit_dir = pathlib.Path("/pdo/qlp-data")
+        for orbit_number, camera, ccd in product(orbits, cameras, ccds):
+            orbit_path = orbit_dir / f"orbit-{orbit_number}" / "ffi"
+            lc_path = orbit_path / f"cam{camera}/ccd{ccd}" / "LC"
+            context = extract_pdo_path_context(lc_path)
+            n_accepted = 0
+            for path in lc_path.glob("*h5"):
+                tic_id = int(path.name.split(".")[0])
+                if tic_id in self.tic_ids:
+                    context["tic_id"] = tic_id
+                    context["path"] = path
+                    contexts.append(context)
+                    n_accepted += 1
+            logger.debug(f"Found {n_accepted} relevant files in {lc_path}")
+        self.files = contexts
+
+    def _get_observed(self, db):
+        q = (
+            select(
+                OrbitLightcurve.tic_id,
+                OrbitLightcurve.camera,
+                OrbitLightcurve.ccd,
+                Orbit.orbit_number,
+                Aperture.name,
+                LightcurveType.name,
+            )
+            .join(OrbitLightcurve.aperture)
+            .join(OrbitLightcurve.lightcurve_type)
+            .join(OrbitLightcurve.orbit)
+            .where(OrbitLightcurve.tic_id.in_(self.tic_ids))
+        )
+
+        return set(db.execute(q).fetchall())
+
+
+class FilePlan(DirectoryPlan):
+    def __init__(self, plan_file_path, db):
+        self.db = db
+        self.plan_file_path = plan_file_path
+
+        self._look_for_files()
+        self._preprocess_files()
+
+    def _parse_for_context(self, row):
+        orbit_number, camera, ccd, tic_id = row
+        base = pathlib.Path("/pdo/qlp-data")
+        path = (
+            base
+            / f"orbit-{orbit_number}"
+            / "ffi"
+            / f"cam{camera}"
+            / f"ccd{ccd}"
+            / "LC"
+            / f"{tic_id}.h5"
+        )
+
+        return {
+            "tic_id": tic_id,
+            "orbit_number": orbit_number,
+            "camera": camera,
+            "ccd": ccd,
+            "path": path,
+        }
+
+    def _look_for_files(self):
+        df = pd.read_csv(self.plan_file_path)[
+            ["orbit_number", "camera", "ccd", "tic_id"]
+        ]
+        reduction = map(self._parse_for_context, df.itertuples(index=False))
+        self.files = list(tqdm(reduction, total=len(df)))
+
+    def _get_observed(self, db):
+        unique_orbits = {c["orbit_number"] for c in self.files}
+        q = (
+            select(
+                OrbitLightcurve.tic_id,
+                OrbitLightcurve.camera,
+                OrbitLightcurve.ccd,
+                Orbit.orbit_number,
+                Aperture.name,
+                LightcurveType.name,
+            )
+            .join(OrbitLightcurve.aperture)
+            .join(OrbitLightcurve.lightcurve_type)
+            .join(OrbitLightcurve.orbit)
+            .where(Orbit.orbit_number.in_(unique_orbits))
+        )
+        return set(db.execute(q).fetchall())
+
+
+class EM2Plan:
+    files = None
+    jobs = None
+
+    DEFAULT_TIC_CATALOG_TEMPLATE = (
+        "/pdo/qlp-data/"
+        "orbit-{orbit_number}/"
+        "ffi/run/"
+        "catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+    )
+
+    DEFAULT_QUALITY_FLAG_TEMPLATE = (
+        "/pdo/qlp-data/"
+        "orbit-{orbit_number}/"
+        "ffi/run/"
+        "cam{camera}ccd{ccd}_qflag.txt"
+    )
+
+    def __init__(
+        self,
+        directories: list[pathlib.Path],
+        db,
+        recursive=False,
+    ):
+        self.source_dirs = directories
+        self.recursive = recursive
+        self.db = db
+        self._look_for_files()
+        self._preprocess_files()
+
+    def __repr__(self):
+        file_msg = f"Considered {len(self.files)} files"
+        tics = {context.tic_id for context in self.jobs}
+        tic_msg = f"{len(tics)} total unique TIC ids"
+
+        messages = [file_msg, tic_msg]
+
+        return "\n".join(messages)
+
+    def _look_for_files(self):
+        contexts = []
+        for source_dir in self.source_dirs:
+            logger.debug(f"Looking for h5 files in {source_dir}")
+            if self.recursive:
+                files = source_dir.rglob("*.h5")
+            else:
+                files = source_dir.glob("*.h5")
+
+            files = list(files)
+
+            with Pool() as pool:
+                results = pool.imap(extract_pdo_path_context, files)
+                for path, context in zip(tqdm(files), results):
+                    context["path"] = path
+                    contexts.append(context)
+
+            logger.debug(f"Found {len(files)} files in {source_dir}")
+
+        self.contexts = contexts
+
+    def _preprocess_files(self):
+        logger.debug(f"Preprocessing {len(self.contexts)} files")
+        with Pool() as pool:
+            jobs = pool.imap(EM2_H5_Job.from_path_context, self.contexts)
+        logger.debug(f"Process files and generated {len(jobs)} jobs")
+        self.jobs = jobs
+
+    def _get_unique_observed(self):
+        unique_observed = set()
+        for job in self.get_jobs():
+            key = (job.orbit_number, job.camera, job.ccd)
+            unique_observed.add(key)
+        return unique_observed
+
+    def get_jobs(self):
+        return self.jobs
+
+    def yield_needed_tic_catalogs(self, path_template=None):
+        if path_template is None:
+            path_template = self.DEFAULT_TIC_CATALOG_TEMPLATE
+
+        for orbit_number, camera, ccd in self._get_unique_observed():
+            expected_path = path_template.format(
+                orbit_number=orbit_number, camera=camera, ccd=ccd
+            )
+            yield pathlib.Path(expected_path)
+
+    def yield_needed_quality_flags(self, path_template=None):
+        if path_template is None:
+            path_template = self.DEFAULT_QUALITY_FLAG_TEMPLATE
+        for orbit_number, camera, ccd in self._get_unique_observed():
+            expected_path = path_template.format(
+                orbit_number=orbit_number, camera=camera, ccd=ccd
+            )
+            yield pathlib.Path(expected_path), camera, ccd
+
+    @property
+    def tic_ids(self):
+        return set(job.tic_id for job in self.jobs)

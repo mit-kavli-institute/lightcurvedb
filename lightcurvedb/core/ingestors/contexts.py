@@ -9,14 +9,95 @@ There is a bit more overhead with these methods. But overall the impact
 is minimal.
 
 """
-import sqlite3
+import pathlib
 from functools import wraps
 
 import numpy as np
 import pandas as pd
+import sqlalchemy as sa
+from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Session, as_declarative, declared_attr
+from tqdm import tqdm
 
-from lightcurvedb.models import Frame, SpacecraftEphemeris
+from lightcurvedb.core.tic8 import TIC8_DB
+from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
+
+MAX_PARAM = 999
+
+
+@as_declarative()
+class ContextBase:
+    @declared_attr
+    def __tablename__(cls):
+        return cls.__name__.lower() + "s"
+
+    @classmethod
+    def dynamic_select(cls, *fields):
+        cols = tuple(getattr(cls, field) for field in fields)
+        return sa.select(*cols)
+
+    @classmethod
+    def insert(cls, *args, **kwargs):
+        return sa.insert(cls, *args, **kwargs)
+
+    @classmethod
+    def select(cls, *args, **kwargs):
+        return sa.select(cls, *args, **kwargs)
+
+
+class TicParameter(ContextBase):
+    tic_id = sa.Column(sa.BigInteger, primary_key=True)
+    ra = sa.Column(sa.Float)
+    dec = sa.Column(sa.Float)
+    tmag = sa.Column(sa.Float)
+    pmra = sa.Column(sa.Float)
+    pmdec = sa.Column(sa.Float)
+    jmag = sa.Column(sa.Float)
+    kmag = sa.Column(sa.Float)
+    vmag = sa.Column(sa.Float)
+
+
+class QualityFlag(ContextBase):
+    cadence = sa.Column(sa.Integer, primary_key=True)
+    camera = sa.Column(sa.SmallInteger, primary_key=True)
+    ccd = sa.Column(sa.SmallInteger, primary_key=True)
+    quality_flag = sa.Column(sa.Integer)
+
+
+class SpacecraftPosition(ContextBase):
+    bjd = sa.Column(sa.Float, primary_key=True)
+    x = sa.Column(sa.Float)
+    y = sa.Column(sa.Float)
+    z = sa.Column(sa.Float)
+
+
+class TJDMapping(ContextBase):
+    cadence = sa.Column(sa.Integer, primary_key=True)
+    camera = sa.Column(sa.SmallInteger, primary_key=True)
+    tjd = sa.Column(sa.Float)
+
+    @hybrid_property
+    def mid_tjd(self):
+        # Keyword compatibility with Frame
+        return self.tjd
+
+    @mid_tjd.expression
+    def mid_tjd(cls):
+        # Keyword compatibility with Frame
+        return cls.tjd
+
+
+class LightcurveIDMapping(ContextBase):
+    id = sa.Column(sa.BigInteger, primary_key=True)
+    tic_id = sa.Column(sa.BigInteger)
+    camera = sa.Column(sa.SmallInteger)
+    ccd = sa.Column(sa.SmallInteger)
+    orbit_id = sa.Column(sa.SmallInteger)
+    aperture_id = sa.Column(sa.SmallInteger)
+    lightcurve_type_id = sa.Column(sa.Integer)
 
 
 def with_sqlite(function):
@@ -29,68 +110,77 @@ def with_sqlite(function):
 
     @wraps(function)
     def wrapper(db_path, *args, **kwargs):
-        conn = sqlite3.connect(db_path)
-        return function(conn, *args, **kwargs)
+        path = pathlib.Path(db_path)
+        url = f"sqlite:///{path}"
+        engine = sa.create_engine(url)
+        with Session(engine) as session:
+            return function(session, *args, **kwargs)
 
     return wrapper
 
 
 @with_sqlite
-def make_shared_context(conn):
+def make_shared_context(session):
     """
     Creates the expected tables needed for ingestion contexts.
     """
-    # Establish tables
-    with conn:
-        conn.execute(
-            "CREATE TABLE tic_parameters "
-            "(tic_id integer PRIMARY KEY,"
-            " ra REAL,"
-            " dec REAL,"
-            " tmag REAL,"
-            " pmra REAL,"
-            " pmdec REAL,"
-            " jmag REAL,"
-            " kmag REAL,"
-            " vmag REAL)"
-        )
-        conn.execute(
-            "CREATE TABLE quality_flags "
-            "(cadence INTEGER,"
-            " camera INTEGER,"
-            " ccd INTEGER,"
-            " quality_flag INTEGER,"
-            " PRIMARY KEY (cadence, camera, ccd))"
-        )
-        conn.execute(
-            "CREATE TABLE spacecraft_pos "
-            "(bjd REAL PRIMARY KEY,"
-            " x REAL,"
-            " y REAL,"
-            " z REAL)"
-        )
-        conn.execute(
-            "CREATE TABLE tjd_map "
-            "(cadence INTEGER,"
-            " camera INTEGER,"
-            " tjd REAL,"
-            " PRIMARY KEY (cadence, camera))"
-        )
-    # Tables have been made
+    logger.debug("Creating SQLite Cache")
+    ContextBase.metadata.create_all(bind=session.bind)
 
 
-def _iter_tic_catalog(catalog_path):
+def _iter_tic_catalog(catalog_path, mask, field_order=None):
     """
     Yield paramters within the catalog path. The file should be whitespace
     delimited with the TIC_ID parameter as the first column.
     """
+    if field_order is None:
+        field_order = (
+            "tic_id",
+            "ra",
+            "dec",
+            "tmag",
+            "pmra",
+            "pmdec",
+            "jmag",
+            "kmag",
+            "vmag",
+        )
     with open(catalog_path, "rt") as fin:
         for line in fin:
             tic_id, *data = line.strip().split()
-            yield int(tic_id), *tuple(map(float, data))
+            tic_id = int(tic_id)
+            if tic_id in mask:
+                continue
+            parsed = []
+            for token in data:
+                if token == "None" or token is None:
+                    parsed.append(float("NaN"))
+                else:
+                    parsed.append(token)
+
+            fields = (tic_id, *parsed)
+            yield dict(zip(field_order, fields))
+            mask.add(tic_id)
 
 
-def _iter_quality_flags(quality_flag_path, *constants):
+def _iter_tic_db(ticdb, q, field_order=None):
+    if field_order is None:
+        field_order = (
+            "tic_id",
+            "ra",
+            "dec",
+            "tmag",
+            "pmra",
+            "pmdec",
+            "jmag",
+            "kmag",
+            "vmag",
+        )
+    for row in ticdb.execute(q).fetchall():
+        yield dict(zip(field_order, row))
+
+
+def _iter_quality_flags(quality_flag_path, camera, ccd):
     """
     Yield quality flag cadence and flag values. The file should be
     whitespace delimited with the cadence as the first column.
@@ -104,11 +194,11 @@ def _iter_quality_flags(quality_flag_path, *constants):
     with open(quality_flag_path, "rt") as fin:
         for line in fin:
             cadence, quality_flag = line.strip().split()
-            yield int(float(cadence)), int(float(quality_flag)), *constants
+            yield int(float(cadence)), camera, ccd, int(float(quality_flag))
 
 
 @with_sqlite
-def populate_tic_catalog(conn, catalog_path, chunksize=1024):
+def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
     """
     Pull the tic catalog into the sqlite3 temporary database.
 
@@ -124,14 +214,38 @@ def populate_tic_catalog(conn, catalog_path, chunksize=1024):
         incredibly long query strings the population process is chunkified
         with length of this parameter.
     """
-    with conn:
-        for chunk in chunkify(_iter_tic_catalog(catalog_path), chunksize):
-            conn.executemany(
-                "INSERT OR IGNORE INTO tic_parameters("
-                " tic_id, ra, dec, tmag, pmra, pmdec, jmag, kmag, vmag"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                chunk,
-            )
+    logger.debug(f"Loading {catalog_path}")
+    mask = {tic_id for tic_id, in conn.query(TicParameter.tic_id)}
+    parameters = list(_iter_tic_catalog(catalog_path, mask))
+    chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
+
+    for chunk in chunks:
+        stmt = TicParameter.insert().values(chunk)
+        conn.execute(stmt)
+        conn.commit()
+
+
+@with_sqlite
+def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
+    with TIC8_DB() as tic8:
+        columns = tic8.ticentries.c
+        q = select(
+            columns.id,
+            columns.ra,
+            columns.dec,
+            columns.tmag,
+            columns.pmra,
+            columns.pmdec,
+            columns.jmag,
+            columns.kmag,
+            columns.vmag,
+        ).where(columns.id.in_(tic_ids))
+        parameters = list(_iter_tic_db(tic8, q))
+        chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
+        for chunk in chunks:
+            stmt = TicParameter.insert().values(chunk)
+            conn.execute(stmt)
+            conn.commit()
 
 
 @with_sqlite
@@ -149,14 +263,13 @@ def populate_quality_flags(conn, quality_flag_path, camera, ccd):
     ccd: int
         The ccd of the quality flags.
     """
-    with conn:
-        _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
-        for chunk in chunkify(_iter, 1024):
-            conn.executemany(
-                "INSERT INTO quality_flags(cadence, quality_flag, camera, ccd)"
-                " VALUES (?, ?, ?, ?)",
-                chunk,
-            )
+    logger.debug(f"Loading {quality_flag_path}")
+    _iter = _iter_quality_flags(quality_flag_path, camera, ccd)
+    parameters = list(_iter)
+    for chunk in chunkify(tqdm(parameters, unit=" qflags"), MAX_PARAM // 4):
+        stmt = QualityFlag.insert().values(chunk)
+        conn.execute(stmt)
+        conn.commit()
 
 
 @with_sqlite
@@ -174,17 +287,23 @@ def populate_ephemeris(conn, db):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
-    with conn:
-        q = db.query(
-            SpacecraftEphemeris.barycentric_dynamical_time,
-            SpacecraftEphemeris.x,
-            SpacecraftEphemeris.y,
-            SpacecraftEphemeris.z,
-        ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
-        conn.executemany(
-            "INSERT INTO spacecraft_pos(bjd, x, y, z) VALUES (?, ?, ?, ?)",
-            q,
-        )
+    logger.debug("Loading spacecraft position data")
+    cols = (
+        "bjd",
+        "x",
+        "y",
+        "z",
+    )
+    q = db.query(
+        *tuple(getattr(SpacecraftEphemeris, col) for col in cols)
+    ).order_by(SpacecraftEphemeris.barycentric_dynamical_time)
+    payload = [(bjd, x, y, z) for bjd, x, y, z in q]
+    chunks = chunkify(tqdm(payload, unit=" positions"), MAX_PARAM // len(cols))
+
+    for chunk in chunks:
+        stmt = SpacecraftPosition.insert().values(chunk)
+        conn.execute(stmt)
+    conn.commit()
 
 
 @with_sqlite
@@ -202,14 +321,25 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     db: lightcurvedb.core.connection.ORMDB
         An open lcdb connection object to read from.
     """
-    with conn:
-        q = db.query(Frame.cadence, Frame.camera, Frame.mid_tjd).filter(
-            Frame.frame_type_id
-            == ("Raw FFI" if frame_type is None else frame_type)
+    logger.debug("Loading Frame TJD data")
+    cols = ("cadence", "camera", "tjd")
+    type_name = "Raw FFI" if frame_type is None else frame_type
+    q = (
+        db.query(Frame.cadence, Frame.camera, Frame.mid_tjd)
+        .join(FrameType, FrameType.name == Frame.frame_type_id)
+        .filter(FrameType.name == type_name)
+    )
+    payload = [dict(zip(cols, row)) for row in q]
+    if len(payload) == 0:
+        raise RuntimeError(
+            "Unable to find any TJD values from frame query using: "
+            f"frame type name: {type_name}"
         )
-        conn.executemany(
-            "INSERT INTO tjd_map(cadence, camera, tjd) VALUES (?, ?, ?)", q
-        )
+    chunksize = MAX_PARAM // len(cols)
+    for chunk in chunkify(tqdm(payload, unit=" tjds"), chunksize):
+        stmt = TJDMapping.insert().values(chunk)
+        conn.execute(stmt)
+    conn.commit()
 
 
 def _none_to_nan(value):
@@ -240,12 +370,8 @@ def get_tic_parameters(conn, tic_id, parameter, *parameters):
         The specified `tic_id` was not found in the sqlite3 cache.
     """
     param_order = (parameter, *parameters)
-    param_str = ", ".join(param_order)
-    q = conn.execute(
-        f"SELECT {param_str} FROM tic_parameters WHERE tic_id = {tic_id}"
-    )
-    result = q.fetchall()[0]
-    return dict(zip(param_order, map(_none_to_nan, result)))
+    stmt = TicParameter.dynamic_select(*param_order).filter_by(tic_id=tic_id)
+    return dict(zip(param_order, map(_none_to_nan, conn.execute(stmt).one())))
 
 
 @with_sqlite
@@ -268,10 +394,9 @@ def get_tic_mapping(conn, parameter, *parameters):
         keys.
     """
     param_order = ("tic_id", parameter, *parameters)
-    param_str = ", ".join(param_order)
-    q = conn.execute(f"SELECT {param_str} FROM tic_parameters")
+    stmt = TicParameter.dynamic_select(*param_order)
     mapping = {}
-    for tic_id, *parameters in q.fetchall():
+    for tic_id, *parameters in conn.execute(stmt).fetchall():
         values = dict(zip(param_order[1:], map(_none_to_nan, parameters)))
         mapping[tic_id] = values
     return mapping
@@ -302,11 +427,10 @@ def get_qflag(conn, cadence, camera, ccd):
     ValueError
         Raised if the specified filters do not result in any quality flags.
     """
-    q = conn.execute(
-        "SELECT quality_flag FROM quality_flags WHERE "
-        f"cadence = {cadence} AND camera = {camera} AND ccd = {ccd}"
+    stmt = QualityFlag.dynamic_select("quality_flag").filter_by(
+        cadence=cadence, camera=camera, ccd=ccd
     )
-    results = q.fetchall()
+    results = conn.execute(stmt).fetchall()
     if len(results) == 0:
         raise ValueError(
             "Attempt to query for quality flag failed, "
@@ -329,28 +453,35 @@ def get_qflag_np(conn, camera, ccd, cadence_min=None, cadence_max=None):
     ccd: int
         The CCD to look for quality flags.
     cadence_min: int, optional
-        A lower cadence cutoff, if desired.
+        A lower cadence cutoff (inclusive), if desired.
     cadence_max: int, optional
-        A high cadence cutoff, if resired.
+        A high cadence cutoff (inclusive), if resired.
 
     Returns
     -------
     np.array
         A structured numpy array.
     """
-    base_q = "SELECT cadence, quality_flag FROM quality_flags "
-    filter_q = f"WHERE camera = {camera} AND ccd = {ccd}"
+    filters = [
+        QualityFlag.camera == camera,
+        QualityFlag.ccd == ccd,
+    ]
     if cadence_min is not None and cadence_max is not None:
-        filter_q += f" AND cadence BETWEEN {cadence_min} AND {cadence_max}"
+        filter.append(QualityFlag.cadence.between(cadence_min, cadence_max))
     elif cadence_min is not None:
-        filter_q += f" AND cadence >= {cadence_min}"
+        filter.append(QualityFlag.cadence >= cadence_min)
     elif cadence_max is not None:
-        filter_q += f" AND cadence <= {cadence_max}"
+        filter.append(QualityFlag.cadence <= cadence_max)
+    stmt = (
+        QualityFlag.dynamic_select("cadence", "quality_flag")
+        .where(*filters)
+        .order_by(QualityFlag.cadence)
+    )
 
-    q = conn.execute(base_q + filter_q + " ORDER BY cadence")
-
+    df = pd.read_sql(stmt, conn.bind)
     return np.array(
-        q.fetchall(), dtype=[("cadence", np.int32), ("quality_flag", np.int8)]
+        df.to_records(index=False),
+        dtype=[("cadence", np.int32), ("quality_flag", np.int8)],
     )
 
 
@@ -370,10 +501,13 @@ def get_quality_flag_mapping(conn):
         A pandas dataframe indexed by (camera, CCD, and cadence). The
         resulting dataframe is not sorted.
     """
+    stmt = QualityFlag.dynamic_select(
+        "camera", "ccd", "cadence", "quality_flag"
+    ).order_by(QualityFlag.camera, QualityFlag.ccd, QualityFlag.cadence)
+
     df = pd.read_sql(
-        "SELECT camera, ccd, cadence, quality_flag FROM quality_flags "
-        "ORDER BY camera, ccd, cadence",
-        conn,
+        stmt,
+        conn.bind,
         index_col=["camera", "ccd", "cadence"],
     )
     return df
@@ -399,8 +533,10 @@ def get_spacecraft_data(conn, col):
         `col`. This field will be ordered by ascending barycentric julian
         date.
     """
-    q = f"SELECT {col} FROM spacecraft_pos ORDER BY bjd"
-    q = conn.execute(q)
+    stmt = SpacecraftPosition.dynamic_select(col).order_by(
+        SpacecraftPosition.bjd
+    )
+    q = conn.execute(stmt)
     return np.array(list(val for val, in q))
 
 
@@ -420,9 +556,12 @@ def get_tjd_mapping(conn):
         dataframe is not ordered and all NULL values will be forced into
         NaN values.
     """
+    stmt = TJDMapping.dynamic_select("cadence", "camera", "tjd").order_by(
+        TJDMapping.camera, TJDMapping.cadence
+    )
     df = pd.read_sql(
-        "SELECT camera, cadence, tjd FROM tjd_map ORDER BY camera, cadence",
-        conn,
+        stmt,
+        conn.bind,
         index_col=["camera", "cadence"],
     ).fillna(value=np.nan)
     return df

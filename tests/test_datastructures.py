@@ -2,15 +2,17 @@ import pathlib
 import tempfile
 
 import numpy as np
-from hypothesis import given
+from hypothesis import given, note, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
+from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 
 from .strategies import ingestion
 from .strategies import orm as orm_st
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_tic_catalog_mapping(data):
 
@@ -45,6 +47,7 @@ def test_tic_catalog_mapping(data):
                     assert check.get(key, None) == values[key]
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_quality_flag_cache(data):
     with tempfile.TemporaryDirectory() as tempdir:
@@ -69,6 +72,7 @@ def test_quality_flag_cache(data):
             check == flag
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_quality_flag_np(data):
     with tempfile.TemporaryDirectory() as tempdir:
@@ -93,24 +97,14 @@ def test_quality_flag_np(data):
             check == flag
 
 
-@given(
-    orm_st.database(),
-    st.lists(
-        orm_st.spacecraft_ephemeris(),
-        min_size=1,
-        unique_by=lambda eph: eph.barycentric_dynamical_time,
-    ),
-)
-def test_spacecraft_eph_cache(database, eph_list):
-    with database as db, tempfile.TemporaryDirectory() as tempdir:
+def test_spacecraft_eph_cache(db):
+    with db, tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
-
-        db.session.add_all(eph_list)
-        db.flush()
 
         ctx.make_shared_context(db_path)
         ctx.populate_ephemeris(db_path, db)
 
+        eph_list = db.query(SpacecraftEphemeris).all()
         ref_eph = sorted(
             eph_list, key=lambda eph: eph.barycentric_dynamical_time
         )
@@ -127,8 +121,8 @@ def test_spacecraft_eph_cache(database, eph_list):
         assert np.array_equal(check_z, ref_z)
 
 
+@settings(deadline=None)
 @given(
-    orm_st.database(),
     orm_st.frame_types(name=st.just("Raw FFI")),
     orm_st.orbits(),
     st.lists(
@@ -137,8 +131,8 @@ def test_spacecraft_eph_cache(database, eph_list):
         unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path),
     ),
 )
-def test_tjd_cache(database, raw_ffi_type, orbit, frames):
-    with database as db, tempfile.TemporaryDirectory() as tempdir:
+def test_tjd_cache(db, raw_ffi_type, orbit, frames):
+    with db, tempfile.TemporaryDirectory() as tempdir:
         cache_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
         db.add(raw_ffi_type)
         db.add(orbit)
@@ -147,11 +141,18 @@ def test_tjd_cache(database, raw_ffi_type, orbit, frames):
             frame.orbit = orbit
         db.session.add_all(frames)
         db.flush()
-
+        state_q = (
+            db.query(Frame.cadence, Frame.camera, Frame.tjd)
+            .join(Frame.frame_type)
+            .filter(FrameType.name == raw_ffi_type.name)
+        )
+        print(state_q.all())
+        print(db.query(Frame.frame_type_id, Frame.camera, Frame.cadence).all())
         ctx.make_shared_context(cache_path)
-        ctx.populate_tjd_mapping(cache_path, db)
+        ctx.populate_tjd_mapping(cache_path, db, frame_type=raw_ffi_type.name)
 
         tjd_check_df = ctx.get_tjd_mapping(cache_path)
+        note(tjd_check_df)
         for frame_ref in frames:
             check = tjd_check_df.loc[
                 (frame_ref.camera, frame_ref.cadence)

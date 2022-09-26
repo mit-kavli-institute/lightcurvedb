@@ -11,11 +11,11 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin, NameAndDescriptionMixin
 from lightcurvedb.core.sql import psql_safe_str
 
 
-class Aperture(QLPReference):
+class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """
     Provides ORM implementation of an aperture used by QLP.
 
@@ -48,8 +48,7 @@ class Aperture(QLPReference):
     )
 
     # Model Attributes
-    id = Column(SmallInteger)
-    _name = Column("name", String(64), primary_key=True)
+    id = Column(SmallInteger, primary_key=True, unique=True)
     star_radius = Column(Numeric, nullable=False)
     inner_radius = Column(Numeric, nullable=False)
     outer_radius = Column(Numeric, nullable=False)
@@ -81,22 +80,6 @@ class Aperture(QLPReference):
     def outer_r(self):
         return self.outer_radius
 
-    @hybrid_property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, value):
-        self._name = psql_safe_str(value)
-
-    @name.expression
-    def name(cls):
-        return cls._name
-
-    @hybrid_property
-    def id(self):
-        return self.name
-
     @classmethod
     def from_aperture_string(cls, string):
         """Attempt to parse an aperture string (fistar/fiphot format)
@@ -121,7 +104,7 @@ class Aperture(QLPReference):
         return star_r, inner_r, outer_r
 
 
-class BestApertureMap(QLPReference):
+class BestApertureMap(QLPModel, CreatedOnMixin):
     """
     A mapping of lightcurves to their 'best' aperture. This model
     is defined so TICs will contain 1 best aperture. This is enforced
@@ -147,7 +130,7 @@ class BestApertureMap(QLPReference):
     __table_args__ = (UniqueConstraint("tic_id", name="best_ap_unique_tic"),)
 
     aperture_id = Column(
-        ForeignKey(Aperture.name, onupdate="CASCADE", ondelete="RESTRICT"),
+        ForeignKey(Aperture.id, onupdate="CASCADE", ondelete="RESTRICT"),
         primary_key=True,
     )
     tic_id = Column(BigInteger, primary_key=True)
@@ -159,10 +142,10 @@ class BestApertureMap(QLPReference):
         q = insert(cls.__table__)
         if isinstance(aperture, Aperture):
             q = q.values(
-                tic_id=tic_id, aperture_id=aperture.name
+                tic_id=tic_id, aperture_id=aperture.id
             ).on_conflict_do_update(
                 constraint="best_ap_unique_tic",
-                set_={"aperture_id": aperture.name},
+                set_={"aperture_id": aperture.id},
             )
         else:
             q = q.values(

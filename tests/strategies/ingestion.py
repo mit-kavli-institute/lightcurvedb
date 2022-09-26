@@ -14,6 +14,7 @@ from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
 from lightcurvedb import models
+from lightcurvedb.models.camera_quaternion import get_utc_time
 from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
 
 from . import orm as orm_st
@@ -142,8 +143,12 @@ def lightpoints(draw, **overrides):
             barycentric_julian_date=tess_st.tjds(),
             data=st.floats(),
             error=st.floats(),
-            x_centroid=st.floats(allow_nan=False, allow_infinity=False),
-            y_centroid=st.floats(allow_nan=False, allow_infinity=False),
+            x_centroid=st.floats(
+                allow_nan=False, allow_infinity=False, width=32
+            ),
+            y_centroid=st.floats(
+                allow_nan=False, allow_infinity=False, width=32
+            ),
             quality_flag=st.integers(min_value=0, max_value=1),
         )
     )
@@ -267,10 +272,15 @@ def lightcurves(draw, **overrides):
     )
 
 
+def _unique_gps(camera_quat_model):
+    gps_time = camera_quat_model.gps_time
+    return get_utc_time(gps_time).datetime.replace(microsecond=0)
+
+
 # Begin Simulation Functions
 def simulate_hk_file(data, directory, formatter=str, **overrides):
     quaternions = data.draw(
-        st.lists(camera_quaternions(), unique_by=lambda cq: cq[0])
+        st.lists(camera_quaternions(), min_size=1, unique_by=_unique_gps)
     )
     camera = data.draw(overrides.get("camera", tess_st.cameras()))
     filename = pathlib.Path(f"cam{camera}_quat.txt")
@@ -433,20 +443,9 @@ def simulate_lightcurve_ingestion_environment(
 ):
     # Put critical assumptions here
     cadences = np.arange(0, lightcurve_length)
-    exposure_time = data.draw(
-        st.floats(
-            min_value=2,
-            max_value=30 * 60,
-            allow_infinity=False,
-            allow_nan=False,
-        )
-    )
-
+    exposure_time = 2 / 60 / 60 / 24  # Seconds in units of days
     camera = data.draw(tess_st.cameras())
     ccd = data.draw(tess_st.ccds())
-
-    cur_start_tjd = 0.0
-    cur_end_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24)
 
     frame_type = data.draw(orm_st.frame_types())
     orbit = data.draw(orm_st.orbits())
@@ -498,46 +497,26 @@ def simulate_lightcurve_ingestion_environment(
     db.add(background_aperture)
     db.session.add_all(magnitude_types)
     db.session.add_all(photometric_apertures)
-    db.flush()
+
+    note(f"PUSHING {photometric_apertures}")
+    note(f"{db.query(models.Aperture).all()}")
+
+    db.commit()
     quality_flags = []
-    for cadence in cadences:
-        cur_mid_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24 / 2)
+    for ith, cadence in enumerate(cadences):
         frame = data.draw(
             orm_st.frames(
                 cadence=st.just(cadence),
                 camera=st.just(camera),
                 exp_time=st.just(exposure_time),
-                start_tjd=st.just(cur_start_tjd),
-                mid_tjd=st.just(cur_mid_tjd),
-                end_tjd=st.just(cur_end_tjd),
                 orbit=st.just(orbit),
                 frame_type=st.just(frame_type),
             )
         )
         frame.file_path = f"{frame.cadence}_{frame.file_path}"
-
-        cur_start_tjd = cur_end_tjd
-        cur_end_tjd = cur_start_tjd + (exposure_time / 60 / 60 / 24)
-
         db.add(frame)
         db.flush()
         quality_flags.append((cadence, int(frame.quality_bit)))
-
-    eph = [
-        data.draw(
-            orm_st.spacecraft_ephemeris(
-                barycentric_dynamical_time=st.just(0.0)
-            )
-        ),
-        data.draw(
-            orm_st.spacecraft_ephemeris(
-                barycentric_dynamical_time=st.just(2457000 + cur_end_tjd)
-            )
-        ),
-    ]
-
-    db.session.add_all(eph)
-    db.flush()
 
     # Generate tic parameters
     tic_parameters = data.draw(

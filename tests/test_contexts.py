@@ -2,7 +2,7 @@ import tempfile
 import pathlib
 import numpy as np
 from lightcurvedb.core.ingestors import contexts
-from hypothesis import strategies as st, given
+from hypothesis import strategies as st, given, settings, note
 from .strategies import tess as tess_st
 
 
@@ -23,6 +23,7 @@ def _dump_dict_txt(path, data, param_order, formatter=str):
     )
 
 
+@settings(deadline=None)
 @given(
     st.lists(tess_st.tic_parameters(), unique_by=lambda p: p["tic_id"])
 )
@@ -54,6 +55,7 @@ def test_tic_catalog_loading(parameters):
                     assert param[key] == remote[key]
 
 
+@settings(deadline=None)
 @given(
     st.lists(
         st.tuples(
@@ -79,14 +81,13 @@ def test_quality_flag_loading(quality_flags, camera, ccd):
             qflag_path,
             quality_flags
         )
-
         contexts.populate_quality_flags(sqlite_path, qflag_path, camera, ccd)
-
         for cadence, quality_flag in quality_flags:
             remote_flag = contexts.get_qflag(sqlite_path, cadence, camera, ccd)
             assert remote_flag == quality_flag
 
 
+@settings(deadline=None)
 @given(
     st.lists(
         st.tuples(
@@ -115,7 +116,9 @@ def test_quality_flag_ordering(quality_flags, camera, ccd):
 
         contexts.populate_quality_flags(sqlite_path, qflag_path, camera, ccd)
         np_arr = contexts.get_qflag_np(sqlite_path, camera, ccd)
+        note(np_arr)
         for ith, row in enumerate(sorted(quality_flags, key=lambda r: r[0])):
             remote_row = np_arr[ith]
+            note(f"{row} {remote_row}")
             assert row[0] == remote_row[0]
             assert row[1] == remote_row[1]

@@ -1,14 +1,13 @@
-from sqlalchemy import BigInteger, Column, ForeignKey, and_, func, select
-from sqlalchemy.ext.hybrid import hybrid_method
+from sqlalchemy import BigInteger, Column, ForeignKey, and_, select
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPReference
-from lightcurvedb.models.frame import Frame
-from lightcurvedb.models.lightpoint import Lightpoint
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
+from lightcurvedb.models.aperture import Aperture
+from lightcurvedb.models.lightcurve import LightcurveType, OrbitLightcurve
 
 
-class BestOrbitLightcurve(QLPReference):
+class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     """
     A mapping of lightcurves to orbits to define the best detrending method
     used. This allows a heterogenous mix of lightcurves to coalese into a
@@ -18,71 +17,51 @@ class BestOrbitLightcurve(QLPReference):
     __tablename__ = "best_orbit_lightcurves"
     __table_args = (
         UniqueConstraint(
-            "lightcurve_id",
+            "tic_id",
             "orbit_id",
         ),
     )
 
     id = Column(BigInteger, primary_key=True)
-    lightcurve_id = Column(
-        ForeignKey("lightcurves.id", ondelete="CASCADE"), nullable=False
+    tic_id = Column(BigInteger, nullable=False)
+
+    aperture_id = Column(ForeignKey("apertures.id", ondelete="RESTRICT"))
+    lightcurve_type_id = Column(
+        ForeignKey("lightcurvetypes.id", ondelete="RESTRICT")
     )
     orbit_id = Column(
         ForeignKey("orbits.id", ondelete="RESTRICT"), nullable=False
     )
 
-    lightcurve = relationship("Lightcurve")
-
+    aperture = relationship("Aperture")
+    lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
-    @hybrid_method
-    def max_cadence(self, frame_type="Raw FFI"):
-        return self.orbit.max_cadence()
-
-    @max_cadence.expression
-    def max_cadence(cls, frame_type="Raw FFI"):
-        return (
-            select(func.max(Frame.cadence))
-            .where(Frame.orbit_id == cls.orbit_id)
-            .label("max_cadence")
+    @classmethod
+    def orbitlightcurve_join_condition(cls):
+        return and_(
+            cls.tic_id == OrbitLightcurve.tic_id,
+            cls.aperture_id == OrbitLightcurve.aperture_id,
+            cls.lightcurve_type_id == OrbitLightcurve.lightcurve_type_id,
+            cls.orbit_id == OrbitLightcurve.orbit_id,
         )
 
-    @hybrid_method
-    def min_cadence(self, frame_type="Raw FFI"):
-        return self.orbit.min_cadence()
 
-    @min_cadence.expression
-    def min_cadence(cls, frame_type="Raw FFI"):
-        return (
-            select(func.min(Frame.cadence))
-            .where(Frame.orbit_id == cls.orbit_id)
-            .label("min_cadence")
+class BestOrbitLightcurveAPIMixin:
+    def get_best_lightcurve_q(self):
+        q = self.query(OrbitLightcurve).join(
+            BestOrbitLightcurve.orbit_lightcurve,
         )
+        return q
 
-    @hybrid_method
-    def lightpoints(self, frame_type="Raw FFI"):
-        raise NotImplementedError
+    def resolve_best_aperture_id(self, bestap):
+        q = select(Aperture.id).filter(Aperture.name.ilike(f"%{bestap}%"))
+        id_ = self.execute(q).fetchone()[0]
+        return id_
 
-    @lightpoints.expression
-    def lightpoints(cls, frame_type="Raw FFI"):
-        return (
-            select(
-                Lightpoint.lightcurve_id,
-                Lightpoint.cadence,
-                Lightpoint.barycentric_julian_date,
-                Lightpoint.data,
-                Lightpoint.error,
-                Lightpoint.x_centroid,
-                Lightpoint.y_centroid,
-                Lightpoint.quality_flag,
-            )
-            .where(
-                and_(
-                    Lightpoint.lightcurve_id == cls.lightcurve_id,
-                    Lightpoint.cadence.between(
-                        cls.min_cadence, cls.max_cadence
-                    ),
-                )
-            )
-            .label("lightpoints")
+    def resolve_best_lightcurve_type_id(self, detrend_name):
+        q = select(LightcurveType.id).filter(
+            LightcurveType.name.ilike(detrend_name.lower())
         )
+        id_ = self.execute(q).fetchone()[0]
+        return id_

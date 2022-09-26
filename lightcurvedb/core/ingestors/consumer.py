@@ -1,3 +1,4 @@
+import time
 from collections import defaultdict
 from multiprocessing import Process
 from queue import Empty
@@ -10,9 +11,6 @@ from lightcurvedb import db_from_config
 class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
-    db_config = None
-    db = None
-    buffers = defaultdict(list)
     buffer_order = []
 
     def __init__(self, config, name, job_queue):
@@ -21,6 +19,7 @@ class BufferedDatabaseIngestor(Process):
         self.name = name
         self.job_queue = job_queue
         self.log("Initialized")
+        self.buffers = defaultdict(list)
 
     def log(self, msg, level="debug"):
         full_msg = f"{self.name} {msg}"
@@ -50,13 +49,29 @@ class BufferedDatabaseIngestor(Process):
     def flush(self, db):
         self._preflush(db)
         metrics = []
-
-        for buffer_key in self.buffer_order:
-            method_name = f"flush_{buffer_key}"
-            flush_method = getattr(self, method_name)
-            metric = flush_method(db)
-            if metric is not None:
-                metrics.append(metric)
+        tries = 5
+        while tries > 0:
+            try:
+                for buffer_key in self.buffer_order:
+                    method_name = f"flush_{buffer_key}"
+                    flush_method = getattr(self, method_name)
+                    metric = flush_method(db)
+                    if metric is not None:
+                        metrics.append(metric)
+                # Successful push
+                break
+            except RuntimeError:
+                self.log(
+                    "Encountered deadlock state, rolling back "
+                    f"and performing backoff. {tries} tries remaining.",
+                    level="warning",
+                )
+                db.rollback()
+                wait_time = 2 ** (5 - tries)
+                time.sleep(wait_time)
+                tries -= 1
+        if tries == 0:
+            raise RuntimeError(f"{self.name} could not push payload. Exciting")
 
         db.commit()
 

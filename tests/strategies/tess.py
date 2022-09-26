@@ -1,5 +1,7 @@
 from hypothesis import strategies as st
 
+MIN_TJD, MAX_TJD = 1325.29, 2796.12
+
 
 @st.composite
 def ccds(draw):
@@ -106,7 +108,12 @@ def gps_times(draw):
 @st.composite
 def tjds(draw, **kwargs):
     return draw(
-        st.floats(allow_nan=False, allow_infinity=False, min_value=0.0)
+        st.floats(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=MIN_TJD,
+            max_value=MAX_TJD,
+        )
     )
 
 

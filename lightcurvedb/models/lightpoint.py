@@ -1,26 +1,12 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    ForeignKey,
-    Index,
-    Integer,
-    event,
-    func,
-)
+from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.datastructures.blob import Blobable
-from lightcurvedb.core.partitioning import (
-    Partitionable,
-    emit_ranged_partition_ddl,
-)
-from lightcurvedb.util.iter import keyword_zip
 
-LIGHTPOINT_PARTITION_RANGE = 10 ** 6
 UPDATEABLE_PARAMS = [
     "barycentric_julian_date",
     "data",
@@ -47,12 +33,12 @@ LIGHTPOINT_ALIASES = {
 
 LIGHTPOINT_NP_DTYPES = {
     "lightcurve_id": "uint64",
-    "cadence": "uint64",
-    "barycentric_julian_date": "float64",
+    "cadence": "uint32",
+    "barycentric_julian_date": "float32",
     "data": "float64",
     "error": "float64",
-    "x_centroid": "float64",
-    "y_centroid": "float64",
+    "x_centroid": "float32",
+    "y_centroid": "float32",
     "quality_flag": "uint16",
 }
 
@@ -62,47 +48,28 @@ def get_lightpoint_dtypes(*fields):
     return np.dtype(types)
 
 
-class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
+class Lightpoint(QLPModel, Blobable):
     """
     This SQLAlchemy model is used to represent individual datapoints of
     a ``Lightcurve``.
     """
 
-    __tablename__ = "lightpoints"
-    __abstract__ = False
+    __tablename__ = "hyper_lightpoints"
 
     lightcurve_id = Column(
-        ForeignKey("lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"),
-        primary_key=True,
-        index=Index(
-            "ix_lightpoints_lightcurve_id",
-            "lightpoint_id",
-        ),
-        nullable=False,
-    )
-
-    cadence = Column(
         BigInteger,
-        nullable=False,
-        primary_key=True,
-        index=Index(
-            "lightpoints_cadence_idx",
-            "cadence",
-            postgresql_using="brin",
-            postgresql_concurrently=True,
+        ForeignKey(
+            "orbit_lightcurves.id", onupdate="CASCADE", ondelete="CASCADE"
         ),
+        primary_key=True,
     )
 
-    barycentric_julian_date = Column(DOUBLE_PRECISION, nullable=False)
-
+    cadence = Column(Integer, primary_key=True)
+    barycentric_julian_date = Column(Float, nullable=False)
     data = Column(DOUBLE_PRECISION)
-
     error = Column(DOUBLE_PRECISION)
-
-    x_centroid = Column(DOUBLE_PRECISION)
-
-    y_centroid = Column(DOUBLE_PRECISION)
-
+    x_centroid = Column(Float)
+    y_centroid = Column(Float)
     quality_flag = Column(Integer, nullable=False)
 
     def __repr__(self):
@@ -270,6 +237,42 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
             "quality_flag": self.quality_flag,
         }
 
+    @classmethod
+    def _array_aggregate(cls, col):
+        if isinstance(col, str):
+            orm_col = getattr(cls, col)
+        orm_col = col
+
+        return func.array_agg(aggregate_order_by(orm_col, cls.cadence.asc()))
+
+    @classmethod
+    def cadence_array(cls):
+        return cls._array_aggregate(cls.cadence)
+
+    @classmethod
+    def barycentric_julian_date_array(cls):
+        return cls._array_aggregate(cls.barycentric_julian_date)
+
+    @classmethod
+    def data_array(cls):
+        return cls._array_aggregate(cls.data)
+
+    @classmethod
+    def error_array(cls):
+        return cls._array_aggregate(cls.error)
+
+    @classmethod
+    def x_centroid_array(cls):
+        return cls._array_aggregate(cls.x_centroid)
+
+    @classmethod
+    def y_centroid_array(cls):
+        return cls._array_aggregate(cls.y_centroid)
+
+    @classmethod
+    def quality_flag_array(cls):
+        return cls._array_aggregate(cls.quality_flag)
+
     def update_with(self, data):
         """
         Updates using the given object. The following parameters are pulled
@@ -292,64 +295,3 @@ class Lightpoint(QLPModel, Partitionable("range", "lightcurve_id"), Blobable):
                 # Do not edit, fail softly
                 continue
         # All edits, if any have been made
-
-
-# Define some factories
-def lightpoints_from_kw(cadences, bjd, **other_data):
-    """
-    A factory method to construct raw Lightpoints from keyword data
-    comprising of lists.
-
-    Parameters
-    ----------
-    cadences : list or list-like of integers
-        The cadences to align the given data. The cadence array need not be
-        in ascending or descending order. However the ``bjd`` and other
-        data columns will be interpreted in the order of the cadences given.
-
-    bjd : list or list-like of floats
-        The barycentric julian dates to assign to lightpoint instances. Will
-        be interpreted in order of the given cadences
-
-    **other_data : optional keyword arg of additional list-like data.
-        Other keyword data to assign to lightpoints. Must have the same
-        lengths as the given cadences.
-
-    Yields
-    ------
-    Lightpoint
-        A lightpoint instance instantiated with a column of the given
-        data.
-    Raises
-    ------
-    ValueError:
-        Raised if the given data does not agree in length.
-    """
-    if not len(bjd) == len(cadences):
-        raise ValueError(
-            "bjd length {0} does not match cadence length {1}".format(
-                len(bjd), len(cadences)
-            )
-        )
-    data_keys = other_data.keys()
-    for col in data_keys:
-        if not len(other_data[col]) == len(cadences):
-            raise ValueError(
-                "{0} length {1} does not match cadence length {2}".format(
-                    col, len(other_data[col]), len(cadences)
-                )
-            )
-    # Everything is aligned
-    # iterate through columnwise
-    for kw in keyword_zip(cadence=cadences, bjd=bjd, **other_data):
-        yield Lightpoint(**kw)
-
-
-# Setup initial lightpoint Partition
-event.listen(
-    Lightpoint.__table__,
-    "after_create",
-    emit_ranged_partition_ddl(
-        Lightpoint.__tablename__, 0, LIGHTPOINT_PARTITION_RANGE
-    ),
-)

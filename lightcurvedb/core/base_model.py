@@ -2,9 +2,8 @@ from __future__ import division, print_function
 
 from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import ColumnProperty, RelationshipProperty
+from sqlalchemy.orm import ColumnProperty, RelationshipProperty, as_declarative, declarative_mixin
 from sqlalchemy.sql import func
 
 from lightcurvedb.core.admin import get_psql_catalog_tables
@@ -13,7 +12,7 @@ from lightcurvedb.core.sql import psql_safe_str
 
 
 @as_declarative()
-class QLPModel(object):
+class QLPModel:
     """
     Common SQLAlchemy base model for all QLP Models
     """
@@ -99,29 +98,23 @@ class QLPModel(object):
                 "Could not find any SQL properties on {0} with the "
                 "path '{1}'".format(cls, path)
             )
-
-
-class QLPDataProduct(QLPModel):
+@declarative_mixin
+class CreatedOnMixin:
     """
     Mixin for describing QLP Dataproducts such as frames, lightcurves,
     and BLS results
     """
-
-    __abstract__ = True
-
     created_on = Column(DateTime, server_default=func.now())
 
 
-class QLPDataSubType(QLPModel):
+@declarative_mixin
+class NameAndDescriptionMixin:
     """
     Mixin for describing QLP data subtypes such as lightcurve types.
     """
 
-    __abstract__ = True
-
-    _name = Column("name", String(64), primary_key=True, nullable=False)
+    _name = Column("name", String(64), unique=True, nullable=False)
     _description = Column("description", String)
-    created_on = Column(DateTime, server_default=func.now())
 
     @hybrid_property
     def name(self):
@@ -146,32 +139,3 @@ class QLPDataSubType(QLPModel):
     @description.expression
     def description(cls):
         return cls._description
-
-    @hybrid_property
-    def id(self):
-        return self.name
-
-    @id.expression
-    def id(cls):
-        return cls.name
-
-
-class QLPReference(QLPModel):
-    """
-    Mixin for describing models which are used by QLP but generally aren't
-    'produced'. For example: orbits and space craft telemetery
-    """
-
-    __abstract__ = True
-
-    created_on = Column(DateTime, server_default=func.now())
-
-
-class QLPMetric(QLPModel):
-    """
-    Mixin for describing models which are purely for determining performance
-    metrics or some other internal diagnostics.
-    """
-
-    __abstract__ = True
-    created_on = Column(DateTime, server_default=func.now())

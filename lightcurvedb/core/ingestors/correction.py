@@ -1,4 +1,5 @@
 import warnings
+from datetime import datetime
 
 import numpy as np
 from astropy import constants as const
@@ -7,13 +8,26 @@ from loguru import logger
 from scipy.interpolate import interp1d
 
 from lightcurvedb.core.ingestors import contexts
+from lightcurvedb.core.tic8 import one_off
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
 
+TIC_PARAM_FIELDS = (
+    "ra",
+    "dec",
+    "tmag",
+    "pmra",
+    "pmdec",
+    "jmag",
+    "kmag",
+    "vmag",
+)
+
 
 class LightcurveCorrector:
     def __init__(self, sqlite_path):
+        self.sqlite_path = sqlite_path
         bjd = contexts.get_spacecraft_data(sqlite_path, "bjd")
         tess_x = contexts.get_spacecraft_data(sqlite_path, "x")
         tess_y = contexts.get_spacecraft_data(sqlite_path, "y")
@@ -24,15 +38,37 @@ class LightcurveCorrector:
         self.y_pos_interpolator = interp1d(bjd, tess_y)
         self.z_pos_interpolator = interp1d(bjd, tess_z)
         logger.debug("Built spacecraft position interpolations")
-
-        self.tic_parameters = contexts.get_tic_mapping(
-            sqlite_path, "ra", "dec", "tmag"
-        )
-        logger.debug("Built tic catalog mapping")
         self.quality_flag_map = contexts.get_quality_flag_mapping(sqlite_path)
         logger.debug("Built quality flag mapping")
         self.tjd_map = contexts.get_tjd_mapping(sqlite_path)
         logger.debug("Built tjd mapping")
+
+        self._last_tic_miss = None
+
+    def resolve_tic_parameters(self, tic_id, *fields):
+        try:
+            row = contexts.get_tic_parameters(
+                self.sqlite_path, tic_id, *fields
+            )
+            result = tuple(row[field] for field in fields)
+        except KeyError:
+            result = one_off(tic_id, *TIC_PARAM_FIELDS)
+            row = dict(zip(TIC_PARAM_FIELDS, result))
+            result = tuple(row[field] for field in fields)
+
+            if self._last_tic_miss is None:
+                self._last_tic_miss = datetime.now()
+            else:
+                elapsed = datetime.now() - self._last_tic_miss
+                self._last_tic_miss = datetime.now()
+                if elapsed.seconds < 5:
+                    logger.warning(
+                        "High subsequent hits to TIC. "
+                        "Is the catalog representative of "
+                        "the ingesting orbit?"
+                    )
+
+        return result
 
     def correct_for_earth_time(self, tic_id, tjd_time_array):
         # Offset the bjd epoc for Earth time
@@ -45,9 +81,9 @@ class LightcurveCorrector:
         orbit_z = self.z_pos_interpolator(tjd_time.jd)
         orbit_vector = np.c_[orbit_x, orbit_y, orbit_z]
 
-        parameters = self.tic_parameters[tic_id]
-        ra = np.radians(parameters["ra"])
-        dec = np.radians(parameters["dec"])
+        ra, dec = self.resolve_tic_parameters(tic_id, "ra", "dec")
+        ra = np.radians(ra)
+        dec = np.radians(dec)
         star_vector = np.array(
             [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
         )
@@ -67,7 +103,7 @@ class LightcurveCorrector:
     def get_magnitude_alignment_offset(
         self, tic_id, magnitudes, quality_flags
     ):
-        tmag = self.tic_parameters[tic_id]["tmag"]
+        tmag = self.resolve_tic_parameters(tic_id, "tmag")
         mask = quality_flags == 0
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

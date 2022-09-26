@@ -1,61 +1,83 @@
+import configparser
+import os
 import pathlib
 import tempfile
 
+import psycopg2
 import pytest
 from click.testing import CliRunner
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import sessionmaker
+from psycopg2 import sql
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from sqlalchemy import text
 
-from lightcurvedb import core
+from lightcurvedb import __version__ as version
+from lightcurvedb import db_from_config, models
+from lightcurvedb.core.base_model import QLPModel
 from lightcurvedb.core.connection import DB
-from lightcurvedb.core.engines import engine_from_config
 
-from .constants import CONFIG_PATH
+from . import provision
 
 
-class __TEST_DB__(DB):
-    @property
-    def session(self):
-        try:
-            return super().session
-        except DBAPIError:
+def _db_connection(database):
+    conn = psycopg2.connect(
+        dbname=database,
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+        host=os.environ["HOST"],
+        port=os.environ["PORT"],
+    )
+    return conn
+
+
+def _create_testdb(testdb_name):
+    postgres_conn = _db_connection("postgres")
+    postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    with postgres_conn.cursor() as cur:
+        drop = sql.SQL("DROP DATABASE IF EXISTS {}").format(
+            sql.Identifier(testdb_name)
+        )
+        create = sql.SQL("CREATE DATABASE {}").format(
+            sql.Identifier(testdb_name)
+        )
+        cur.execute(drop)
+        cur.execute(create)
+    postgres_conn.close()
+
+
+def _populate_configuration(testdb_name):
+    TEST_PATH = os.path.dirname(os.path.relpath(__file__))
+    CONFIG_PATH = os.path.join(TEST_PATH, "config.conf")
+    parser = configparser.ConfigParser()
+    parser["Credentials"] = {
+        "username": os.environ["POSTGRES_USER"],
+        "password": os.environ["POSTGRES_PASSWORD"],
+        "database_name": testdb_name,
+        "database_host": os.environ["HOST"],
+        "database_port": os.environ["PORT"],
+    }
+    with open(CONFIG_PATH, "wt") as fout:
+        parser.write(fout)
+
+    db = db_from_config(CONFIG_PATH)
+    with db:
+        QLPModel.metadata.create_all(db.bind)
+        provision.sync_tess_positions(db)
+
+    return CONFIG_PATH
+
+
+class TestDB(DB):
+    def close(self):
+        if self.is_active:
             self.session.rollback()
-            raise
-
-    def flush(self, *args, **kwargs):
-        try:
-            return self.session.flush(*args, **kwargs)
-        except Exception:
-            self.session.rollback()
-            raise
-
-    def add(self, *args, **kwargs):
-        try:
-            val = super().add(*args, **kwargs)
-            return val
-        except Exception:
-            self.session.rollback()
-            raise
-
-
-@pytest.fixture(scope="module")
-def db_with_schema():
-    _engine = engine_from_config(CONFIG_PATH)
-    _factory = sessionmaker(bind=_engine)
-
-    db_ = __TEST_DB__(_factory)
-    with db_:
-        core.base_model.QLPModel.metadata.create_all(db_.bind)
-    return db_
-
-
-@pytest.fixture(scope="module")
-def db(db_with_schema):
-    with db_with_schema as db_:
-        try:
-            yield db_
-        finally:
-            db_.rollback()
+        if self.depth <= 1:
+            for table in reversed(QLPModel.metadata.sorted_tables):
+                if table.name == models.SpacecraftEphemeris.__tablename__:
+                    continue
+                q = text(f"TRUNCATE TABLE {table.name} CASCADE")
+                self.session.execute(q)
+            self.session.commit()
+        return super().close()
 
 
 @pytest.fixture(scope="module")
@@ -69,3 +91,16 @@ def clirunner():
     runner = CliRunner(mix_stderr=True)
 
     return runner
+
+
+@pytest.fixture(scope="module")
+def db():
+    testdbname = "lightpointtesting_" + version.replace(".", "_")
+    _create_testdb(testdbname)
+    _populate_configuration(testdbname)
+
+    test_path = os.path.dirname(os.path.relpath(__file__))
+    config_path = os.path.join(test_path, "config.conf")
+    database = db_from_config(config_path, db_class=TestDB)
+
+    yield database

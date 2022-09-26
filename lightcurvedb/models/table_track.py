@@ -14,16 +14,16 @@ from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
 from tqdm import tqdm
 
-from lightcurvedb.core.base_model import QLPMetric
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 from lightcurvedb.core.psql_tables import PGClass
 
 
-class PartitionTrack(QLPMetric):
+class PartitionTrack(QLPModel, CreatedOnMixin):
     __tablename__ = "partition_tracks"
 
     id = Column(Integer, Sequence("partition_tracks_id_seq"), primary_key=True)
     model = Column(String(64), index=True)
-    oid = Column(ForeignKey(PGClass.oid), index=True, unique=True)
+    oid = Column(Integer, index=True, unique=True)
     tracker_type = Column(String(64), index=True)
 
     __mapper_args__ = {
@@ -31,7 +31,8 @@ class PartitionTrack(QLPMetric):
         "polymorphic_on": tracker_type,
     }
 
-    pgclass = relationship(PGClass)
+
+    pgclass = relationship(PGClass, foreign_keys=(PGClass.oid,), primaryjoin=PGClass.oid == oid)
 
     @hybrid_method
     def same_model(self, Model):

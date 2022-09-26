@@ -15,10 +15,10 @@ from .strategies import ingestion, orm
 no_scope_check = HealthCheck.function_scoped_fixture
 
 
-@settings(suppress_health_check=[no_scope_check])
-@given(orm.database(), orm.frame_types(), orm.orbits(), orm.frames())
-def test_frame_insertion(database, frame_type, orbit, frame):
-    with database as db:
+@settings(deadline=None, suppress_health_check=[no_scope_check])
+@given(orm.frame_types(), orm.orbits(), orm.frames())
+def test_frame_insertion(db, frame_type, orbit, frame):
+    with db:
         db.add(orbit)
         db.add(frame_type)
         db.flush()
@@ -36,6 +36,7 @@ def test_frame_insertion(database, frame_type, orbit, frame):
         db.query(Frame).filter(Frame.orbit == orbit).count() == 1
 
 
+@settings(deadline=None)
 @given(st.data())
 def test_from_fits(tempdir, data):
     path, header = ingestion.simulate_fits(data, tempdir)
@@ -51,9 +52,10 @@ def test_from_fits(tempdir, data):
     assert str(path) == str(frame.file_path)
 
 
-@given(orm.database(), orm.frame_types(), st.data())
-def test_frame_ingestion(database, frame_type, data):
-    with database as db, TemporaryDirectory() as tempdir:
+@settings(deadline=None)
+@given(orm.frame_types(), st.data())
+def test_frame_ingestion(db, frame_type, data):
+    with db, TemporaryDirectory() as tempdir:
         db.add(frame_type)
         db.flush()
         file_path, ffi_kwargs = ingestion.simulate_fits(
@@ -70,11 +72,11 @@ def test_frame_ingestion(database, frame_type, data):
 
 
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
-@given(orm.database(), st.data())
-def test_new_orbit_cli(clirunner, database, data):
+@given(st.data())
+def test_new_orbit_cli(clirunner, db, data):
     # Simulate new frames
     try:
-        with database as db, TemporaryDirectory() as tempdir:
+        with db, TemporaryDirectory() as tempdir:
             frame_type = data.draw(orm.frame_types())
             ffi_path = pathlib.Path(tempdir, "ffi_fits")
             hk_path = pathlib.Path(tempdir, "hk")
@@ -122,7 +124,7 @@ def test_new_orbit_cli(clirunner, database, data):
     finally:
         # Complete catch, we want to try keep the test
         # database as clean as possible
-        with database as db:
+        with db:
             opts = {"synchronize_session": False}
             db.query(Frame).delete(**opts)
             db.query(FrameType).delete(**opts)

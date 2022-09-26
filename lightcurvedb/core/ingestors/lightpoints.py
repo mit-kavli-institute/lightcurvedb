@@ -1,8 +1,10 @@
+import pathlib
 from collections import defaultdict
 from datetime import datetime
 from multiprocessing import Manager
-from queue import Empty
+from os import getpid
 from random import sample
+from tempfile import TemporaryDirectory
 from time import sleep
 
 import numpy as np
@@ -10,45 +12,69 @@ from click import echo
 from h5py import File as H5File
 from loguru import logger
 from pgcopy import CopyManager
+from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, func
+from sqlalchemy.dialects.postgresql import insert as psql_insert
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql.expression import cast
 from tqdm import tqdm
 
-from lightcurvedb import db_from_config
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 from lightcurvedb.core.ingestors.lightcurves import (
+    best_detrending_from_h5_fd,
     cadences_from_h5_fd,
-    get_components,
     h5_fd_to_numpy,
 )
-from lightcurvedb.models import Lightpoint, Observation, Orbit
+from lightcurvedb.models import (
+    Aperture,
+    BestOrbitLightcurve,
+    LightcurveType,
+    Lightpoint,
+    Orbit,
+    OrbitLightcurve,
+)
 from lightcurvedb.models.metrics import QLPOperation, QLPProcess, QLPStage
+from lightcurvedb.util.contexts import extract_pdo_path_context
+
+
+def _yield_lightpoints(files, lightcurves):
+    for f, orbit_lightcurve in zip(files, lightcurves):
+        id_ = orbit_lightcurve.id
+        array = np.load(f)
+        for _, cadence, bjd, data, err, x, y, flag in array:
+            yield (id_, cadence, bjd, data, err, x, y, flag)
 
 
 class BaseLightpointIngestor(BufferedDatabaseIngestor):
-    normalizer = None
-    quality_flag_map = None
-    mid_tjd_map = None
-    orbit_map = None
-    stage_id = None
-    process = None
-    current_sample = 0
-    n_samples = 0
-    seen_cache = set()
-    db = None
-    runtime_parameters = {}
-    rng = None
-    target_table = "lightpoints"
-    buffer_order = ["lightpoints", "observations"]
+    target_table = Lightpoint.__tablename__
+    buffer_order = [
+        "orbit_lightcurves",
+        "best_orbit_lightcurves",
+        "lightpoints",
+    ]
 
-    def __init__(self, config, name, job_queue, stage_id, cache_path):
+    def __init__(
+        self, config, name, job_queue, stage_slug, cache_path, lp_cache
+    ):
         super().__init__(config, name, job_queue)
         self.cache_path = cache_path
-        self.stage_id = stage_id
+        self.stage_slug = stage_slug
         self.log("Initialized")
+        self.apertures = {}
+        self.lightcurve_types = {}
+        self.bestap_cache = {}
+        self.best_detrend_cache = {}
+        self.runtime_parameters = {}
+        self.tmp_lc_id_map = {}
+        self.orbit_map = {}
+        self.current_sample = 0
+        self.n_samples = 0
+        self.rng = None
+        self.process = None
+        self.lp_cache = pathlib.Path(lp_cache)
+        self.n_lightpoints = 0
 
     def _load_contexts(self):
         try:
@@ -56,6 +82,14 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                 self.corrector = LightcurveCorrector(self.cache_path)
                 self.orbit_map = dict(db.query(Orbit.orbit_number, Orbit.id))
                 self.log("Instantiated Orbit ID map")
+
+                stage = (
+                    self.db.query(QLPStage)
+                    .filter_by(slug=str(self.stage_slug))
+                    .one()
+                )
+                self.stage_id = stage.id
+                self.log(f"Will use stage metric {stage}")
                 self.rng = np.random.default_rng()
                 self.set_new_parameters(db)
                 self.log("Determined initial parameters")
@@ -71,33 +105,71 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         if self.should_refresh_parameters:
             self.set_new_parameters(db)
 
+    def get_aperture_id(self, name):
+        try:
+            id_ = self.apertures[name]
+        except KeyError:
+            with self.db as db:
+                q = db.query(Aperture.id).filter_by(name=name)
+                id_ = q.one()[0]
+                self.apertures[name] = id_
+        return id_
+
+    def get_lightcurve_type_id(self, name):
+        try:
+            id_ = self.lightcurve_types[name]
+        except KeyError:
+            with self.db as db:
+                q = db.query(LightcurveType.id).filter_by(name=name)
+                id_ = q.one()[0]
+                self.lightcurve_types[name] = id_
+        return id_
+
+    def get_best_aperture_id(self, tic_id):
+        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")[0]
+        magbins = np.array([6, 7, 8, 9, 10, 11, 12])
+        bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
+        index = np.searchsorted(magbins, tmag)
+        if index == 0:
+            bestap = bestaps[0]
+        elif index >= len(magbins):
+            bestap = bestaps[-1]
+        else:
+            if tmag > magbins[index] - 0.5:
+                bestap = bestaps[index]
+            else:
+                bestap = bestaps[index - 1]
+
+        try:
+            id_ = self.bestap_cache[bestap]
+        except KeyError:
+            self.log(f"Best Aperture cache miss for {bestap}, tmag of {tmag}")
+            with self.db as db:
+                id_ = db.resolve_best_aperture_id(bestap)
+            self.bestap_cache[bestap] = id_
+
+        return id_
+
+    def get_best_detrend_id(self, h5_file):
+        name = best_detrending_from_h5_fd(h5_file)
+        try:
+            id_ = self.best_detrend_cache[name]
+        except KeyError:
+            self.log(f"Best Detrending cache miss for {name}, resolving")
+            with self.db as db:
+                id_ = db.resolve_best_lightcurve_type_id(name)
+            self.best_detrend_cache[name] = id_
+        return id_
+
     def read_lightcurve(
         self, id_, aperture, lightcurve_type, quality_flags, context, h5
     ):
         lightcurve = h5_fd_to_numpy(id_, aperture, lightcurve_type, h5)
-        tic_id = int(context["tic_id"])
-
-        magnitudes = lightcurve["data"]
-
-        # tmag-alignment
-        mag_offset = self.corrector.get_magnitude_alignment_offset(
-            tic_id, magnitudes, quality_flags
-        )
-        if np.isnan(mag_offset):
-            self.log(
-                f"{tic_id} {aperture} {lightcurve_type} orbit "
-                f"{context['orbit_number']} returned NaN for "
-                "alignment offset",
-                level="warning",
-            )
-        aligned_mag = magnitudes - mag_offset
-
-        lightcurve["data"] = aligned_mag
         return lightcurve
 
     def process_job(self, h5_job):
         self.log(f"Processing {h5_job.file_path}", level="trace")
-        context = get_components(h5_job.file_path)
+        context = extract_pdo_path_context(h5_job.file_path)
         with H5File(h5_job.file_path, "r") as h5:
             cadences = cadences_from_h5_fd(h5)
             tic_id, camera, ccd = (
@@ -110,64 +182,123 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
             quality_flags = self.corrector.get_quality_flags(
                 camera, ccd, cadences
             )
+            bestap_id = self.get_best_aperture_id(tic_id)
+            best_detrend_id = self.get_best_detrend_id(h5)
 
-            for smj in h5_job.single_merge_jobs:
-                orbit_number = smj.orbit_number
-                lightcurve_id = smj.lightcurve_id
-                if (lightcurve_id, orbit_number) in self.seen_cache:
-                    self.log("Ignoring duplicate job")
-                    return None
+            for orbit_job in h5_job.orbit_lightcurve_jobs:
+                aperture_id = self.get_aperture_id(orbit_job.aperture)
+                lightcurve_type_id = self.get_lightcurve_type_id(
+                    orbit_job.lightcurve_type
+                )
+                orbit_number = orbit_job.orbit_number
+                orbit_id = self.orbit_map[orbit_number]
+
+                best_lightcurve_definition = {
+                    "orbit_id": orbit_id,
+                    "aperture_id": bestap_id,
+                    "lightcurve_type_id": best_detrend_id,
+                    "camera": camera,
+                    "ccd": ccd,
+                    "tic_id": tic_id,
+                }
 
                 try:
+                    pos = len(self.buffers["orbit_lightcurves"])
                     lightpoint_array = self.read_lightcurve(
-                        smj.lightcurve_id,
-                        smj.aperture,
-                        smj.lightcurve_type,
+                        pos,
+                        orbit_job.aperture,
+                        orbit_job.lightcurve_type,
                         quality_flags,
                         context,
                         h5,
                     )
+                    lightcurve = OrbitLightcurve(
+                        tic_id=tic_id,
+                        camera=camera,
+                        ccd=ccd,
+                        aperture_id=aperture_id,
+                        lightcurve_type_id=lightcurve_type_id,
+                        orbit_id=orbit_id,
+                    )
+                    if orbit_job.preassigned_id is not None:
+                        lightcurve.id = orbit_job.preassigned_id
+
                     lightpoint_array["barycentric_julian_date"] = bjd
                     lightpoint_array["quality_flag"] = quality_flags
-                    observation = (
-                        smj.lightcurve_id,
-                        self.orbit_map[smj.orbit_number],
-                        smj.camera,
-                        smj.ccd,
+
+                    file_path = self.lp_cache / f"{pos}_{getpid()}_lp_blob.npy"
+                    np.save(file_path, lightpoint_array)
+                    self.n_lightpoints += len(lightpoint_array)
+
+                    self.buffers["lightpoints"].append(file_path)
+                    self.buffers["orbit_lightcurves"].append(lightcurve)
+                    self.buffers["best_orbit_lightcurves"].append(
+                        best_lightcurve_definition
                     )
-                    self.buffers["lightpoints"].append(lightpoint_array)
-                    self.buffers["observations"].append(observation)
                 except OSError as e:
                     self.log(
-                        f"Unable to open {smj.file_path}: {e}",
+                        f"Unable to open {orbit_job.file_path}: {e}",
                         level="exception",
                     )
                 except ValueError as e:
                     self.log(
-                        f"Unable to process {smj.file_path}: {e}",
+                        f"Unable to process {orbit_job.file_path}: {e}",
                         level="exception",
                     )
-                finally:
-                    self.seen_cache.add((lightcurve_id, orbit_number))
 
-        self.job_queue.task_done()
+        queue_tries = 5
+        while queue_tries > 0:
+            try:
+                self.job_queue.task_done()
+                break
+            except ConnectionResetError:
+                self.log("Could not mark job as done, waiting...")
+                wait_time = 2 ** (5 - queue_tries)
+                sleep(wait_time)
+                queue_tries -= 1
+
+        if queue_tries == 0:
+            raise RuntimeError(
+                f"{self.name} could not properly communicate with job queue"
+            )
 
     def flush_lightpoints(self, db):
-        lps = self.buffers.get("lightpoints")
+        """
+        Flush lightpoints from buffers to remote. At this point lightpoints
+        have temporary lightcurve ids assigned and must be updated with the
+        ids assigned from remote.
+        """
+        files = self.buffers["lightpoints"]
+        lcs = self.buffers["orbit_lightcurves"]
 
         conn = db.session.connection().connection
-        lp_size = sum(len(chunk) for chunk in lps)
+        start = datetime.now()
+        lp_size = self.n_lightpoints
+
         self.log(
-            f"Flushing {lp_size} lightpoints over {len(lps)} jobs to remote",
+            f"Flushing {lp_size:,} lightpoints over "
+            f"{len(files):,} jobs to remote",
             level="debug",
         )
-        mgr = CopyManager(conn, self.target_table, Lightpoint.get_columns())
-        start = datetime.now()
 
-        for chunk in lps:
-            mgr.threading_copy(chunk)
+        try:
+            mgr = CopyManager(
+                conn, self.target_table, Lightpoint.get_columns()
+            )
+            mgr.threading_copy(_yield_lightpoints(files, lcs))
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                _healthcheck = cur.fetchall()  # noqa F841
+        except InFailedSqlTransaction:
+            # threading failed silently, raise:
+            raise RuntimeError
 
         end = datetime.now()
+
+        # Remove files there was a successful push
+        for f in files:
+            f.unlink()
+        self.n_lightpoints = 0
 
         metric = QLPOperation(
             process_id=self.process.id,
@@ -178,16 +309,49 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         )
         return metric
 
-    def flush_observations(self, db):
-        obs = self.buffers.get("observations")
-        self.log(f"Flushing {len(obs)} observations to remote", level="trace")
-        conn = db.session.connection().connection
-        mgr = CopyManager(
-            conn,
-            Observation.__tablename__,
-            ["lightcurve_id", "orbit_id", "camera", "ccd"],
+    def flush_orbit_lightcurves(self, db):
+        lightcurves = self.buffers.get("orbit_lightcurves")
+        self.log(f"Flushing {len(lightcurves):,} orbit lightcurves to remote")
+
+        start = datetime.now()
+        db.session.add_all(lightcurves)
+        db.flush()
+        end = datetime.now()
+        # Ids should now be assigned.
+
+        metric = QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=len(lightcurves),
+            unit="lightcurve",
         )
-        mgr.threading_copy(obs)
+        return metric
+
+    def flush_best_orbit_lightcurves(self, db):
+        best_lcs = self.buffers["best_orbit_lightcurves"]
+        self.log(
+            "Updating best orbit lightcurve table with "
+            f"{len(best_lcs)} entries"
+        )
+
+        start = datetime.now()
+        q = (
+            psql_insert(BestOrbitLightcurve)
+            .values(best_lcs)
+            .on_conflict_do_nothing()
+        )
+        db.session.execute(q)
+        end = datetime.now()
+
+        metric = QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=len(best_lcs),
+            unit="best_lightcurves",
+        )
+        return metric
 
     def determine_process_parameters(self):
         raise NotImplementedError
@@ -218,67 +382,13 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
     @property
     def should_flush(self):
         return (
-            sum(len(array) for array in self.buffers["lightpoints"])
+            self.n_lightpoints
             >= self.runtime_parameters["lp_buffer_threshold"]
         )
 
     @property
     def should_refresh_parameters(self):
         return self.n_samples >= 3
-
-
-class ImmediateLightpointIngestor(BaseLightpointIngestor):
-    def _execute_job(self, db, job):
-        self.process_job(job)
-        metric = self.flush_lightpoints(db)
-        for lc_id, orbit_id, camera, ccd in self.buffers.get("observations"):
-            obs = Observation(
-                lightcurve_id=lc_id, orbit_id=orbit_id, camera=camera, ccd=ccd
-            )
-            db.add(obs)
-        db.add(metric)
-        db.commit()
-
-        # Clear buffers
-        for buffer_key in self.buffer_order:
-            self.buffers[buffer_key] = []
-
-    def run(self):
-        self.log("Entering main runtime")
-        self.db = db_from_config(self.db_config)
-        self._load_contexts()
-        with self.db as db:
-            while not self.job_queue.empty():
-                try:
-                    job = self.job_queue.get(timeout=10)
-                    self._execute_job(db, job)
-                except Empty:
-                    self.log("Timed out", level="error")
-                    break
-                except KeyboardInterrupt:
-                    self.log("Received keyboard interrupt")
-                    break
-                except Exception:
-                    self.log("Breaking", level="exception")
-                    break
-        self.log("Finished, exiting main runtime")
-
-    def determine_process_parameters(self):
-        return {}
-
-
-class SamplingLightpointIngestor(BaseLightpointIngestor):
-    max_lp_buffersize = 10e5
-    min_lp_buffersize = 1
-    bucket_size = 100
-
-    def determine_process_parameters(self):
-        lp_buffersize = np.random.randint(
-            self.min_lp_buffersize, high=self.max_lp_buffersize + 1
-        )
-        return {
-            "lp_buffer_threshold": lp_buffersize,
-        }
 
 
 class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
@@ -325,11 +435,62 @@ class ExponentialSamplingLightpointIngestor(BaseLightpointIngestor):
         # naively pick first
         exp = sample(possible_exp, 1)[0]
 
-        return {"lp_buffer_threshold": 2 ** exp}
+        return {"lp_buffer_threshold": 2**exp}
+
+
+class StepSamplingLightpointIngestor(BaseLightpointIngestor):
+    step_size = 800
+    max_steps = 62500
+
+    def determine_process_parameters(self):
+        step_col = cast(QLPOperation.job_size / self.step_size, Integer)
+
+        q = (
+            self.db.query(
+                step_col.label("bucket"),
+                func.count(QLPOperation.id),
+            )
+            .join(QLPOperation.process)
+            .filter(QLPProcess.current_version())
+            .group_by(step_col)
+        )
+        current_samples = dict(q)
+        samples = defaultdict(list)
+
+        for step in range(1, self.max_steps + 1):
+            n_samples = current_samples.get(step, 0)
+            samples[n_samples].append(step)
+        lowest_sample_rate = min(samples.keys())
+        possible_steps = samples[lowest_sample_rate]
+
+        step = sample(possible_steps, 1)[0]
+
+        return {"lp_buffer_threshold": self.step_size * step}
+
+
+def _queue_is_empty(queue):
+    wait = 1
+    while True:
+        try:
+            return queue.empty()
+        except ConnectionResetError:
+            unit = "second" if wait == 1 else "seconds"
+            logger.warning(
+                "Main thread could not communicate with queue, "
+                f"waiting {wait} {unit}."
+            )
+            sleep(wait)
+            wait += 1
 
 
 def ingest_merge_jobs(
-    db, jobs, n_processes, cache_path, log_level="info", worker_class=None
+    db,
+    jobs,
+    n_processes,
+    cache_path,
+    lp_scratch,
+    log_level="info",
+    worker_class=None,
 ):
     """
     Process and ingest SingleMergeJob objects.
@@ -339,12 +500,9 @@ def ingest_merge_jobs(
     job_queue = manager.Queue()
 
     echo("Enqueing multiprocessing work")
-    distinct_run_setups = set()
 
     for job in tqdm(jobs, unit=" jobs"):
         job_queue.put(job)
-        for smj in job.single_merge_jobs:
-            distinct_run_setups.add((smj.orbit_number, smj.camera, smj.ccd))
 
     with db:
         echo("Grabbing introspective processing tracker")
@@ -360,7 +518,9 @@ def ingest_merge_jobs(
             db.session.refresh(stage)
 
     echo("Initializing workers, beginning processing...")
-    with tqdm(total=len(jobs)) as bar:
+    with tqdm(total=len(jobs)) as bar, TemporaryDirectory(
+        dir=lp_scratch
+    ) as tmpdir:
         logger.remove()
         logger.add(
             lambda msg: tqdm.write(msg, end=""),
@@ -369,15 +529,20 @@ def ingest_merge_jobs(
             enqueue=True,
         )
         for n in range(n_processes):
-            p = ExponentialSamplingLightpointIngestor(
-                db._config, f"worker-{n}", job_queue, stage.id, cache_path
+            p = StepSamplingLightpointIngestor(
+                db._config,
+                f"worker-{n}",
+                job_queue,
+                "lightpoint-ingestion",
+                cache_path,
+                tmpdir,
             )
             p.start()
             workers.append(p)
 
         # Wait until all jobs have been pulled off queue
         prev = job_queue.qsize()
-        while not job_queue.empty():
+        while not _queue_is_empty(job_queue):
             cur = job_queue.qsize()
             diff = prev - cur
             bar.update(diff)

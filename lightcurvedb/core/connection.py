@@ -3,21 +3,24 @@ from __future__ import division, print_function
 import contextlib
 import os
 import warnings
+from time import sleep
 
 import numpy as np
-from pandas import read_sql as pd_read_sql
 from loguru import logger
-from sqlalchemy import and_, func, exc
+from pandas import read_sql as pd_read_sql
+from sqlalchemy import and_, exc, func
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core.engines import engine_from_config
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
+from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
+from lightcurvedb.models.lightcurve import OrbitLightcurveAPIMixin
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
-from lightcurvedb.models.orbit import ORBIT_DTYPE
+from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.type_check import isiterable
@@ -75,13 +78,14 @@ class ORM_DB(contextlib.AbstractContextManager):
                 elif 0 < self.depth < self._max_depth:
                     nested_session = self.session.begin_nested()
                     self._session_stack.append(nested_session)
+                    pass
                 else:
-                    raise RuntimeError("Database nested too far! Cowardly refusing")
+                    raise RuntimeError(
+                        "Database nested too far! Cowardly refusing"
+                    )
                 return self
             except exc.OperationalError as e:
-                logger.warning(
-                    f"Could not connect: {e}, waiting for {wait}s"
-                )
+                logger.warning(f"Could not connect: {e}, waiting for {wait}s")
                 sleep(wait)
                 wait *= 2
                 tries -= 1
@@ -298,8 +302,11 @@ class ORM_DB(contextlib.AbstractContextManager):
 
 class DB(
     ORM_DB,
+    BestOrbitLightcurveAPIMixin,
     FrameAPIMixin,
     TableTrackerAPIMixin,
+    OrbitAPIMixin,
+    OrbitLightcurveAPIMixin,
     PGCatalogMixin,
     QLPMetricAPIMixin,
 ):
@@ -1222,7 +1229,7 @@ class DB(
         )
 
 
-def db_from_config(config_path=None, **engine_kwargs):
+def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
 
@@ -1237,15 +1244,20 @@ def db_from_config(config_path=None, **engine_kwargs):
     """
     engine = engine_from_config(
         os.path.expanduser(config_path if config_path else __DEFAULT_PATH__),
-        **engine_kwargs
+        **engine_kwargs,
     )
+
+    db_class = DB if db_class is None else db_class
 
     factory = sessionmaker(bind=engine)
 
-    new_db = DB(factory)
+    new_db = db_class(factory)
     new_db._config = config_path
     return new_db
 
 
 # Try and instantiate "global" lcdb
-db = db_from_config()
+try:
+    db = db_from_config()
+except KeyError:
+    db = None

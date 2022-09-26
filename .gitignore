@@ -114,4 +114,6 @@ dmypy.json
 .pyre/
 
 # End of https://www.gitignore.io/api/python
-tests/config.conf
+.env
+*.conf
+*.eph

@@ -104,6 +104,33 @@ def cadences_from_h5_fd(h5):
     return cadences
 
 
+def best_detrending_from_h5_fd(h5, fallback_name=None):
+    """
+    Attempt to find the best detrending method specified in the h5
+    file. If any key errors occur, "KSPMagnitude" is returned.
+
+    Parameters
+    ----------
+    h5: h5py.File
+        The h5 file object to read
+    fallback_name: str, optional
+        The name to return in the event of any KeyError exceptions. If None
+        then "KSPMagnitude" is returned.
+
+    Returns
+    -------
+    str
+        The string name of the best detrending method.
+    """
+    photometry = h5["LightCurve"]["AperturePhotometry"]
+    if fallback_name is None:
+        fallback = "KSPMagnitude"
+    else:
+        fallback = fallback_name
+    name = photometry.attrs.get("bestdmagkey", fallback)
+    return name
+
+
 def bjd_from_h5_fd(h5):
     bjd = h5["LightCurve"]["BJD"][()]
     return bjd

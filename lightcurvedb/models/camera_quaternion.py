@@ -8,12 +8,13 @@ from sqlalchemy import (
     Column,
     DateTime,
     Integer,
+    SmallInteger,
     UniqueConstraint,
     func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
 
-from lightcurvedb.core.base_model import QLPReference
+from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.util.constants import GPS_LEAP_SECONDS
 
@@ -75,7 +76,7 @@ class TimeUnixLeap(formats.TimeFromEpoch):
     epoch_format = "iso"
 
 
-class CameraQuaternion(QLPReference):
+class CameraQuaternion(QLPModel, CreatedOnMixin):
     """
     This class encapsulates Camera orientation via quaternions.
     """
@@ -84,7 +85,7 @@ class CameraQuaternion(QLPReference):
 
     id = Column(Integer, primary_key=True)
     date = Column(DateTime, index=True, nullable=False)
-    camera = Column(Integer, index=True, nullable=False)
+    camera = Column(SmallInteger, index=True, nullable=False)
 
     _w = high_precision_column(name="w", nullable=False)
     _x = high_precision_column(name="x", nullable=False)

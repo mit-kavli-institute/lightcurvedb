@@ -2,7 +2,7 @@ import pathlib
 
 from hypothesis import strategies as st
 
-from lightcurvedb import db_from_config, models
+from lightcurvedb import models
 
 from . import tess as tess_st
 
@@ -23,9 +23,12 @@ FORBIDDEN_KEYWORDS = {
 
 
 @st.composite
-def database(draw):
-    config_path = draw(st.just(CONFIG_PATH))
-    return db_from_config(config_path)
+def psql_texts(draw, **kwargs):
+    alphabet = st.characters(
+        blacklist_categories=["C"],
+    )
+
+    return draw(st.text(alphabet=alphabet, **kwargs))
 
 
 @st.composite
@@ -105,6 +108,23 @@ def lightcurve_types(draw, **overrides):
 
 
 @st.composite
+def orbit_lightcurves(draw, **overrides):
+    return draw(
+        st.builds(
+            models.OrbitLightcurve,
+            tic_id=overrides.get("tic_id", tess_st.tic_ids()),
+            camera=overrides.get("camera", tess_st.cameras()),
+            ccd=overrides.get("ccd", tess_st.ccds()),
+            orbit=overrides.get("orbit", orbits()),
+            aperture=overrides.get("aperture", apertures()),
+            lightcurve_type=overrides.get(
+                "lightcurve_type", lightcurve_types()
+            ),
+        )
+    )
+
+
+@st.composite
 def frames(draw, **overrides):
     """
     Generate a frame, note that the relations for this frame, namely
@@ -118,9 +138,9 @@ def frames(draw, **overrides):
             ccd=overrides.get("ccd", st.one_of(tess_st.ccds(), st.none())),
             cadence=overrides.get("cadence", psql_integers()),
             gps_time=st.floats(),
-            start_tjd=overrides.get("start_tjd", st.floats()),
-            mid_tjd=overrides.get("mid_tjd", st.floats()),
-            end_tjd=overrides.get("end_tjd", st.floats()),
+            start_tjd=overrides.get("start_tjd", tess_st.tjds()),
+            mid_tjd=overrides.get("mid_tjd", tess_st.tjds()),
+            end_tjd=overrides.get("end_tjd", tess_st.tjds()),
             exp_time=overrides.get("exp_time", st.floats()),
             quality_bit=st.booleans(),
             file_path=st.text(),
@@ -134,14 +154,16 @@ def frames(draw, **overrides):
 
 @st.composite
 def camera_quaternions(draw):
-    return st.builds(
-        models.CameraQuaternion,
-        date=st.datetimes(),
-        camera=tess_st.cameras(),
-        w=st.floats(),
-        x=st.floats(),
-        y=st.floats(),
-        z=st.floats(),
+    return draw(
+        st.builds(
+            models.CameraQuaternion,
+            date=st.datetimes(),
+            camera=tess_st.cameras(),
+            w=st.floats(),
+            x=st.floats(),
+            y=st.floats(),
+            z=st.floats(),
+        )
     )
 
 
@@ -160,5 +182,15 @@ def spacecraft_ephemeris(draw, **overrides):
             light_travel_time=st.floats(allow_nan=False, allow_infinity=False),
             range_to=st.floats(allow_nan=False, allow_infinity=False),
             range_rate=st.floats(allow_nan=False, allow_infinity=False),
+        )
+    )
+
+
+@st.composite
+def qlpstages(draw, **overrides):
+    return draw(
+        st.builds(
+            models.QLPStage,
+            slug=psql_texts(min_size=1, max_size=64),
         )
     )

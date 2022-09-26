@@ -20,7 +20,11 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
-from lightcurvedb.core.base_model import QLPDataProduct, QLPDataSubType
+from lightcurvedb.core.base_model import (
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
+    QLPModel,
+)
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
@@ -42,11 +46,11 @@ def adapt_pathlib(path):
 ext.register_adapter(Path, adapt_pathlib)
 
 
-class FrameType(QLPDataSubType):
+class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-
+    id = Column(SmallInteger, primary_key=True, unique=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -55,7 +59,7 @@ class FrameType(QLPDataSubType):
         )
 
 
-class Frame(QLPDataProduct):
+class Frame(QLPModel, CreatedOnMixin):
     """
     Provides ORM implementation of various Frame models
     """
@@ -118,7 +122,7 @@ class Frame(QLPDataProduct):
         index=True,
     )
     frame_type_id = Column(
-        ForeignKey("frametypes.name", ondelete="RESTRICT"),
+        ForeignKey(FrameType.name, ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -238,6 +242,14 @@ class Frame(QLPDataProduct):
     @property
     def data(self):
         return fits.open(self.file_path)[0].data
+
+    @hybrid_property
+    def tjd(self):
+        return self.mid_tjd
+
+    @tjd.expression
+    def tjd(cls):
+        return cls.mid_tjd
 
 
 class FrameAPIMixin(object):

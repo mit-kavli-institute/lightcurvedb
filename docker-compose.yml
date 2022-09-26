@@ -1,0 +1,19 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:14.4
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+  test_runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    env_file:
+      - .env
+    volumes:
+      - .:/testing
+      - /tmp:/tmp

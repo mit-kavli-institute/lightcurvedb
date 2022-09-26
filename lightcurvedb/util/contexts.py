@@ -1,5 +1,5 @@
-import os
 import re
+from pathlib import Path
 
 CONTEXTS = []
 
@@ -18,7 +18,7 @@ def extract_pdo_path_context(path):
     """
     found_contexts = {}
     for regex in CONTEXTS:
-        result = regex.search(path)
+        result = regex.search(str(path))
         if result:
             found_contexts.update(result.groupdict())
     return found_contexts
@@ -29,8 +29,8 @@ REGISTER(r"orbit-(?P<orbit_number>[0-9]+)")
 REGISTER(r"sector-(?P<sector>[0-9]+)")
 REGISTER(r"cam(?P<camera>[1-4])")
 REGISTER(r"ccd(?P<ccd>[1-4])")
+REGISTER(r"[^0-9]?(?P<tic_id>\d+)\.h5$")
 
 
-from pathlib import Path
 def get_parent_dir(path):
     return Path(path).parts[-1]
