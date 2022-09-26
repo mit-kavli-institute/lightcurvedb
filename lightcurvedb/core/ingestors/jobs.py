@@ -126,7 +126,9 @@ def _yield_lightcurve_fields(db, background_name_template="%background%"):
     bg_type_filter = LightcurveType.name.ilike(background_name_template)
 
     fg_apertures = db.query(Aperture).filter(~bg_aperture_filter)
-    fg_types = db.query(LightcurveType).filter(~bg_type_filter)
+    fg_types = db.query(LightcurveType).filter(
+        ~bg_type_filter, LightcurveType.name != "QSPMagnitude"
+    )
 
     bg_apertures = db.query(Aperture).filter(bg_aperture_filter)
     bg_types = db.query(LightcurveType).filter(bg_type_filter)

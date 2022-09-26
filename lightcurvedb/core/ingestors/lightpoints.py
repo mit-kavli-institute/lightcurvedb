@@ -8,7 +8,6 @@ from tempfile import TemporaryDirectory
 from time import sleep
 
 import numpy as np
-from click import echo
 from h5py import File as H5File
 from loguru import logger
 from pgcopy import CopyManager
@@ -105,6 +104,15 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
         if self.should_refresh_parameters:
             self.set_new_parameters(db)
 
+    def _execute_job(self, job):
+        try:
+            self.process_job(job)
+            if self.should_flush:
+                with self.db as db:
+                    self.flush(db)
+        except OSError as e:
+            self.log(f"Unable to open {job.file_path}: {e}", level="error")
+
     def get_aperture_id(self, name):
         try:
             id_ = self.apertures[name]
@@ -197,55 +205,41 @@ class BaseLightpointIngestor(BufferedDatabaseIngestor):
                     "orbit_id": orbit_id,
                     "aperture_id": bestap_id,
                     "lightcurve_type_id": best_detrend_id,
-                    "camera": camera,
-                    "ccd": ccd,
                     "tic_id": tic_id,
                 }
 
-                try:
-                    pos = len(self.buffers["orbit_lightcurves"])
-                    lightpoint_array = self.read_lightcurve(
-                        pos,
-                        orbit_job.aperture,
-                        orbit_job.lightcurve_type,
-                        quality_flags,
-                        context,
-                        h5,
-                    )
-                    lightcurve = OrbitLightcurve(
-                        tic_id=tic_id,
-                        camera=camera,
-                        ccd=ccd,
-                        aperture_id=aperture_id,
-                        lightcurve_type_id=lightcurve_type_id,
-                        orbit_id=orbit_id,
-                    )
-                    if orbit_job.preassigned_id is not None:
-                        lightcurve.id = orbit_job.preassigned_id
+                pos = len(self.buffers["orbit_lightcurves"])
+                lightpoint_array = self.read_lightcurve(
+                    pos,
+                    orbit_job.aperture,
+                    orbit_job.lightcurve_type,
+                    quality_flags,
+                    context,
+                    h5,
+                )
+                lightcurve = OrbitLightcurve(
+                    tic_id=tic_id,
+                    camera=camera,
+                    ccd=ccd,
+                    aperture_id=aperture_id,
+                    lightcurve_type_id=lightcurve_type_id,
+                    orbit_id=orbit_id,
+                )
+                if orbit_job.preassigned_id is not None:
+                    lightcurve.id = orbit_job.preassigned_id
 
-                    lightpoint_array["barycentric_julian_date"] = bjd
-                    lightpoint_array["quality_flag"] = quality_flags
+                lightpoint_array["barycentric_julian_date"] = bjd
+                lightpoint_array["quality_flag"] = quality_flags
 
-                    file_path = self.lp_cache / f"{pos}_{getpid()}_lp_blob.npy"
-                    np.save(file_path, lightpoint_array)
-                    self.n_lightpoints += len(lightpoint_array)
+                file_path = self.lp_cache / f"{pos}_{getpid()}_lp_blob.npy"
+                np.save(file_path, lightpoint_array)
+                self.n_lightpoints += len(lightpoint_array)
 
-                    self.buffers["lightpoints"].append(file_path)
-                    self.buffers["orbit_lightcurves"].append(lightcurve)
-                    self.buffers["best_orbit_lightcurves"].append(
-                        best_lightcurve_definition
-                    )
-                except OSError as e:
-                    self.log(
-                        f"Unable to open {orbit_job.file_path}: {e}",
-                        level="exception",
-                    )
-                except ValueError as e:
-                    self.log(
-                        f"Unable to process {orbit_job.file_path}: {e}",
-                        level="exception",
-                    )
-
+                self.buffers["lightpoints"].append(file_path)
+                self.buffers["orbit_lightcurves"].append(lightcurve)
+                self.buffers["best_orbit_lightcurves"].append(
+                    best_lightcurve_definition
+                )
         queue_tries = 5
         while queue_tries > 0:
             try:
@@ -499,13 +493,8 @@ def ingest_merge_jobs(
     manager = Manager()
     job_queue = manager.Queue()
 
-    echo("Enqueing multiprocessing work")
-
-    for job in tqdm(jobs, unit=" jobs"):
-        job_queue.put(job)
-
     with db:
-        echo("Grabbing introspective processing tracker")
+        logger.info("Grabbing introspective processing tracker")
         try:
             stage = db.get_qlp_stage("lightpoint-ingestion")
         except NoResultFound:
@@ -517,7 +506,7 @@ def ingest_merge_jobs(
             db.commit()
             db.session.refresh(stage)
 
-    echo("Initializing workers, beginning processing...")
+    logger.info("Initializing workers, beginning processing...")
     with tqdm(total=len(jobs)) as bar, TemporaryDirectory(
         dir=lp_scratch
     ) as tmpdir:
@@ -540,8 +529,12 @@ def ingest_merge_jobs(
             p.start()
             workers.append(p)
 
+        logger.info("Enqueing multiprocessing work")
+        for job in jobs:
+            job_queue.put(job)
+
         # Wait until all jobs have been pulled off queue
-        prev = job_queue.qsize()
+        prev = len(jobs)
         while not _queue_is_empty(job_queue):
             cur = job_queue.qsize()
             diff = prev - cur
