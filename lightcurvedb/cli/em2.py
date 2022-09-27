@@ -7,7 +7,7 @@ from loguru import logger
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import em2 as ingest_em2
-from lightcurvedb.core.ingestors.jobs import EM2_Plan
+from lightcurvedb.core.ingestors.jobs import EM2Plan
 
 
 @lcdbcli.group()
@@ -26,7 +26,7 @@ def em2(ctx):
 @click.option(
     "--quality-flag-template",
     type=str,
-    default=EM2_Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+    default=EM2Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 def ingest_dir(
@@ -39,7 +39,7 @@ def ingest_dir(
 ):
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         tempdir_path = pathlib.Path(tempdir)
-        cache_path = tempdir / "db.sqlite3"
+        cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
         with ctx.obj["dbconf"] as db:
             contexts.populate_ephemeris(cache_path, db)
@@ -49,7 +49,7 @@ def ingest_dir(
             for directory in directories:
                 click.echo(f"Considering {directory}")
 
-            plan = EM2_Plan(directories, db, recursive=recursive)
+            plan = EM2Plan(directories, db, recursive=recursive)
 
             jobs = plan.get_jobs()
             tic_ids = plan.tic_ids

@@ -2,6 +2,7 @@ from .admin import admin
 from .apertures import add_aperture
 from .base import lcdbcli
 from .bls import bls
+from .em2 import em2
 from .frames import add_frametype, tica
 from .lightcurves import lightcurve
 from .new_orbit import ingest_frames
@@ -18,6 +19,7 @@ __all__ = [
     "add_frametype",
     "add_lightcurvetype",
     "bls",
+    "em2",
     "ingest_frames",
     "orbit",
     "lightcurve",
