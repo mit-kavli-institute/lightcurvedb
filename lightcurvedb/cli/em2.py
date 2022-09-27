@@ -62,7 +62,7 @@ def ingest_dir(
             jobs = plan.get_jobs()
             if tic_catalog:
                 path_iter = plan.yield_needed_tic_catalogs(
-                    plan_template=tic_catalog_path_template
+                    path_tepmplate=tic_catalog_path_template
                 )
                 for catalog_path in path_iter:
                     contexts.populate_tic_catalog(cache_path, catalog_path)
