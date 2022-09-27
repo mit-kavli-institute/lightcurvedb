@@ -1,5 +1,4 @@
 import numpy as np
-from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
 
@@ -40,7 +39,7 @@ def iterate_for_raw_data(h5_fd):
         flux_weighted_x_centroid = photometry["X"][()]
         flux_weighted_y_centroid = photometry["Y"][()]
         for type_name, timeseries in photometry.items():
-            if type_name.lower() in skip_these_tokens:
+            if any(token in type_name.lower() for token in skip_these_tokens):
                 continue
             expected_error_name = f"{type_name}Error"
 
@@ -48,10 +47,6 @@ def iterate_for_raw_data(h5_fd):
             try:
                 error = photometry[expected_error_name][()]
             except KeyError:
-                logger.warning(
-                    f"Could not get error field for {expected_error_name} "
-                    f"in {h5_fd}"
-                )
                 error = np.full_like(data, np.nan)
 
             raw_data = {
