@@ -28,11 +28,13 @@ def em2(ctx):
     "--tic-catalog-path-template",
     type=str,
     default=EM2Plan.DEFAULT_TIC_CATALOG_TEMPLATE,
+    show_default=True,
 )
 @click.option(
     "--quality-flag-template",
     type=str,
     default=EM2Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+    show_default=True,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 def ingest_dir(

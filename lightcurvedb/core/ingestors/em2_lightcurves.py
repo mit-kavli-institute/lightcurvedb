@@ -25,6 +25,11 @@ def get_barycentric_julian_dates(h5_fd):
     return lightcurve["BJD"][()]
 
 
+def get_best_detrending_type(h5_fd):
+    photometry = h5_fd["LightCurve"]["AperturePhotometry"]
+    return photometry.attrs["bestdmagkey"]
+
+
 def iterate_for_raw_data(h5_fd):
     """
     Yield over the given h5 data for orbit lightcurve lightpoint
