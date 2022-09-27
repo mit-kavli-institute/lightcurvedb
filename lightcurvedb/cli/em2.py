@@ -7,7 +7,7 @@ from loguru import logger
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import em2 as ingest_em2
-from lightcurvedb.core.ingestors.jobs import EM2_Plan
+from lightcurvedb.core.ingestors.jobs import EM2Plan
 
 
 @lcdbcli.group()
@@ -23,10 +23,16 @@ def em2(ctx):
 )
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
+@click.option("--tic-catalog/--tic-db", is_flag=True, default=True)
+@click.option(
+    "--tic-catalog-path-template",
+    type=str,
+    default=EM2Plan.DEFAULT_TIC_CATALOG_TEMPLATE,
+)
 @click.option(
     "--quality-flag-template",
     type=str,
-    default=EM2_Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+    default=EM2Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 def ingest_dir(
@@ -34,12 +40,14 @@ def ingest_dir(
     paths,
     n_processes,
     recursive,
+    tic_catalog,
+    tic_catalog_path_template,
     quality_flag_template,
     scratch,
 ):
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         tempdir_path = pathlib.Path(tempdir)
-        cache_path = tempdir / "db.sqlite3"
+        cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
         with ctx.obj["dbconf"] as db:
             contexts.populate_ephemeris(cache_path, db)
@@ -47,13 +55,20 @@ def ingest_dir(
 
             directories = [pathlib.Path(path) for path in paths]
             for directory in directories:
-                click.echo(f"Considering {directory}")
+                logger.info(f"Considering {directory}")
 
-            plan = EM2_Plan(directories, db, recursive=recursive)
+            plan = EM2Plan(directories, db, recursive=recursive)
 
             jobs = plan.get_jobs()
-            tic_ids = plan.tic_ids
-            contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
+            if tic_catalog:
+                path_iter = plan.yield_needed_tic_catalogs(
+                    path_template=tic_catalog_path_template
+                )
+                for catalog_path in path_iter:
+                    contexts.populate_tic_catalog(cache_path, catalog_path)
+            else:
+                tic_ids = plan.tic_ids
+                contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
 
             for args in plan.yield_needed_quality_flags(
                 path_template=quality_flag_template

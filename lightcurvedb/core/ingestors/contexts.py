@@ -227,6 +227,10 @@ def populate_tic_catalog(conn, catalog_path, chunksize=MAX_PARAM):
 
 @with_sqlite
 def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
+    logger.debug(
+        f"Pulling {len(tic_ids)} entries from remote TIC db using"
+        f"{chunksize} sized batches"
+    )
     with TIC8_DB() as tic8:
         columns = tic8.ticentries.c
         q = select(

@@ -165,6 +165,11 @@ class ORM_DB(contextlib.AbstractContextManager):
         return self.session.bind
 
     @property
+    def config(self):
+        """Return the config file path that is configuring this instance."""
+        return self._config
+
+    @property
     def depth(self):
         """
         What is the current transaction depth. For initially opened

@@ -85,6 +85,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         self.n_samples = 0
         self.process = None
         self.lp_cache = pathlib.Path(lp_cache)
+        self.cache_path = cache_path
 
     def _load_contexts(self):
         with self.db as db:
@@ -394,6 +395,7 @@ def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
         db.config,
         n_processes,
         job_queue=job_queue,
+        cache_path=cache_path,
         lp_cache=lp_cache,
     )
 
@@ -406,7 +408,7 @@ def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
             enqueue=True,
         )
         n_jobs_remaining = job_queue.qsize()
-        while not job_queue.is_empty():
+        while not job_queue.empty():
             current_qsize = job_queue.qsize()
             completed_since_last_check = n_jobs_remaining - current_qsize
             n_jobs_remaining = current_qsize

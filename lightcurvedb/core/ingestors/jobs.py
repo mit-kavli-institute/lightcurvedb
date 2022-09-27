@@ -55,7 +55,7 @@ class EM2_H5_Job:
     @classmethod
     def from_path_context(cls, context):
         job = cls(
-            path=pathlib.Path(context["file_path"]),
+            file_path=pathlib.Path(context["path"]),
             tic_id=int(context["tic_id"]),
             camera=int(context["camera"]),
             ccd=int(context["ccd"]),
@@ -546,8 +546,13 @@ class EM2Plan:
     def _preprocess_files(self):
         logger.debug(f"Preprocessing {len(self.contexts)} files")
         with Pool() as pool:
-            jobs = pool.imap(EM2_H5_Job.from_path_context, self.contexts)
-        logger.debug(f"Process files and generated {len(jobs)} jobs")
+            jobs = list(
+                pool.imap(
+                    EM2_H5_Job.from_path_context,
+                    tqdm(self.contexts, unit=" files"),
+                )
+            )
+        logger.debug(f"Processed files and generated {len(jobs)} jobs")
         self.jobs = jobs
 
     def _get_unique_observed(self):
