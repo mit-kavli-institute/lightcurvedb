@@ -6,12 +6,14 @@ from os import getpid
 from random import sample
 from time import sleep
 
+import cachetools
 import h5py
 import numpy as np
 from loguru import logger
 from pgcopy import CopyManager
 from psycopg2.errors import InFailedSqlTransaction
 from sqlalchemy import Integer, cast, func
+from sqlalchemy.dialects.postgresql import insert as psql_insert
 from tqdm import tqdm
 
 from lightcurvedb import models
@@ -33,6 +35,7 @@ CSV_TYPES = (
     int,  # cadence
     float,  # bjd
     float,  # data
+    float,  # error
     float,  # x_centroid
     float,  # y_centroid
     int,  # quality flag
@@ -76,16 +79,18 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
 
         super().__init__(config, name, job_queue)
         self.result_queue = result_queue
-        self.apertures = {}
-        self.lightcurve_types = {}
-        self.bestap_cache = {}
+        self.aperture_cache = cachetools.FIFOCache(8)
+        self.lightcurve_type_cache = cachetools.FIFOCache(8)
         self.tmp_lc_id_map = {}
+        self.n_lightpoints = 0
         self.runtime_parameters = {}
         self.current_sample = {}
         self.n_samples = 0
         self.process = None
         self.lp_cache = pathlib.Path(lp_cache)
         self.cache_path = cache_path
+        self.observation_cache = cachetools.LRUCache(1024)
+        self.best_detrend_cache = cachetools.LRUCache(32)
 
     def _load_contexts(self):
         with self.db as db:
@@ -108,7 +113,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             self.set_new_parameters(db)
 
     def get_best_aperture_id(self, tic_id):
-        tmag = self.corrector.resolve_tic_parameters(tic_id, "tmag")
+        (tmag,) = self.corrector.resolve_tic_parameters(tic_id, "tmag")
         magbins = np.array([6, 7, 8, 9, 10, 11, 12])
         bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
         index = np.searchsorted(magbins, tmag)
@@ -122,26 +127,12 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             else:
                 bestap = bestaps[index - 1]
 
-        try:
-            id_ = self.bestap_cache[bestap]
-        except KeyError:
-            self.log(f"Best Aperture cache miss for {bestap}, tmag of {tmag}")
-            with self.db as db:
-                id_ = db.resolve_best_aperture_id(bestap)
-            self.bestap_cache[bestap] = id_
-
-        return id_
+        name = f"Aperture_{bestap:03}"
+        return self.get_aperture_id(name)
 
     def get_best_detrend_id(self, h5_file):
-        name = em2.best_detrending_from_h5_fd(h5_file)
-        try:
-            id_ = self.best_detrend_cache[name]
-        except KeyError:
-            self.log(f"Best Detrending cache miss for {name}, resolving")
-            with self.db as db:
-                id_ = db.resolve_beset_lightcurve_type_id(name)
-            self.best_detrend_cache[name] = id_
-        return id_
+        name = em2.get_best_detrending_type(h5_file)
+        return self.get_lightcurve_type_id(name)
 
     def get_observed(self, tic_id):
         try:
@@ -153,22 +144,54 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                 ap = models.Aperture
                 type_ = models.LightcurveType
 
-                q = db.query(
-                    lc.tic_id,
-                    lc.camera,
-                    lc.ccd,
-                    o.orbit_number,
-                    ap.name,
-                    type_.name,
-                ).filter(lc.tic_id == tic_id)
+                q = (
+                    db.query(
+                        lc.tic_id,
+                        lc.camera,
+                        lc.ccd,
+                        o.orbit_number,
+                        ap.name,
+                        type_.name,
+                    )
+                    .join(lc.orbit)
+                    .join(lc.aperture)
+                    .join(lc.lightcurve_type)
+                    .filter(lc.tic_id == tic_id)
+                )
                 observed = set(q.all())
                 self.observation_cache[tic_id] = observed
         return observed
 
+    def _resolve_id_from_name(self, Model, name):
+        with self.db as db:
+            q = db.query(Model.id).filter(Model.name == name)
+            (id_,) = q.first()
+
+        self.log(
+            f"Resolved '{name}' to numeric identifier {id_}", level="debug"
+        )
+        return id_
+
+    def get_aperture_id(self, name):
+        try:
+            id_ = self.aperture_cache[name]
+        except KeyError:
+            id_ = self._resolve_id_from_name(models.Aperture, name)
+            self.aperture_cache[name] = id_
+        return id_
+
+    def get_lightcurve_type_id(self, name):
+        try:
+            id_ = self.lightcurve_type_cache[name]
+        except KeyError:
+            id_ = self._resolve_id_from_name(models.LightcurveType, name)
+            self.lightcurve_type_cache[name] = id_
+        return id_
+
     def process_job(self, em2_h5_job):
         observed_mask = self.get_observed(em2_h5_job.tic_id)
 
-        with h5py.File(em2_h5_job, "r") as h5:
+        with h5py.File(em2_h5_job.file_path, "r") as h5:
             cadences = em2.get_cadences(h5)
             bjd = em2.get_barycentric_julian_dates(h5)
 
@@ -184,7 +207,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             best_lightcurve_definition = {
                 "orbit_id": self.orbit_map[em2_h5_job.orbit_number],
                 "aperture_id": bestap_id,
-                "lightcurve_id": best_detrend_id,
+                "lightcurve_type_id": best_detrend_id,
                 "tic_id": em2_h5_job.tic_id,
             }
 
@@ -193,7 +216,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             )
 
             for ap_name, type_name, raw_data in em2.iterate_for_raw_data(h5):
-                pos = len(self.buffers["orbit_lightcurve"])
+                pos = len(self.buffers["orbit_lightcurves"])
                 unique_key = (
                     em2_h5_job.tic_id,
                     em2_h5_job.camera,
@@ -249,11 +272,16 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
     def flush_best_orbit_lightcurves(self, db):
         best_lcs = self.buffers["best_orbit_lightcurves"]
         self.log(
-            f"Updating best lightcurve table with {len(best_lcs):,} entries"
+            "Updating best orbit lightcurve table with "
+            f"{len(best_lcs)} entries"
         )
         start = datetime.now()
-        db.session.bulk_insert_mapping(models.BestOrbitLightcurve, best_lcs)
-        db.flush()
+        q = (
+            psql_insert(models.BestOrbitLightcurve)
+            .values(best_lcs)
+            .on_conflict_do_nothing()
+        )
+        db.session.execute(q)
         end = datetime.now()
 
         metric = models.QLPOperation(
@@ -265,7 +293,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         )
         return metric
 
-    def flush_lightpoints(self, db):
+    def flush_hyper_lightpoints(self, db):
         files = self.buffers["lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
 
@@ -292,7 +320,13 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         end = datetime.now()
 
         for f in files:
-            f.unlink()
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                self.log(
+                    f"Could not remove {f}, already does not exist",
+                    level="warning",
+                )
 
         self.n_lightpoints = 0
 
@@ -407,6 +441,9 @@ def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
             level=log_level.upper(),
             enqueue=True,
         )
+        for job in jobs:
+            job_queue.put(job)
+
         n_jobs_remaining = job_queue.qsize()
         while not job_queue.empty():
             current_qsize = job_queue.qsize()
