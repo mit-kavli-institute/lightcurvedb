@@ -25,7 +25,29 @@ def _np_dtype(*cols):
         yield col, LIGHTPOINT_NP_DTYPES[col]
 
 
-def _resolve_ids(config, lightcurve_ids):
+def resolve_ids(config, lightcurve_ids):
+    """
+    Resolve lightpoint data from the given lightcurve ids.
+
+    Parameters
+    ----------
+    config: pathlike
+        Path to a configuration file for a lightcurvedb db instance.
+
+    lightcurve_ids: List[int]
+        A list of lightcurve ids to get orbit baselines for.
+
+    Returns
+    -------
+    Dict[int, Dict[int, List]]
+        A dictionary of lightcurve ids -> data where data is also a
+        dictionary of baseline-name -> array.
+
+    Note
+    ----
+    Duplicates in the input id list will result in overwrites in the return
+    dictionary. Order is also not guaranteed in the return.
+    """
     q = (
         sa.select(
             models.Lightpoint.lightcurve_id,
@@ -60,9 +82,46 @@ def _resolve_ids(config, lightcurve_ids):
 def resolve_lightcurve_ids(
     config, lightcurve_ids, workers=None, id_chunk_size=32
 ):
-    f = partial(_resolve_ids, config)
+    """
+    Resolve lightcurve ids using a multiprocessing queue. See ``resolve_ids``
+    for behavior.
+
+    Parameters
+    ----------
+    config: pathlike
+        Path to a configuration file for a lightcurvedb db instance.
+
+    lightcurve_ids: List[int]
+        A list of lightcurve ids to get orbit baselines for.
+
+    workers: int, optional
+        The `maximum` number of multiprocess workers to use. By default
+        this is ``mp.cpu_count()``. This function will use the minimum of
+        either the specified cpu count or the length of the chunkified
+        lightcurve ids
+
+    id_chunk_size: int, optional
+        Granularity of the multiprocess workload. It's inefficient
+        to query a lightcurve at a time for both remote resource utilization
+        and python serialization of the return (which could be in the order
+        of millions to billions of rows).
+
+    Returns
+    -------
+    Dict[int, Dict[int, List]]
+        A dictionary of lightcurve ids -> data where data is also a
+        dictionary of baseline-name -> array.
+
+    Note
+    ----
+    Duplicates in the input id list will result in overwrites in the return
+    dictionary. Order is also not guaranteed in the return.
+
+    As of the latest doc, it is unknown of the best chunk size to use.
+    """
+    f = partial(resolve_ids, config)
     results = {}
-    jobs = list(chunkify(lightcurve_ids, id_chunk_size))
+    jobs = list(chunkify(sorted(lightcurve_ids), id_chunk_size))
     if workers is None:
         workers = min(mp.cpu_count(), len(jobs))
     with mp.Pool(workers) as pool:
@@ -72,6 +131,13 @@ def resolve_lightcurve_ids(
 
 
 class LightcurveManager:
+    """
+    This generic lightcurve manager allows interaction of lightcurve
+    data with this general syntax:
+    >>> lm = LightcurveManager(db_config)
+    >>> lm[tic_id, aperture, type]["data"]
+    """
+
     def __init__(self, config, cache_size=4096):
         self._config = config
         self._star_lookup = cachetools.LRUCache(cache_size)
