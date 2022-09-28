@@ -178,7 +178,7 @@ class LightcurveManager:
         return self.construct_lightcurve(id_baseline)
 
     def lookup_ids_for_baseline(self, tic_ids, aperture=None, type=None):
-        with db_from_config(self._cache) as db:
+        with db_from_config(self._config) as db:
             q = (
                 sa.select(
                     models.OrbitLightcurve.tic_id,
