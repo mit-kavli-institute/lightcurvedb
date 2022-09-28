@@ -171,9 +171,9 @@ class LightcurveManager:
         cache_misses = [id_ for id_ in id_baseline if id_ not in hot_ids]
 
         if len(cache_misses) > 0:
-            for result in resolve_lightcurve_ids(self._config, cache_misses):
-                for id_, data in result.items():
-                    self._cache[id_] = data
+            result = resolve_lightcurve_ids(self._config, cache_misses)
+            for id_, data in result.items():
+                self._cache[id_] = data
 
         return self.construct_lightcurve(id_baseline)
 
