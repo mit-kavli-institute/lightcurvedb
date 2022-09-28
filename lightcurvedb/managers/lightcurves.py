@@ -203,7 +203,7 @@ class LightcurveManager:
             )
 
             for *key, id_array in db.execute(q).fetchall():
-                self._star_lookup[key] = id_array
+                self._star_lookup[tuple(key)] = id_array
 
     def yield_lightpoint_tuples_for(self, ids):
         for id_ in ids:
