@@ -2,7 +2,6 @@ import multiprocessing as mp
 import pathlib
 from collections import defaultdict
 from datetime import datetime
-from os import getpid
 from random import sample
 from time import sleep
 
@@ -64,6 +63,16 @@ def _from_csv(file_path, lightcurve_id):
 def _yield_from_csvs(files, lightcurves):
     for file, lightcurve in zip(files, lightcurves):
         yield from _from_csv(file, lightcurve.id)
+
+
+def _from_lp_array(array, lightcurve_id):
+    for row in array:
+        yield lightcurve_id, *array
+
+
+def _from_lp_arrays(arrays, lightcurves):
+    for array, lightcurve in zip(arrays, lightcurves):
+        yield from _from_lp_array(array, lightcurve.id)
 
 
 class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
@@ -216,7 +225,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             )
 
             for ap_name, type_name, raw_data in em2.iterate_for_raw_data(h5):
-                pos = len(self.buffers["orbit_lightcurves"])
                 unique_key = (
                     em2_h5_job.tic_id,
                     em2_h5_job.camera,
@@ -242,12 +250,8 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                     lightcurve_type_id=lightcurve_type_id,
                 )
 
-                lp_filepath = self.lp_cache / f"{pos}_{getpid()}_lp.csv"
                 self.n_lightpoints += len(cadences)
-
-                _to_csv(lp_filepath, raw_data)
-
-                self.buffers["lightpoints"].append(lp_filepath)
+                self.buffers["lightpoints"].append(raw_data)
                 self.buffers["orbit_lightcurves"].append(lightcurve)
 
         self.job_queue.task_done()
@@ -294,7 +298,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         return metric
 
     def flush_hyper_lightpoints(self, db):
-        files = self.buffers["lightpoints"]
+        arrays = self.buffers["lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
 
         conn = db.session.connection().connection
@@ -310,7 +314,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                 models.Lightpoint.get_columns(),
             )
 
-            mgr.threading_copy(_yield_from_csvs(files, lcs))
+            mgr.threading_copy(_from_lp_arrays(arrays, lcs))
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 _healthcheck = cur.fetchall()  # noqa F841
@@ -318,15 +322,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             # threading failed silently, raise here
             raise RuntimeError
         end = datetime.now()
-
-        for f in files:
-            try:
-                f.unlink()
-            except FileNotFoundError:
-                self.log(
-                    f"Could not remove {f}, already does not exist",
-                    level="warning",
-                )
 
         self.n_lightpoints = 0
 
