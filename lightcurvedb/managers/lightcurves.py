@@ -141,7 +141,7 @@ class LightcurveManager:
     def __init__(self, config, cache_size=4096):
         self._config = config
         self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
-        self._cache = cachetools.LRUCache(cache_size)
+        self._lightpoint_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, key):
         try:
@@ -167,13 +167,13 @@ class LightcurveManager:
             )
             id_baseline = self._lightcurve_id_cache[key]
 
-        hot_ids = set(self._cache.keys())
+        hot_ids = set(self._lightpoint_cache.keys())
         cache_misses = [id_ for id_ in id_baseline if id_ not in hot_ids]
 
         if len(cache_misses) > 0:
             result = resolve_lightcurve_ids(self._config, cache_misses)
             for id_, data in result.items():
-                self._cache[id_] = data
+                self._lightpoint_cache[id_] = data
 
         return self.construct_lightcurve(id_baseline)
 
@@ -207,7 +207,7 @@ class LightcurveManager:
 
     def yield_lightpoint_tuples_for(self, ids):
         for id_ in ids:
-            data = self._cache[id_]
+            data = self._lightpoint_cache[id_]
             yield from zip(*tuple(data[col] for col in LP_DATA_COLUMNS))
 
     def construct_lightcurve(self, ids):
