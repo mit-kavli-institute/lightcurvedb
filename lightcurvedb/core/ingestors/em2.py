@@ -1,5 +1,4 @@
 import multiprocessing as mp
-import pathlib
 from collections import defaultdict
 from datetime import datetime
 from random import sample
@@ -82,9 +81,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         "hyper_lightpoints",
     ]
 
-    def __init__(
-        self, config, name, job_queue, cache_path, lp_cache, result_queue=None
-    ):
+    def __init__(self, config, name, job_queue, cache_path, result_queue=None):
 
         super().__init__(config, name, job_queue)
         self.result_queue = result_queue
@@ -96,7 +93,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         self.current_sample = {}
         self.n_samples = 0
         self.process = None
-        self.lp_cache = pathlib.Path(lp_cache)
         self.cache_path = cache_path
         self.observation_cache = cachetools.LRUCache(1024)
         self.best_detrend_cache = cachetools.LRUCache(32)
@@ -415,7 +411,7 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     return workers
 
 
-def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
+def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
@@ -425,7 +421,6 @@ def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
         n_processes,
         job_queue=job_queue,
         cache_path=cache_path,
-        lp_cache=lp_cache,
     )
 
     with tqdm(total=len(jobs), unit=" jobs") as bar:

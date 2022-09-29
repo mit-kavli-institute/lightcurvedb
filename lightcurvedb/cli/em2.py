@@ -83,7 +83,6 @@ def ingest_dir(
             jobs,
             n_processes,
             cache_path,
-            tempdir_path,
             log_level=ctx.obj["log_level"],
         )
         logger.success("Done!")
