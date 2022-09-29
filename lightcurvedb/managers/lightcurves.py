@@ -140,12 +140,12 @@ class LightcurveManager:
 
     def __init__(self, config, cache_size=4096):
         self._config = config
-        self._star_lookup = cachetools.LRUCache(cache_size)
+        self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
         self._cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, key):
         try:
-            id_baseline = self._star_lookup[key]
+            id_baseline = self._lightcurve_id_cache[key]
         except KeyError:
             if isinstance(key, int):
                 tic_id = key
@@ -165,7 +165,7 @@ class LightcurveManager:
             self.lookup_ids_for_baseline(
                 [tic_id], aperture=aperture, type=type
             )
-            id_baseline = self._star_lookup[key]
+            id_baseline = self._lightcurve_id_cache[key]
 
         hot_ids = set(self._cache.keys())
         cache_misses = [id_ for id_ in id_baseline if id_ not in hot_ids]
@@ -203,7 +203,7 @@ class LightcurveManager:
             )
 
             for *key, id_array in db.execute(q).fetchall():
-                self._star_lookup[tuple(key)] = id_array
+                self._lightcurve_id_cache[tuple(key)] = id_array
 
     def yield_lightpoint_tuples_for(self, ids):
         for id_ in ids:
