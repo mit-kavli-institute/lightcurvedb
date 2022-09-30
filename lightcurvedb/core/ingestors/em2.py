@@ -247,7 +247,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                 )
 
                 self.n_lightpoints += len(cadences)
-                self.buffers["lightpoints"].append(raw_data)
+                self.buffers["hyper_lightpoints"].append(raw_data)
                 self.buffers["orbit_lightcurves"].append(lightcurve)
 
         self.job_queue.task_done()
@@ -294,7 +294,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         return metric
 
     def flush_hyper_lightpoints(self, db):
-        arrays = self.buffers["lightpoints"]
+        arrays = self.buffers["hyper_lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
 
         conn = db.session.connection().connection
