@@ -1,8 +1,6 @@
 import multiprocessing as mp
-import pathlib
 from collections import defaultdict
 from datetime import datetime
-from os import getpid
 from random import sample
 from time import sleep
 
@@ -66,6 +64,17 @@ def _yield_from_csvs(files, lightcurves):
         yield from _from_csv(file, lightcurve.id)
 
 
+def _from_lp_dict(lp_dict, lightcurve_id):
+    lightpoint_arrays = tuple(lp_dict[field] for field in CSV_FIELDS)
+    for row in zip(*lightpoint_arrays):
+        yield lightcurve_id, *row
+
+
+def _from_lp_dicts(lp_dicts, lightcurves):
+    for array, lightcurve in zip(lp_dicts, lightcurves):
+        yield from _from_lp_dict(lp_dicts, lightcurve.id)
+
+
 class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
     buffer_order = [
         "orbit_lightcurves",
@@ -73,9 +82,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         "hyper_lightpoints",
     ]
 
-    def __init__(
-        self, config, name, job_queue, cache_path, lp_cache, result_queue=None
-    ):
+    def __init__(self, config, name, job_queue, cache_path, result_queue=None):
 
         super().__init__(config, name, job_queue)
         self.result_queue = result_queue
@@ -87,7 +94,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         self.current_sample = {}
         self.n_samples = 0
         self.process = None
-        self.lp_cache = pathlib.Path(lp_cache)
         self.cache_path = cache_path
         self.observation_cache = cachetools.LRUCache(1024)
         self.best_detrend_cache = cachetools.LRUCache(32)
@@ -216,7 +222,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             )
 
             for ap_name, type_name, raw_data in em2.iterate_for_raw_data(h5):
-                pos = len(self.buffers["orbit_lightcurves"])
                 unique_key = (
                     em2_h5_job.tic_id,
                     em2_h5_job.camera,
@@ -242,12 +247,8 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                     lightcurve_type_id=lightcurve_type_id,
                 )
 
-                lp_filepath = self.lp_cache / f"{pos}_{getpid()}_lp.csv"
                 self.n_lightpoints += len(cadences)
-
-                _to_csv(lp_filepath, raw_data)
-
-                self.buffers["lightpoints"].append(lp_filepath)
+                self.buffers["hyper_lightpoints"].append(raw_data)
                 self.buffers["orbit_lightcurves"].append(lightcurve)
 
         self.job_queue.task_done()
@@ -294,7 +295,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
         return metric
 
     def flush_hyper_lightpoints(self, db):
-        files = self.buffers["lightpoints"]
+        arrays = self.buffers["hyper_lightpoints"]
         lcs = self.buffers["orbit_lightcurves"]
 
         conn = db.session.connection().connection
@@ -310,7 +311,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                 models.Lightpoint.get_columns(),
             )
 
-            mgr.threading_copy(_yield_from_csvs(files, lcs))
+            mgr.threading_copy(_from_lp_dicts(arrays, lcs))
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 _healthcheck = cur.fetchall()  # noqa F841
@@ -318,15 +319,6 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
             # threading failed silently, raise here
             raise RuntimeError
         end = datetime.now()
-
-        for f in files:
-            try:
-                f.unlink()
-            except FileNotFoundError:
-                self.log(
-                    f"Could not remove {f}, already does not exist",
-                    level="warning",
-                )
 
         self.n_lightpoints = 0
 
@@ -420,7 +412,7 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     return workers
 
 
-def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
+def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
@@ -430,7 +422,6 @@ def ingest_jobs(db, jobs, n_processes, cache_path, lp_cache, log_level):
         n_processes,
         job_queue=job_queue,
         cache_path=cache_path,
-        lp_cache=lp_cache,
     )
 
     with tqdm(total=len(jobs), unit=" jobs") as bar:
