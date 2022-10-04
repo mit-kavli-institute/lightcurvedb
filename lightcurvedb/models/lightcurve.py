@@ -10,6 +10,7 @@ from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
     Column,
+    Float,
     ForeignKey,
     Integer,
     Sequence,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     inspect,
     select,
 )
+from sqlalchemy.dialects import psql
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -450,6 +452,34 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
     aperture = relationship("Aperture")
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
+
+
+class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
+    __table__name = "array_orbit_lightcurves"
+
+    id = Column(
+        BigInteger, Sequence("array_orbit_lightcurve_id_seq"), primary_key=True
+    )
+    tic_id = Column(BigInteger)
+    camera = Column(SmallInteger)
+    ccd = Column(SmallInteger)
+    orbit_id = Column(
+        Integer,
+        ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"),
+    )
+    aperture_id = Column(
+        SmallInteger,
+        ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"),
+    )
+    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurvetypes.id"))
+
+    cadences = Column(psql.ARRAY(BigInteger, dimensions=1))
+    barycentric_julian_dates = Column(psql.ARRAY(Float, dimensions=1))
+    data = Column(psql.ARRAY(psql.DOUBLE_PRECISION, dimensions=1))
+    errors = Column(psql.ARRAY(psql.DOUBLE_PRECISION, dimensions=1))
+    x_centroids = Column(psql.ARRAY(Float, dimensions=1))
+    y_centroids = Column(psql.ARRAY(Float, dimensions=1))
+    quality_flags = Column(psql.ARRAY(Integer, dimensions=1))
 
 
 class OrbitLightcurveAPIMixin:
