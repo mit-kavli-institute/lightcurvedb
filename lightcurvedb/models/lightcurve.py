@@ -481,6 +481,20 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     y_centroids = Column(psql.ARRAY(Float, dimensions=1))
     quality_flags = Column(psql.ARRAY(Integer, dimensions=1))
 
+    aperture = relationship("Aperture")
+    lightcurve_type = relationship("LightcurveType")
+    orbit = relationship("Orbit")
+
+    __table_args__ = UniqueConstraint(
+        "tic_id",
+        "camera",
+        "ccd",
+        "orbit_id",
+        "aperture_id",
+        "lightcurve_type_id",
+        name="unique_array_lightcurve_constraint",
+    )
+
 
 class OrbitLightcurveAPIMixin:
     def get_missing_id_ranges(self):
