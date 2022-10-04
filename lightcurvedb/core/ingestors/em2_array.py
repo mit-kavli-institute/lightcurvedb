@@ -6,6 +6,7 @@ from time import sleep
 
 import cachetools
 import h5py
+import numpy as np
 from loguru import logger
 from sqlalchemy import Integer, cast, func
 from tqdm import tqdm
@@ -16,6 +17,16 @@ from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 
 INGESTION_TELEMETRY_SLUG = "lightpoint-ingestion"
+
+
+def _nan_compat(array):
+    compat_arr = []
+    for elem in array:
+        if np.isnan(elem):
+            compat_arr.append("NaN")
+        else:
+            compat_arr.append(elem)
+    return compat_arr
 
 
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
@@ -135,6 +146,9 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                 raw_data["barycentric_julian_date"] = bjd
                 raw_data["quality_flag"] = quality_flags
 
+                raw_data["data"] = _nan_compat(raw_data["data"])
+                raw_data["error"] = _nan_compat(raw_data["error"])
+
                 aperture_id = self.get_aperture_id(ap_name)
                 lightcurve_type_id = self.get_lightcurve_type_id(type_name)
                 lightcurve = models.ArrayOrbitLightcurve(
@@ -154,16 +168,15 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                     y_centroids=raw_data["y_centroid"],
                     quality_flags=raw_data["quality_flag"],
                 )
-
-                self.n_lightpoints += len(cadences)
-                self.buffers["hyper_lightpoints"].append(raw_data)
-                self.buffers["orbit_lightcurves"].append(lightcurve)
-
+                buffer = self.buffers[
+                    models.ArrayOrbitLightcurve.__tablename__
+                ]
+                buffer.append(lightcurve)
         self.job_queue.task_done()
 
     def flush_array_orbit_lightcurves(self, db):
         lightcurves = self.buffers[models.ArrayOrbitLightcurve.__tablename__]
-
+        self.log(f"Flushing {len(lightcurves):,} lightcurves")
         start = datetime.now()
         db.session.bulk_save_objects(lightcurves)
         end = datetime.now()
@@ -218,8 +231,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
 
 class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
-    step_size = 10
-    max_steps = 1000
+    step_size = 1
+    max_steps = 10
 
     def determine_process_parameters(self):
         step_col = cast(models.QLPOperation.job_size / self.step_size, Integer)

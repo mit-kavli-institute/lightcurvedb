@@ -19,7 +19,7 @@ from sqlalchemy import (
     inspect,
     select,
 )
-from sqlalchemy.dialects import psql
+from sqlalchemy.dialects import postgresql as psql
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -455,7 +455,7 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
 
 
 class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
-    __table__name = "array_orbit_lightcurves"
+    __tablename__ = "array_orbit_lightcurves"
 
     id = Column(
         BigInteger, Sequence("array_orbit_lightcurve_id_seq"), primary_key=True
@@ -485,14 +485,16 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
-    __table_args__ = UniqueConstraint(
-        "tic_id",
-        "camera",
-        "ccd",
-        "orbit_id",
-        "aperture_id",
-        "lightcurve_type_id",
-        name="unique_array_lightcurve_constraint",
+    __table_args__ = (
+        UniqueConstraint(
+            "tic_id",
+            "camera",
+            "ccd",
+            "orbit_id",
+            "aperture_id",
+            "lightcurve_type_id",
+            name="unique_array_lightcurve_constraint",
+        ),
     )
 
 
