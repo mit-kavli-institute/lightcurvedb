@@ -64,14 +64,15 @@ def _yield_from_csvs(files, lightcurves):
         yield from _from_csv(file, lightcurve.id)
 
 
-def _from_lp_array(array, lightcurve_id):
-    for row in array:
-        yield lightcurve_id, *array
+def _from_lp_dict(lp_dict, lightcurve_id):
+    lightpoint_arrays = tuple(lp_dict[field] for field in CSV_FIELDS)
+    for row in zip(*lightpoint_arrays):
+        yield lightcurve_id, *row
 
 
-def _from_lp_arrays(arrays, lightcurves):
-    for array, lightcurve in zip(arrays, lightcurves):
-        yield from _from_lp_array(array, lightcurve.id)
+def _from_lp_dicts(lp_dicts, lightcurves):
+    for array, lightcurve in zip(lp_dicts, lightcurves):
+        yield from _from_lp_dict(lp_dicts, lightcurve.id)
 
 
 class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
@@ -310,7 +311,7 @@ class BaseEM2LightcurveIngestor(BufferedDatabaseIngestor):
                 models.Lightpoint.get_columns(),
             )
 
-            mgr.threading_copy(_from_lp_arrays(arrays, lcs))
+            mgr.threading_copy(_from_lp_dicts(arrays, lcs))
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 _healthcheck = cur.fetchall()  # noqa F841
