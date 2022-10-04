@@ -71,7 +71,7 @@ def _from_lp_dict(lp_dict, lightcurve_id):
 
 
 def _from_lp_dicts(lp_dicts, lightcurves):
-    for array, lightcurve in zip(lp_dicts, lightcurves):
+    for lp_dict, lightcurve in zip(lp_dicts, lightcurves):
         yield from _from_lp_dict(lp_dict, lightcurve.id)
 
 
