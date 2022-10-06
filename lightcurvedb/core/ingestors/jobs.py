@@ -1,6 +1,7 @@
 import pathlib
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import partial
 from itertools import chain, product
 from multiprocessing import Pool
 from typing import List, Optional
@@ -219,6 +220,26 @@ def get_observed_from_path(db, path):
             )
         )
     return result
+
+
+def look_for_relevant_files(wanted_tic_ids, lc_path):
+    h5_files = lc_path.glob("*.h5")
+    contexts = []
+    n_accepted = 0
+    for path in h5_files:
+        context = extract_pdo_path_context(path)
+        context["tic_id"] = int(context["tic_id"])
+        context["camera"] = int(context["camera"])
+        context["ccd"] = int(context["ccd"])
+        context["orbit_number"] = int(context["orbit_number"])
+
+        if context["tic_id"] in wanted_tic_ids:
+            context["path"] = path
+            contexts.append(context)
+            n_accepted += 1
+
+    logger.debug(f"Found {n_accepted} relevant files in {lc_path}")
+    return contexts
 
 
 class DirectoryPlan:
@@ -547,9 +568,10 @@ class EM2Plan:
         logger.debug(f"Preprocessing {len(self.contexts)} files")
         with Pool() as pool:
             jobs = list(
-                pool.imap(
+                pool.imap_unordered(
                     EM2_H5_Job.from_path_context,
                     tqdm(self.contexts, unit=" files"),
+                    chunksize=1000,
                 )
             )
         logger.debug(f"Processed files and generated {len(jobs)} jobs")
@@ -587,3 +609,42 @@ class EM2Plan:
     @property
     def tic_ids(self):
         return set(job.tic_id for job in self.jobs)
+
+
+class EM2_ArrayTICListPlan(EM2Plan):
+    def __init__(self, tic_ids, db):
+        self.db = db
+        self._tic_ids = set(tic_ids)
+        self._look_for_files()
+        self._preprocess_files()
+
+    @property
+    def tic_ids(self):
+        return self._tic_ids
+
+    def _look_for_files(self):
+        logger.debug(f"Looking for files relevant to {len(self.tic_ids)} tics")
+        cameras = [1, 2, 3, 4]
+        ccds = [1, 2, 3, 4]
+        paths = []
+        with self.db as db:
+            orbits = [
+                number
+                for number, in db.query(Orbit.orbit_number).order_by(
+                    Orbit.orbit_number
+                )
+            ]
+        contexts = []
+        orbit_dir = pathlib.Path("/pdo/qlp-data")
+        for orbit_number, camera, ccd in product(orbits, cameras, ccds):
+            orbit_path = orbit_dir / f"orbit-{orbit_number}" / "ffi"
+            lc_path = orbit_path / f"cam{camera}" / f"ccd{ccd}" / "LC"
+            paths.append(lc_path)
+
+        with Pool() as pool:
+            func = partial(look_for_relevant_files, self.tic_ids)
+            contexts = list(
+                chain.from_iterable(pool.imap_unordered(func, paths))
+            )
+
+        self.contexts = contexts
