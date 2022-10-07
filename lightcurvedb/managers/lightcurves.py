@@ -280,7 +280,7 @@ class LightcurveManager:
         try:
             ids = self._lightcurve_id_cache[idx]
         except KeyError:
-            _, _, _, ids = self._resolve_lightcurve_ids_for(*idx)
+            _, _, _, ids = list(self._resolve_lightcurve_ids_for(*idx))[0]
 
             for id in ids:
                 self._id_to_tic_id_lookup[id] = tic_id
