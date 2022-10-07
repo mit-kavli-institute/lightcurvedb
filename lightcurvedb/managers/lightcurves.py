@@ -1,3 +1,4 @@
+import itertools as it
 import multiprocessing as mp
 from functools import partial
 
@@ -6,6 +7,7 @@ import numpy as np
 import sqlalchemy as sa
 
 from lightcurvedb import db_from_config, models
+from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.util.iter import chunkify
 
@@ -66,15 +68,11 @@ def resolve_ids(config, lightcurve_ids):
     results = {}
     with db_from_config(config) as db:
         for id_, *fields in db.execute(q).fetchall():
-            results[id_] = {
-                "cadence": fields[0],
-                "barycentric_julian_date": fields[1],
-                "data": fields[2],
-                "error": fields[3],
-                "x_centroid": fields[4],
-                "y_centroid": fields[5],
-                "quality_flag": fields[6],
-            }
+
+            dtype = tuple(_np_dtype(*LP_DATA_COLUMNS))
+            struct = np.array(list(zip(*fields)), dtype=dtype)
+
+            results[id_] = struct
 
     return results
 
@@ -140,78 +138,148 @@ class LightcurveManager:
 
     def __init__(self, config, cache_size=4096):
         self._config = config
+        self._keyword_lookups = {}
+        self._id_to_tic_id_lookup = {}
         self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
         self._lightpoint_cache = cachetools.LRUCache(cache_size)
+        self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, key):
+        tic_id = None
+        apertures = []
+        lightcurve_types = []
+
+        if isinstance(key, int):
+            # Just keying by integer
+            tic_id = key
+            raise NotImplementedError
+        elif isinstance(key, tuple):
+            # Tiered slice of data
+            for token in key:
+                if isinstance(token, int):
+                    tic_id = token
+                else:
+                    if "Aperture" in token:
+                        apertures.append(token)
+                    else:
+                        lightcurve_types.append(token)
+        else:
+            raise KeyError(f"Cannot access lightcurve data using {key}.")
+
+        return self.get_lightcurve(
+            tic_id, apertures=apertures, lightcurve_types=lightcurve_types
+        )
+
+    def get_lightcurve(self, tic_id, apertures=None, lightcurve_types=None):
+        """ """
+        if apertures is None or len(apertures) == 0:
+            # Pivot around types
+            apertures = [
+                keywords[0] for keywords in self._keyword_lookup[tic_id]
+            ]
+        if lightcurve_types is None or len(lightcurve_types) == 0:
+            lightcurve_types = [
+                keywords[1] for keywords in self._keyword_lookup[tic_id]
+            ]
+        keys = list(it.product([tic_id], apertures, lightcurve_types))
+        if len(keys) == 1:
+            raise NotImplementedError
+
+        result = {}
+        if len(apertures) == 1:
+            for aperture, type in keys:
+                result[type] = self.construct_lightcurve(
+                    self._resolve_key(tic_id, aperture, type)
+                )
+        elif len(lightcurve_types) == 1:
+            for aperture, type in keys:
+                result[aperture] = self.construct_lightcurve(
+                    self._resolve_key(tic_id, aperture, type)
+                )
+
+        else:
+            # Composite keys...construct tiered dictionary
+            for aperture, type in keys:
+                types = result.get(aperture, dict())
+                types[type] = self.construct_lightcurve(
+                    self._resolve_key(tic_id, aperture, type)
+                )
+                result[aperture] = types
+
+        return result
+
+    def get_magnitude_median_offset(self, id, struct):
+        tic_id = self._id_to_tic_id_lookup[id]
         try:
-            id_baseline = self._lightcurve_id_cache[key]
+            tmag = self._stellar_parameter_cache[tic_id]
         except KeyError:
-            if isinstance(key, int):
-                tic_id = key
-                aperture = None
-                type = None
-            elif len(key) == 2:
-                tic_id, aperture = key
-                type = None
-            elif len(key) == 3:
-                tic_id, aperture, type = key
-            else:
-                raise IndexError(
-                    "Could not interpret {key}. Indexing should be in one "
-                    "of these forms: [tic_id], [tic_id, aperture], "
-                    "[tic_id, aperture, lightcurve_type]"
+            with TIC8_DB() as db:
+                q = sa.select(db.ticentries.c.tmag).where(
+                    db.ticentries.id == tic_id
                 )
-            self.lookup_ids_for_baseline(
-                [tic_id], aperture=aperture, type=type
+                tmag = db.execute(q).fetchone()[0]
+
+            self._stellar_parameter_cache[tic_id] = tmag
+
+        good_cadences = struct["quality_flag"] == 0
+        mag_median = np.nanmedian(struct["data"][good_cadences])
+        offset = mag_median - tmag
+
+        return offset
+
+    def _resolve_lightcurve_ids_for(self, tic_id, aperture, lightcurve_type):
+        q = (
+            sa.select(
+                models.OrbitLightcurve.tic_id,
+                models.Aperture.name,
+                models.LightcurveType.name,
+                sa.func.array_agg(models.OrbitLightcurve.id),
             )
-            id_baseline = self._lightcurve_id_cache[key]
-
-        hot_ids = set(self._lightpoint_cache.keys())
-        cache_misses = [id_ for id_ in id_baseline if id_ not in hot_ids]
-
-        if len(cache_misses) > 0:
-            result = resolve_lightcurve_ids(self._config, cache_misses)
-            for id_, data in result.items():
-                self._lightpoint_cache[id_] = data
-
-        return self.construct_lightcurve(id_baseline)
-
-    def lookup_ids_for_baseline(self, tic_ids, aperture=None, type=None):
-        with db_from_config(self._config) as db:
-            q = (
-                sa.select(
-                    models.OrbitLightcurve.tic_id,
-                    models.Aperture.name,
-                    models.LightcurveType.name,
-                    sa.func.array_agg(models.OrbitLightcurve.id),
-                )
-                .join(models.OrbitLightcurve.aperture)
-                .join(models.OrbitLightcurve.lightcurve_type)
-                .filter(models.OrbitLightcurve.tic_id.in_(tic_ids))
-            )
-            if aperture is not None:
-                q = q.filter(models.Aperture.name == aperture)
-
-            if type is not None:
-                q = q.filter(models.LightcurveType.name == type)
-
-            q = q.group_by(
+            .join(models.OrbitLightcurve.aperture)
+            .join(models.OrbitLightcurve.lightcurve_type)
+            .where(models.OrbitLightcurve.tic_id == tic_id)
+            .group_by(
                 models.OrbitLightcurve.tic_id,
                 models.Aperture.name,
                 models.LightcurveType.name,
             )
+        )
 
-            for *key, id_array in db.execute(q).fetchall():
-                self._lightcurve_id_cache[tuple(key)] = id_array
+        with db_from_config(self._config) as db:
+            for tic_id, aperture, type, ids in db.execute(q):
+                yield (tic_id, aperture, type), ids
 
-    def yield_lightpoint_tuples_for(self, ids):
-        for id_ in ids:
-            data = self._lightpoint_cache[id_]
-            yield from zip(*tuple(data[col] for col in LP_DATA_COLUMNS))
+    def _resolve_key(self, tic_id, aperture, lightcurve_type):
+        idx = (tic_id, aperture, lightcurve_type)
+        try:
+            ids = self._lightcurve_id_cache[idx]
+        except KeyError:
+            ids = self._resolve_lightcurve_ids_for(*idx)
+
+            for id in ids:
+                self._id_to_tic_id_lookup[id] = tic_id
+
+            self._lightcurve_id_cache[idx] = ids
+        return ids
 
     def construct_lightcurve(self, ids):
-        return np.array(
-            list(self.yield_lightpoint_tuples_for(ids)),
-            dtype=list(_np_dtype(*LP_DATA_COLUMNS)),
+        datum = []
+        misses = []
+        for id in ids:
+            try:
+                data = self._lightpoint_cache[id]
+                datum.append(data)
+            except KeyError:
+                misses.append(id)
+
+        if len(misses) > 0:
+            for id, data in resolve_ids(self._config, misses):
+                offset = self.get_magnitude_median_offset(id, data)
+                data["data"] -= offset
+                self._lightpoint_cache[id] = data
+                datum.append(data)
+
+        full_struct = np.concatenate(
+            sorted(datum, key=lambda struct: struct["cadence"][0])
         )
+        return full_struct
