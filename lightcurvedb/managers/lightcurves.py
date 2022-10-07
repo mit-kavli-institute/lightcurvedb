@@ -161,7 +161,6 @@ class LightcurveManager:
         if isinstance(key, int):
             # Just keying by integer
             tic_id = key
-            raise NotImplementedError
         elif isinstance(key, tuple):
             # Tiered slice of data
             for token in key:
