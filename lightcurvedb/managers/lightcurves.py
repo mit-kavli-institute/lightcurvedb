@@ -213,19 +213,19 @@ class LightcurveManager:
 
         result = {}
         if len(apertures) == 1:
-            for aperture, type in keys:
+            for tic_id, aperture, type in keys:
                 result[type] = self.construct_lightcurve(
                     self._resolve_key(tic_id, aperture, type)
                 )
         elif len(lightcurve_types) == 1:
-            for aperture, type in keys:
+            for tic_id, aperture, type in keys:
                 result[aperture] = self.construct_lightcurve(
                     self._resolve_key(tic_id, aperture, type)
                 )
 
         else:
             # Composite keys...construct tiered dictionary
-            for aperture, type in keys:
+            for tic_id, aperture, type in keys:
                 types = result.get(aperture, dict())
                 types[type] = self.construct_lightcurve(
                     self._resolve_key(tic_id, aperture, type)
