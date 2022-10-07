@@ -96,7 +96,10 @@ def resolve_lightcurve_ids(
         The `maximum` number of multiprocess workers to use. By default
         this is ``mp.cpu_count()``. This function will use the minimum of
         either the specified cpu count or the length of the chunkified
-        lightcurve ids
+        lightcurve ids.
+
+        If this value is set to 0, then no multiprocessing workers will be
+        spawned; instead, fetching logic will be done in the current process.
 
     id_chunk_size: int, optional
         Granularity of the multiprocess workload. It's inefficient
@@ -122,9 +125,14 @@ def resolve_lightcurve_ids(
     jobs = list(chunkify(sorted(lightcurve_ids), id_chunk_size))
     if workers is None:
         workers = min(mp.cpu_count(), len(jobs))
-    with mp.Pool(workers) as pool:
+    if workers > 0:
+        with mp.Pool(workers) as pool:
+            for result in pool.map(f, jobs):
+                results.update(result)
+    else:
         for result in pool.map(f, jobs):
             results.update(result)
+
     return results
 
 
@@ -136,13 +144,14 @@ class LightcurveManager:
     >>> lm[tic_id, aperture, type]["data"]
     """
 
-    def __init__(self, config, cache_size=4096):
+    def __init__(self, config, cache_size=4096, n_lc_readers=mp.cpu_count()):
         self._config = config
         self._keyword_lookups = {}
         self._id_to_tic_id_lookup = {}
         self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
         self._lightpoint_cache = cachetools.LRUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
+        self.n_lc_readers = n_lc_readers
 
     def __getitem__(self, key):
         tic_id = None
@@ -273,7 +282,10 @@ class LightcurveManager:
                 misses.append(id)
 
         if len(misses) > 0:
-            for id, data in resolve_ids(self._config, misses):
+            search = resolve_ids(
+                self._config, misses, workers=self.n_lc_readers
+            )
+            for id, data in search:
                 offset = self.get_magnitude_median_offset(id, data)
                 data["data"] -= offset
                 self._lightpoint_cache[id] = data
