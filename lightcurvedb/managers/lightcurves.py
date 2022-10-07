@@ -27,7 +27,7 @@ def _np_dtype(*cols):
         yield col, LIGHTPOINT_NP_DTYPES[col]
 
 
-def resolve_ids(config, lightcurve_ids):
+def fetch_lightcurve_data(config, lightcurve_ids):
     """
     Resolve lightpoint data from the given lightcurve ids.
 
@@ -77,12 +77,12 @@ def resolve_ids(config, lightcurve_ids):
     return results
 
 
-def resolve_lightcurve_ids(
+def fetch_lightcurve_data_multiprocessing(
     config, lightcurve_ids, workers=None, id_chunk_size=32
 ):
     """
-    Resolve lightcurve ids using a multiprocessing queue. See ``resolve_ids``
-    for behavior.
+    Resolve lightcurve ids using a multiprocessing queue. See
+    ``fetch_lightcurve_data`` for behavior.
 
     Parameters
     ----------
@@ -120,7 +120,7 @@ def resolve_lightcurve_ids(
 
     As of the latest doc, it is unknown of the best chunk size to use.
     """
-    f = partial(resolve_ids, config)
+    f = partial(fetch_lightcurve_data, config)
     results = {}
     jobs = list(chunkify(sorted(lightcurve_ids), id_chunk_size))
     if workers is None:
@@ -299,7 +299,7 @@ class LightcurveManager:
                 misses.append(id)
 
         if len(misses) > 0:
-            search = resolve_ids(
+            search = fetch_lightcurve_data_multiprocessing(
                 self._config, misses, workers=self.n_lc_readers
             )
             for id, data in search:
