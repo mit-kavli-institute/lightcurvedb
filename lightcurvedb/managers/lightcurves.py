@@ -242,7 +242,7 @@ class LightcurveManager:
         except KeyError:
             with TIC8_DB() as db:
                 q = sa.select(db.ticentries.c.tmag).where(
-                    db.ticentries.id == tic_id
+                    db.ticentries.c.id == tic_id
                 )
                 tmag = db.execute(q).fetchone()[0]
 
