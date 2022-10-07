@@ -69,7 +69,7 @@ def fetch_lightcurve_data(config, lightcurve_ids):
     with db_from_config(config) as db:
         for id_, *fields in db.execute(q).fetchall():
 
-            dtype = tuple(_np_dtype(*LP_DATA_COLUMNS))
+            dtype = list(_np_dtype(*LP_DATA_COLUMNS))
             struct = np.array(list(zip(*fields)), dtype=dtype)
 
             results[id_] = struct
