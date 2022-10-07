@@ -130,8 +130,9 @@ def fetch_lightcurve_data_multiprocessing(
             for result in pool.map(f, jobs):
                 results.update(result)
     else:
-        for result in pool.map(f, jobs):
-            results.update(result)
+        for chunk in jobs:
+            for result in f(chunk):
+                results.update(result)
 
     return results
 
