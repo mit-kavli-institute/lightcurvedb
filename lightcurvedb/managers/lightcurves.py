@@ -210,7 +210,9 @@ class LightcurveManager:
             ]
         keys = list(it.product([tic_id], apertures, lightcurve_types))
         if len(keys) == 1:
-            raise NotImplementedError
+            return self.construct_lightcurve(
+                self._resolve_key(tic_id, apertures[0], lightcurve_types[0])
+            )
 
         result = {}
         if len(apertures) == 1:
