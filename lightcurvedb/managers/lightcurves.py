@@ -303,7 +303,7 @@ class LightcurveManager:
             search = fetch_lightcurve_data_multiprocessing(
                 self._config, misses, workers=self.n_lc_readers
             )
-            for id, data in search:
+            for id, data in search.items():
                 offset = self.get_magnitude_median_offset(id, data)
                 data["data"] -= offset
                 self._lightpoint_cache[id] = data
