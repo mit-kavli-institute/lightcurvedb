@@ -198,7 +198,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             models.ArrayOrbitLightcurve.__tablename__,
             INGESTION_COLS,
         )
-        mgr.copy(lightcurves)
+        mgr.threading_copy(lightcurves)
         end = datetime.now()
 
         metric = models.QLPOperation(
@@ -295,14 +295,6 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    workers = _initialize_workers(
-        EM2ArrayParamSearchIngestor,
-        db.config,
-        n_processes,
-        job_queue=job_queue,
-        cache_path=cache_path,
-    )
-
     with tqdm(total=len(jobs), unit=" jobs") as bar:
         logger.remove()
         logger.add(
@@ -311,6 +303,14 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
             level=log_level.upper(),
             enqueue=True,
         )
+        workers = _initialize_workers(
+            EM2ArrayParamSearchIngestor,
+            db.config,
+            n_processes,
+            job_queue=job_queue,
+            cache_path=cache_path,
+        )
+
         for job in jobs:
             job_queue.put(job)
 
