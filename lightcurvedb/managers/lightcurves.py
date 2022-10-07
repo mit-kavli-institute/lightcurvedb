@@ -136,6 +136,18 @@ def resolve_lightcurve_ids(
     return results
 
 
+def resolve_keywords_for(config, tic_id):
+    q = (
+        sa.select(models.Aperture.name, models.LightcurveType.name)
+        .join(models.OrbitLightcurve.aperture)
+        .join(models.OrbitLightcurve.lightcurve_type)
+        .filter(models.OrbitLightcurve.tic_id == tic_id)
+        .distinct()
+    )
+    with db_from_config(config) as db:
+        return db.execute(q).fetchall()
+
+
 class LightcurveManager:
     """
     This generic lightcurve manager allows interaction of lightcurve
@@ -178,18 +190,22 @@ class LightcurveManager:
             tic_id, apertures=apertures, lightcurve_types=lightcurve_types
         )
 
+    def keywords_for(self, tic_id):
+        try:
+            keywords = self._keyword_lookups[tic_id]
+        except KeyError:
+            keywords = resolve_keywords_for(self._config, tic_id)
+            self._keyword_lookups[tic_id] = keywords
+        return keywords
+
     def get_lightcurve(self, tic_id, apertures=None, lightcurve_types=None):
         """ """
         if apertures is None or len(apertures) == 0:
             # Pivot around types
-            apertures = [
-                keywords[0]
-                for keywords in self._keyword_lookups.get(tic_id, [])
-            ]
+            apertures = [keywords[0] for keywords in self.keywords_for(tic_id)]
         if lightcurve_types is None or len(lightcurve_types) == 0:
             lightcurve_types = [
-                keywords[1]
-                for keywords in self._keyword_lookups.get(tic_id, [])
+                keywords[1] for keywords in self.keywords_for(tic_id)
             ]
         keys = list(it.product([tic_id], apertures, lightcurve_types))
         if len(keys) == 1:
