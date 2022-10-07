@@ -183,11 +183,11 @@ class LightcurveManager:
         if apertures is None or len(apertures) == 0:
             # Pivot around types
             apertures = [
-                keywords[0] for keywords in self._keyword_lookup[tic_id]
+                keywords[0] for keywords in self._keyword_lookups[tic_id]
             ]
         if lightcurve_types is None or len(lightcurve_types) == 0:
             lightcurve_types = [
-                keywords[1] for keywords in self._keyword_lookup[tic_id]
+                keywords[1] for keywords in self._keyword_lookups[tic_id]
             ]
         keys = list(it.product([tic_id], apertures, lightcurve_types))
         if len(keys) == 1:
