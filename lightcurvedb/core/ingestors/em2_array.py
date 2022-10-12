@@ -1,12 +1,14 @@
 import multiprocessing as mp
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from datetime import datetime
 from random import sample
 from time import sleep
 
 import cachetools
 import h5py
+import numpy as np
 from loguru import logger
+from pgcopy import CopyManager
 from sqlalchemy import Integer, cast, func
 from tqdm import tqdm
 
@@ -16,6 +18,33 @@ from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 
 INGESTION_TELEMETRY_SLUG = "lightpoint-ingestion"
+INGESTION_COLS = (
+    "tic_id",
+    "camera",
+    "ccd",
+    "orbit_id",
+    "aperture_id",
+    "lightcurve_type_id",
+    "cadences",
+    "barycentric_julian_dates",
+    "data",
+    "errors",
+    "x_centroids",
+    "y_centroids",
+    "quality_flags",
+)
+
+ArrayLCPayload = namedtuple("ArrayLCPayload", INGESTION_COLS)
+
+
+def _nan_compat(array):
+    compat_arr = []
+    for elem in array:
+        if np.isnan(elem):
+            compat_arr.append("NaN")
+        else:
+            compat_arr.append(elem)
+    return compat_arr
 
 
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
@@ -137,35 +166,39 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
                 aperture_id = self.get_aperture_id(ap_name)
                 lightcurve_type_id = self.get_lightcurve_type_id(type_name)
-                lightcurve = models.ArrayOrbitLightcurve(
+                lightcurve = ArrayLCPayload(
                     tic_id=em2_h5_job.tic_id,
                     camera=em2_h5_job.camera,
                     ccd=em2_h5_job.ccd,
                     orbit_id=self.orbit_map[em2_h5_job.orbit_number],
                     aperture_id=aperture_id,
                     lightcurve_type_id=lightcurve_type_id,
-                    cadences=raw_data["cadence"],
-                    barycentric_julian_dates=raw_data[
-                        "barycentric_julian_date"
-                    ],
-                    data=raw_data["data"],
-                    errors=raw_data["error"],
-                    x_centroids=raw_data["x_centroid"],
-                    y_centroids=raw_data["y_centroid"],
-                    quality_flags=raw_data["quality_flag"],
+                    cadences=list(raw_data["cadence"]),
+                    barycentric_julian_dates=list(
+                        raw_data["barycentric_julian_date"]
+                    ),
+                    data=list(raw_data["data"]),
+                    errors=list(raw_data["error"]),
+                    x_centroids=list(raw_data["x_centroid"]),
+                    y_centroids=list(raw_data["y_centroid"]),
+                    quality_flags=list(raw_data["quality_flag"]),
                 )
-
-                self.n_lightpoints += len(cadences)
-                self.buffers["hyper_lightpoints"].append(raw_data)
-                self.buffers["orbit_lightcurves"].append(lightcurve)
-
+                buffer = self.buffers[
+                    models.ArrayOrbitLightcurve.__tablename__
+                ]
+                buffer.append(lightcurve)
         self.job_queue.task_done()
 
     def flush_array_orbit_lightcurves(self, db):
         lightcurves = self.buffers[models.ArrayOrbitLightcurve.__tablename__]
-
+        self.log(f"Flushing {len(lightcurves):,} lightcurves")
         start = datetime.now()
-        db.session.bulk_save_objects(lightcurves)
+        mgr = CopyManager(
+            db.session.connection().connection,
+            models.ArrayOrbitLightcurve.__tablename__,
+            INGESTION_COLS,
+        )
+        mgr.threading_copy(lightcurves)
         end = datetime.now()
 
         metric = models.QLPOperation(
@@ -218,7 +251,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
 
 class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
-    step_size = 10
+    step_size = 1
     max_steps = 1000
 
     def determine_process_parameters(self):
@@ -262,14 +295,6 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    workers = _initialize_workers(
-        EM2ArrayParamSearchIngestor,
-        db.config,
-        n_processes,
-        job_queue=job_queue,
-        cache_path=cache_path,
-    )
-
     with tqdm(total=len(jobs), unit=" jobs") as bar:
         logger.remove()
         logger.add(
@@ -278,6 +303,14 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
             level=log_level.upper(),
             enqueue=True,
         )
+        workers = _initialize_workers(
+            EM2ArrayParamSearchIngestor,
+            db.config,
+            n_processes,
+            job_queue=job_queue,
+            cache_path=cache_path,
+        )
+
         for job in jobs:
             job_queue.put(job)
 
