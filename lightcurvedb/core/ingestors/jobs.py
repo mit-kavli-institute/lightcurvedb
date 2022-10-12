@@ -1,5 +1,5 @@
 import pathlib
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import partial
 from itertools import chain, product
@@ -7,13 +7,14 @@ from multiprocessing import Pool
 from typing import List, Optional
 
 import pandas as pd
+import sqlalchemy as sa
 from click import echo
 from loguru import logger
-from sqlalchemy import select, sql
 from tqdm import tqdm
 
 from lightcurvedb.models import (
     Aperture,
+    ArrayOrbitLightcurve,
     LightcurveType,
     Orbit,
     OrbitLightcurve,
@@ -196,7 +197,7 @@ def get_observed_from_path(db, path):
     columns = []
     for context in required_contexts:
         try:
-            column = sql.expression.literal_column(path_context[context])
+            column = sa.sql.expression.literal_column(path_context[context])
             constants_from_path.append(
                 getattr(OrbitLightcurve, context) == path_context[context]
             )
@@ -432,7 +433,7 @@ class TICListPlan(DirectoryPlan):
 
     def _get_observed(self, db):
         q = (
-            select(
+            sa.select(
                 OrbitLightcurve.tic_id,
                 OrbitLightcurve.camera,
                 OrbitLightcurve.ccd,
@@ -488,7 +489,7 @@ class FilePlan(DirectoryPlan):
     def _get_observed(self, db):
         unique_orbits = {c["orbit_number"] for c in self.files}
         q = (
-            select(
+            sa.select(
                 OrbitLightcurve.tic_id,
                 OrbitLightcurve.camera,
                 OrbitLightcurve.ccd,
@@ -532,6 +533,7 @@ class EM2Plan:
         self.recursive = recursive
         self.db = db
         self._look_for_files()
+        self.get_observed_counts()
         self._preprocess_files()
 
     def __repr__(self):
@@ -564,17 +566,58 @@ class EM2Plan:
 
         self.contexts = contexts
 
+    def get_observed_counts(self):
+        q = (
+            sa.select(
+                ArrayOrbitLightcurve.tic_id,
+                Orbit.orbit_number,
+                sa.func.count(ArrayOrbitLightcurve.id),
+            )
+            .join(ArrayOrbitLightcurve.orbit)
+            .where(ArrayOrbitLightcurve.tic_id.in_(self.tic_ids))
+            .group_by(ArrayOrbitLightcurve.tic_id, Orbit.orbit_number)
+        )
+        observation_counts = {
+            (tic_id, orbit): count
+            for tic_id, orbit, count in self.db.execute(q)
+        }
+
+        self.observation_counts = observation_counts
+        if len(observation_counts) > 0:
+            counter = Counter(observation_counts.values())
+            self.count_cutoff, most_common = counter.most_common(1)[0]
+            logger.debug(
+                f"Will ignore files that have {most_common} existing "
+                "lightcurves"
+            )
+        else:
+            logger.debug(
+                "No existing observations found. Allowing all found files"
+            )
+
     def _preprocess_files(self):
         logger.debug(f"Preprocessing {len(self.contexts)} files")
+        jobs = []
+        n_rejected = 0
         with Pool() as pool:
-            jobs = list(
-                pool.imap_unordered(
-                    EM2_H5_Job.from_path_context,
-                    tqdm(self.contexts, unit=" files"),
-                    chunksize=1000,
-                )
+            results = pool.imap_unordered(
+                EM2_H5_Job.from_path_context,
+                tqdm(self.contexts, unit=" files"),
+                chunksize=1000,
             )
-        logger.debug(f"Processed files and generated {len(jobs)} jobs")
+            for job in results:
+                n_lcs = self.observation_counts.get(
+                    (job.tic_id, job.orbit_number), 0
+                )
+                if n_lcs < self.count_cutoff:
+                    jobs.append(job)
+                else:
+                    n_rejected += 1
+
+        logger.debug(
+            f"Processed files and generated {len(jobs)} jobs,"
+            f"ignoring {n_rejected} files."
+        )
         self.jobs = jobs
 
     def _get_unique_observed(self):
@@ -616,6 +659,7 @@ class EM2_ArrayTICListPlan(EM2Plan):
         self.db = db
         self._tic_ids = set(tic_ids)
         self._look_for_files()
+        self.get_observed_counts()
         self._preprocess_files()
 
     @property
