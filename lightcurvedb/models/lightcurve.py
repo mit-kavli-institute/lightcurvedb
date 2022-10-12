@@ -4,6 +4,8 @@ lightcurve.py
 The lightcurve model module containing the Lightcurve model class
 and directly related models
 """
+from collections import OrderedDict
+
 import numpy as np
 import sqlalchemy as sa
 from psycopg2.extensions import AsIs, register_adapter
@@ -475,6 +477,18 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
 class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     __tablename__ = "array_orbit_lightcurves"
 
+    DTYPE = OrderedDict(
+        [
+            ("cadences", "uint32"),
+            ("barycentric_julian_dates", "float32"),
+            ("data", "float64"),
+            ("errors", "float64"),
+            ("x_centroids", "float32"),
+            ("y_centroids", "float32"),
+            ("quality_flags", "uint16"),
+        ]
+    )
+
     id = Column(
         BigInteger, Sequence("array_orbit_lightcurve_id_seq"), primary_key=True
     )
@@ -514,6 +528,17 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
             name="unique_array_lightcurve_constraint",
         ),
     )
+
+    @classmethod
+    def create_structured_dtype(cls, *names):
+        return tuple(cls.DTYPE[name] for name in names)
+
+    def to_numpy(self):
+        dtype = self.create_structured_dtype(self.DTYPE.keys())
+
+        fields = [getattr(self, col) for col in self.DTYPE.keys()]
+
+        return np.array(list(zip(*fields)), dtype=dtype)
 
 
 class OrbitLightcurveAPIMixin:

@@ -50,29 +50,13 @@ def fetch_lightcurve_data(config, lightcurve_ids):
     Duplicates in the input id list will result in overwrites in the return
     dictionary. Order is also not guaranteed in the return.
     """
-    q = (
-        sa.select(
-            models.Lightpoint.lightcurve_id,
-            models.Lightpoint.cadence_array(),
-            models.Lightpoint.barycentric_julian_date_array(),
-            models.Lightpoint.data_array(),
-            models.Lightpoint.error_array(),
-            models.Lightpoint.x_centroid_array(),
-            models.Lightpoint.y_centroid_array(),
-            models.Lightpoint.quality_flag_array(),
-        )
-        .where(models.Lightpoint.lightcurve_id.in_(sorted(lightcurve_ids)))
-        .group_by(models.Lightpoint.lightcurve_id)
+    q = sa.select(models.ArrayOrbitLightcurve).where(
+        models.ArrayOrbitLightcurve.id.in_(lightcurve_ids)
     )
-
     results = {}
     with db_from_config(config) as db:
-        for id_, *fields in db.execute(q).fetchall():
-
-            dtype = list(_np_dtype(*LP_DATA_COLUMNS))
-            struct = np.array(list(zip(*fields)), dtype=dtype)
-
-            results[id_] = struct
+        for lightcurve in db.execute(q).fetchall():
+            results[lightcurve.id] = lightcurve
 
     return results
 
@@ -140,9 +124,9 @@ def fetch_lightcurve_data_multiprocessing(
 def resolve_keywords_for(config, tic_id):
     q = (
         sa.select(models.Aperture.name, models.LightcurveType.name)
-        .join(models.OrbitLightcurve.aperture)
-        .join(models.OrbitLightcurve.lightcurve_type)
-        .filter(models.OrbitLightcurve.tic_id == tic_id)
+        .join(models.ArrayOrbitLightcurve.aperture)
+        .join(models.ArrayOrbitLightcurve.lightcurve_type)
+        .filter(models.ArrayOrbitLightcurve.tic_id == tic_id)
         .distinct()
     )
     with db_from_config(config) as db:
@@ -237,8 +221,7 @@ class LightcurveManager:
 
         return result
 
-    def get_magnitude_median_offset(self, id, struct):
-        tic_id = self._id_to_tic_id_lookup[id]
+    def get_magnitude_median_offset(self, tic_id, struct):
         try:
             tmag = self._stellar_parameter_cache[tic_id]
         except KeyError:
@@ -259,16 +242,16 @@ class LightcurveManager:
     def _resolve_lightcurve_ids_for(self, tic_id, aperture, lightcurve_type):
         q = (
             sa.select(
-                models.OrbitLightcurve.tic_id,
+                models.ArrayOrbitLightcurve.tic_id,
                 models.Aperture.name,
                 models.LightcurveType.name,
-                sa.func.array_agg(models.OrbitLightcurve.id),
+                sa.func.array_agg(models.ArrayOrbitLightcurve.id),
             )
-            .join(models.OrbitLightcurve.aperture)
-            .join(models.OrbitLightcurve.lightcurve_type)
-            .where(models.OrbitLightcurve.tic_id == tic_id)
+            .join(models.ArrayOrbitLightcurve.aperture)
+            .join(models.ArrayOrbitLightcurve.lightcurve_type)
+            .where(models.ArrayOrbitLightcurve.tic_id == tic_id)
             .group_by(
-                models.OrbitLightcurve.tic_id,
+                models.ArrayOrbitLightcurve.tic_id,
                 models.Aperture.name,
                 models.LightcurveType.name,
             )
@@ -302,11 +285,12 @@ class LightcurveManager:
                 misses.append(id)
 
         if len(misses) > 0:
-            search = fetch_lightcurve_data_multiprocessing(
-                self._config, misses, workers=self.n_lc_readers
-            )
-            for id, data in search.items():
-                offset = self.get_magnitude_median_offset(id, data)
+            search = fetch_lightcurve_data(self._config, misses)
+            for id, lightcurve in search.items():
+                tic_id = lightcurve.tic_id
+                array = lightcurve.to_numpy()
+
+                offset = self.get_magnitude_median_offset(tic_id, array)
                 data["data"] -= offset
                 self._lightpoint_cache[id] = data
                 datum.append(data)
