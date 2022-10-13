@@ -251,7 +251,11 @@ class LightcurveManager:
             )
             .join(models.ArrayOrbitLightcurve.aperture)
             .join(models.ArrayOrbitLightcurve.lightcurve_type)
-            .where(models.ArrayOrbitLightcurve.tic_id == tic_id)
+            .where(
+                models.ArrayOrbitLightcurve.tic_id == tic_id,
+                models.Aperture.name == aperture,
+                models.LightcurveType.name == lightcurve_type,
+            )
             .group_by(
                 models.ArrayOrbitLightcurve.tic_id,
                 models.Aperture.name,
