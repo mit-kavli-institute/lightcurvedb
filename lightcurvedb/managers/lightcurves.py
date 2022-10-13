@@ -291,9 +291,9 @@ class LightcurveManager:
                 array = lightcurve.to_numpy()
 
                 offset = self.get_magnitude_median_offset(tic_id, array)
-                data["data"] -= offset
-                self._lightpoint_cache[id] = data
-                datum.append(data)
+                array["data"] -= offset
+                self._lightpoint_cache[id] = array
+                datum.append(array)
 
         full_struct = np.concatenate(
             sorted(datum, key=lambda struct: struct["cadences"][0])
