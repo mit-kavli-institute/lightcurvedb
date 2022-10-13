@@ -564,6 +564,7 @@ class EM2Plan:
 
             logger.debug(f"Found {len(files)} files in {source_dir}")
 
+        self._tic_ids = {int(c["tic_id"]) for c in contexts}
         self.contexts = contexts
 
     def get_observed_counts(self):
@@ -651,7 +652,7 @@ class EM2Plan:
 
     @property
     def tic_ids(self):
-        return set(job.tic_id for job in self.jobs)
+        return self._tic_ids
 
 
 class EM2_ArrayTICListPlan(EM2Plan):
@@ -661,10 +662,6 @@ class EM2_ArrayTICListPlan(EM2Plan):
         self._look_for_files()
         self.get_observed_counts()
         self._preprocess_files()
-
-    @property
-    def tic_ids(self):
-        return self._tic_ids
 
     def _look_for_files(self):
         logger.debug(f"Looking for files relevant to {len(self.tic_ids)} tics")
