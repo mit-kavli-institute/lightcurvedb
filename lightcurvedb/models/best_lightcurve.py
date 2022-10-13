@@ -38,12 +38,12 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     orbit = relationship("Orbit")
 
     @classmethod
-    def orbitlightcurve_join_condition(cls):
+    def lightcurve_join(cls, OtherLightcurve):
         return and_(
-            cls.tic_id == OrbitLightcurve.tic_id,
-            cls.aperture_id == OrbitLightcurve.aperture_id,
-            cls.lightcurve_type_id == OrbitLightcurve.lightcurve_type_id,
-            cls.orbit_id == OrbitLightcurve.orbit_id,
+            cls.tic_id == OtherLightcurve.tic_id,
+            cls.aperture_id == OtherLightcurve.aperture_id,
+            cls.lightcurve_type_id == OtherLightcurve.lightcurve_type_id,
+            cls.orbit_id == OtherLightcurve.orbit_id,
         )
 
 
