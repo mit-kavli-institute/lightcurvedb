@@ -4,8 +4,10 @@ lightcurve.py
 The lightcurve model module containing the Lightcurve model class
 and directly related models
 """
+from collections import OrderedDict
 
 import numpy as np
+import sqlalchemy as sa
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -30,7 +32,9 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
+from lightcurvedb.models.aperture import Aperture
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
+from lightcurvedb.models.orbit import Orbit
 
 
 def adapt_as_is_type(type_class):
@@ -453,9 +457,37 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
+    @hybrid_property
+    def aperture_name(self):
+        return self.aperture.name
+
+    @aperture_name.expression
+    def aperture_name(cls):
+        return Aperture.name
+
+    @hybrid_property
+    def lightcurve_type_name(self):
+        return self.lightcurve_type.name
+
+    @lightcurve_type_name.expression
+    def lightcurve_type_name(self):
+        return LightcurveType.name
+
 
 class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     __tablename__ = "array_orbit_lightcurves"
+
+    DTYPE = OrderedDict(
+        [
+            ("cadences", "uint32"),
+            ("barycentric_julian_dates", "float32"),
+            ("data", "float64"),
+            ("errors", "float64"),
+            ("x_centroids", "float32"),
+            ("y_centroids", "float32"),
+            ("quality_flags", "uint16"),
+        ]
+    )
 
     id = Column(
         BigInteger, Sequence("array_orbit_lightcurve_id_seq"), primary_key=True
@@ -497,6 +529,17 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         ),
     )
 
+    @classmethod
+    def create_structured_dtype(cls, *names):
+        return tuple(cls.DTYPE[name] for name in names)
+
+    def to_numpy(self):
+        dtype = self.create_structured_dtype(self.DTYPE.keys())
+
+        fields = [getattr(self, col) for col in self.DTYPE.keys()]
+
+        return np.array(list(zip(*fields)), dtype=dtype)
+
 
 class OrbitLightcurveAPIMixin:
     def get_missing_id_ranges(self):
@@ -529,3 +572,88 @@ class OrbitLightcurveAPIMixin:
             (subq.c.next_id - 1).label("gap_end"),
         ).where(subq.c.id + 1 != subq.c.next_id)
         return self.execute(q).fetchall()
+
+    def get_lightcurve(
+        self, tic_id, lightcurve_type, aperture, orbit, resolve=True
+    ):
+        """
+        Retrieves a single lightcurve row.
+
+        Arguments
+        ---------
+        tic_id: int
+            The TIC id of the desired lightcurve.
+        aperture: str or integer
+            The aperture name or aperture id of the desired lightcurve.
+        lightcurve_type: str or integer
+            The type name or type id of the desired lightcurve.
+        orbit: integer
+            The physical orbit number of the desired lightcurve.
+        resolve: bool, optional
+            If True, return the resolved lightcurve query, otherwise return
+            the query object itself.
+
+        Returns
+        -------
+        OrbitLightcurve, sqlalchemy.Query
+
+        Raises
+        ------
+        sqlalchemy.orm.exc.NoResultFound
+            No lightcurve matched the desired parameters.
+        """
+
+        q = (
+            sa.select(OrbitLightcurve)
+            .join(OrbitLightcurve.orbit)
+            .filter(Orbit.orbit_number == orbit)
+        )
+
+        if isinstance(aperture, str):
+            q = q.join(OrbitLightcurve.aperture)
+            q = q.filter(OrbitLightcurve.aperture_name == aperture)
+        else:
+            q = q.filter(OrbitLightcurve.aperture_id == aperture)
+
+        if isinstance(lightcurve_type, str):
+            q = q.join(OrbitLightcurve.lightcurve_type)
+            q = q.filter(
+                OrbitLightcurve.lightcurve_type_name == lightcurve_type
+            )
+        else:
+            q = q.filter(OrbitLightcurve.lightcurve_type_id == lightcurve_type)
+
+        if resolve:
+            return q.one()
+
+        return q
+
+    def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
+        columns = [
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "x_centroid",
+            "y_centroid",
+            "quality_flag",
+        ]
+        id_q = (
+            sa.select(OrbitLightcurve.id)
+            .join(OrbitLightcurve.aperture)
+            .join(OrbitLightcurve.lightcurve_id)
+            .where(
+                OrbitLightcurve.tic_id == tic_id,
+                LightcurveType.name == lightcurve_type,
+                Aperture.name == aperture,
+            )
+        )
+        ids = [id for id, in self.execute(id_q)]
+
+        lp_q = (
+            sa.select(*[getattr(Lightpoint, col) for col in columns])
+            .where(Lightpoint.lightcurve_id.in_(ids))
+            .order_by(Lightpoint.cadence)
+        )
+
+        return lp_q
