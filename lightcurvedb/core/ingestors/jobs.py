@@ -592,7 +592,7 @@ class EM2Plan:
                 "lightcurves"
             )
         else:
-            self.count_cutoff = 0
+            self.count_cutoff = None
             logger.debug(
                 "No existing observations found. Allowing all found files"
             )
@@ -607,14 +607,17 @@ class EM2Plan:
                 tqdm(self.contexts, unit=" files"),
                 chunksize=1000,
             )
-            for job in results:
-                n_lcs = self.observation_counts.get(
-                    (job.tic_id, job.orbit_number), 0
-                )
-                if n_lcs < self.count_cutoff:
-                    jobs.append(job)
-                else:
-                    n_rejected += 1
+            if self.count_cutoff is not None:
+                for job in results:
+                    n_lcs = self.observation_counts.get(
+                        (job.tic_id, job.orbit_number), 0
+                    )
+                    if n_lcs < self.count_cutoff:
+                        jobs.append(job)
+                    else:
+                        n_rejected += 1
+            else:
+                jobs.extend(results)
 
         logger.debug(
             f"Processed files and generated {len(jobs)} jobs,"
