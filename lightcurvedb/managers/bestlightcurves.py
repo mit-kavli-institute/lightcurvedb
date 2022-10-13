@@ -28,7 +28,7 @@ class BestLightcurveManager(LightcurveManager):
 
     def __init__(self, config, cache_size=4096):
         self._config = config
-        self._lightcurve_id_cache = cachetools.LFUCahce(cache_size)
+        self._lightcurve_id_cache = cachetools.LFUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, tic_id):
@@ -62,4 +62,5 @@ class BestLightcurveManager(LightcurveManager):
         return ids
 
     def get_lightcurve(self, tic_id):
-        raise NotImplementedError
+        ids = self._resolve_key(tic_id)
+        return self.construct_lightcurve(ids)
