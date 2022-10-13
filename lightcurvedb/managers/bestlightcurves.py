@@ -30,6 +30,7 @@ class BestLightcurveManager(LightcurveManager):
     def __init__(self, config=None, cache_size=4096):
         self._config = __DEFAULT_PATH__ if config is None else config
         self._lightcurve_id_cache = cachetools.LFUCache(cache_size)
+        self._lightpoint_cache = cachetools.LRUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, tic_id):
