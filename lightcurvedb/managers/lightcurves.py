@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from lightcurvedb import db_from_config, models
 from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
+from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.iter import chunkify
 
 LP_DATA_COLUMNS = (
@@ -141,8 +142,10 @@ class LightcurveManager:
     >>> lm[tic_id, aperture, type]["data"]
     """
 
-    def __init__(self, config, cache_size=4096, n_lc_readers=mp.cpu_count()):
-        self._config = config
+    def __init__(
+        self, config=None, cache_size=4096, n_lc_readers=mp.cpu_count()
+    ):
+        self._config = __DEFAULT_PATH__ if config is None else config
         self._keyword_lookups = {}
         self._id_to_tic_id_lookup = {}
         self._lightcurve_id_cache = cachetools.LRUCache(cache_size)

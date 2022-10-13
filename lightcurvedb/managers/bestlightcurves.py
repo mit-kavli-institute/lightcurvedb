@@ -6,6 +6,7 @@ import sqlalchemy as sa
 
 from lightcurvedb import db_from_config, models
 from lightcurvedb.managers.lightcurves import LightcurveManager
+from lightcurvedb.util.constants import __DEFAULT_PATH__
 
 
 class BestLightcurveManager(LightcurveManager):
@@ -26,8 +27,8 @@ class BestLightcurveManager(LightcurveManager):
     ```
     """
 
-    def __init__(self, config, cache_size=4096):
-        self._config = config
+    def __init__(self, config=None, cache_size=4096):
+        self._config = __DEFAULT_PATH__ if config is None else config
         self._lightcurve_id_cache = cachetools.LFUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
