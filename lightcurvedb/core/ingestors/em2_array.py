@@ -251,8 +251,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
 
 class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
-    step_size = 1
-    max_steps = 1000
+    step_size = 10
+    max_steps = 10000
 
     def determine_process_parameters(self):
         step_col = cast(models.QLPOperation.job_size / self.step_size, Integer)
