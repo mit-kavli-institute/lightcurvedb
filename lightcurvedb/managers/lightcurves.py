@@ -55,7 +55,7 @@ def fetch_lightcurve_data(config, lightcurve_ids):
     )
     results = {}
     with db_from_config(config) as db:
-        for lightcurve in db.execute(q).fetchall():
+        for lightcurve in db.execute(q).scalars().all():
             results[lightcurve.id] = lightcurve
 
     return results
