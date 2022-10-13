@@ -8,7 +8,8 @@ from multiprocessing import Pool
 from lightcurvedb.managers.bestlightcurves import BestLightcurveManager
 
 
-def fetch_best_orbit_baseline(config, tic_id):
+def fetch_best_orbit_baseline(job):
+    config, tic_id = job
     lm = BestLightcurveManager(config=config)
 
     return tic_id, lm[tic_id]
