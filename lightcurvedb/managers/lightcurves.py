@@ -233,7 +233,7 @@ class LightcurveManager:
 
             self._stellar_parameter_cache[tic_id] = tmag
 
-        good_cadences = struct["quality_flag"] == 0
+        good_cadences = struct["quality_flags"] == 0
         mag_median = np.nanmedian(struct["data"][good_cadences])
         offset = mag_median - tmag
 
@@ -296,6 +296,6 @@ class LightcurveManager:
                 datum.append(data)
 
         full_struct = np.concatenate(
-            sorted(datum, key=lambda struct: struct["cadence"][0])
+            sorted(datum, key=lambda struct: struct["cadences"][0])
         )
         return full_struct
