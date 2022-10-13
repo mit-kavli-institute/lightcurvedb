@@ -586,12 +586,13 @@ class EM2Plan:
         self.observation_counts = observation_counts
         if len(observation_counts) > 0:
             counter = Counter(observation_counts.values())
-            self.count_cutoff, most_common = counter.most_common(1)[0]
+            self.count_cutoff, _ = counter.most_common(1)[0]
             logger.debug(
-                f"Will ignore files that have {most_common} existing "
+                f"Will ignore files that have {self.count_cutoff} existing "
                 "lightcurves"
             )
         else:
+            self.count_cutoff = 0
             logger.debug(
                 "No existing observations found. Allowing all found files"
             )
