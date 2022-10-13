@@ -147,7 +147,6 @@ class LightcurveManager:
     ):
         self._config = __DEFAULT_PATH__ if config is None else config
         self._keyword_lookups = {}
-        self._id_to_tic_id_lookup = {}
         self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
         self._lightpoint_cache = cachetools.LRUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
@@ -270,11 +269,8 @@ class LightcurveManager:
             ids = self._lightcurve_id_cache[idx]
         except KeyError:
             _, ids = list(self._resolve_lightcurve_ids_for(*idx))[0]
-
-            for id in ids:
-                self._id_to_tic_id_lookup[id] = tic_id
-
             self._lightcurve_id_cache[idx] = ids
+
         return ids
 
     def construct_lightcurve(self, ids):
