@@ -1,11 +1,7 @@
-import itertools
 import os
-import re
-from multiprocessing import Pool
 
 import click
 import numpy as np
-from astropy.io import fits
 from sqlalchemy import (
     Boolean,
     Column,
@@ -19,11 +15,13 @@ from sqlalchemy import (
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
-from lightcurvedb.models import CameraQuaternion, Frame, Observation
+from lightcurvedb.models.camera_quaternion import CameraQuaternion
+from lightcurvedb.models.frame import Frame
+from lightcurvedb.models.observations import Observation
 
 ORBIT_DTYPE = [
     ("orbit_number", np.int32),
@@ -246,4 +244,6 @@ class Orbit(QLPModel, CreatedOnMixin):
 
 class OrbitAPIMixin:
     def get_orbit_id(self, orbit_number):
-        return self.query(Orbit.id).filter_by(orbit_number=orbit_number).one()[0]
+        return (
+            self.query(Orbit.id).filter_by(orbit_number=orbit_number).one()[0]
+        )
