@@ -531,7 +531,7 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
 
     @classmethod
     def create_structured_dtype(cls, *names):
-        return tuple((name, cls.DTYPE[name]) for name in names)
+        return list((name, cls.DTYPE[name]) for name in names)
 
     def to_numpy(self):
         dtype = self.create_structured_dtype(*self.DTYPE.keys())
