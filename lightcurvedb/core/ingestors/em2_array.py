@@ -10,6 +10,7 @@ import numpy as np
 from loguru import logger
 from pgcopy import CopyManager
 from sqlalchemy import Integer, cast, func
+from sqlalchemy.dialects.postgresql import insert as psql_insert
 from tqdm import tqdm
 
 from lightcurvedb import models
@@ -48,7 +49,10 @@ def _nan_compat(array):
 
 
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
-    buffer_order = [models.ArrayOrbitLightcurve.__tablename__]
+    buffer_order = [
+        models.ArrayOrbitLightcurve.__tablename__,
+        models.BestOrbitLightcurve.__tablename__,
+    ]
 
     def __init__(self, config, name, job_queue, cache_path):
         super().__init__(config, name, job_queue)
@@ -126,6 +130,24 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             self.aperture_cache[name] = id_
         return id_
 
+    def get_best_aperture_id(self, tic_id):
+        (tmag,) = self.corrector.resolve_tic_parameters(tic_id, "tmag")
+        magbins = np.array([6, 7, 8, 9, 10, 11, 12])
+        bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
+        index = np.searchsorted(magbins, tmag)
+        if index == 0:
+            bestap = bestaps[0]
+        elif index >= len(magbins):
+            bestap = bestaps[-1]
+        else:
+            if tmag > magbins[index] - 0.5:
+                bestap = bestaps[index]
+            else:
+                bestap = bestaps[index - 1]
+
+        name = f"Aperture_{bestap:03}"
+        return self.get_aperture_id(name)
+
     def get_lightcurve_type_id(self, name):
         try:
             id_ = self.lightcurve_type_cache[name]
@@ -133,6 +155,10 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             id_ = self._resolve_id_from_name(models.LightcurveType, name)
             self.lightcurve_type_cache[name] = id_
         return id_
+
+    def get_best_lightcurve_type_id(self, h5_file):
+        name = em2.get_best_detrending_type(h5_file)
+        return self.get_lightcurve_type_id(name)
 
     def process_job(self, em2_h5_job):
         observed_mask = self.get_observed(em2_h5_job.tic_id)
@@ -147,6 +173,19 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             )
             quality_flags = self.corrector.get_quality_flags(
                 em2_h5_job.camera, em2_h5_job.ccd, cadences
+            )
+
+            best_aperture_id = self.get_best_aperture_id(em2_h5_job.tic_id)
+            best_type_id = self.get_best_lightcurve_type_id(h5)
+            best_lightcurve_definition = {
+                "orbit_id": self.orbit_map[em2_h5_job.orbit_number],
+                "aperture_id": best_aperture_id,
+                "lightcurve_type_id": best_type_id,
+                "tic_id": em2_h5_job.tic_id,
+            }
+
+            self.buffers[models.BestOrbitLightcurve.__tablename__].append(
+                best_lightcurve_definition
             )
 
             for ap_name, type_name, raw_data in em2.iterate_for_raw_data(h5):
@@ -207,6 +246,30 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             time_end=end,
             job_size=len(lightcurves),
             unit="array_lightcurves",
+        )
+        return metric
+
+    def flush_best_orbit_lightcurves(self, db):
+        best_lcs = self.buffers[models.BestOrbitLightcurve.__tablename__]
+        self.log(
+            "Updating best orbit lightcurve table with "
+            f"{len(best_lcs)} entries"
+        )
+        start = datetime.now()
+        q = (
+            psql_insert(models.BestOrbitLightcurve)
+            .values(best_lcs)
+            .on_conflict_do_nothing()
+        )
+        db.session.execute(q)
+        end = datetime.now()
+
+        metric = models.QLPOperation(
+            process_id=self.process.id,
+            time_start=start,
+            time_end=end,
+            job_size=len(best_lcs),
+            unit="best_lightcurves",
         )
         return metric
 
