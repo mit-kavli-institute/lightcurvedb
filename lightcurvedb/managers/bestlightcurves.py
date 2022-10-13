@@ -61,6 +61,7 @@ class BestLightcurveManager(LightcurveManager):
             ids = self._lightcurve_id_cache[tic_id]
         except KeyError:
             _, ids = list(self._resolve_lightcurve_ids_for(tic_id))[0]
+            self._lightcurve_id_cache[tic_id] = ids
         return ids
 
     def get_lightcurve(self, tic_id):
