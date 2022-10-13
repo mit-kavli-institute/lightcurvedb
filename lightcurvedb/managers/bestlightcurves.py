@@ -32,7 +32,7 @@ class BestLightcurveManager(LightcurveManager):
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, tic_id):
-        return self.get_lightcurve(self, tic_id)
+        return self.get_lightcurve(tic_id)
 
     def _resolve_lightcurve_ids_for(self, tic_id):
         q = (
