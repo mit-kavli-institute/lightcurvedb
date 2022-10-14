@@ -3,13 +3,16 @@ This module describes multiprocessing queues in order to quickly feed
 IO greedy processes. The functions described here can quickly spawn
 multiple SQL sessions, use with caution.
 """
-from multiprocessing import Manager, Process
+from multiprocessing import Manager, Pool, Process
 
 import numpy as np
+import sqlalchemy as sa
 from sqlalchemy.exc import InternalError
 
 from lightcurvedb import Lightcurve, db_from_config
+from lightcurvedb import models as m
 from lightcurvedb.exceptions import EmptyLightcurve, PrimaryIdentNotFound
+from lightcurvedb.io.pipeline import db_scope
 from lightcurvedb.io.procedures.procedure import get_lightcurve_data
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 
@@ -195,3 +198,51 @@ def yield_best_aperture_data(
         n_threads=n_threads,
     ):
         yield data
+
+
+@db_scope()
+def fetch_best_orbit_baseline(db, job):
+    tic_id, columns = job
+    best_orbit = m.BestOrbitLightcurve
+    lc = m.OrbitLightcurve
+    dtype = [(col, LIGHTPOINT_NP_DTYPES[col]) for col in columns]
+
+    q = (
+        sa.select(lc.id)
+        .join(
+            best_orbit,
+            sa.and_(
+                best_orbit.orbit_id == lc.orbit_id,
+                best_orbit.aperture_id == lc.aperture_id,
+                best_orbit.lightcurve_type_id == lc.lightcurve_type_id,
+                best_orbit.tic_id == lc.tic_id,
+            ),
+        )
+        .where(lc.tic_id == tic_id)
+    )
+    ids = [id for tid, in q]
+
+    lp_q = (
+        sa.select(*[getattr(m.Lightpoint, col) for col in columns])
+        .where(m.Lightpoint.lightcurve_id.in_(ids))
+        .order_by(m.Lightpoint.cadence)
+    )
+
+    return tic_id, np.array(db.execute(lp_q).fetchall(), dtype=dtype)
+
+
+def yield_best_lightcurve_data(
+    tic_ids, db_override=None, n_threads=None, columns=None
+):
+    if columns is None or len(columns) == 0:
+        columns = [
+            "cadence",
+            "barycentric_julian_date",
+            "data",
+            "error",
+            "quality_flag",
+        ]
+    jobs = ((tic_id, columns) for tic_id in tic_ids)
+    with Pool(n_threads) as pool:
+        results = pool.imap_unordered(fetch_best_orbit_baseline, jobs)
+        yield from results
