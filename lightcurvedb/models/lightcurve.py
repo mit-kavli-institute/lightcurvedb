@@ -475,6 +475,53 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
 
 
 class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
+    """
+    The latest model for representing Lightcurves. This model sacrifices
+    lightpoint relational power for in-row arrays to optimize i/o operations.
+    This also comes at the cost where developers must be sure to maintain
+    cadence->value relations manually when editing lightcurves.
+
+    Attributes
+    ----------
+    id: int
+        The primary key for the model.
+    tic_id: int
+        The TIC identifier of the parent star which was used to generate
+        the Lightcurve's timeseries data.
+    camera: int
+        Which spacecraft camera this lightcurve was observed on.
+    ccd: int
+        Which spacecraft ccd this lightcurve was observed on.
+    orbit_id: int
+        The primary key of the orbit which this lightcurve was observed in.
+    aperture_id: int
+        The primary key of the aperture this lightcurve was generated with.
+    lightcurve_type_id: int
+        The primary key of the type of data this lightcurve represents.
+        Usually this is raw lightcurves or from a variety of detrending
+        methods.
+    cadences: List[int]
+        A list of observed cadences which have been recorded by the spacecraft.
+    barycentric_julian_dates: List[float]
+        A list of floats representing the time in days which the cadences were
+        recorded on. This time is barycentric in reference.
+    data: List[float]
+        The time series value. The units of these values depend on the type
+        and how they are interpreted is up to the developer.
+    error: List[float]
+        The error for each value. The values are left up to interpretation
+        of the developer.
+    x_centroids: List[float]
+        Where, in terms of pixels on the ccd was the aperture centered on.
+        With the exception of Background Lightcurves, this value is
+        centered with a flux-weighted bias.
+    y_centroids: List[float]
+        Where, in terms of pixels on the ccd was the aperture centered on.
+        With the exception of Background Lightcurves, this value is
+        centered with a flux-weighted bias.
+    quality_flags: List[int]
+        The quality flags for the lightcurve.
+    """
     __tablename__ = "array_orbit_lightcurves"
 
     DTYPE = OrderedDict(
@@ -534,6 +581,9 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         return list((name, cls.DTYPE[name]) for name in names)
 
     def to_numpy(self):
+        """
+        Represent this lightcurve as a structured numpy array.
+        """
         dtype = self.create_structured_dtype(*self.DTYPE.keys())
 
         fields = [getattr(self, col) for col in self.DTYPE.keys()]
