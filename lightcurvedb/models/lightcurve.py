@@ -29,7 +29,7 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 from lightcurvedb.models.aperture import Aperture
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint, lp_structured_array
+from lightcurvedb.models.lightpoint import Lightpoint, lp_structured_array
 from lightcurvedb.models.orbit import Orbit
 
 
@@ -565,7 +565,7 @@ class OrbitLightcurveAPIMixin:
         id_q = (
             sa.select(OrbitLightcurve.id)
             .join(OrbitLightcurve.aperture)
-            .join(OrbitLightcurve.lightcurve_id)
+            .join(OrbitLightcurve.lightcurve_type)
             .where(
                 OrbitLightcurve.tic_id == tic_id,
                 LightcurveType.name == lightcurve_type,
