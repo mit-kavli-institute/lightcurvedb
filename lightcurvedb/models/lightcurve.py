@@ -585,4 +585,9 @@ class OrbitLightcurveAPIMixin:
             .order_by(Lightpoint.cadence)
         )
 
-        return lp_q
+        data = lp_structured_array(
+            self.execute(lp_q),
+            columns
+        )
+
+        return data
