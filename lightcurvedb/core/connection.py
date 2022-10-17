@@ -18,7 +18,7 @@ from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightcurve import OrbitLightcurveAPIMixin
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
+from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, LightpointAPIMixin
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
 from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
@@ -310,6 +310,7 @@ class DB(
     BestOrbitLightcurveAPIMixin,
     FrameAPIMixin,
     TableTrackerAPIMixin,
+    LightpointAPIMixin,
     OrbitAPIMixin,
     OrbitLightcurveAPIMixin,
     PGCatalogMixin,
@@ -657,7 +658,10 @@ class DB(
             iterator will return 1 lightcurve at a time.
         tics : list, optional
             Filter lightcurves that have TIC identifiers contained in this
-            list. If this list is empty then no filter will be applied using
+            list. If this list is empty then no filter will be applied      id_q = id_q.join(
+
+    )           BestOrbitLightcurve,
+    sa.and_(*join_conditions)using
             ``tics``.
         apertures : list, optional
             Filter lightcurves that have one of the given ``Aperture.name``
@@ -962,7 +966,10 @@ class DB(
         if isinstance(sectors, int):
             q = q.filter(models.Orbit.sector == sectors)
         else:
-            q = q.filter(models.Orbit.sector.in_(sectors))
+            q = q.filter(models.Orbit.secto     id_q = id_q.join(
+
+        )           BestOrbitLightcurve,
+        sa.and_(*join_conditions)r.in_(sectors))
 
         if cameras:
             q = q.filter(models.Observation.camera.in_(cameras))
