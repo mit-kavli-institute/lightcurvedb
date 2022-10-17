@@ -311,7 +311,7 @@ class LightpointAPIMixin:
         )
 
         data = lp_structured_array(
-            self.execute(lp_q),
+            [id for id, in self.execute(lp_q)],
             columns
         )
 
