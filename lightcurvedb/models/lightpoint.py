@@ -311,6 +311,6 @@ class LightpointAPIMixin:
             .order_by(Lightpoint.cadence)
         )
 
-        data = lp_structured_array([id for id, in self.execute(lp_q)], columns)
+        data = lp_structured_array(self.execute(lp_q), columns)
 
         return data
