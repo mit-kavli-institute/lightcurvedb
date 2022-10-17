@@ -48,6 +48,11 @@ def get_lightpoint_dtypes(*fields):
     return np.dtype(types)
 
 
+def lp_structured_array(q, columns):
+    dtypes = get_lightpoint_dtype(*columns)
+    return np.array(list(map(tuple, q)), dtype=dtypes)
+
+
 class Lightpoint(QLPModel, Blobable):
     """
     This SQLAlchemy model is used to represent individual datapoints of
@@ -295,3 +300,19 @@ class Lightpoint(QLPModel, Blobable):
                 # Do not edit, fail softly
                 continue
         # All edits, if any have been made
+
+
+class LightpointAPIMixin:
+    def get_lightpoint_array(self, ids, columns):
+        lp_q = (
+            sa.select(*[getattr(Lightpoint, col) for col in columns])
+            .where(Lightpoint.lightcurve_id.in_(ids))
+            .order_by(Lightpoint.cadence)
+        )
+
+        data = lp_structured_array(
+            self.execute(lp_q),
+            columns
+        )
+
+        return data
