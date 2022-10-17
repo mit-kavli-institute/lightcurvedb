@@ -18,7 +18,10 @@ from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightcurve import OrbitLightcurveAPIMixin
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, LightpointAPIMixin
+from lightcurvedb.models.lightpoint import (
+    LIGHTPOINT_NP_DTYPES,
+    LightpointAPIMixin,
+)
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
 from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
 from lightcurvedb.models.table_track import TableTrackerAPIMixin
@@ -658,11 +661,7 @@ class DB(
             iterator will return 1 lightcurve at a time.
         tics : list, optional
             Filter lightcurves that have TIC identifiers contained in this
-            list. If this list is empty then no filter will be applied      id_q = id_q.join(
-
-    )           BestOrbitLightcurve,
-    sa.and_(*join_conditions)using
-            ``tics``.
+            list. If this list is empty then no filter will be applied.
         apertures : list, optional
             Filter lightcurves that have one of the given ``Aperture.name``
             strings. If this list is empty then no filter will be applied
@@ -920,56 +919,6 @@ class DB(
             q = q.filter(models.Orbit.orbit_number == orbit_numbers)
         else:
             q = q.filter(models.Orbit.orbit_number.in_(orbit_numbers))
-
-        if cameras:
-            q = q.filter(models.Observation.camera.in_(cameras))
-        if ccds:
-            q = q.filter(models.Observation.ccd.in_(ccds))
-
-        if resolve:
-            return q.all()
-        return q
-
-    def lightcurves_by_sector(
-        self, sectors, cameras=None, ccds=None, resolve=True
-    ):
-        """
-        Retrieve lightcurves that have been observed in the given
-        sector numbers. This method can also filter by camera and ccd.
-
-        Arguments
-        ---------
-        sectors : list of integers
-            The sectors to filter on.
-        cameras : list of integers, optional
-            List of cameras to query against. If None, then don't
-            discriminate using cameras.
-        ccds : list of integers, optional
-            List of ccds to query against. If None, then don't discriminate
-            using ccds
-        resolve : bool, optional
-            If True, resolve the query into a list of Lightcurves. If False
-            return the ``sqlalchemy.orm.Query`` object representing
-            the intended SQL statement.
-
-        Returns
-        -------
-        list of lightcurves or ``sqlalchemy.orm.Query``
-            Returns either the result of the query or the Query object itself.
-
-        """
-
-        q = self.lightcurves.join(models.Lightcurve.observations).join(
-            models.Observation.orbit
-        )
-
-        if isinstance(sectors, int):
-            q = q.filter(models.Orbit.sector == sectors)
-        else:
-            q = q.filter(models.Orbit.secto     id_q = id_q.join(
-
-        )           BestOrbitLightcurve,
-        sa.and_(*join_conditions)r.in_(sectors))
 
         if cameras:
             q = q.filter(models.Observation.camera.in_(cameras))
