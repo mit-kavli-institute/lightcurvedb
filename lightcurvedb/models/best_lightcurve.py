@@ -125,7 +125,10 @@ class BestOrbitLightcurveAPIMixin:
             filter_conditions.append(
                 LightcurveType.name == lightcurve_type
             )
-
+        id_q = id_q.join(
+            BestOrbitLightcurve,
+            sa.and_(*join_conditions)
+        )
         id_q = id_q.where(*filter_conditions)
         ids = [id for id, in self.execute(id_q)]
 
