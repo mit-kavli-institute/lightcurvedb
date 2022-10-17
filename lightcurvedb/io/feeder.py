@@ -220,7 +220,7 @@ def fetch_best_orbit_baseline(db, job):
         )
         .where(lc.tic_id == tic_id)
     )
-    ids = [id for id, in q]
+    ids = [id for id, in db.execute(q)]
 
     lp_q = (
         sa.select(*[getattr(m.Lightpoint, col) for col in columns])
