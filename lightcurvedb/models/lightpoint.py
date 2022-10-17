@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -49,7 +50,7 @@ def get_lightpoint_dtypes(*fields):
 
 
 def lp_structured_array(q, columns):
-    dtypes = get_lightpoint_dtype(*columns)
+    dtypes = get_lightpoint_dtypes(*columns)
     return np.array(list(map(tuple, q)), dtype=dtypes)
 
 
@@ -310,9 +311,6 @@ class LightpointAPIMixin:
             .order_by(Lightpoint.cadence)
         )
 
-        data = lp_structured_array(
-            [id for id, in self.execute(lp_q)],
-            columns
-        )
+        data = lp_structured_array([id for id, in self.execute(lp_q)], columns)
 
         return data
