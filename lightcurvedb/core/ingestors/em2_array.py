@@ -212,15 +212,15 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                     orbit_id=self.orbit_map[em2_h5_job.orbit_number],
                     aperture_id=aperture_id,
                     lightcurve_type_id=lightcurve_type_id,
-                    cadences=raw_data["cadence"],
+                    cadences=raw_data["cadence"].tolist(),
                     barycentric_julian_dates=raw_data[
                         "barycentric_julian_date"
-                    ],
-                    data=raw_data["data"],
-                    errors=raw_data["error"],
-                    x_centroids=raw_data["x_centroid"],
-                    y_centroids=raw_data["y_centroid"],
-                    quality_flags=raw_data["quality_flag"],
+                    ].tolist(),
+                    data=raw_data["data"].tolist(),
+                    errors=raw_data["error"].tolist(),
+                    x_centroids=raw_data["x_centroid"].tolist(),
+                    y_centroids=raw_data["y_centroid"].tolist(),
+                    quality_flags=raw_data["quality_flag"].tolist(),
                 )
                 buffer = self.buffers[
                     models.ArrayOrbitLightcurve.__tablename__
