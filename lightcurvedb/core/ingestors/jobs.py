@@ -578,6 +578,9 @@ class EM2Plan:
             .where(ArrayOrbitLightcurve.tic_id.in_(self.tic_ids))
             .group_by(ArrayOrbitLightcurve.tic_id, Orbit.orbit_number)
         )
+        logger.debug(
+            f"Querying existing lightcurves for {len(self.tic_ids)} TIC ids"
+        )
         observation_counts = {
             (tic_id, orbit): count
             for tic_id, orbit, count in self.db.execute(q)
