@@ -697,7 +697,7 @@ class ArrayOrbitLightcurveAPIMixin:
             "quality_flags",
         ]
         unnested = [
-            sa.func.unnest(getattr(ArrayOrbitLightcurve, col))
+            sa.func.unnest(getattr(ArrayOrbitLightcurve, col)).label(col)
             for col in columns
         ]
         lc_q = (
