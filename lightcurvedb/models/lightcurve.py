@@ -703,7 +703,7 @@ class ArrayOrbitLightcurveAPIMixin:
         lc_q = (
             sa.select(*unnested)
             .join(ArrayOrbitLightcurve.aperture)
-            .join(ArrayOrbitLightcurve.lightcurve_type_id)
+            .join(ArrayOrbitLightcurve.lightcurve_type)
             .where(
                 ArrayOrbitLightcurve.tic_id == tic_id,
                 LightcurveType.name == lightcurve_type,
