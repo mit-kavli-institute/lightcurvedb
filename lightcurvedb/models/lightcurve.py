@@ -583,8 +583,7 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
 
     @classmethod
     def serialize_lightpoint_result(cls, db_result, *columns):
-        dtype = cls.create_structured_dtype(*columns)
-        return np.array(list(db_result), dtype=dtype)
+        return lp_structured_array(db_result, columns)
 
     def to_numpy(self):
         """
