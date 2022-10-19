@@ -716,5 +716,5 @@ class ArrayOrbitLightcurveAPIMixin:
         )
 
         return ArrayOrbitLightcurve.serialize_lightpoint_result(
-            self.execute(lp_q).fetchall(), *columns
+            list(map(tuple, self.execute(lp_q))), *columns
         )
