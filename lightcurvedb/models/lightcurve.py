@@ -522,6 +522,7 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     quality_flags: List[int]
         The quality flags for the lightcurve.
     """
+
     __tablename__ = "array_orbit_lightcurves"
 
     DTYPE = OrderedDict(
@@ -580,6 +581,11 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     def create_structured_dtype(cls, *names):
         return list((name, cls.DTYPE[name]) for name in names)
 
+    @classmethod
+    def serialize_lightpoint_result(cls, db_result, *columns):
+        dtype = cls.create_structured_dtype(*columns)
+        return np.array(list(db_result), dtype=dtype)
+
     def to_numpy(self):
         """
         Represent this lightcurve as a structured numpy array.
@@ -591,7 +597,7 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         return np.array(list(zip(*fields)), dtype=dtype)
 
 
-class OrbitLightcurveAPIMixin:
+class ArrayOrbitLightcurveAPIMixin:
     def get_missing_id_ranges(self):
         """
         Parse through all orbit lightcurves to find gaps in the primary key
@@ -610,10 +616,10 @@ class OrbitLightcurveAPIMixin:
         may not include the newest gaps.
         """
         subq = select(
-            OrbitLightcurve.id,
+            ArrayOrbitLightcurve.id,
             (
-                func.lead(OrbitLightcurve.id)
-                .over(order_by=OrbitLightcurve.id)
+                func.lead(ArrayOrbitLightcurve.id)
+                .over(order_by=ArrayOrbitLightcurve.id)
                 .label("next_id")
             ),
         ).subquery()
@@ -654,24 +660,26 @@ class OrbitLightcurveAPIMixin:
         """
 
         q = (
-            sa.select(OrbitLightcurve)
-            .join(OrbitLightcurve.orbit)
+            sa.select(ArrayOrbitLightcurve)
+            .join(ArrayOrbitLightcurve.orbit)
             .filter(Orbit.orbit_number == orbit)
         )
 
         if isinstance(aperture, str):
-            q = q.join(OrbitLightcurve.aperture)
-            q = q.filter(OrbitLightcurve.aperture_name == aperture)
+            q = q.join(ArrayOrbitLightcurve.aperture)
+            q = q.filter(ArrayOrbitLightcurve.aperture_name == aperture)
         else:
-            q = q.filter(OrbitLightcurve.aperture_id == aperture)
+            q = q.filter(ArrayOrbitLightcurve.aperture_id == aperture)
 
         if isinstance(lightcurve_type, str):
-            q = q.join(OrbitLightcurve.lightcurve_type)
+            q = q.join(ArrayOrbitLightcurve.lightcurve_type)
             q = q.filter(
-                OrbitLightcurve.lightcurve_type_name == lightcurve_type
+                ArrayOrbitLightcurve.lightcurve_type_name == lightcurve_type
             )
         else:
-            q = q.filter(OrbitLightcurve.lightcurve_type_id == lightcurve_type)
+            q = q.filter(
+                ArrayOrbitLightcurve.lightcurve_type_id == lightcurve_type
+            )
 
         if resolve:
             return q.one()
@@ -680,30 +688,33 @@ class OrbitLightcurveAPIMixin:
 
     def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
         columns = [
-            "cadence",
-            "barycentric_julian_date",
+            "cadences",
+            "barycentric_julian_dates",
             "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
+            "errors",
+            "x_centroids",
+            "y_centroids",
+            "quality_flags",
         ]
-        id_q = (
-            sa.select(OrbitLightcurve.id)
-            .join(OrbitLightcurve.aperture)
-            .join(OrbitLightcurve.lightcurve_id)
+        unnested = [
+            sa.func.unnest(getattr(ArrayOrbitLightcurve, col))
+            for col in columns
+        ]
+        lc_q = (
+            sa.select(*unnested)
+            .join(ArrayOrbitLightcurve.aperture)
+            .join(ArrayOrbitLightcurve.lightcurve_id)
             .where(
-                OrbitLightcurve.tic_id == tic_id,
+                ArrayOrbitLightcurve.tic_id == tic_id,
                 LightcurveType.name == lightcurve_type,
                 Aperture.name == aperture,
             )
+            .subquery("lp_unnester")
         )
-        ids = [id for id, in self.execute(id_q)]
-
-        lp_q = (
-            sa.select(*[getattr(Lightpoint, col) for col in columns])
-            .where(Lightpoint.lightcurve_id.in_(ids))
-            .order_by(Lightpoint.cadence)
+        lp_q = sa.select(*[getattr(lc_q.c, col) for col in columns]).order_by(
+            lc_q.c.cadences.asc()
         )
 
-        return lp_q
+        return ArrayOrbitLightcurve.serialize_lightpoint_result(
+            self.execute(lp_q).fetchall(), *columns
+        )
