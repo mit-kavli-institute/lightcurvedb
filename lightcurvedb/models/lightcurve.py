@@ -586,15 +586,33 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         dtype = cls.create_structured_dtype(*columns)
         return np.array(db_result, dtype=dtype)
 
-    def to_numpy(self):
+    def to_numpy(self, normalize=False, offset=0.0):
         """
         Represent this lightcurve as a structured numpy array.
+
+        Parameters
+        ----------
+        normalize: bool
+            If true, normalize the lightcurve to the median of the
+            ``data`` values.
+        offset: float
+            Offset the data values by adding this constant. By default this is
+            0.0.
         """
         dtype = self.create_structured_dtype(*self.DTYPE.keys())
 
         fields = [getattr(self, col) for col in self.DTYPE.keys()]
 
-        return np.array(list(zip(*fields)), dtype=dtype)
+        struct = np.array(list(zip(*fields)), dtype=dtype)
+
+        if normalize:
+            mask = struct["quality_flag"] == 0
+            median = np.nanmedian(struct["data"][mask])
+        else:
+            median = 0.0
+
+        struct["data"] = struct["data"] + (offset - median)
+        return struct
 
 
 class ArrayOrbitLightcurveAPIMixin:
