@@ -629,7 +629,7 @@ class ArrayOrbitLightcurveAPIMixin:
                 tmag = stellar_param_info[lc.tic_id]
             except KeyError:
                 tmag = one_off(lc.tic_id, "tmag")[0]
-                stellar_param_info(lc.tic_id) == tmag
+                stellar_param_info[lc.tic_id] == tmag
             structs.append(lc.to_numpy(normalize=True, offset=tmag))
         return np.concatenate(lc)
 
