@@ -87,7 +87,7 @@ class BestOrbitLightcurveAPIMixin:
         if len(join_conditions) > 0:
             join_conditions.append(BEST_LC.tic_id == LC.tic_id)
             join_conditions.append(BEST_LC.orbit_id == LC.orbit_id)
-            q = q.join(BEST_LC, *join_conditions)
+            q = q.join(BEST_LC, sa.and_(*join_conditions))
         q = q.where(*filter_conditions)
 
         return self._process_lc_selection(q)
