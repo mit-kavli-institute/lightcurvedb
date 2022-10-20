@@ -32,7 +32,6 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
-from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.models.aperture import Aperture
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 from lightcurvedb.models.orbit import Orbit
@@ -621,6 +620,8 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
 
 class ArrayOrbitLightcurveAPIMixin:
     def _process_lc_selection(self, select_q):
+        from lightcurvedb.core.tic8 import one_off
+
         structs = []
         stellar_param_info = {}
         for lc in self.execute(select_q):
@@ -721,6 +722,7 @@ class ArrayOrbitLightcurveAPIMixin:
         return q
 
     def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
+
         q = (
             sa.select(ArrayOrbitLightcurve)
             .join(ArrayOrbitLightcurve.aperture)
