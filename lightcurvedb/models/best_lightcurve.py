@@ -1,10 +1,11 @@
+import sqlalchemy as sa
 from sqlalchemy import BigInteger, Column, ForeignKey, and_, select
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.models.aperture import Aperture
-from lightcurvedb.models.lightcurve import LightcurveType, OrbitLightcurve
+from lightcurvedb.models.lightcurve import ArrayOrbitLightcurve, LightcurveType
 
 
 class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
@@ -48,12 +49,6 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
 
 
 class BestOrbitLightcurveAPIMixin:
-    def get_best_lightcurve_q(self):
-        q = self.query(OrbitLightcurve).join(
-            BestOrbitLightcurve.orbit_lightcurve,
-        )
-        return q
-
     def resolve_best_aperture_id(self, bestap):
         q = select(Aperture.id).filter(Aperture.name.ilike(f"%{bestap}%"))
         id_ = self.execute(q).fetchone()[0]
@@ -65,3 +60,34 @@ class BestOrbitLightcurveAPIMixin:
         )
         id_ = self.execute(q).fetchone()[0]
         return id_
+
+    def get_best_lightcurve_baseline(
+        self, tic_id, aperture=None, lightcurve_type=None
+    ):
+        BEST_LC = BestOrbitLightcurve
+        LC = ArrayOrbitLightcurve
+
+        q = sa.select(ArrayOrbitLightcurve)
+        join_conditions = []
+        filter_conditions = [LC.tic_id == tic_id]
+
+        if aperture is None:
+            join_conditions.append(BEST_LC.aperture_id == LC.aperture_id)
+        else:
+            q = q.join(LC.aperture)
+            filter_conditions.append(Aperture.name == aperture)
+        if lightcurve_type is None:
+            join_conditions.append(
+                BEST_LC.lightcurve_type_id == LC.lightcurve_type_id
+            )
+        else:
+            q = q.join(LC.lightcurve_type)
+            filter_conditions.append(LightcurveType.name == lightcurve_type)
+
+        if len(join_conditions) > 0:
+            join_conditions.append(BEST_LC.tic_id == LC.tic_id)
+            join_conditions.append(BEST_LC.orbit_id == LC.orbit_id)
+            q = q.join(BEST_LC, *join_conditions)
+        q = q.where(*filter_conditions)
+
+        return self._process_lc_selection(q)

@@ -32,6 +32,7 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
+from lightcurvedb.core.tic8 import one_off
 from lightcurvedb.models.aperture import Aperture
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
 from lightcurvedb.models.orbit import Orbit
@@ -586,6 +587,9 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         dtype = cls.create_structured_dtype(*columns)
         return np.array(db_result, dtype=dtype)
 
+    def get_tic_info(self, *fields):
+        pass
+
     def to_numpy(self, normalize=False, offset=0.0):
         """
         Represent this lightcurve as a structured numpy array.
@@ -616,6 +620,18 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
 
 
 class ArrayOrbitLightcurveAPIMixin:
+    def _process_lc_selection(self, select_q):
+        structs = []
+        stellar_param_info = {}
+        for lc in self.execute(select_q):
+            try:
+                tmag = stellar_param_info[lc.tic_id]
+            except KeyError:
+                tmag = one_off(lc.tic_id, "tmag")[0]
+                stellar_param_info(lc.tic_id) == tmag
+            structs.append(lc.to_numpy(normalize=True, offset=tmag))
+        return np.concatenate(lc)
+
     def get_missing_id_ranges(self):
         """
         Parse through all orbit lightcurves to find gaps in the primary key
@@ -705,34 +721,16 @@ class ArrayOrbitLightcurveAPIMixin:
         return q
 
     def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
-        columns = [
-            "cadences",
-            "barycentric_julian_dates",
-            "data",
-            "errors",
-            "x_centroids",
-            "y_centroids",
-            "quality_flags",
-        ]
-        unnested = [
-            sa.func.unnest(getattr(ArrayOrbitLightcurve, col)).label(col)
-            for col in columns
-        ]
-        lc_q = (
-            sa.select(*unnested)
+        q = (
+            sa.select(ArrayOrbitLightcurve)
             .join(ArrayOrbitLightcurve.aperture)
             .join(ArrayOrbitLightcurve.lightcurve_type)
+            .join(ArrayOrbitLightcurve.orbit)
             .where(
                 ArrayOrbitLightcurve.tic_id == tic_id,
-                LightcurveType.name == lightcurve_type,
                 Aperture.name == aperture,
+                LightcurveType.name == LightcurveType,
             )
-            .subquery("lp_unnester")
+            .order_by(Orbit.orbit_number)
         )
-        lp_q = sa.select(*[getattr(lc_q.c, col) for col in columns]).order_by(
-            lc_q.c.cadences.asc()
-        )
-
-        return ArrayOrbitLightcurve.serialize_lightpoint_result(
-            list(map(tuple, self.execute(lp_q))), *columns
-        )
+        return self._process_lc_selection(q)
