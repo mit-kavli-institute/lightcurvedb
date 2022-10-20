@@ -624,7 +624,7 @@ class ArrayOrbitLightcurveAPIMixin:
 
         structs = []
         stellar_param_info = {}
-        for lc in self.execute(select_q):
+        for lc in self.execute(select_q).scalars():
             try:
                 tmag = stellar_param_info[lc.tic_id]
             except KeyError:
@@ -735,4 +735,4 @@ class ArrayOrbitLightcurveAPIMixin:
             )
             .order_by(Orbit.orbit_number)
         )
-        return self._process_lc_selection(q.scalars())
+        return self._process_lc_selection(q)

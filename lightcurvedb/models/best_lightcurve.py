@@ -90,4 +90,4 @@ class BestOrbitLightcurveAPIMixin:
             q = q.join(BEST_LC, sa.and_(*join_conditions))
         q = q.where(*filter_conditions)
 
-        return self._process_lc_selection(q.scalars())
+        return self._process_lc_selection(q)
