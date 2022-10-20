@@ -735,4 +735,4 @@ class ArrayOrbitLightcurveAPIMixin:
             )
             .order_by(Orbit.orbit_number)
         )
-        return self._process_lc_selection(q)
+        return self._process_lc_selection(q.scalars())
