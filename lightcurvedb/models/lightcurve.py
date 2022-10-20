@@ -609,7 +609,7 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
         struct = np.array(list(zip(*fields)), dtype=dtype)
 
         if normalize:
-            mask = struct["quality_flag"] == 0
+            mask = struct["quality_flags"] == 0
             median = np.nanmedian(struct["data"][mask])
         else:
             median = 0.0
