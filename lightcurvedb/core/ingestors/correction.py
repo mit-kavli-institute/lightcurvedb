@@ -42,7 +42,7 @@ class LightcurveCorrector:
         logger.debug("Built quality flag mapping")
         self.tjd_map = contexts.get_tjd_mapping(sqlite_path)
         logger.debug("Built tjd mapping")
-        self.tic_map = contexts.get(sqlite_path).get_tic_mapping("ra", "dec")
+        self.tic_map = contexts.get_tic_mapping(sqlite_path, "ra", "dec")
         logger.debug("Got ra-dec mapping")
 
         self._last_tic_miss = None
