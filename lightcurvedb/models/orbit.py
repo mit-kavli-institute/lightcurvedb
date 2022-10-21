@@ -19,9 +19,7 @@ from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
-from lightcurvedb.models.camera_quaternion import CameraQuaternion
-from lightcurvedb.models.frame import Frame
-from lightcurvedb.models.observations import Observation
+from lightcurvedb.models import CameraQuaternion, Frame
 
 ORBIT_DTYPE = [
     ("orbit_number", np.int32),
@@ -63,7 +61,6 @@ class Orbit(QLPModel, CreatedOnMixin):
 
     # Relationships
     frames = relationship("Frame", back_populates="orbit")
-    observations = relationship(Observation, back_populates="orbit")
     # Click Parameters
     click_parameters = click.Choice(
         ["orbit_number", "sector", "ra", "dec", "roll", "basename"],

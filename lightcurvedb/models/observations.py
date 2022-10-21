@@ -4,10 +4,9 @@ from sqlalchemy import Column, ForeignKey, SmallInteger, bindparam
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import relationship
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.core.constants import QLP_ORBITS
 from lightcurvedb.core.datastructures.blob import Blobable
-from lightcurvedb.core.partitioning import Partitionable
 
 
 class Observation(QLPModel, CreatedOnMixin, Blobable):
@@ -34,7 +33,7 @@ class Observation(QLPModel, CreatedOnMixin, Blobable):
     )
 
     lightcurve = relationship("Lightcurve", back_populates="observations")
-    orbit = relationship("Orbit", back_populates="observations")
+    orbit = relationship("Orbit")
 
     def __repr__(self):
         return "Observation Orbit-{0} Camera {1} CCD {2}, LC {3}".format(

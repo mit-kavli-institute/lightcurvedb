@@ -33,7 +33,7 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 from lightcurvedb.models.aperture import Aperture
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES, Lightpoint
+from lightcurvedb.models.lightpoint import Lightpoint, lp_structured_array
 from lightcurvedb.models.orbit import Orbit
 
 
@@ -53,11 +53,6 @@ adapt_as_is_type(np.float64)
 def lp_ordered_array(table, spec):
     col = getattr(table, spec)
     return func.array_agg(aggregate_order_by(col, getattr(table, "cadence")))
-
-
-def lp_structured_array(q, columns):
-    dtypes = [(col, LIGHTPOINT_NP_DTYPES[col]) for col in columns]
-    return np.array(list(map(tuple, q)), dtype=dtypes)
 
 
 class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
@@ -722,7 +717,6 @@ class ArrayOrbitLightcurveAPIMixin:
         return q
 
     def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
-
         q = (
             sa.select(ArrayOrbitLightcurve)
             .join(ArrayOrbitLightcurve.aperture)
