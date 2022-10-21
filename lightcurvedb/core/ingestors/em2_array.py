@@ -170,13 +170,15 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             cadences = em2.get_cadences(h5)
             bjd = em2.get_barycentric_julian_dates(h5)
 
-            with self.record_elapsed("lightcurve-correction"):
+            with self.record_elapsed("tjd-retrieval"):
                 mid_tjd = self.corrector.get_mid_tjd(
                     em2_h5_job.camera, cadences
                 )
+            with self.record_elapsed("time-correction"):
                 bjd = self.corrector.correct_for_earth_time(
                     em2_h5_job.tic_id, mid_tjd
                 )
+            with self.record_elapsed("quality-flag-assignment"):
                 quality_flags = self.corrector.get_quality_flags(
                     em2_h5_job.camera, em2_h5_job.ccd, cadences
                 )
@@ -189,49 +191,49 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                     "lightcurve_type_id": best_type_id,
                     "tic_id": em2_h5_job.tic_id,
                 }
-
             self.buffers[models.BestOrbitLightcurve.__tablename__].append(
                 best_lightcurve_definition
             )
+            with self.record_elapsed("lightcurve-construction"):
+                data_iter = em2.iterate_for_raw_data(h5)
+                for ap_name, type_name, raw_data in data_iter:
+                    unique_key = (
+                        em2_h5_job.tic_id,
+                        em2_h5_job.camera,
+                        em2_h5_job.ccd,
+                        em2_h5_job.orbit_number,
+                        ap_name,
+                        type_name,
+                    )
+                    if unique_key in observed_mask:
+                        continue
 
-            for ap_name, type_name, raw_data in em2.iterate_for_raw_data(h5):
-                unique_key = (
-                    em2_h5_job.tic_id,
-                    em2_h5_job.camera,
-                    em2_h5_job.ccd,
-                    em2_h5_job.orbit_number,
-                    ap_name,
-                    type_name,
-                )
-                if unique_key in observed_mask:
-                    continue
+                    raw_data["barycentric_julian_date"] = bjd
+                    raw_data["quality_flag"] = quality_flags
 
-                raw_data["barycentric_julian_date"] = bjd
-                raw_data["quality_flag"] = quality_flags
-
-                aperture_id = self.get_aperture_id(ap_name)
-                lightcurve_type_id = self.get_lightcurve_type_id(type_name)
-                lightcurve = ArrayLCPayload(
-                    tic_id=em2_h5_job.tic_id,
-                    camera=em2_h5_job.camera,
-                    ccd=em2_h5_job.ccd,
-                    orbit_id=self.orbit_map[em2_h5_job.orbit_number],
-                    aperture_id=aperture_id,
-                    lightcurve_type_id=lightcurve_type_id,
-                    cadences=raw_data["cadence"].tolist(),
-                    barycentric_julian_dates=raw_data[
-                        "barycentric_julian_date"
-                    ].tolist(),
-                    data=raw_data["data"].tolist(),
-                    errors=raw_data["error"].tolist(),
-                    x_centroids=raw_data["x_centroid"].tolist(),
-                    y_centroids=raw_data["y_centroid"].tolist(),
-                    quality_flags=raw_data["quality_flag"].tolist(),
-                )
-                buffer = self.buffers[
-                    models.ArrayOrbitLightcurve.__tablename__
-                ]
-                buffer.append(lightcurve)
+                    aperture_id = self.get_aperture_id(ap_name)
+                    lightcurve_type_id = self.get_lightcurve_type_id(type_name)
+                    lightcurve = ArrayLCPayload(
+                        tic_id=em2_h5_job.tic_id,
+                        camera=em2_h5_job.camera,
+                        ccd=em2_h5_job.ccd,
+                        orbit_id=self.orbit_map[em2_h5_job.orbit_number],
+                        aperture_id=aperture_id,
+                        lightcurve_type_id=lightcurve_type_id,
+                        cadences=raw_data["cadence"].tolist(),
+                        barycentric_julian_dates=raw_data[
+                            "barycentric_julian_date"
+                        ].tolist(),
+                        data=raw_data["data"].tolist(),
+                        errors=raw_data["error"].tolist(),
+                        x_centroids=raw_data["x_centroid"].tolist(),
+                        y_centroids=raw_data["y_centroid"].tolist(),
+                        quality_flags=raw_data["quality_flag"].tolist(),
+                    )
+                    buffer = self.buffers[
+                        models.ArrayOrbitLightcurve.__tablename__
+                    ]
+                    buffer.append(lightcurve)
         self.job_queue.task_done()
 
     def flush_array_orbit_lightcurves(self, db):
