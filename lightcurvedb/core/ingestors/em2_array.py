@@ -2,7 +2,7 @@ import multiprocessing as mp
 from collections import defaultdict, namedtuple
 from datetime import datetime
 from random import sample
-from time import sleep
+from time import sleep, time
 
 import cachetools
 import h5py
@@ -163,26 +163,32 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
     def process_job(self, em2_h5_job):
         observed_mask = self.get_observed(em2_h5_job.tic_id)
 
+        read_t0 = time()
         with h5py.File(em2_h5_job.file_path, "r") as h5:
+            self.telemetry["h5_read"] += time() - read_t0
+
             cadences = em2.get_cadences(h5)
             bjd = em2.get_barycentric_julian_dates(h5)
 
-            mid_tjd = self.corrector.get_mid_tjd(em2_h5_job.camera, cadences)
-            bjd = self.corrector.correct_for_earth_time(
-                em2_h5_job.tic_id, mid_tjd
-            )
-            quality_flags = self.corrector.get_quality_flags(
-                em2_h5_job.camera, em2_h5_job.ccd, cadences
-            )
-
-            best_aperture_id = self.get_best_aperture_id(em2_h5_job.tic_id)
-            best_type_id = self.get_best_lightcurve_type_id(h5)
-            best_lightcurve_definition = {
-                "orbit_id": self.orbit_map[em2_h5_job.orbit_number],
-                "aperture_id": best_aperture_id,
-                "lightcurve_type_id": best_type_id,
-                "tic_id": em2_h5_job.tic_id,
-            }
+            with self.record_elapsed("lightcurve-correction"):
+                mid_tjd = self.corrector.get_mid_tjd(
+                    em2_h5_job.camera, cadences
+                )
+                bjd = self.corrector.correct_for_earth_time(
+                    em2_h5_job.tic_id, mid_tjd
+                )
+                quality_flags = self.corrector.get_quality_flags(
+                    em2_h5_job.camera, em2_h5_job.ccd, cadences
+                )
+            with self.record_elapsed("best-lightcurve-construction"):
+                best_aperture_id = self.get_best_aperture_id(em2_h5_job.tic_id)
+                best_type_id = self.get_best_lightcurve_type_id(h5)
+                best_lightcurve_definition = {
+                    "orbit_id": self.orbit_map[em2_h5_job.orbit_number],
+                    "aperture_id": best_aperture_id,
+                    "lightcurve_type_id": best_type_id,
+                    "tic_id": em2_h5_job.tic_id,
+                }
 
             self.buffers[models.BestOrbitLightcurve.__tablename__].append(
                 best_lightcurve_definition
