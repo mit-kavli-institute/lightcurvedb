@@ -25,9 +25,12 @@ def get_barycentric_julian_dates(h5_fd):
     return lightcurve["BJD"][()]
 
 
-def get_best_detrending_type(h5_fd):
+def get_best_detrending_type(h5_fd, default_key=None):
     photometry = h5_fd["LightCurve"]["AperturePhotometry"]
-    return photometry.attrs["bestdmagkey"]
+    try:
+        return photometry.attrs["bestdmagkey"]
+    except KeyError:
+        return "KSPMagnitude" if default_key is None else default_key
 
 
 def iterate_for_raw_data(h5_fd):

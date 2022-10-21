@@ -4,12 +4,15 @@ lightcurve.py
 The lightcurve model module containing the Lightcurve model class
 and directly related models
 """
+from collections import OrderedDict
+
 import numpy as np
 import sqlalchemy as sa
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
     Column,
+    Float,
     ForeignKey,
     Integer,
     Sequence,
@@ -18,6 +21,7 @@ from sqlalchemy import (
     inspect,
     select,
 )
+from sqlalchemy.dialects import postgresql as psql
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -465,7 +469,165 @@ class OrbitLightcurve(QLPModel, CreatedOnMixin):
         return LightcurveType.name
 
 
-class OrbitLightcurveAPIMixin:
+class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
+    """
+    The latest model for representing Lightcurves. This model sacrifices
+    lightpoint relational power for in-row arrays to optimize i/o operations.
+    This also comes at the cost where developers must be sure to maintain
+    cadence->value relations manually when editing lightcurves.
+
+    Attributes
+    ----------
+    id: int
+        The primary key for the model.
+    tic_id: int
+        The TIC identifier of the parent star which was used to generate
+        the Lightcurve's timeseries data.
+    camera: int
+        Which spacecraft camera this lightcurve was observed on.
+    ccd: int
+        Which spacecraft ccd this lightcurve was observed on.
+    orbit_id: int
+        The primary key of the orbit which this lightcurve was observed in.
+    aperture_id: int
+        The primary key of the aperture this lightcurve was generated with.
+    lightcurve_type_id: int
+        The primary key of the type of data this lightcurve represents.
+        Usually this is raw lightcurves or from a variety of detrending
+        methods.
+    cadences: List[int]
+        A list of observed cadences which have been recorded by the spacecraft.
+    barycentric_julian_dates: List[float]
+        A list of floats representing the time in days which the cadences were
+        recorded on. This time is barycentric in reference.
+    data: List[float]
+        The time series value. The units of these values depend on the type
+        and how they are interpreted is up to the developer.
+    error: List[float]
+        The error for each value. The values are left up to interpretation
+        of the developer.
+    x_centroids: List[float]
+        Where, in terms of pixels on the ccd was the aperture centered on.
+        With the exception of Background Lightcurves, this value is
+        centered with a flux-weighted bias.
+    y_centroids: List[float]
+        Where, in terms of pixels on the ccd was the aperture centered on.
+        With the exception of Background Lightcurves, this value is
+        centered with a flux-weighted bias.
+    quality_flags: List[int]
+        The quality flags for the lightcurve.
+    """
+
+    __tablename__ = "array_orbit_lightcurves"
+
+    DTYPE = OrderedDict(
+        [
+            ("cadences", "uint32"),
+            ("barycentric_julian_dates", "float32"),
+            ("data", "float64"),
+            ("errors", "float64"),
+            ("x_centroids", "float32"),
+            ("y_centroids", "float32"),
+            ("quality_flags", "uint16"),
+        ]
+    )
+
+    id = Column(
+        BigInteger, Sequence("array_orbit_lightcurve_id_seq"), primary_key=True
+    )
+    tic_id = Column(BigInteger)
+    camera = Column(SmallInteger)
+    ccd = Column(SmallInteger)
+    orbit_id = Column(
+        Integer,
+        ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"),
+    )
+    aperture_id = Column(
+        SmallInteger,
+        ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"),
+    )
+    lightcurve_type_id = Column(SmallInteger, ForeignKey("lightcurvetypes.id"))
+
+    cadences = Column(psql.ARRAY(BigInteger, dimensions=1))
+    barycentric_julian_dates = Column(psql.ARRAY(Float, dimensions=1))
+    data = Column(psql.ARRAY(psql.DOUBLE_PRECISION, dimensions=1))
+    errors = Column(psql.ARRAY(psql.DOUBLE_PRECISION, dimensions=1))
+    x_centroids = Column(psql.ARRAY(Float, dimensions=1))
+    y_centroids = Column(psql.ARRAY(Float, dimensions=1))
+    quality_flags = Column(psql.ARRAY(Integer, dimensions=1))
+
+    aperture = relationship("Aperture")
+    lightcurve_type = relationship("LightcurveType")
+    orbit = relationship("Orbit")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tic_id",
+            "camera",
+            "ccd",
+            "orbit_id",
+            "aperture_id",
+            "lightcurve_type_id",
+            name="unique_array_lightcurve_constraint",
+        ),
+    )
+
+    @classmethod
+    def create_structured_dtype(cls, *names):
+        return list((name, cls.DTYPE[name]) for name in names)
+
+    @classmethod
+    def serialize_lightpoint_result(cls, db_result, *columns):
+        dtype = cls.create_structured_dtype(*columns)
+        return np.array(db_result, dtype=dtype)
+
+    def get_tic_info(self, *fields):
+        pass
+
+    def to_numpy(self, normalize=False, offset=0.0):
+        """
+        Represent this lightcurve as a structured numpy array.
+
+        Parameters
+        ----------
+        normalize: bool
+            If true, normalize the lightcurve to the median of the
+            ``data`` values.
+        offset: float
+            Offset the data values by adding this constant. By default this is
+            0.0.
+        """
+        dtype = self.create_structured_dtype(*self.DTYPE.keys())
+
+        fields = [getattr(self, col) for col in self.DTYPE.keys()]
+
+        struct = np.array(list(zip(*fields)), dtype=dtype)
+
+        if normalize:
+            mask = struct["quality_flags"] == 0
+            median = np.nanmedian(struct["data"][mask])
+        else:
+            median = 0.0
+
+        struct["data"] = struct["data"] + (offset - median)
+        return struct
+
+
+class ArrayOrbitLightcurveAPIMixin:
+    def _process_lc_selection(self, select_q):
+        from lightcurvedb.core.tic8 import one_off
+
+        structs = []
+        stellar_param_info = {}
+        for lc in self.execute(select_q).scalars():
+            try:
+                tmag = stellar_param_info[lc.tic_id]
+            except KeyError:
+                tmag = one_off(lc.tic_id, "tmag")[0]
+                stellar_param_info[lc.tic_id] = tmag
+            structs.append(lc.to_numpy(normalize=True, offset=tmag))
+        return np.concatenate(lc)
+
     def get_missing_id_ranges(self):
         """
         Parse through all orbit lightcurves to find gaps in the primary key
@@ -484,10 +646,10 @@ class OrbitLightcurveAPIMixin:
         may not include the newest gaps.
         """
         subq = select(
-            OrbitLightcurve.id,
+            ArrayOrbitLightcurve.id,
             (
-                func.lead(OrbitLightcurve.id)
-                .over(order_by=OrbitLightcurve.id)
+                func.lead(ArrayOrbitLightcurve.id)
+                .over(order_by=ArrayOrbitLightcurve.id)
                 .label("next_id")
             ),
         ).subquery()
@@ -528,24 +690,26 @@ class OrbitLightcurveAPIMixin:
         """
 
         q = (
-            sa.select(OrbitLightcurve)
-            .join(OrbitLightcurve.orbit)
+            sa.select(ArrayOrbitLightcurve)
+            .join(ArrayOrbitLightcurve.orbit)
             .filter(Orbit.orbit_number == orbit)
         )
 
         if isinstance(aperture, str):
-            q = q.join(OrbitLightcurve.aperture)
-            q = q.filter(OrbitLightcurve.aperture_name == aperture)
+            q = q.join(ArrayOrbitLightcurve.aperture)
+            q = q.filter(ArrayOrbitLightcurve.aperture_name == aperture)
         else:
-            q = q.filter(OrbitLightcurve.aperture_id == aperture)
+            q = q.filter(ArrayOrbitLightcurve.aperture_id == aperture)
 
         if isinstance(lightcurve_type, str):
-            q = q.join(OrbitLightcurve.lightcurve_type)
+            q = q.join(ArrayOrbitLightcurve.lightcurve_type)
             q = q.filter(
-                OrbitLightcurve.lightcurve_type_name == lightcurve_type
+                ArrayOrbitLightcurve.lightcurve_type_name == lightcurve_type
             )
         else:
-            q = q.filter(OrbitLightcurve.lightcurve_type_id == lightcurve_type)
+            q = q.filter(
+                ArrayOrbitLightcurve.lightcurve_type_id == lightcurve_type
+            )
 
         if resolve:
             return q.one()
@@ -553,25 +717,16 @@ class OrbitLightcurveAPIMixin:
         return q
 
     def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
-        columns = [
-            "cadence",
-            "barycentric_julian_date",
-            "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
-        ]
-        id_q = (
-            sa.select(OrbitLightcurve.id)
-            .join(OrbitLightcurve.aperture)
-            .join(OrbitLightcurve.lightcurve_type)
+        q = (
+            sa.select(ArrayOrbitLightcurve)
+            .join(ArrayOrbitLightcurve.aperture)
+            .join(ArrayOrbitLightcurve.lightcurve_type)
+            .join(ArrayOrbitLightcurve.orbit)
             .where(
-                OrbitLightcurve.tic_id == tic_id,
-                LightcurveType.name == lightcurve_type,
+                ArrayOrbitLightcurve.tic_id == tic_id,
                 Aperture.name == aperture,
+                LightcurveType.name == LightcurveType,
             )
+            .order_by(Orbit.orbit_number)
         )
-        ids = [id for id, in self.execute(id_q)]
-
-        return self.get_lightpoint_array(ids, columns)
+        return self._process_lc_selection(q)

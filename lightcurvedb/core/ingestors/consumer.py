@@ -1,5 +1,6 @@
 import time
 from collections import defaultdict
+from contextlib import contextmanager
 from multiprocessing import Process
 from queue import Empty
 
@@ -20,10 +21,27 @@ class BufferedDatabaseIngestor(Process):
         self.job_queue = job_queue
         self.log("Initialized")
         self.buffers = defaultdict(list)
+        self.telemetry = defaultdict(int)
 
     def log(self, msg, level="debug"):
         full_msg = f"{self.name} {msg}"
         getattr(logger, level, logger.debug)(full_msg)
+
+    def reset_telemetry(self):
+        self.buffers = defaultdict(int)
+
+    def log_telemetry(self):
+        for name, elapsed in self.telemetry.items():
+            self.log(f"{name} took {elapsed:.2f}s")
+
+    @contextmanager
+    def record_elapsed(self, telemetry_type, *resources):
+        t0 = time.time()
+        try:
+            yield resources
+        finally:
+            elapsed = time.time() - t0
+            self.telemetry[telemetry_type] += elapsed
 
     def _create_db(self):
         self.db = db_from_config(self.db_config)
@@ -74,6 +92,7 @@ class BufferedDatabaseIngestor(Process):
             raise RuntimeError(f"{self.name} could not push payload. Exciting")
 
         db.commit()
+        self.reset_telemetry()
 
         # Emplace metrics
         for metric in metrics:
