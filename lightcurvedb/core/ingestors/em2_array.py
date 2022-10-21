@@ -277,6 +277,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             job_size=len(best_lcs),
             unit="best_lightcurves",
         )
+        self.log_telemetry()
         return metric
 
     def determine_process_parameters(self):
