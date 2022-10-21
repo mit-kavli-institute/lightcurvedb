@@ -42,14 +42,14 @@ class LightcurveCorrector:
         logger.debug("Built quality flag mapping")
         self.tjd_map = contexts.get_tjd_mapping(sqlite_path)
         logger.debug("Built tjd mapping")
+        self.tic_map = contexts.get(sqlite_path).get_tic_mapping("ra", "dec")
+        logger.debug("Got ra-dec mapping")
 
         self._last_tic_miss = None
 
     def resolve_tic_parameters(self, tic_id, *fields):
         try:
-            row = contexts.get_tic_parameters(
-                self.sqlite_path, tic_id, *fields
-            )
+            row = self.tic_map[tic_id]
             result = tuple(row[field] for field in fields)
         except KeyError:
             result = one_off(tic_id, *TIC_PARAM_FIELDS)
