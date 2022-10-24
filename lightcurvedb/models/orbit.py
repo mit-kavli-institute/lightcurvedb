@@ -19,7 +19,8 @@ from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
-from lightcurvedb.models import CameraQuaternion, Frame
+from lightcurvedb.models.camera_quaternion import CameraQuaternion
+from lightcurvedb.models.frame import Frame
 
 ORBIT_DTYPE = [
     ("orbit_number", np.int32),
