@@ -276,13 +276,13 @@ def look_for_relevant_files(config, lc_path, tic_mask=None):
         context["ccd"] = int(context["ccd"])
         context["orbit_number"] = int(context["orbit_number"])
 
-        observed_n_times = observation_counts.get(context["tic_id"])
+        observed_n_times = observation_counts.get(context["tic_id"], 0)
         in_mask = tic_mask is not None and context["tic_id"] in tic_mask
         above_cutoff = (
             count_cutoff is not None and observed_n_times >= count_cutoff
         )
 
-        if in_mask or above_cutoff:
+        if not in_mask or above_cutoff:
             n_rejected += 1
             continue
 
