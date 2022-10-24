@@ -622,6 +622,13 @@ class EM2Plan:
         logger.debug(f"Processed files and generated {len(jobs)} jobs")
         self.jobs = jobs
 
+    def _get_unique_observed(self):
+        unique_observed = set()
+        for job in self.get_jobs():
+            key = (job.orbit_number, job.camera, job.ccd)
+            unique_observed.add(key)
+        return unique_observed
+
     def get_jobs(self):
         return self.jobs
 
