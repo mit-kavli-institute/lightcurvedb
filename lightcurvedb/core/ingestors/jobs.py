@@ -246,7 +246,10 @@ def look_for_relevant_files(config, lc_path, tic_mask=None):
         )
         with db_from_config(config) as db:
             logger.debug(f"Querying for existing observations for {lc_path}")
-            observation_counts = dict(db.execute(lc_histogram_q))
+            observation_counts = {
+                tic_id: lc_count
+                for tic_id, lc_count in db.execute(lc_histogram_q)
+            }
             if len(observation_counts) > 0:
                 counter = Counter(observation_counts.values())
                 count_cutoff, _ = counter.most_common(1)[0]
