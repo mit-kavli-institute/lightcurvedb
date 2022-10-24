@@ -682,42 +682,6 @@ class DB(
         q = self.query_lightcurves(tics=tics, apertures=apertures, types=types)
         return q.yield_per(chunksize)
 
-    def get_lightcurve(self, tic, lightcurve_type, aperture, resolve=True):
-        """
-        Retrieves a single lightcurve row.
-
-        Arguments
-        ---------
-        tic : int
-            The TIC identifier of the lightcurve.
-        aperture : str
-            The aperture name of the lightcurve.
-        lightcurve_type : str
-            The name of the lightcurve's type.
-        resolve : bool, optional
-            If True return a single Lightcurve object, or a query instance.
-
-        Returns
-        -------
-        Lightcurve or sqlalchemy.orm.query.Query
-            Returns either a single Lightcurve instance or a Query object.
-
-        Raises
-        ------
-        sqlalchemy.orm.exc.NoResultFound
-            No lightcurve matched your requirements.
-
-        """
-        q = self.lightcurves.filter(
-            models.Lightcurve.tic_id == tic,
-            models.Lightcurve.aperture_id == aperture,
-            models.Lightcurve.lightcurve_type_id == lightcurve_type,
-        )
-
-        if resolve:
-            return q.one()
-        return q
-
     def lightcurves_from_tics(self, tics, **kw_filters):
         """
         Retrieves lightcurves from a collection of TIC identifiers.
