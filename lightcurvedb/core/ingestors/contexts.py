@@ -401,8 +401,10 @@ def get_tic_mapping(conn, parameter, *parameters):
     stmt = TicParameter.dynamic_select(*param_order)
     mapping = {}
     for tic_id, *parameters in conn.execute(stmt).fetchall():
-        values = dict(zip(param_order[1:], map(_none_to_nan, parameters)))
-        mapping[tic_id] = values
+        row = {}
+        for name, remote_value in zip(param_order[1:], parameters):
+            row[name] = _none_to_nan(remote_value)
+        mapping[tic_id] = row
     return mapping
 
 

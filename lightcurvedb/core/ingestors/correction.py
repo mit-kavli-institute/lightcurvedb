@@ -54,6 +54,7 @@ class LightcurveCorrector:
         except KeyError:
             result = one_off(tic_id, *TIC_PARAM_FIELDS)
             row = dict(zip(TIC_PARAM_FIELDS, result))
+            self.tic_map[tic_id] = result
             result = tuple(row[field] for field in fields)
 
             if self._last_tic_miss is None:
