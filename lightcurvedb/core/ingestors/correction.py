@@ -50,12 +50,10 @@ class LightcurveCorrector:
     def resolve_tic_parameters(self, tic_id, *fields):
         try:
             row = self.tic_map[tic_id]
-            result = tuple(row[field] for field in fields)
         except KeyError:
-            result = one_off(tic_id, *TIC_PARAM_FIELDS)
-            row = dict(zip(TIC_PARAM_FIELDS, result))
-            self.tic_map[tic_id] = result
-            result = tuple(row[field] for field in fields)
+            remote = one_off(tic_id, *TIC_PARAM_FIELDS)
+            row = dict(zip(TIC_PARAM_FIELDS, remote))
+            self.tic_map[tic_id] = row
 
             if self._last_tic_miss is None:
                 self._last_tic_miss = datetime.now()
@@ -69,6 +67,7 @@ class LightcurveCorrector:
                         "the ingesting orbit?"
                     )
 
+        result = tuple(row[field] for field in fields)
         return result
 
     def correct_for_earth_time(self, tic_id, tjd_time_array):
