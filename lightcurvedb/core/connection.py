@@ -8,7 +8,7 @@ from time import sleep
 import numpy as np
 from loguru import logger
 from pandas import read_sql as pd_read_sql
-from sqlalchemy import and_, exc, func
+from sqlalchemy import exc, func
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
@@ -364,7 +364,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.Lightcurve)
+        return self.session.query(models.ArrayOrbitLightcurve)
 
     @property
     def lightcurve_types(self):
@@ -375,7 +375,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.LightcurveType)
+        return self.session.query(models.ArrayOrbitLightcurveType)
 
     # Begin orbit methods
     def query_orbits_by_id(self, orbit_numbers):
@@ -603,11 +603,13 @@ class DB(
         """
         q = self.lightcurves
         if apertures is not None:
-            q = q.filter(models.Lightcurve.aperture_id.in_(apertures))
+            q = q.join(models.ArrayOrbitLightcurve.aperture)
+            q = q.filter(models.Aperture.in_(apertures))
         if types is not None:
-            q = q.filter(models.Lightcurve.lightcurve_type_id.in_(types))
+            q = q.join(models.ArrayOrbitLightcurve.lightcurve_type)
+            q = q.filter(models.LightcurveType.name.in_(types))
         if tics is not None:
-            q = q.filter(models.Lightcurve.tic_id.in_(tics))
+            q = q.filter(models.ArrayOrbitLightcurve.tic_id.in_(tics))
         return q
 
     def load_from_db(self, tics=None, apertures=None, types=None):
@@ -699,7 +701,7 @@ class DB(
             Keyword arguments to pass into ``filter_by``.
         """
         q = self.lightcurves.filter(
-            models.Lightcurve.tic_id.in_(tics)
+            models.ArrayOrbitLightcurve.tic_id.in_(tics)
         ).filter_by(**kw_filters)
         return q
 
@@ -749,15 +751,14 @@ class DB(
         if not isiterable(orbit_numbers):
             orbit_numbers = [orbit_numbers]
 
-        col = models.Lightcurve.tic_id
+        col = models.ArrayOrbitLightcurve.tic_id
 
         if unique:
             col = col.distinct()
 
         q = (
             self.query(col)
-            .join(models.Lightcurve.observations)
-            .join(models.Observation.orbit)
+            .join(models.ArrayOrbitLightcurve.orbit)
             .filter(models.Orbit.orbit_number.in_(orbit_numbers))
         )
 
@@ -767,7 +768,7 @@ class DB(
             q = q.filter(models.Observation.ccd.in_(ccds))
 
         if sort:
-            q = q.order_by(models.Lightcurve.tic_id.asc())
+            q = q.order_by(models.ArrayOrbitLightcurve.tic_id.asc())
 
         if resolve:
             return [r for r, in q.all()]
@@ -820,14 +821,13 @@ class DB(
         if not isiterable(sectors):
             sectors = [sectors]
 
-        col = models.Lightcurve.tic_id
+        col = models.ArrayOrbitLightcurve.tic_id
         if unique:
             col = col.distinct()
 
         q = (
             self.query(col)
-            .join(models.Lightcurve.observations)
-            .join(models.Observation.orbit)
+            .join(models.ArrayOrbitLightcurve.orbit)
             .filter(models.Orbit.sector.in_(sectors))
         )
 
@@ -837,7 +837,7 @@ class DB(
             q = q.filter(models.Observation.ccd.in_(ccds))
 
         if sort:
-            q = q.order_by(models.Lightcurve.tic_id.asc())
+            q = q.order_by(models.ArrayOrbitLightcurve.tic_id.asc())
 
         if resolve:
             return [r for r, in q.all()]
@@ -871,9 +871,7 @@ class DB(
             Returns either the result of the query or the Query object itself.
         """
 
-        q = self.lightcurves.join(models.Lightcurve.observations).join(
-            models.Observation.orbit
-        )
+        q = self.lightcurves.join(models.ArrayLightcurve.orbit)
 
         if isinstance(orbit_numbers, int):
             q = q.filter(models.Orbit.orbit_number == orbit_numbers)
@@ -881,85 +879,9 @@ class DB(
             q = q.filter(models.Orbit.orbit_number.in_(orbit_numbers))
 
         if cameras:
-            q = q.filter(models.Observation.camera.in_(cameras))
+            q = q.filter(models.ArrayOrbitLightcurve.camera.in_(cameras))
         if ccds:
-            q = q.filter(models.Observation.ccd.in_(ccds))
-
-        if resolve:
-            return q.all()
-        return q
-
-    def lightcurves_from_best_aperture(self, q=None, resolve=True):
-        """
-        Find Lightcurve rows based upon their best aperture.
-
-        Arguments
-        ---------
-        q : sqlalchemy.orm.query.Query, optional
-            An initial Lightcurve Query. If left to None then all lightcurves
-            will be queried for.
-        resolve : bool, optional
-            If True execute the Query into a list of Lightcurves. If False,
-            return a Query object.
-
-        Returns
-        -------
-        list of ``Lightcurves`` or a ``sqlalchemy.orm.query.Query``
-
-
-        Notes
-        -----
-        This methods finds Lightcurves by JOINing them onto the BestAperture
-        table. SQL JOINs find the cartesian product of two tables. This
-        product is filtered by ``Lightcurve.tic_id == BestApertureMap.tic_id``
-        and ``Lightcurve.aperture_id == BestApertureMap.aperture_id``. In this
-        way the catesian product is filtered and the expected Best Aperture
-        filter is achieved.
-
-        For best results additional filters should be applied as this JOIN
-        will, by default, attempt to find the cartesian product of the
-        entire lightcurve and best aperture tables.
-
-        This can be done by first passing in a ``sqlalchemy.orm.query.Query``
-        object as the ``q`` parameter. This query must be on the
-        ``Lightcurve`` table.
-
-        ::
-
-            # Example
-            q = db.lightcurves_by_orbit(23, resolve=False) # Get init. query
-
-            lcs = db.lightcurves_from_best_apertures(q=q)
-
-            # Retrives lcs that appear in orbit 23 and filtered
-            # for best aperture.
-        """
-        bestap_tic_id = models.BestApertureMap.tic_id
-        bestap_aperture_id = models.BestApertureMap.aperture_id
-
-        and_clause = and_(
-            models.Lightcurve.tic_id == bestap_tic_id,
-            models.Lightcurve.aperture_id == bestap_aperture_id,
-        )
-
-        if q is None:
-            q = self.lightcurves
-
-        q = q.join(models.BestApertureMap, and_clause)
-        if resolve:
-            return q.all()
-        return q
-
-    def lightcurve_id_map(self, filters=None, resolve=True):
-        if not filters:
-            filters = []
-
-        q = self.query(
-            models.Lightcurve.id,
-            models.Lightcurve.tic_id,
-            models.Lightcurve.aperture_id,
-            models.Lightcurve.lightcurve_type_id,
-        ).filter(*filters)
+            q = q.filter(models.ArrayOrbitLightcurve.ccd.in_(ccds))
 
         if resolve:
             return q.all()
