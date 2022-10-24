@@ -725,7 +725,7 @@ class ArrayOrbitLightcurveAPIMixin:
             .where(
                 ArrayOrbitLightcurve.tic_id == tic_id,
                 Aperture.name == aperture,
-                LightcurveType.name == LightcurveType,
+                LightcurveType.name == lightcurve_type,
             )
             .order_by(Orbit.orbit_number)
         )
