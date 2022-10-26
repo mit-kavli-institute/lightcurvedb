@@ -62,7 +62,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.Orbit)
+        return self.query(models.Orbit)
 
     @property
     def apertures(self):
@@ -73,7 +73,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.Aperture)
+        return self.query(models.Aperture)
 
     @property
     def lightcurves(self):
@@ -84,7 +84,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.Lightcurve)
+        return self.query(models.Lightcurve)
 
     @property
     def lightcurve_types(self):
@@ -95,7 +95,7 @@ class DB(
         -------
         sqlalchemy.Query
         """
-        return self.session.query(models.LightcurveType)
+        return self.query(models.LightcurveType)
 
     # Begin orbit methods
     def query_orbits_by_id(self, orbit_numbers):
@@ -739,7 +739,7 @@ class DB(
         permanent.
         """
         upsert = models.BestApertureMap.set_best_aperture(tic_id, aperture)
-        self.session.execute(upsert)
+        self.execute(upsert)
 
     def unset_best_aperture(self, tic_id):
         """
@@ -757,7 +757,7 @@ class DB(
         to be made permanent.
         """
         check = (
-            self.session.query(models.BestApertureMap)
+            self.query(models.BestApertureMap)
             .filter(models.BestApertureMap.tic_id == tic_id)
             .one_or_none()
         )
@@ -790,7 +790,7 @@ class DB(
                 models.Observation.tic_id.asc(),
             )
         )
-        return pd_read_sql(q.statement, self.session.bind)
+        return pd_read_sql(q.statement, self.bind)
 
     def get_partitions_df(self, model):
         """
