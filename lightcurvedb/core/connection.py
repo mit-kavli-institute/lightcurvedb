@@ -1,5 +1,3 @@
-from __future__ import division, print_function
-
 import contextlib
 import os
 import warnings
@@ -12,7 +10,7 @@ from sqlalchemy import and_, exc, func
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
-from lightcurvedb.core.engines import engine_from_config
+from lightcurvedb.core.engines import thread_safe_engine
 from lightcurvedb.core.psql_tables import PGCatalogMixin
 from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
@@ -1199,7 +1197,7 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
-    engine = engine_from_config(
+    engine = thread_safe_engine(
         os.path.expanduser(config_path if config_path else __DEFAULT_PATH__),
         **engine_kwargs,
     )
