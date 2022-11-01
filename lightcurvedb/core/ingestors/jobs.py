@@ -3,7 +3,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import partial
 from itertools import chain, product
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from typing import List, Optional
 
 import pandas as pd
@@ -12,6 +12,7 @@ from click import echo
 from loguru import logger
 from tqdm import tqdm
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import (
     Aperture,
     ArrayOrbitLightcurve,
@@ -223,10 +224,51 @@ def get_observed_from_path(db, path):
     return result
 
 
-def look_for_relevant_files(wanted_tic_ids, lc_path):
-    h5_files = lc_path.glob("*.h5")
-    contexts = []
-    n_accepted = 0
+def look_for_relevant_files(config, lc_path, tic_mask=None):
+    try:
+        h5_files = lc_path.glob("*.h5")
+        contexts = []
+        n_accepted = 0
+        n_rejected = 0
+        path_context = extract_pdo_path_context(lc_path)
+        lc_histogram_q = (
+            sa.select(
+                ArrayOrbitLightcurve.tic_id,
+                sa.func.count(ArrayOrbitLightcurve.tic_id).label("lc_count"),
+            )
+            .join(ArrayOrbitLightcurve.orbit)
+            .filter(
+                Orbit.orbit_number == path_context["orbit_number"],
+                ArrayOrbitLightcurve.camera == path_context["camera"],
+                ArrayOrbitLightcurve.ccd == path_context["ccd"],
+            )
+            .group_by(ArrayOrbitLightcurve.tic_id)
+        )
+        with db_from_config(config) as db:
+            logger.debug(f"Querying for existing observations for {lc_path}")
+            observation_counts = {
+                tic_id: lc_count
+                for tic_id, lc_count in db.execute(lc_histogram_q)
+            }
+            if len(observation_counts) > 0:
+                counter = Counter(observation_counts.values())
+                count_cutoff, _ = counter.most_common(1)[0]
+                logger.debug(
+                    f"Will ignore files that have >= {count_cutoff} "
+                    "observations for orbit "
+                    "{orbit_number} camera {camera} ccd {ccd}".format(
+                        **path_context
+                    )
+                )
+            else:
+                count_cutoff = None
+    except KeyError:
+        logger.warning(
+            "Could not determine good orbit, camera, ccd contexts for "
+            f"{lc_path}"
+        )
+        return []
+
     for path in h5_files:
         context = extract_pdo_path_context(path)
         context["tic_id"] = int(context["tic_id"])
@@ -234,12 +276,24 @@ def look_for_relevant_files(wanted_tic_ids, lc_path):
         context["ccd"] = int(context["ccd"])
         context["orbit_number"] = int(context["orbit_number"])
 
-        if context["tic_id"] in wanted_tic_ids:
-            context["path"] = path
-            contexts.append(context)
-            n_accepted += 1
+        observed_n_times = observation_counts.get(context["tic_id"], 0)
+        in_mask = tic_mask is not None and context["tic_id"] in tic_mask
+        above_cutoff = (
+            count_cutoff is not None and observed_n_times >= count_cutoff
+        )
 
-    logger.debug(f"Found {n_accepted} relevant files in {lc_path}")
+        if not in_mask or above_cutoff:
+            n_rejected += 1
+            continue
+
+        context["path"] = path
+        contexts.append(context)
+        n_accepted += 1
+
+    logger.debug(
+        f"Found {n_accepted} relevant files in {lc_path}, "
+        f"rejecting {n_rejected} files"
+    )
     return contexts
 
 
@@ -533,7 +587,6 @@ class EM2Plan:
         self.recursive = recursive
         self.db = db
         self._look_for_files()
-        self.get_observed_counts()
         self._preprocess_files()
 
     def __repr__(self):
@@ -546,86 +599,27 @@ class EM2Plan:
         return "\n".join(messages)
 
     def _look_for_files(self):
-        contexts = []
-        for source_dir in self.source_dirs:
-            logger.debug(f"Looking for h5 files in {source_dir}")
-            if self.recursive:
-                files = source_dir.rglob("*.h5")
-            else:
-                files = source_dir.glob("*.h5")
-
-            files = list(files)
-
-            with Pool() as pool:
-                results = pool.imap(extract_pdo_path_context, files)
-                for path, context in zip(tqdm(files), results):
-                    context["path"] = path
-                    contexts.append(context)
-
-            logger.debug(f"Found {len(files)} files in {source_dir}")
+        n_workers = min((len(self.source_dirs), cpu_count()))
+        func = partial(look_for_relevant_files, self.db.config)
+        with Pool(n_workers) as pool:
+            results = pool.imap(func, self.source_dirs)
+            contexts = list(chain.from_iterable(results))
 
         self._tic_ids = {int(c["tic_id"]) for c in contexts}
         self.contexts = contexts
 
-    def get_observed_counts(self):
-        q = (
-            sa.select(
-                ArrayOrbitLightcurve.tic_id,
-                Orbit.orbit_number,
-                sa.func.count(ArrayOrbitLightcurve.id),
-            )
-            .join(ArrayOrbitLightcurve.orbit)
-            .where(ArrayOrbitLightcurve.tic_id.in_(self.tic_ids))
-            .group_by(ArrayOrbitLightcurve.tic_id, Orbit.orbit_number)
-        )
-        logger.debug(
-            f"Querying existing lightcurves for {len(self.tic_ids)} TIC ids"
-        )
-        observation_counts = {
-            (tic_id, orbit): count
-            for tic_id, orbit, count in self.db.execute(q)
-        }
-
-        self.observation_counts = observation_counts
-        if len(observation_counts) > 0:
-            counter = Counter(observation_counts.values())
-            self.count_cutoff, _ = counter.most_common(1)[0]
-            logger.debug(
-                f"Will ignore files that have {self.count_cutoff} existing "
-                "lightcurves"
-            )
-        else:
-            self.count_cutoff = None
-            logger.debug(
-                "No existing observations found. Allowing all found files"
-            )
-
     def _preprocess_files(self):
         logger.debug(f"Preprocessing {len(self.contexts)} files")
         jobs = []
-        n_rejected = 0
         with Pool() as pool:
             results = pool.imap_unordered(
                 EM2_H5_Job.from_path_context,
                 tqdm(self.contexts, unit=" files"),
                 chunksize=1000,
             )
-            if self.count_cutoff is not None:
-                for job in results:
-                    n_lcs = self.observation_counts.get(
-                        (job.tic_id, job.orbit_number), 0
-                    )
-                    if n_lcs < self.count_cutoff:
-                        jobs.append(job)
-                    else:
-                        n_rejected += 1
-            else:
-                jobs.extend(results)
+            jobs.extend(results)
 
-        logger.debug(
-            f"Processed files and generated {len(jobs)} jobs,"
-            f"ignoring {n_rejected} files."
-        )
+        logger.debug(f"Processed files and generated {len(jobs)} jobs")
         self.jobs = jobs
 
     def _get_unique_observed(self):
@@ -667,7 +661,6 @@ class EM2_ArrayTICListPlan(EM2Plan):
         self.db = db
         self._tic_ids = set(tic_ids)
         self._look_for_files()
-        self.get_observed_counts()
         self._preprocess_files()
 
     def _look_for_files(self):
@@ -690,7 +683,9 @@ class EM2_ArrayTICListPlan(EM2Plan):
             paths.append(lc_path)
 
         with Pool() as pool:
-            func = partial(look_for_relevant_files, self.tic_ids)
+            func = partial(
+                look_for_relevant_files, self.db.config, tic_mask=self.tic_ids
+            )
             contexts = list(
                 chain.from_iterable(pool.imap_unordered(func, paths))
             )
