@@ -626,7 +626,7 @@ class ArrayOrbitLightcurveAPIMixin:
                 tmag = one_off(lc.tic_id, "tmag")[0]
                 stellar_param_info[lc.tic_id] = tmag
             structs.append(lc.to_numpy(normalize=True, offset=tmag))
-        return np.concatenate(lc)
+        return np.concatenate(structs)
 
     def get_missing_id_ranges(self):
         """
@@ -725,7 +725,7 @@ class ArrayOrbitLightcurveAPIMixin:
             .where(
                 ArrayOrbitLightcurve.tic_id == tic_id,
                 Aperture.name == aperture,
-                LightcurveType.name == LightcurveType,
+                LightcurveType.name == lightcurve_type,
             )
             .order_by(Orbit.orbit_number)
         )
