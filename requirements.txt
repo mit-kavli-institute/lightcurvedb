@@ -14,3 +14,4 @@ pyquaternion
 tqdm
 loguru
 cachetools
+git+https://tessgit.mit.edu/wcfong/configurables.git@v-0.1.4
