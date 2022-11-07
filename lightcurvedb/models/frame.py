@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 from astropy.io import fits
 from psycopg2 import extensions as ext
 from sqlalchemy import (
@@ -250,22 +249,3 @@ class Frame(QLPModel, CreatedOnMixin):
     @tjd.expression
     def tjd(cls):
         return cls.mid_tjd
-
-
-class FrameAPIMixin(object):
-    """
-    Provide methods which iteract with the Frame table
-    """
-
-    def get_mid_tjd_mapping(self, frame_type="Raw FFI"):
-        cameras = self.query(Frame.camera).distinct().all()
-        mapping = {}
-        for (camera,) in cameras:
-            q = self.query(Frame.cadence, Frame.mid_tjd).filter(
-                Frame.camera == camera, Frame.frame_type_id == frame_type
-            )
-            df = pd.read_sql(
-                q.statement, self.bind, index_col=["cadence"]
-            ).sort_index()
-            mapping[camera] = df
-        return mapping
