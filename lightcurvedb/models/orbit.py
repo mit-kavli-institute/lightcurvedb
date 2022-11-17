@@ -5,8 +5,8 @@ import numpy as np
 from sqlalchemy import (
     Boolean,
     Column,
-    Integer,
     Sequence,
+    SmallInteger,
     String,
     func,
     inspect,
@@ -43,9 +43,9 @@ class Orbit(QLPModel, CreatedOnMixin):
     __tablename__ = "orbits"
 
     # Model Attributes
-    id = Column(Integer, Sequence("orbit_id_seq"), primary_key=True)
-    orbit_number = Column(Integer, unique=True, nullable=False)
-    sector = Column(Integer, nullable=False)
+    id = Column(SmallInteger, Sequence("orbit_id_seq"), primary_key=True)
+    orbit_number = Column(SmallInteger, unique=True, nullable=False)
+    sector = Column(SmallInteger, nullable=False)
 
     right_ascension = high_precision_column(nullable=False)
     declination = high_precision_column(nullable=False)
@@ -57,7 +57,9 @@ class Orbit(QLPModel, CreatedOnMixin):
     quaternion_q = high_precision_column(nullable=False)
 
     crm = Column(Boolean, nullable=False)  # Has been correct for CRM
-    crm_n = Column(Integer, nullable=False)  # Cosmic Ray Mitigation Number
+    crm_n = Column(
+        SmallInteger, nullable=False
+    )  # Cosmic Ray Mitigation Number
     _basename = Column("basename", String(256), nullable=False)
 
     # Relationships

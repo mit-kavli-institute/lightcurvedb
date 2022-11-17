@@ -1,18 +1,13 @@
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    ForeignKey,
-    Numeric,
-    SmallInteger,
-    String,
-)
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Column, Numeric, SmallInteger
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin, NameAndDescriptionMixin
-from lightcurvedb.core.sql import psql_safe_str
+from lightcurvedb.core.base_model import (
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
+    QLPModel,
+)
 
 
 class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
@@ -102,55 +97,3 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         outer_r = float(vals[2])
 
         return star_r, inner_r, outer_r
-
-
-class BestApertureMap(QLPModel, CreatedOnMixin):
-    """
-    A mapping of lightcurves to their 'best' aperture. This model
-    is defined so TICs will contain 1 best aperture. This is enforced
-    on a PSQL constraint so behavior alterations will require a
-    database migration.
-
-    Attributes
-    ----------
-    aperture_id : str
-        Foreign key to the "best aperture". Do not edit unless you're
-        confident in the change will be a valid Foreign Key.
-    tic_id : int
-        The TIC identifier. This serves as the primary key of the model
-        so it must be unique.
-
-    aperture : Aperture
-        Returns the Aperture model related to this BestApertureMap
-        instance. Accessing this attribute will result in a SQL query
-        emission.
-    """
-
-    __tablename__ = "best_apertures"
-    __table_args__ = (UniqueConstraint("tic_id", name="best_ap_unique_tic"),)
-
-    aperture_id = Column(
-        ForeignKey(Aperture.id, onupdate="CASCADE", ondelete="RESTRICT"),
-        primary_key=True,
-    )
-    tic_id = Column(BigInteger, primary_key=True)
-
-    aperture = relationship("Aperture", back_populates="best_apertures")
-
-    @classmethod
-    def set_best_aperture(cls, tic_id, aperture):
-        q = insert(cls.__table__)
-        if isinstance(aperture, Aperture):
-            q = q.values(
-                tic_id=tic_id, aperture_id=aperture.id
-            ).on_conflict_do_update(
-                constraint="best_ap_unique_tic",
-                set_={"aperture_id": aperture.id},
-            )
-        else:
-            q = q.values(
-                tic_id=tic_id, aperture_id=aperture
-            ).on_conflict_do_update(
-                constraint="best_ap_unique_tic", set_={"aperture_id": aperture}
-            )
-        return q
