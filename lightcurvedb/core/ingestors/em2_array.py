@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as psql_insert
 from tqdm import tqdm
 
 from lightcurvedb import models
-from lightcurvedb.core.ingestors import em2_lightcurves as em2
+from lightcurvedb.core.ingestors import lightcurves as em2
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 
