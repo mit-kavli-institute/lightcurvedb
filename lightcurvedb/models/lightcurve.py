@@ -41,7 +41,7 @@ class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     id = sa.Column(sa.SmallInteger, primary_key=True, unique=True)
     lightcurves = relationship(
-        "ArrayLightcurve", back_populates="lightcurve_type"
+        "ArrayOrbitLightcurve", back_populates="lightcurve_type"
     )
 
     def __str__(self):
