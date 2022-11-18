@@ -14,19 +14,6 @@ from lightcurvedb.core.ingestors.jobs import (
 from lightcurvedb.core.ingestors.lightpoints import ingest_merge_jobs
 
 
-def gaps_in_ids(id_array):
-    """
-    A naive slow approach to find missing numbers.
-    """
-    check_ids = set(id_array)
-
-    start = min(check_ids)
-    end = max(check_ids)
-    ref = set(range(start, end + 1))
-
-    return ref - check_ids
-
-
 @lcdbcli.group()
 @click.pass_context
 def lightcurve(ctx):
