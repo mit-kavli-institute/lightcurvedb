@@ -6,7 +6,7 @@ from loguru import logger
 
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
-from lightcurvedb.core.ingestors import em2_array as ingest_em2_array
+from lightcurvedb.core.ingestors import lightcurve_arrays as ingest_em2_array
 from lightcurvedb.core.ingestors.jobs import EM2_ArrayTICListPlan, EM2Plan
 
 
