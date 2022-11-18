@@ -40,7 +40,9 @@ class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     __tablename__ = "lightcurvetypes"
 
     id = sa.Column(sa.SmallInteger, primary_key=True, unique=True)
-    lightcurves = relationship("Lightcurve", back_populates="lightcurve_type")
+    lightcurves = relationship(
+        "ArrayLightcurve", back_populates="lightcurve_type"
+    )
 
     def __str__(self):
         return self.name

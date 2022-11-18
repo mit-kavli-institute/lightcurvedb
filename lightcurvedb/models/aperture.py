@@ -49,7 +49,9 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     outer_radius = Column(Numeric, nullable=False)
 
     # Relationships
-    lightcurves = relationship("Lightcurve", back_populates="aperture")
+    lightcurves = relationship(
+        "ArrayOrbitLightcurve", back_populates="aperture"
+    )
     best_apertures = relationship("BestApertureMap", back_populates="aperture")
 
     def __str__(self):
