@@ -10,7 +10,6 @@ from .spacecraft import SpacecraftEphemeris
 __all__ = [
     "Aperture",
     "ArrayOrbitLightcurve",
-    "BestApertureMap",
     "BestOrbitLightcurve",
     "CameraQuaternion",
     "FrameType",
