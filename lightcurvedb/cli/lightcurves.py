@@ -81,11 +81,9 @@ def ingest_dir(
                 contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
-            ctx.obj["dbconf"],
+            ctx.obj,
             jobs,
-            n_processes,
             cache_path,
-            log_level=ctx.obj["log_level"],
         )
         logger.success("Done!")
 
@@ -131,10 +129,8 @@ def ingest_tic_list(
                 contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
-            ctx.obj["dbconf"],
+            ctx,
             jobs,
-            n_processes,
             cache_path,
-            log_level=ctx.obj["log_level"],
         )
         click.echo("Done!")

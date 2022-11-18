@@ -353,22 +353,24 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     return workers
 
 
-def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
+def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    with tqdm(total=len(jobs), unit=" jobs") as bar:
+    with cli_context["db_conf"] as db, tqdm(
+        total=len(jobs), unit=" jobs"
+    ) as bar:
         logger.remove()
         logger.add(
             lambda msg: tqdm.write(msg, end=""),
             colorize=True,
-            level=log_level.upper(),
+            level=cli_context["log_level"].upper(),
             enqueue=True,
         )
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
             db.config,
-            n_processes,
+            cli_context["n_processes"],
             job_queue=job_queue,
             cache_path=cache_path,
         )
@@ -385,6 +387,7 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
             sleep(1)
 
         job_queue.join()
+
     logger.debug("Waiting for workers to finish")
     for worker in workers:
         worker.join()
