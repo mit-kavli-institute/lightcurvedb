@@ -29,9 +29,6 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     lightcurves : list of Lightcurves
         Returns all lightcurves associated with this Aperture. Accessing
         this attribute will result in a SQL query emission.
-    best_apertures : list of BestApertureMap
-        Returns all mappings of BestApertureMap related to this Aperture.
-        Accessing this attribute will result in a SQL query emission.
     """
 
     __tablename__ = "apertures"
@@ -52,7 +49,6 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     lightcurves = relationship(
         "ArrayOrbitLightcurve", back_populates="aperture"
     )
-    best_apertures = relationship("BestApertureMap", back_populates="aperture")
 
     def __str__(self):
         return self.name
