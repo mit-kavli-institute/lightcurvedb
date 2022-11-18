@@ -14,14 +14,11 @@ from sqlalchemy.orm import sessionmaker
 from lightcurvedb import models
 from lightcurvedb.core.engines import engine_from_config
 from lightcurvedb.core.psql_tables import PGCatalogMixin
-from lightcurvedb.io.procedures import procedure
 from lightcurvedb.models.best_lightcurve import BestOrbitLightcurveAPIMixin
 from lightcurvedb.models.frame import FRAME_DTYPE, FrameAPIMixin
 from lightcurvedb.models.lightcurve import ArrayOrbitLightcurveAPIMixin
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.models.metrics import QLPMetricAPIMixin
 from lightcurvedb.models.orbit import ORBIT_DTYPE, OrbitAPIMixin
-from lightcurvedb.models.table_track import TableTrackerAPIMixin
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.type_check import isiterable
 
@@ -309,7 +306,6 @@ class DB(
     ORM_DB,
     BestOrbitLightcurveAPIMixin,
     FrameAPIMixin,
-    TableTrackerAPIMixin,
     OrbitAPIMixin,
     ArrayOrbitLightcurveAPIMixin,
     PGCatalogMixin,
@@ -1032,43 +1028,6 @@ class DB(
             .join(models.Lightpoint.lightcurve)
             .filter(models.Lightpoint.lightcurve_id.in_(ids))
             .group_by(models.Lightpoint.lightcurve_id)
-        )
-
-    def get_best_aperture_data(self, tic_id, *columns):
-        """
-        Build a structured numpy array with the best aperture lightcurve
-        data associated with the given TIC id. Columns can also be provided
-        if one does not want the full representation of the lightcurve.
-
-        Parameters
-        ----------
-        tic_id : int
-            The TIC id to find lightcurve data for. This entry must
-            have defined lightcurves as well as an associated bestaperture
-            entry.
-        *columns : variadic str, optional
-            If empty all columns of Lightpoint will be returned. Otherwise,
-            one may specify a subset of Lightpoint columns. These names
-            must appear as they do on the Lightpoint model.
-        Returns
-        ------
-        A structured numpy.ndarray with Lightpoint fieldnames as the
-        field keys.
-
-        Raises
-        ------
-        InternalError:
-            No data was found for this TIC id.
-        """
-        if not columns:
-            columns = models.Lightpoint.get_columns()
-
-        stmt = procedure.get_bestaperture_data(tic_id, *columns)
-        return np.array(
-            list(map(tuple, self.execute(stmt))),
-            dtype=[
-                (column, LIGHTPOINT_NP_DTYPES[column]) for column in columns
-            ],
         )
 
 

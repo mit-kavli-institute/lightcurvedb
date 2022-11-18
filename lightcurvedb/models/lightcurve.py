@@ -109,21 +109,26 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
             ("quality_flags", "uint16"),
         ]
     )
-    tic_id = sa.Column(sa.BigInteger, primary_key=True)
-    camera = sa.Column(sa.SmallInteger, primary_key=True)
-    ccd = sa.Column(sa.SmallInteger, primary_key=True)
+    tic_id = sa.Column(sa.BigInteger, primary_key=True, index=True)
+    camera = sa.Column(sa.SmallInteger, primary_key=True, index=True)
+    ccd = sa.Column(sa.SmallInteger, primary_key=True, index=True)
     orbit_id = sa.Column(
         sa.SmallInteger,
         sa.ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     )
     aperture_id = sa.Column(
         sa.SmallInteger,
         sa.ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"),
         primary_key=True,
+        index=True,
     )
     lightcurve_type_id = sa.Column(
-        sa.SmallInteger, sa.ForeignKey("lightcurvetypes.id"), primary_key=True
+        sa.SmallInteger,
+        sa.ForeignKey("lightcurvetypes.id"),
+        primary_key=True,
+        index=True,
     )
 
     cadences = sa.Column(psql.ARRAY(sa.BigInteger, dimensions=1))

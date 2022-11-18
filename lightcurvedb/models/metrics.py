@@ -19,7 +19,7 @@ from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 
 from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 
 
 class QLPStage(QLPModel, CreatedOnMixin):
@@ -31,6 +31,8 @@ class QLPStage(QLPModel, CreatedOnMixin):
     __tablename__ = "qlpstages"
     id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
     slug = Column(String(64), unique=True)
+    name = Column(String(64), unique=True)
+    description = Column(Text(), nullable=True)
 
     processes = relationship("QLPProcess", backref="stage")
 
@@ -100,6 +102,7 @@ class QLPProcess(QLPModel, CreatedOnMixin):
     @classmethod
     def current_version(cls):
         from lightcurvedb import __version__
+
         return cls.lcdb_version == __version__
 
 

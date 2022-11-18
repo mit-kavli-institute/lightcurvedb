@@ -4,7 +4,6 @@ from .camera_quaternion import CameraQuaternion
 from .frame import Frame, FrameType
 from .lightcurve import ArrayOrbitLightcurve, LightcurveType
 from .metrics import QLPOperation, QLPProcess, QLPStage
-from .observations import Observation
 from .orbit import Orbit
 from .spacecraft import SpacecraftEphemeris
 
@@ -21,7 +20,6 @@ __all__ = [
     "Lightcurve",
     "LightcurveType",
     "Lightpoint",
-    "Observation",
     "SpacecraftEphemeris",
     "QLPStage",
     "QLPProcess",
