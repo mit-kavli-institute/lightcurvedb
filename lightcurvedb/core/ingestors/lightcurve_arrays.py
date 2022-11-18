@@ -38,16 +38,6 @@ INGESTION_COLS = (
 ArrayLCPayload = namedtuple("ArrayLCPayload", INGESTION_COLS)
 
 
-def _nan_compat(array):
-    compat_arr = []
-    for elem in array:
-        if np.isnan(elem):
-            compat_arr.append("NaN")
-        else:
-            compat_arr.append(elem)
-    return compat_arr
-
-
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
     buffer_order = [
         models.ArrayOrbitLightcurve.__tablename__,
