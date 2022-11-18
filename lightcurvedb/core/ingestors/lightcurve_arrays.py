@@ -360,13 +360,17 @@ def ingest_jobs(cli_context, jobs, cache_path):
     with cli_context["db_conf"] as db, tqdm(
         total=len(jobs), unit=" jobs"
     ) as bar:
-        logger.remove()
-        logger.add(
-            lambda msg: tqdm.write(msg, end=""),
-            colorize=True,
-            level=cli_context["log_level"].upper(),
-            enqueue=True,
-        )
+        if "logfile" not in cli_context:
+            # If logging to standard out, we need to ensure loguru
+            # does not step over tqdm output.
+            logger.remove()
+            logger.add(
+                lambda msg: tqdm.write(msg, end=""),
+                colorize=True,
+                level=cli_context["log_level"].upper(),
+                enqueue=True,
+            )
+
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
             db.config,
