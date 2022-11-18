@@ -7,7 +7,7 @@ from loguru import logger
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import lightcurve_arrays as ingest_em2_array
-from lightcurvedb.core.ingestors.jobs import EM2_ArrayTICListPlan, EM2Plan
+from lightcurvedb.core.ingestors.jobs import DirectoryPlan, TICListPlan
 
 
 @lcdbcli.group()
@@ -29,13 +29,13 @@ def lightcurve(ctx):
 @click.option(
     "--tic-catalog-path-template",
     type=str,
-    default=EM2Plan.DEFAULT_TIC_CATALOG_TEMPLATE,
+    default=DirectoryPlan.DEFAULT_TIC_CATALOG_TEMPLATE,
     show_default=True,
 )
 @click.option(
     "--quality-flag-template",
     type=str,
-    default=EM2Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+    default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
     show_default=True,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
@@ -61,7 +61,7 @@ def ingest_dir(
             for directory in directories:
                 logger.info(f"Considering {directory}")
 
-            plan = EM2Plan(directories, db, recursive=recursive)
+            plan = DirectoryPlan(directories, db, recursive=recursive)
 
             jobs = plan.get_jobs()
             if tic_catalog:
@@ -97,7 +97,7 @@ def ingest_dir(
 @click.option(
     "--quality-flag-template",
     type=str,
-    default=EM2Plan.DEFAULT_QUALITY_FLAG_TEMPLATE,
+    default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
 )
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 @click.option("--fill-id-gaps", is_flag=True)
@@ -117,7 +117,7 @@ def ingest_tic_list(
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
-            plan = EM2_ArrayTICListPlan(tic_ids, db)
+            plan = TICListPlan(tic_ids, db)
             if fill_id_gaps:
                 plan.fill_id_gaps()
             jobs = plan.get_jobs()
