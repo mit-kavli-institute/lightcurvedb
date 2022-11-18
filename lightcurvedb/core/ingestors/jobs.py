@@ -6,19 +6,12 @@ from itertools import chain, product
 from multiprocessing import Pool, cpu_count
 
 import sqlalchemy as sa
-from click import echo
 from loguru import logger
 from tqdm import tqdm
 
 from lightcurvedb import db_from_config
-from lightcurvedb.models import (
-    Aperture,
-    ArrayOrbitLightcurve,
-    LightcurveType,
-    Orbit,
-)
+from lightcurvedb.models import ArrayOrbitLightcurve, Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
-from lightcurvedb.util.iter import chunkify
 
 
 @dataclass
@@ -39,82 +32,6 @@ class H5_Job:
             orbit_number=int(context["orbit_number"]),
         )
         return job
-
-
-PHYSICAL_LIMIT = {1, 2, 3, 4}
-
-
-def apply_physical_filter(filters, attr, tokens):
-    """
-    For cameras and ccds, if all of them are listed, don't bother with
-    a filter. Otherwise construct the filter object and apply it to the
-    list of filters.
-
-    Returns
-    -------
-    List of SQLAlchemy filters
-    """
-    if set(tokens) == PHYSICAL_LIMIT:
-        # No need to filter
-        return filters
-    return filters + [attr.in_(tokens)]
-
-
-def sqlite_accumulator(scalars, filter_col, base_q, maxlen=999):
-    """
-    SQLite has a max limit to how many scalar values can be present when
-    comparing a membership filter. Break apart the query using the max lengths
-    and accumulate the values in a list.
-
-    Parameters
-    ----------
-    scalars: iterable
-        An iterable of values to check against.
-    filter_col: SQLAlchemy column
-        The filter column to check membership with.
-    base_q: SQLAlchemy query
-        A base query to serve as a common entry point.
-    Returns
-    -------
-    list
-        A list of the specified results in ``base_q``.
-    """
-    chunks = list(chunkify(scalars, maxlen))
-    accumulator = []
-    echo("Chunkifying for {0}".format(base_q))
-    for chunk in tqdm(chunks):
-        q = base_q.filter(filter_col.in_(chunk))
-        accumulator.extend(q)
-    return accumulator
-
-
-def _yield_lightcurve_fields(db, background_name_template="%background%"):
-    """
-    Yield lightcurve apertures and types
-    """
-    bg_aperture_filter = Aperture.name.ilike(background_name_template)
-    bg_type_filter = LightcurveType.name.ilike(background_name_template)
-
-    fg_apertures = db.query(Aperture).filter(~bg_aperture_filter)
-    fg_types = db.query(LightcurveType).filter(
-        ~bg_type_filter, LightcurveType.name != "QSPMagnitude"
-    )
-
-    bg_apertures = db.query(Aperture).filter(bg_aperture_filter)
-    bg_types = db.query(LightcurveType).filter(bg_type_filter)
-
-    _iter = product(fg_apertures, fg_types)
-    for fg_aperture, fg_lightcurve_type in _iter:
-        yield fg_aperture.name, fg_lightcurve_type.name
-
-    _iter = product(bg_apertures, bg_types)
-    for bg_aperture, bg_lightcurve_type in _iter:
-        yield bg_aperture.name, bg_lightcurve_type.name
-
-
-def _tic_from_h5(path):
-    base = path.name
-    return int(base.split(".")[0])
 
 
 def look_for_relevant_files(config, lc_path, tic_mask=None):
