@@ -357,7 +357,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    with cli_context["db_conf"] as db, tqdm(
+    with cli_context["dbconf"] as db, tqdm(
         total=len(jobs), unit=" jobs"
     ) as bar:
         if "logfile" not in cli_context:

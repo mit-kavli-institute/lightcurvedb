@@ -129,7 +129,7 @@ def ingest_tic_list(
                 contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
-            ctx,
+            ctx.obj,
             jobs,
             cache_path,
         )
