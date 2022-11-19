@@ -49,6 +49,7 @@ def ingest_dir(
     quality_flag_template,
     scratch,
 ):
+    ctx.obj["n_processes"] = n_processes
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
