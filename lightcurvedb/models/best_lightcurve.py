@@ -6,6 +6,7 @@ from sqlalchemy.schema import UniqueConstraint
 from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.models.aperture import Aperture
 from lightcurvedb.models.lightcurve import ArrayOrbitLightcurve, LightcurveType
+from lightcurvedb.models.orbit import Orbit
 
 
 class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
@@ -73,7 +74,7 @@ class BestOrbitLightcurveAPIMixin:
         BEST_LC = BestOrbitLightcurve
         LC = ArrayOrbitLightcurve
 
-        q = sa.select(ArrayOrbitLightcurve)
+        q = sa.select(ArrayOrbitLightcurve).join(ArrayOrbitLightcurve.orbit)
         join_conditions = []
         filter_conditions = [LC.tic_id == tic_id]
 
@@ -94,6 +95,6 @@ class BestOrbitLightcurveAPIMixin:
             join_conditions.append(BEST_LC.tic_id == LC.tic_id)
             join_conditions.append(BEST_LC.orbit_id == LC.orbit_id)
             q = q.join(BEST_LC, sa.and_(*join_conditions))
-        q = q.where(*filter_conditions)
+        q = q.where(*filter_conditions).order_by(Orbit.orbit_number.asc())
 
         return self._process_lc_selection(q)
