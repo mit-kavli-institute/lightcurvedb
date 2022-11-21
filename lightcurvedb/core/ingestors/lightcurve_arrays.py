@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as psql_insert
 from tqdm import tqdm
 
 from lightcurvedb import models
-from lightcurvedb.core.ingestors import em2_lightcurves as em2
+from lightcurvedb.core.ingestors import lightcurves as em2
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
 
@@ -36,16 +36,6 @@ INGESTION_COLS = (
 )
 
 ArrayLCPayload = namedtuple("ArrayLCPayload", INGESTION_COLS)
-
-
-def _nan_compat(array):
-    compat_arr = []
-    for elem in array:
-        if np.isnan(elem):
-            compat_arr.append("NaN")
-        else:
-            compat_arr.append(elem)
-    return compat_arr
 
 
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
@@ -363,22 +353,28 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     return workers
 
 
-def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
+def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    with tqdm(total=len(jobs), unit=" jobs") as bar:
-        logger.remove()
-        logger.add(
-            lambda msg: tqdm.write(msg, end=""),
-            colorize=True,
-            level=log_level.upper(),
-            enqueue=True,
-        )
+    with cli_context["dbconf"] as db, tqdm(
+        total=len(jobs), unit=" jobs"
+    ) as bar:
+        if "logfile" not in cli_context:
+            # If logging to standard out, we need to ensure loguru
+            # does not step over tqdm output.
+            logger.remove()
+            logger.add(
+                lambda msg: tqdm.write(msg, end=""),
+                colorize=True,
+                level=cli_context["log_level"].upper(),
+                enqueue=True,
+            )
+
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
             db.config,
-            n_processes,
+            cli_context["n_processes"],
             job_queue=job_queue,
             cache_path=cache_path,
         )
@@ -395,6 +391,7 @@ def ingest_jobs(db, jobs, n_processes, cache_path, log_level):
             sleep(1)
 
         job_queue.join()
+
     logger.debug("Waiting for workers to finish")
     for worker in workers:
         worker.join()

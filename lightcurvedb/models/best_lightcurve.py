@@ -21,14 +21,20 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     )
 
     id = sa.Column(sa.BigInteger, primary_key=True)
-    tic_id = sa.Column(sa.BigInteger, nullable=False)
+    tic_id = sa.Column(sa.BigInteger, nullable=False, index=True)
 
-    aperture_id = sa.Column(sa.ForeignKey("apertures.id", ondelete="RESTRICT"))
+    aperture_id = sa.Column(
+        sa.ForeignKey("apertures.id", ondelete="RESTRICT"),
+        index=True,
+    )
     lightcurve_type_id = sa.Column(
-        sa.ForeignKey("lightcurvetypes.id", ondelete="RESTRICT")
+        sa.ForeignKey("lightcurvetypes.id", ondelete="RESTRICT"),
+        index=True,
     )
     orbit_id = sa.Column(
-        sa.ForeignKey("orbits.id", ondelete="RESTRICT"), nullable=False
+        sa.ForeignKey("orbits.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
 
     aperture = relationship("Aperture")

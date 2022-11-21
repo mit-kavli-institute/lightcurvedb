@@ -8,8 +8,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    Sequence,
     String,
+    Text,
     between,
     func,
 )
@@ -28,8 +28,10 @@ class QLPStage(QLPModel, CreatedOnMixin):
     """
 
     __tablename__ = "qlpstages"
-    id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
+    id = Column(Integer, primary_key=True)
     slug = Column(String(64), unique=True)
+    name = Column(String(64), unique=True)
+    description = Column(Text(), nullable=True)
 
     processes = relationship("QLPProcess", backref="stage")
 
@@ -69,7 +71,7 @@ class QLPProcess(QLPModel, CreatedOnMixin):
 
     __tablename__ = "qlpprocesses"
 
-    id = Column(Integer, Sequence("qlpprocess_id_seq"), primary_key=True)
+    id = Column(Integer, primary_key=True)
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
@@ -115,7 +117,6 @@ class QLPOperation(QLPModel, CreatedOnMixin):
     __tablename__ = "qlpoperations"
     id = Column(
         BigInteger,
-        Sequence("qlpoperation_id_seq"),
         primary_key=True,
     )
     process_id = Column(Integer, ForeignKey(QLPProcess.id), nullable=False)

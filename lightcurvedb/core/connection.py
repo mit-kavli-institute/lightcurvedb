@@ -1,17 +1,16 @@
 import os
 
-from loguru import logger
-from sqlalchemy import exc
+from sqlalchemy import Session
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core import mixins
-from lightcurvedb.core.engines import engine_from_config
+from lightcurvedb.core.engines import thread_safe_engine
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 
 
 class DB(
-    ORM_DB,
+    Session,
     mixins.BestOrbitLightcurveAPIMixin,
     mixins.FrameAPIMixin,
     mixins.OrbitAPIMixin,
