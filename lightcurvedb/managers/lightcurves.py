@@ -5,6 +5,7 @@ from functools import partial
 import cachetools
 import numpy as np
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb import db_from_config, models
 from lightcurvedb.core.tic8 import TIC8_DB
@@ -247,10 +248,16 @@ class LightcurveManager:
                 models.ArrayOrbitLightcurve.tic_id,
                 models.Aperture.name,
                 models.LightcurveType.name,
-                sa.func.array_agg(models.ArrayOrbitLightcurve.id),
+                sa.func.array_agg(
+                    aggregate_order_by(
+                        models.ArrayOrbitLightcurve.id,
+                        models.Orbit.orbit_number.asc(),
+                    )
+                ),
             )
             .join(models.ArrayOrbitLightcurve.aperture)
             .join(models.ArrayOrbitLightcurve.lightcurve_type)
+            .join(models.ArrayOrbitLightcurve.orbit)
             .where(
                 models.ArrayOrbitLightcurve.tic_id == tic_id,
                 models.Aperture.name == aperture,
