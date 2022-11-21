@@ -12,7 +12,7 @@ def add_lightcurvetype(ctx, lightcurve_type_name):
     """
     Adds a lightcurve-type definition to the database.
     """
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         check = (
             db.session.query(LightcurveType)
             .filter(LightcurveType == lightcurve_type_name)

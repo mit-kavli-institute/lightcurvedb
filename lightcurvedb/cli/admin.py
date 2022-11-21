@@ -32,7 +32,7 @@ def reload(ctx):
     """
     from lightcurvedb.io.procedures.procedure import _yield_procedure_ddl
 
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         for ddl in _yield_procedure_ddl():
             click.echo("Executing {0}".format(ddl))
             db.execute(ddl)
@@ -65,7 +65,7 @@ def list_defined(ctx):
             WHERE routines.specific_schema='my_specified_schema_name'
             ORDER BY routines.routine_name, parameters.ordinal_position;
     """
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         results = db.execute(text(RAW_SQL))
         click.echo(
             tabulate(
@@ -98,7 +98,7 @@ def state(ctx):
     default=["pid", "state", "application_name", "query"],
 )
 def get_all_queries(ctx, columns):
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         q = db.query(*columns).filter(
             PGStatActivity.database == "lightpointdb"
         )
@@ -116,7 +116,7 @@ def get_all_queries(ctx, columns):
     default=["pid", "query", "application_name", "blocked_by"],
 )
 def get_blocked_queries(ctx, columns):
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         q = db.query(*columns).filter(
             PGStatActivity.database == "lightpointdb",
             PGStatActivity.is_blocked(),
@@ -136,7 +136,7 @@ def get_blocked_queries(ctx, columns):
     default=["pid", "state", "application_name", "query"],
 )
 def get_info(ctx, pids, columns):
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         q = db.query(*columns).filter(PGStatActivity.pid.in_(pids))
         click.echo(tabulate_query(q))
 
@@ -145,7 +145,7 @@ def get_info(ctx, pids, columns):
 @click.pass_context
 @click.argument("pids", type=int, nargs=-1)
 def terminate(ctx, pids):
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         queries = db.query(PGStatActivity.query).filter(
             PGStatActivity.pid.in_(pids)
         )
