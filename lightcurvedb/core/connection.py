@@ -1,7 +1,6 @@
 import os
 
-from sqlalchemy import Session
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core import mixins
