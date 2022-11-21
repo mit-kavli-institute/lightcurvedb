@@ -10,7 +10,6 @@ from sqlalchemy import (
     Integer,
     Sequence,
     String,
-    Text,
     between,
     func,
 )
@@ -19,7 +18,7 @@ from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 
 from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 
 
 class QLPStage(QLPModel, CreatedOnMixin):
@@ -100,6 +99,7 @@ class QLPProcess(QLPModel, CreatedOnMixin):
     @classmethod
     def current_version(cls):
         from lightcurvedb import __version__
+
         return cls.lcdb_version == __version__
 
 
@@ -132,14 +132,3 @@ class QLPOperation(QLPModel, CreatedOnMixin):
     @date_during_job.expression
     def date_during_job(cls, target_date):
         return between(target_date, cls.time_start, cls.time_end)
-
-
-class QLPMetricAPIMixin:
-    """
-    Provide interaction with the previously defined models here to avoid
-    making the database connection object too large.
-    """
-
-    def get_qlp_stage(self, slug):
-        stage = self.query(QLPStage).filter_by(slug=slug).one()
-        return stage
