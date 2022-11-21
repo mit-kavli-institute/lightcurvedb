@@ -36,6 +36,7 @@ FRAME_DTYPE = [
     ("exp_time", np.float64),
     ("quality_bit", np.int32),
 ]
+FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
 
 def adapt_pathlib(path):

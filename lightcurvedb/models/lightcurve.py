@@ -7,7 +7,6 @@ and directly related models
 from collections import OrderedDict
 
 import numpy as np
-import sqlalchemy as sa
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import (
     BigInteger,
@@ -19,7 +18,6 @@ from sqlalchemy import (
     SmallInteger,
     func,
     inspect,
-    select,
 )
 from sqlalchemy.dialects import postgresql as psql
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -34,7 +32,6 @@ from lightcurvedb.core.base_model import (
 )
 from lightcurvedb.models.aperture import Aperture
 from lightcurvedb.models.lightpoint import Lightpoint, lp_structured_array
-from lightcurvedb.models.orbit import Orbit
 
 
 def adapt_as_is_type(type_class):
@@ -611,122 +608,3 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
 
         struct["data"] = struct["data"] + (offset - median)
         return struct
-
-
-class ArrayOrbitLightcurveAPIMixin:
-    def _process_lc_selection(self, select_q):
-        from lightcurvedb.core.tic8 import one_off
-
-        structs = []
-        stellar_param_info = {}
-        for lc in self.execute(select_q).scalars():
-            try:
-                tmag = stellar_param_info[lc.tic_id]
-            except KeyError:
-                tmag = one_off(lc.tic_id, "tmag")[0]
-                stellar_param_info[lc.tic_id] = tmag
-            structs.append(lc.to_numpy(normalize=True, offset=tmag))
-        return np.concatenate(structs)
-
-    def get_missing_id_ranges(self):
-        """
-        Parse through all orbit lightcurves to find gaps in the primary key
-        sequence.
-
-        Returns
-        -------
-        List[(int, int)]
-        Returns a list of tuples indicating lack of assigned ids in the range
-        of [start, end].
-
-        Note
-        ----
-        This query must parse all ids and hence can take a few minutes to
-        complete. As such, if pipeline operations are occuring, this list
-        may not include the newest gaps.
-        """
-        subq = select(
-            ArrayOrbitLightcurve.id,
-            (
-                func.lead(ArrayOrbitLightcurve.id)
-                .over(order_by=ArrayOrbitLightcurve.id)
-                .label("next_id")
-            ),
-        ).subquery()
-        q = select(
-            (subq.c.id + 1).label("gap_start"),
-            (subq.c.next_id - 1).label("gap_end"),
-        ).where(subq.c.id + 1 != subq.c.next_id)
-        return self.execute(q).fetchall()
-
-    def get_lightcurve(
-        self, tic_id, lightcurve_type, aperture, orbit, resolve=True
-    ):
-        """
-        Retrieves a single lightcurve row.
-
-        Arguments
-        ---------
-        tic_id: int
-            The TIC id of the desired lightcurve.
-        aperture: str or integer
-            The aperture name or aperture id of the desired lightcurve.
-        lightcurve_type: str or integer
-            The type name or type id of the desired lightcurve.
-        orbit: integer
-            The physical orbit number of the desired lightcurve.
-        resolve: bool, optional
-            If True, return the resolved lightcurve query, otherwise return
-            the query object itself.
-
-        Returns
-        -------
-        OrbitLightcurve, sqlalchemy.Query
-
-        Raises
-        ------
-        sqlalchemy.orm.exc.NoResultFound
-            No lightcurve matched the desired parameters.
-        """
-
-        q = (
-            sa.select(ArrayOrbitLightcurve)
-            .join(ArrayOrbitLightcurve.orbit)
-            .filter(Orbit.orbit_number == orbit)
-        )
-
-        if isinstance(aperture, str):
-            q = q.join(ArrayOrbitLightcurve.aperture)
-            q = q.filter(ArrayOrbitLightcurve.aperture_name == aperture)
-        else:
-            q = q.filter(ArrayOrbitLightcurve.aperture_id == aperture)
-
-        if isinstance(lightcurve_type, str):
-            q = q.join(ArrayOrbitLightcurve.lightcurve_type)
-            q = q.filter(
-                ArrayOrbitLightcurve.lightcurve_type_name == lightcurve_type
-            )
-        else:
-            q = q.filter(
-                ArrayOrbitLightcurve.lightcurve_type_id == lightcurve_type
-            )
-
-        if resolve:
-            return q.one()
-
-        return q
-
-    def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
-        q = (
-            sa.select(ArrayOrbitLightcurve)
-            .join(ArrayOrbitLightcurve.aperture)
-            .join(ArrayOrbitLightcurve.lightcurve_type)
-            .join(ArrayOrbitLightcurve.orbit)
-            .where(
-                ArrayOrbitLightcurve.tic_id == tic_id,
-                Aperture.name == aperture,
-                LightcurveType.name == lightcurve_type,
-            )
-            .order_by(Orbit.orbit_number)
-        )
-        return self._process_lc_selection(q)
