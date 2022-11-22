@@ -2,6 +2,7 @@ import typing
 
 import numpy as np
 import pandas as pd
+import pyticdb
 import sqlalchemy as sa
 
 from lightcurvedb import m as m
@@ -159,15 +160,13 @@ class OrbitAPIMixin(APIMixin):
 
 class ArrayOrbitLightcurveAPIMixin(APIMixin):
     def _process_lc_selection(self, select_q):
-        from lightcurvedb.core.tic8 import one_off
-
         structs = []
         stellar_param_info = {}
         for lc in self.execute(select_q).scalars():
             try:
                 tmag = stellar_param_info[lc.tic_id]
             except KeyError:
-                tmag = one_off(lc.tic_id, "tmag")[0]
+                tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
                 stellar_param_info[lc.tic_id] = tmag
             structs.append(lc.to_numpy(normalize=True, offset=tmag))
         return np.concatenate(structs)
