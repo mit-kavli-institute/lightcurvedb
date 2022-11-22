@@ -5,13 +5,14 @@ import click
 from loguru import logger
 
 from lightcurvedb.core.connection import db_from_config
+from lightcurvedb.util.constants import __DEFAULT_PATH__
 
 
 @click.group()
 @click.pass_context
 @click.option(
     "--dbconf",
-    default="~/.config/lightcurvedb/db.conf",
+    default=__DEFAULT_PATH__,
     type=click.Path(exists=True, dir_okay=False),
     help="Specify a database config for connections",
 )
