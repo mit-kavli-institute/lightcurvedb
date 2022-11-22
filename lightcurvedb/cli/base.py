@@ -62,7 +62,7 @@ def lcdbcli(
     if db_port_override:
         overrides["database_port"] = db_port_override
 
-    ctx.obj["dbconf_file"] = tempfile.NamedTemporaryFile()
+    ctx.obj["dbconf_file"] = tempfile.NamedTemporaryFile(suffix=".ini")
     tmp_config = db_from_config.emit(
         dbconf, pathlib.Path(ctx.obj["dbconf_file"].name), **overrides
     )
