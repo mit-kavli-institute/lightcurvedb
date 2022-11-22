@@ -44,7 +44,7 @@ def query(ctx, model):
 @click.option("--header/--no-header", default=True)
 def print_table(ctx, parameters, filters, orders, table_fmt, header):
     # Construct an SQL query given the cli parameters
-    with ctx.obj["db"] as db:
+    with ctx.obj["dbfactory"]() as db:
         cols = tuple(col["column"] for col in parameters)
         names = tuple(col["alias"] for col in parameters)
 

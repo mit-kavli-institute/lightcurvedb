@@ -1,5 +1,7 @@
 import pathlib
 
+import configurables as conf
+from sqlalchemy import pool
 from sqlalchemy.orm import Session, sessionmaker
 
 from lightcurvedb import models
@@ -97,7 +99,27 @@ def sessionmaker_from_config(config_path, db_class, **engine_kwargs):
     return factory
 
 
-def db_from_config(config_path=None, db_class=None, **engine_kwargs):
+def _PoolClass(name):
+    return getattr(pool, name)
+
+
+@conf.configurable("Credentials")
+@conf.param("database_name")
+@conf.param("username")
+@conf.param("password")
+@conf.option("database_host", default="localhost")
+@conf.option("database_port", type=int, default=5432)
+@conf.option("poolclass", type=_PoolClass, default=pool.NullPool)
+@conf.option("dialect", default="postgresql+psycopg2")
+def db_from_config(
+    database_name,
+    username,
+    password,
+    database_host,
+    database_port,
+    dialect,
+    **engine_kwargs
+):
     """
     Create a DB instance from a configuration file.
 
@@ -110,12 +132,20 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
-    factory = sessionmaker_from_config(config_path, db_class, **engine_kwargs)
-    return factory()
+    engine = thread_safe_engine(
+        database_name,
+        username,
+        password,
+        database_host,
+        database_port,
+        dialect,
+        **engine_kwargs
+    )
+    return DB(engine)
 
 
 # Try and instantiate "global" lcdb
 try:
-    db = db_from_config()
+    db = db_from_config(__DEFAULT_PATH__)
 except KeyError:
     db = None

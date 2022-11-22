@@ -12,7 +12,7 @@ def add_aperture(ctx, name, aperture_string):
     """
     Add an aperture definition to the database
     """
-    with ctx.obj["db"] as db:
+    with ctx.obj["dbfactory"]() as db:
         check = (
             db.session.query(Aperture)
             .filter(Aperture.name == name)

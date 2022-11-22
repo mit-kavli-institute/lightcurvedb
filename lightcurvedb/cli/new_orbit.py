@@ -20,7 +20,7 @@ def ingest_frames(
     ffi_subdir: pathlib.Path,
     quaternion_subdir: pathlib.Path,
 ):
-    with ctx.obj["db"] as db:
+    with ctx.obj["dbfactory"]() as db:
         frame_type = (
             db.query(FrameType).filter_by(name=frame_type_name).one_or_none()
         )

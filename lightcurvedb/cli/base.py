@@ -61,8 +61,7 @@ def lcdbcli(
     if db_port_override:
         overrides["database_port"] = db_port_override
 
-    session = db_from_config(dbconf, **overrides)
-    ctx.obj["db"] = session
+    ctx.obj["dbfactory"] = db_from_config.partial(dbconf, **overrides)
 
     ctx.obj["log_level"] = logging
     ctx.obj["dryrun"] = dryrun

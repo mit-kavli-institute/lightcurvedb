@@ -24,7 +24,7 @@ def add_frametype(ctx, frametype_name):
     """
     Add a Frame-Type Definition to the database.
     """
-    with ctx.obj["db"] as db:
+    with ctx.obj["dbfactory"]() as db:
         # Check if we're updating or inserting
         check = (
             db.session.query(FrameType)
@@ -89,7 +89,7 @@ def ingest_frames(ctx, frame_path):
 @ingest_frames.command()
 @click.pass_context
 def tica(ctx):
-    with ctx.obj["db"] as db:
+    with ctx.obj["dbfactory"]() as db:
         tica_type = (
             db.query(FrameType).filter_by(name="TICA Calibrated FFI").one()
         )

@@ -54,7 +54,7 @@ def ingest_dir(
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
-        with ctx.obj["db"] as db:
+        with ctx.obj["dbfactory"]() as db:
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
@@ -112,7 +112,7 @@ def ingest_tic_list(
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        with ctx.obj["db"] as db:
+        with ctx.obj["dbfactory"]() as db:
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
