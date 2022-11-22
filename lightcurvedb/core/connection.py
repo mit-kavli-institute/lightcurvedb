@@ -1,4 +1,4 @@
-import os
+import pathlib
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -89,13 +89,15 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     config_path : str or Path, optional
         The path to the configuration file.
         Defaults to ``~/.config/lightcurvedb/db.conf``. This is expanded
-        from the user's ``~`` space using ``os.path.expanduser``.
+        from the user's ``~`` space using ``pathlib.Path().expand_user()``.
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
     engine = thread_safe_engine(
-        os.path.expanduser(config_path if config_path else __DEFAULT_PATH__),
-        **engine_kwargs,
+        pathlib.Path(
+            config_path if config_path else __DEFAULT_PATH__
+        ).expand_user()
+        ** engine_kwargs,
     )
 
     db_class = DB if db_class is None else db_class
