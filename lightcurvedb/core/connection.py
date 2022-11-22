@@ -80,6 +80,23 @@ class DB(
         return self.query(models.LightcurveType)
 
 
+def sessionmaker_from_config(config_path, db_class, **engine_kwargs):
+    """
+    Create an sqlalchemy sessionmaker using a configuration file.
+    """
+    engine = thread_safe_engine(
+        pathlib.Path(
+            config_path if config_path else __DEFAULT_PATH__
+        ).expanduser(),
+        **engine_kwargs
+    )
+
+    db_class = DB if db_class is None else db_class
+
+    factory = sessionmaker(bind=engine, class_=db_class)
+    return factory
+
+
 def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     """
     Create a DB instance from a configuration file.
@@ -93,16 +110,7 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
-    engine = thread_safe_engine(
-        pathlib.Path(
-            config_path if config_path else __DEFAULT_PATH__
-        ).expanduser(),
-        **engine_kwargs
-    )
-
-    db_class = DB if db_class is None else db_class
-
-    factory = sessionmaker(bind=engine, class_=db_class)
+    factory = sessionmaker_from_config(config_path, db_class, **engine_kwargs)
     return factory()
 
 
