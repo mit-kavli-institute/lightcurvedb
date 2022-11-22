@@ -4,11 +4,11 @@ from functools import partial
 
 import cachetools
 import numpy as np
+import pyticdb
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb import db_from_config, models
-from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.iter import chunkify
@@ -228,11 +228,7 @@ class LightcurveManager:
         try:
             tmag = self._stellar_parameter_cache[tic_id]
         except KeyError:
-            with TIC8_DB() as db:
-                q = sa.select(db.ticentries.c.tmag).where(
-                    db.ticentries.c.id == tic_id
-                )
-                tmag = db.execute(q).fetchone()[0]
+            tmag = pyticdb.query_by_id(tic_id, "tmag")[0]
 
             self._stellar_parameter_cache[tic_id] = tmag
 

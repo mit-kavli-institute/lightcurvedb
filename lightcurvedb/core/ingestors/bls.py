@@ -5,10 +5,10 @@ from datetime import datetime
 from functools import lru_cache
 
 import numpy as np
+import pyticdb
 from astropy import units as u
 
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
-from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models.bls import BLS
 from lightcurvedb.util.decorators import suppress_warnings
 
@@ -40,19 +40,13 @@ LEGACY_MAPPER = {
 
 
 def get_stellar_radius(tic_id):
-    with TIC8_DB() as tic8:
-        ticentries = tic8.ticentries
-        radius, radius_error = (
-            tic8.query(ticentries.c.rad, ticentries.c.e_rad)
-            .filter(ticentries.c.id == tic_id)
-            .one()
-        )
-        if radius is None:
-            radius = float("nan")
-        if radius_error is None:
-            radius_error = float("nan")
+    radius, radius_error = pyticdb.query_by_id(tic_id, "rad", "e_rad")
+    if radius is None:
+        radius = float("nan")
+    if radius_error is None:
+        radius_error = float("nan")
 
-        return radius * u.solRad, radius_error * u.solRad
+    return radius * u.solRad, radius_error * u.solRad
 
 
 @suppress_warnings
