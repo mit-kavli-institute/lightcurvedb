@@ -69,9 +69,10 @@ class OrbitAPIMixin(APIMixin):
             mapping[ident] = data
         return mapping
 
-    def get_orbit_cadence_limit(
+    def query_orbit_cadence_limit(
         self,
         orbit_number: int,
+        cadence_type: int,
         camera: int,
         frame_type: typing.Optional[str] = None,
     ):
