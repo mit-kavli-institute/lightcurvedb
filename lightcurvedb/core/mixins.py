@@ -145,7 +145,7 @@ class OrbitAPIMixin(APIMixin):
 
         q = (
             sa.select(
-                sa.func.min(m.Frame.star_tjd).label("min_tjd"),
+                sa.func.min(m.Frame.start_tjd).label("min_tjd"),
                 sa.func.max(m.Frame.end_tjd).label("max_tjd"),
             )
             .join(m.Frame.frame_type)
