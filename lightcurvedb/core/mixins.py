@@ -5,7 +5,7 @@ import pandas as pd
 import pyticdb
 import sqlalchemy as sa
 
-from lightcurvedb import m as m
+from lightcurvedb import models as m
 from lightcurvedb.core import psql_tables
 
 
