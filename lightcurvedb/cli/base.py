@@ -66,6 +66,7 @@ def lcdbcli(
     tmp_config = db_from_config.emit(
         pathlib.Path(ctx.obj["dbconf_file"].name),
         _filepath=dbconf,
+        _ignore_options=False,
         **overrides,
     )
 
