@@ -1,6 +1,7 @@
 import click
 from tabulate import tabulate
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import Orbit
 
 from . import lcdbcli
@@ -18,7 +19,7 @@ def orbit(ctx):
 @click.option("--parameter", "-p", multiple=True, type=Orbit.click_parameters)
 @click.pass_context
 def lookup(ctx, orbit_numbers, parameter):
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         cols = [getattr(Orbit, param) for param in parameter]
         q = db.query(*cols).filter(Orbit.orbit_number.in_(orbit_numbers))
         click.echo(tabulate(q.all(), headers=list(parameter)))
@@ -29,7 +30,7 @@ def lookup(ctx, orbit_numbers, parameter):
 @click.option("--parameter", "-p", multiple=True, type=Orbit.click_parameters)
 @click.pass_context
 def sector_lookup(ctx, sectors, parameter):
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         cols = [getattr(Orbit, param) for param in parameter]
         q = db.query(*cols).filter(Orbit.sector.in_(sectors))
         click.echo(tabulate(q.all(), headers=list(parameter)))

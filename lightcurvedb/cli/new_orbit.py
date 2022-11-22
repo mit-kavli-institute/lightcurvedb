@@ -2,6 +2,7 @@ import pathlib
 
 import click
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import camera_quaternions, frames
 from lightcurvedb.models import FrameType
@@ -20,7 +21,7 @@ def ingest_frames(
     ffi_subdir: pathlib.Path,
     quaternion_subdir: pathlib.Path,
 ):
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         frame_type = (
             db.query(FrameType).filter_by(name=frame_type_name).one_or_none()
         )

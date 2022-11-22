@@ -37,6 +37,11 @@ class DB(
 
     """
 
+    def __init__(self, *args, **kwargs):
+        config = kwargs.pop("config", None)
+        super().__init__(*args, **kwargs)
+        self.config = config
+
     @property
     def orbits(self):
         """

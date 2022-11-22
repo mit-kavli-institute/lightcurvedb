@@ -1,5 +1,6 @@
 import pathlib
 import sys
+import tempfile
 
 import click
 from loguru import logger
@@ -61,8 +62,11 @@ def lcdbcli(
     if db_port_override:
         overrides["database_port"] = db_port_override
 
-    ctx.obj["dbfactory"] = db_from_config.partial(dbconf, **overrides)
+    ctx.obj["dbconf_file"] = tempfile.NamedTemporaryFile()
+    tmp_config = db_from_config.emit(
+        dbconf, pathlib.Path(ctx.obj["dbconf_file"].name), **overrides
+    )
 
     ctx.obj["log_level"] = logging
     ctx.obj["dryrun"] = dryrun
-    ctx.obj["dbconf"] = dbconf
+    ctx.obj["dbconf"] = tmp_config

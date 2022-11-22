@@ -1,5 +1,6 @@
 import click
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.models import Aperture
 
@@ -12,7 +13,7 @@ def add_aperture(ctx, name, aperture_string):
     """
     Add an aperture definition to the database
     """
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         check = (
             db.session.query(Aperture)
             .filter(Aperture.name == name)

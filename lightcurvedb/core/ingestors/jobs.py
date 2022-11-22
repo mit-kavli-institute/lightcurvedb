@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from loguru import logger
 from tqdm import tqdm
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import ArrayOrbitLightcurve, Orbit
 from lightcurvedb.util.contexts import extract_pdo_path_context
 
@@ -33,7 +34,7 @@ class H5_Job:
         return job
 
 
-def look_for_relevant_files(db, lc_path, tic_mask=None):
+def look_for_relevant_files(config, lc_path, tic_mask=None):
     try:
         h5_files = lc_path.glob("*.h5")
         contexts = []
@@ -53,7 +54,7 @@ def look_for_relevant_files(db, lc_path, tic_mask=None):
             )
             .group_by(ArrayOrbitLightcurve.tic_id)
         )
-        with db:
+        with db_from_config(config) as db:
             logger.debug(f"Querying for existing observations for {lc_path}")
             observation_counts = {
                 tic_id: lc_count
@@ -131,12 +132,12 @@ class DirectoryPlan:
     def __init__(
         self,
         directories: list[pathlib.Path],
-        db,
+        db_config,
         recursive=False,
     ):
         self.source_dirs = directories
         self.recursive = recursive
-        self.db = db
+        self.db_config = db_config
         self._look_for_files()
         self._preprocess_files()
 
@@ -151,7 +152,7 @@ class DirectoryPlan:
 
     def _look_for_files(self):
         n_workers = min((len(self.source_dirs), cpu_count()))
-        func = partial(look_for_relevant_files, self.db)
+        func = partial(look_for_relevant_files, self.db_config)
         with Pool(n_workers) as pool:
             results = pool.imap(func, self.source_dirs)
             contexts = list(chain.from_iterable(results))
@@ -208,8 +209,8 @@ class DirectoryPlan:
 
 
 class TICListPlan(DirectoryPlan):
-    def __init__(self, tic_ids, db):
-        self.db = db
+    def __init__(self, tic_ids, db_config):
+        self.db_config = db_config
         self._tic_ids = set(tic_ids)
         self._look_for_files()
         self._preprocess_files()
@@ -219,7 +220,7 @@ class TICListPlan(DirectoryPlan):
         cameras = [1, 2, 3, 4]
         ccds = [1, 2, 3, 4]
         paths = []
-        with self.db as db:
+        with db_from_config(self.db_config) as db:
             orbits = [
                 number
                 for number, in db.query(Orbit.orbit_number).order_by(
@@ -235,7 +236,7 @@ class TICListPlan(DirectoryPlan):
 
         with Pool() as pool:
             func = partial(
-                look_for_relevant_files, self.db, tic_mask=self.tic_ids
+                look_for_relevant_files, self.db_config, tic_mask=self.tic_ids
             )
             contexts = list(
                 chain.from_iterable(pool.imap_unordered(func, paths))

@@ -1,5 +1,6 @@
 import click
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import LightcurveType
 
 from . import lcdbcli
@@ -12,7 +13,7 @@ def add_lightcurvetype(ctx, lightcurve_type_name):
     """
     Adds a lightcurve-type definition to the database.
     """
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         check = (
             db.session.query(LightcurveType)
             .filter(LightcurveType == lightcurve_type_name)

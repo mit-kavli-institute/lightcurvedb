@@ -1,6 +1,7 @@
 import click
 import pandas as pd
 
+from lightcurvedb import db_from_config
 from lightcurvedb.models import SpacecraftEphemeris
 
 from .base import lcdbcli
@@ -62,7 +63,7 @@ def ingest(ctx, ephemeris_csv):
     ephemeris_df = ephemeris_df[~ephemeris_df.index.duplicated(keep="last")]
     ephemeris_df.sort_index(inplace=True)
 
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         for i, row in ephemeris_df.iterrows():
             eph = SpacecraftEphemeris(
                 barycentric_dynamical_time=i, **dict(row)

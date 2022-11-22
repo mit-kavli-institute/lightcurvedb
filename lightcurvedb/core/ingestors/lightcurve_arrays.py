@@ -357,9 +357,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    with cli_context["dbconf"] as db, tqdm(
-        total=len(jobs), unit=" jobs"
-    ) as bar:
+    with tqdm(total=len(jobs), unit=" jobs") as bar:
         if "logfile" not in cli_context:
             # If logging to standard out, we need to ensure loguru
             # does not step over tqdm output.
@@ -373,7 +371,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
 
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
-            db,
+            cli_context["dbconf"],
             cli_context["n_processes"],
             job_queue=job_queue,
             cache_path=cache_path,

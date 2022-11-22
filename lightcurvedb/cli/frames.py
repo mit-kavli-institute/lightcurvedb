@@ -5,6 +5,7 @@ import click
 from loguru import logger
 from tqdm import tqdm
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors.frames import from_fits
 from lightcurvedb.models import Orbit
@@ -24,7 +25,7 @@ def add_frametype(ctx, frametype_name):
     """
     Add a Frame-Type Definition to the database.
     """
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         # Check if we're updating or inserting
         check = (
             db.session.query(FrameType)
@@ -89,7 +90,7 @@ def ingest_frames(ctx, frame_path):
 @ingest_frames.command()
 @click.pass_context
 def tica(ctx):
-    with ctx.obj["dbfactory"]() as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         tica_type = (
             db.query(FrameType).filter_by(name="TICA Calibrated FFI").one()
         )
