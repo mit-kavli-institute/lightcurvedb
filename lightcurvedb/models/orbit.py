@@ -42,6 +42,8 @@ class Orbit(QLPModel, CreatedOnMixin):
 
     __tablename__ = "orbits"
 
+    ORBIT_DTYPE = ORBIT_DTYPE
+
     # Model Attributes
     id = Column(SmallInteger, Sequence("orbit_id_seq"), primary_key=True)
     orbit_number = Column(SmallInteger, unique=True, nullable=False)
