@@ -6,17 +6,15 @@ from queue import Empty
 
 from loguru import logger
 
-from lightcurvedb import db_from_config
-
 
 class BufferedDatabaseIngestor(Process):
     job_queue = None
     name = "Worker"
     buffer_order = []
 
-    def __init__(self, config, name, job_queue):
+    def __init__(self, db, name, job_queue):
         super().__init__(daemon=True, name=name)
-        self.db_config = config
+        self.db_session = db
         self.name = name
         self.job_queue = job_queue
         self.log("Initialized")
@@ -44,7 +42,7 @@ class BufferedDatabaseIngestor(Process):
             self.telemetry[telemetry_type] += elapsed
 
     def _create_db(self):
-        self.db = db_from_config(self.db_config)
+        self.db = self.db_session
 
     def _load_contexts(self):
         return

@@ -373,7 +373,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
 
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
-            db.config,
+            db,
             cli_context["n_processes"],
             job_queue=job_queue,
             cache_path=cache_path,
