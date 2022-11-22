@@ -474,3 +474,18 @@ class LegacyAPIMixin(APIMixin):
         return np.array(
             list(map(tuple, values)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
+
+    def cadences_in_orbit(self, orbit_numbers, frame_type=None):
+        q = (
+            sa.select(m.Frame.cadence.distinct())
+            .join(m.Frame.frame_type)
+            .join(m.Frame.orbit)
+            .where(
+                m.Orbit.orbit_number.in_(orbit_numbers),
+                m.FrameType.name == "Raw FFI"
+                if frame_type is None
+                else frame_type,
+            )
+            .order_by(m.Frame.cadence.asc())
+        )
+        return [c for c, in self.execute(q).fetchall()]
