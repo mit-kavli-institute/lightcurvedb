@@ -14,14 +14,13 @@ from functools import wraps
 
 import numpy as np
 import pandas as pd
+import pyticdb
 import sqlalchemy as sa
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Session, as_declarative, declared_attr
 from tqdm import tqdm
 
-from lightcurvedb.core.tic8 import TIC8_DB
 from lightcurvedb.models import Frame, FrameType, SpacecraftEphemeris
 from lightcurvedb.util.iter import chunkify
 
@@ -231,25 +230,23 @@ def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
         f"Pulling {len(tic_ids)} entries from remote TIC db using"
         f"{chunksize} sized batches"
     )
-    with TIC8_DB() as tic8:
-        columns = tic8.ticentries.c
-        q = select(
-            columns.id,
-            columns.ra,
-            columns.dec,
-            columns.tmag,
-            columns.pmra,
-            columns.pmdec,
-            columns.jmag,
-            columns.kmag,
-            columns.vmag,
-        ).where(columns.id.in_(tic_ids))
-        parameters = list(_iter_tic_db(tic8, q))
-        chunks = chunkify(tqdm(parameters, unit=" tics"), chunksize // 9)
-        for chunk in chunks:
-            stmt = TicParameter.insert().values(chunk)
-            conn.execute(stmt)
-            conn.commit()
+    results = pyticdb.query_by_id(
+        tic_ids,
+        "id",
+        "ra",
+        "dec",
+        "tmag",
+        "pmra",
+        "pmdec",
+        "jmag",
+        "kmag",
+        "vmag",
+    )
+    chunks = chunkify(tqdm(results, unit=" tics"), chunksize // 9)
+    for chunk in chunks:
+        stmt = TicParameter.insert().values(chunk)
+        conn.execute(stmt)
+        conn.commit()
 
 
 @with_sqlite
