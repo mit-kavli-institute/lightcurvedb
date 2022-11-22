@@ -89,14 +89,14 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     config_path : str or Path, optional
         The path to the configuration file.
         Defaults to ``~/.config/lightcurvedb/db.conf``. This is expanded
-        from the user's ``~`` space using ``pathlib.Path().expand_user()``.
+        from the user's ``~`` space using ``pathlib.Path().expanduser()``.
     **engine_kwargs : keyword arguments, optional
         Arguments to pass off into engine construction.
     """
     engine = thread_safe_engine(
         pathlib.Path(
             config_path if config_path else __DEFAULT_PATH__
-        ).expand_user()
+        ).expanduser()
         ** engine_kwargs,
     )
 
