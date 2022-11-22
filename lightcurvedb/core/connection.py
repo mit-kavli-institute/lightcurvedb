@@ -1,8 +1,6 @@
-import pathlib
-
 import configurables as conf
 from sqlalchemy import pool
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from lightcurvedb import models
 from lightcurvedb.core import mixins
@@ -87,34 +85,12 @@ class DB(
         return self.query(models.LightcurveType)
 
 
-def sessionmaker_from_config(config_path, db_class, **engine_kwargs):
-    """
-    Create an sqlalchemy sessionmaker using a configuration file.
-    """
-    engine = thread_safe_engine(
-        pathlib.Path(
-            config_path if config_path else __DEFAULT_PATH__
-        ).expanduser(),
-        **engine_kwargs
-    )
-
-    db_class = DB if db_class is None else db_class
-
-    factory = sessionmaker(bind=engine, class_=db_class)
-    return factory
-
-
-def _PoolClass(name):
-    return getattr(pool, name)
-
-
 @conf.configurable("Credentials")
 @conf.param("database_name")
 @conf.param("username")
 @conf.param("password")
 @conf.option("database_host", default="localhost")
 @conf.option("database_port", type=int, default=5432)
-@conf.option("poolclass", type=_PoolClass, default=pool.NullPool)
 @conf.option("dialect", default="postgresql+psycopg2")
 def db_from_config(
     database_name,
@@ -144,6 +120,7 @@ def db_from_config(
         database_host,
         database_port,
         dialect,
+        poolclass=pool.NullPool,
         **engine_kwargs
     )
     return DB(engine)
