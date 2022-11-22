@@ -96,8 +96,8 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
     engine = thread_safe_engine(
         pathlib.Path(
             config_path if config_path else __DEFAULT_PATH__
-        ).expanduser()
-        ** engine_kwargs,
+        ).expanduser(),
+        **engine_kwargs
     )
 
     db_class = DB if db_class is None else db_class
