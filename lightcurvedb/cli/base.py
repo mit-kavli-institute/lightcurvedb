@@ -64,7 +64,9 @@ def lcdbcli(
 
     ctx.obj["dbconf_file"] = tempfile.NamedTemporaryFile(suffix=".ini")
     tmp_config = db_from_config.emit(
-        dbconf, pathlib.Path(ctx.obj["dbconf_file"].name), **overrides
+        pathlib.Path(ctx.obj["dbconf_file"].name),
+        _filepath=dbconf,
+        **overrides,
     )
 
     ctx.obj["log_level"] = logging
