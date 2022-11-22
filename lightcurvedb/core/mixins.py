@@ -297,7 +297,12 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         BEST_LC = m.BestOrbitLightcurve
         LC = m.ArrayOrbitLightcurve
 
-        q = sa.select(m.ArrayOrbitLightcurve)
+        q = (
+            sa.select(m.ArrayOrbitLightcurve)
+            .join(m.ArrayOrbitLightcurve.orbit)
+            .order_by(m.Orbit.orbit_number.asc())
+        )
+
         join_conditions = []
         filter_conditions = [LC.tic_id == tic_id]
 
