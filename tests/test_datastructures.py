@@ -139,7 +139,7 @@ def test_tjd_cache(db, raw_ffi_type, orbit, frames):
         for frame in frames:
             frame.frame_type = raw_ffi_type
             frame.orbit = orbit
-        db.session.add_all(frames)
+        db.add_all(frames)
         db.flush()
         state_q = (
             db.query(Frame.cadence, Frame.camera, Frame.tjd)

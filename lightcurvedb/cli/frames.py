@@ -28,9 +28,7 @@ def add_frametype(ctx, frametype_name):
     with db_from_config(ctx.obj["dbconf"]) as db:
         # Check if we're updating or inserting
         check = (
-            db.session.query(FrameType)
-            .filter_by(name=frametype_name)
-            .one_or_none()
+            db.query(FrameType).filter_by(name=frametype_name).one_or_none()
         )
         if check:
             # Updating
