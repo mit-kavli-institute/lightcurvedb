@@ -242,8 +242,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             process_id=self.process.id,
             time_start=start,
             time_end=end,
-            job_size=len(lightcurves),
-            unit="array_lightcurves",
+            job_size=sum(len(lc) for lc in lightcurves),
+            unit="lightpoints",
         )
         return metric
 
@@ -302,10 +302,11 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
     @property
     def should_flush(self):
-        return (
-            len(self.buffers[models.ArrayOrbitLightcurve.__tablename__])
-            >= self.runtime_parameters["n_lightcurves"]
+        n_lightpoints = sum(
+            len(lc)
+            for lc in self.buffers[models.ArrayOrbitLightcurve.__tablename__]
         )
+        return n_lightpoints >= self.runtime_parameters["n_lightpoints"]
 
     @property
     def should_refresh_parameters(self):
@@ -313,8 +314,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
 
 class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
-    step_size = 10
-    max_steps = 1000
+    step_size = 1000
+    max_steps = 10
 
     def determine_process_parameters(self):
         step_col = cast(models.QLPOperation.job_size / self.step_size, Integer)
@@ -339,7 +340,7 @@ class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
 
         step = sample(possible_steps, 1)[0]
 
-        return {"n_lightcurves": self.step_size * step}
+        return {"n_lightpoints": self.step_size * step}
 
 
 def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
