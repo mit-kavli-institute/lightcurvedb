@@ -112,6 +112,7 @@ def ingest_tic_list(
     fill_id_gaps,
 ):
     tic_ids = set(map(int, open(tic_file, "rt").readlines()))
+    ctx.obj["n_processes"] = n_processes
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
