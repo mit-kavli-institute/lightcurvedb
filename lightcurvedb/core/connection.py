@@ -16,6 +16,7 @@ class DB(
     mixins.ArrayOrbitLightcurveAPIMixin,
     mixins.PGCatalogMixin,
     mixins.QLPMetricAPIMixin,
+    mixins.LegacyAPIMixin,
 ):
     """Wrapper for SQLAlchemy sessions. This is the primary way to interface
     with the lightcurve database.

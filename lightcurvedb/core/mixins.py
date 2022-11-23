@@ -69,9 +69,10 @@ class OrbitAPIMixin(APIMixin):
             mapping[ident] = data
         return mapping
 
-    def get_orbit_cadence_limit(
+    def query_orbit_cadence_limit(
         self,
         orbit_number: int,
+        cadence_type: int,
         camera: int,
         frame_type: typing.Optional[str] = None,
     ):
@@ -144,7 +145,7 @@ class OrbitAPIMixin(APIMixin):
 
         q = (
             sa.select(
-                sa.func.min(m.Frame.star_tjd).label("min_tjd"),
+                sa.func.min(m.Frame.start_tjd).label("min_tjd"),
                 sa.func.max(m.Frame.end_tjd).label("max_tjd"),
             )
             .join(m.Frame.frame_type)
@@ -296,7 +297,12 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         BEST_LC = m.BestOrbitLightcurve
         LC = m.ArrayOrbitLightcurve
 
-        q = sa.select(m.ArrayOrbitLightcurve)
+        q = (
+            sa.select(m.ArrayOrbitLightcurve)
+            .join(m.ArrayOrbitLightcurve.orbit)
+            .order_by(m.Orbit.orbit_number.asc())
+        )
+
         join_conditions = []
         filter_conditions = [LC.tic_id == tic_id]
 
@@ -468,3 +474,18 @@ class LegacyAPIMixin(APIMixin):
         return np.array(
             list(map(tuple, values)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
+
+    def cadences_in_orbit(self, orbit_numbers, frame_type=None):
+        q = (
+            sa.select(m.Frame.cadence.distinct())
+            .join(m.Frame.frame_type)
+            .join(m.Frame.orbit)
+            .where(
+                m.Orbit.orbit_number.in_(orbit_numbers),
+                m.FrameType.name == "Raw FFI"
+                if frame_type is None
+                else frame_type,
+            )
+            .order_by(m.Frame.cadence.asc())
+        )
+        return [c for c, in self.execute(q).fetchall()]
