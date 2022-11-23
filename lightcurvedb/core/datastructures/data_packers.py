@@ -97,7 +97,7 @@ class CSVPacker(DataPacker):
 
     def serialize_to_database(self, lcdb):
         if len(self) > 0:
-            cursor = lcdb.session.connection().connection.cursor()
+            cursor = lcdb.connection().connection.cursor()
 
             mass_ingest(
                 cursor,
@@ -369,7 +369,7 @@ class LightpointPartitionReader(LightpointPartitionBlob):
             )
 
             # Copy lightpoints
-            connection = db.session.connection().connection
+            connection = db.connection().connection
 
             work_mem_q = 'SET LOCAL work_mem TO "1GB"'
             temp_buffers_q = 'SET LOCAL temp_buffers TO "2GB"'
@@ -394,7 +394,7 @@ class LightpointPartitionReader(LightpointPartitionBlob):
 
             # Remove duplication
             obs_df = obs_df[~obs_df.index.duplicated(keep="last")]
-            db.session.execute(
+            db.execute(
                 Observation.upsert_q(), obs_df.reset_index().to_dict("records")
             )
 

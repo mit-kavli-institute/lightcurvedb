@@ -85,7 +85,7 @@ def ingest_quat_file(db, filepath):
             mask.add(model.date)
 
         camera_quaternions.append(model)
-    db.session.add_all(camera_quaternions)
+    db.add_all(camera_quaternions)
     db.flush()
 
 

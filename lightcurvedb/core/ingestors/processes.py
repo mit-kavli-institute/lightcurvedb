@@ -157,7 +157,7 @@ class DBLoader(Process):
             }
         )
         t0 = datetime.utcnow()
-        self.db.session.execute(q, self.insert_buffer)
+        self.db.execute(q, self.insert_buffer)
         t1 = datetime.utcnow()
         self.insert_history.new_timing(len(self.insert_buffer), t0, t1)
         new_insert_buffer = self.insert_history.get_new_buf_size(
@@ -193,7 +193,7 @@ class DBLoader(Process):
             )
         )
         t0 = datetime.utcnow()
-        self.db.session.execute(q, self.update_buffer)
+        self.db.execute(q, self.update_buffer)
         t1 = datetime.utcnow()
         self.update_history.new_timing(len(self.update_buffer), t0, t1)
         new_update_buffer = self.update_history.get_new_buf_size(
@@ -223,7 +223,7 @@ class DBLoader(Process):
         # observation row, catch and retry when encountering Deadlock errors.
         while True:
             try:
-                self.db.session.execute(
+                self.db.execute(
                     Observation.upsert_dicts(), df.to_dict("records")
                 )
                 self.observation_buffer = []

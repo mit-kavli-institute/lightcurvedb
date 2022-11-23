@@ -26,7 +26,7 @@ def reflect_psql_admin(engine):
 def psql_tables(lcdb):
     # PSQL typedefs a bunch of columns which SQLAlchemy complains about
     # (but still perfectly utilizes)
-    return reflect_psql_admin(lcdb.session.get_bind())
+    return reflect_psql_admin(lcdb.get_bind())
 
 
 def psql_catalog_tables():

@@ -15,7 +15,7 @@ def add_lightcurvetype(ctx, lightcurve_type_name):
     """
     with db_from_config(ctx.obj["dbconf"]) as db:
         check = (
-            db.session.query(LightcurveType)
+            db.query(LightcurveType)
             .filter(LightcurveType == lightcurve_type_name)
             .one_or_none()
         )

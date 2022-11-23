@@ -14,11 +14,7 @@ def add_aperture(ctx, name, aperture_string):
     Add an aperture definition to the database
     """
     with db_from_config(ctx.obj["dbconf"]) as db:
-        check = (
-            db.session.query(Aperture)
-            .filter(Aperture.name == name)
-            .one_or_none()
-        )
+        check = db.query(Aperture).filter(Aperture.name == name).one_or_none()
 
         s_r, i_r, o_r = Aperture.from_aperture_string(aperture_string)
 

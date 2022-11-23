@@ -231,7 +231,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
         self.log(f"Flushing {len(lightcurves):,} lightcurves")
         start = datetime.now()
         mgr = CopyManager(
-            db.session.connection().connection,
+            db.connection().connection,
             models.ArrayOrbitLightcurve.__tablename__,
             INGESTION_COLS,
         )
@@ -259,7 +259,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             .values(best_lcs)
             .on_conflict_do_nothing()
         )
-        db.session.execute(q)
+        db.execute(q)
         end = datetime.now()
 
         metric = models.QLPOperation(
@@ -283,7 +283,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             runtime_parameters=self.determine_process_parameters(),
         )
         db.add(process)
-        db.session.flush()
+        db.flush()
         self.log(
             f"Updating runtime parameters to {process.runtime_parameters}"
         )

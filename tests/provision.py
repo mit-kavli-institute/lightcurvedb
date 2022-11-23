@@ -115,7 +115,7 @@ def load_ephemeris(db, ephemeris):
         mask.add(row["JDTDB"])
         objects.append(obj)
 
-    db.session.add_all(objects)
+    db.add_all(objects)
     db.commit()
 
 

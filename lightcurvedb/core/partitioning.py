@@ -102,7 +102,7 @@ def Partitionable(partition_type, *columns):
                 parent, PGInherits.parent_oid == parent.oid
             ).filter(parent.relname == cls.__tablename__)
 
-            df = pd_read_sql(info_q.statement, db.session.bind)
+            df = pd_read_sql(info_q.statement, db.bind)
 
             result = df["expression"].str.extract(partition_range_extr)
             result[["begin_range", "end_range"]] = result[

@@ -68,7 +68,7 @@ def ingest(ctx, ephemeris_csv):
             eph = SpacecraftEphemeris(
                 barycentric_dynamical_time=i, **dict(row)
             )
-            db.session.merge(eph)
+            db.merge(eph)
             click.echo("Added {0}".format(eph))
         if not ctx.obj["dryrun"]:
             db.commit()
