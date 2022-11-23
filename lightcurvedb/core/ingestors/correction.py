@@ -1,4 +1,3 @@
-import warnings
 from datetime import datetime
 
 import numpy as np
@@ -101,15 +100,6 @@ class LightcurveCorrector:
             logger.exception(f"Bad Star Vector {star_vector} for TIC {tic_id}")
             bjd = tjd_time
         return bjd.jd
-
-    def get_magnitude_alignment_offset(
-        self, tic_id, magnitudes, quality_flags
-    ):
-        tmag = self.resolve_tic_parameters(tic_id, "tmag")
-        mask = quality_flags == 0
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return np.nanmedian(magnitudes[mask]) - tmag
 
     def get_quality_flags(self, camera, ccd, cadences):
         qflag_series = self.quality_flag_map.loc[(camera, ccd)].loc[cadences][
