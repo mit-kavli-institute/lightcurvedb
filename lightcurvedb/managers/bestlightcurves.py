@@ -45,7 +45,8 @@ class BestLightcurveManager(LightcurveManager):
 
         with db_from_config(self._config) as db:
             groups = groupby(db.execute(q), lambda row: row[0])
-            for tic_id, data in groups:
+            for tic_id, group in groups:
+                data = [row[1:] for row in group]
                 result[tic_id] = self.construct_lightcurve(tic_id, data)
 
         return self._reduce_defaultdict(result)

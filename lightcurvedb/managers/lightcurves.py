@@ -95,7 +95,8 @@ class LightcurveManager:
             groups = groupby(
                 db.execute(q), lambda row: (row[0], row[1], row[2])
             )
-            for (tic_id, aperture, type), data in groups:
+            for (tic_id, aperture, type), group in groups:
+                data = [row[3:] for row in group]
                 result[tic_id][aperture][type] = self.construct_lightcurve(
                     tic_id, data
                 )
