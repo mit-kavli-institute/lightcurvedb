@@ -61,7 +61,9 @@ class BestLightcurveManager(LightcurveManager):
             m.BestOrbitLightcurve,
             m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
         )
-        if isinstance(tic_ids, int) or len(tic_ids) == 1:
+        if isinstance(tic_ids, int):
+            q = q.where(m.ArrayOrbitLightcurve.tic_id == tic_ids)
+        elif len(tic_ids) == 1:
             q = q.where(m.ArrayOrbitLightcurve.tic_id == list(tic_ids)[0])
         else:
             q = q.where(m.ArrayOrbitLightcurve.tic_id.in_(tic_ids))
