@@ -492,7 +492,7 @@ class LegacyAPIMixin(APIMixin):
             list(map(tuple, results)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
 
-    def cadences_in_orbit(self, orbit_numbers, frame_type=None):
+    def get_cadences_in_orbits(self, orbit_numbers, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
             .join(m.Frame.frame_type)
