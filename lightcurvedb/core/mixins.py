@@ -478,6 +478,20 @@ class LegacyAPIMixin(APIMixin):
             list(map(tuple, values)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
 
+    def query_frames_by_cadence(self, camera, cadences):
+        columns = [m.Orbit.orbit_number] + list(m.Frame.get_legacy_attrs())
+
+        q = (
+            sa.select(*columns)
+            .join(m.Frame.orbit)
+            .filter(m.Frame.camera == camera, m.Frame.cadence.in_(cadences))
+            .order_by(m.Frame.cadence.asc())
+        )
+        results = self.execute(q)
+        return np.array(
+            list(map(tuple, results)), dtype=m.Frame.FRAME_COMP_DTYPE
+        )
+
     def cadences_in_orbit(self, orbit_numbers, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
