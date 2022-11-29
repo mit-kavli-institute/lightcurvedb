@@ -1,6 +1,5 @@
 import multiprocessing as mp
 from collections import defaultdict
-from functools import partial
 from itertools import groupby
 
 import cachetools
@@ -10,9 +9,7 @@ import sqlalchemy as sa
 
 from lightcurvedb import db_from_config
 from lightcurvedb import models as m
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.util.constants import __DEFAULT_PATH__
-from lightcurvedb.util.iter import chunkify
 
 LP_DATA_COLUMNS = (
     "cadence",
@@ -25,122 +22,11 @@ LP_DATA_COLUMNS = (
 )
 
 
-def _np_dtype(*cols):
-    for col in cols:
-        yield col, LIGHTPOINT_NP_DTYPES[col]
-
-
 def _nested_defaultdict():
     """
     A quick infinitely nestable default dictionary.
     """
     return defaultdict(_nested_defaultdict)
-
-
-def fetch_lightcurve_data(config, lightcurve_ids):
-    """
-    Resolve lightpoint data from the given lightcurve ids.
-
-    Parameters
-    ----------
-    config: pathlike
-        Path to a configuration file for a lightcurvedb db instance.
-
-    lightcurve_ids: List[int]
-        A list of lightcurve ids to get orbit baselines for.
-
-    Returns
-    -------
-    Dict[int, Dict[int, List]]
-        A dictionary of lightcurve ids -> data where data is also a
-        dictionary of baseline-name -> array.
-
-    Note
-    ----
-    Duplicates in the input id list will result in overwrites in the return
-    dictionary. Order is also not guaranteed in the return.
-    """
-    q = sa.select(m.ArrayOrbitLightcurve).where(
-        m.ArrayOrbitLightcurve.id.in_(lightcurve_ids)
-    )
-    results = {}
-    with db_from_config(config) as db:
-        for lightcurve in db.execute(q).scalars().all():
-            results[lightcurve.id] = lightcurve
-
-    return results
-
-
-def fetch_lightcurve_data_multiprocessing(
-    config, lightcurve_ids, workers=None, id_chunk_size=32
-):
-    """
-    Resolve lightcurve ids using a multiprocessing queue. See
-    ``fetch_lightcurve_data`` for behavior.
-
-    Parameters
-    ----------
-    config: pathlike
-        Path to a configuration file for a lightcurvedb db instance.
-
-    lightcurve_ids: List[int]
-        A list of lightcurve ids to get orbit baselines for.
-
-    workers: int, optional
-        The `maximum` number of multiprocess workers to use. By default
-        this is ``mp.cpu_count()``. This function will use the minimum of
-        either the specified cpu count or the length of the chunkified
-        lightcurve ids.
-
-        If this value is set to 0, then no multiprocessing workers will be
-        spawned; instead, fetching logic will be done in the current process.
-
-    id_chunk_size: int, optional
-        Granularity of the multiprocess workload. It's inefficient
-        to query a lightcurve at a time for both remote resource utilization
-        and python serialization of the return (which could be in the order
-        of millions to billions of rows).
-
-    Returns
-    -------
-    Dict[int, Dict[int, List]]
-        A dictionary of lightcurve ids -> data where data is also a
-        dictionary of baseline-name -> array.
-
-    Note
-    ----
-    Duplicates in the input id list will result in overwrites in the return
-    dictionary. Order is also not guaranteed in the return.
-
-    As of the latest doc, it is unknown of the best chunk size to use.
-    """
-    f = partial(fetch_lightcurve_data, config)
-    results = {}
-    jobs = list(chunkify(sorted(lightcurve_ids), id_chunk_size))
-    if workers is None:
-        workers = min(mp.cpu_count(), len(jobs))
-    if workers > 0:
-        with mp.Pool(workers) as pool:
-            for result in pool.map(f, jobs):
-                results.update(result)
-    else:
-        for chunk in jobs:
-            for result in f(chunk):
-                results.update(result)
-
-    return results
-
-
-def resolve_keywords_for(config, tic_id):
-    q = (
-        sa.select(m.Aperture.name, m.LightcurveType.name)
-        .join(m.ArrayOrbitLightcurve.aperture)
-        .join(m.ArrayOrbitLightcurve.lightcurve_type)
-        .filter(m.ArrayOrbitLightcurve.tic_id == tic_id)
-        .distinct()
-    )
-    with db_from_config(config) as db:
-        return db.execute(q).fetchall()
 
 
 class LightcurveManager:
@@ -215,14 +101,6 @@ class LightcurveManager:
                 )
 
         return self._reduce_defaultdict(result)
-
-    def keywords_for(self, tic_id):
-        try:
-            keywords = self._keyword_lookups[tic_id]
-        except KeyError:
-            keywords = resolve_keywords_for(self._config, tic_id)
-            self._keyword_lookups[tic_id] = keywords
-        return keywords
 
     def get_lightcurve(self, tic_ids, apertures=None, lightcurve_types=None):
         """ """
