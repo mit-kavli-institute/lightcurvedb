@@ -506,3 +506,18 @@ class LegacyAPIMixin(APIMixin):
             .order_by(m.Frame.cadence.asc())
         )
         return [c for c, in self.execute(q).fetchall()]
+
+    def get_cadences_in_sectors(self, sectors, frame_type=None):
+        q = (
+            sa.select(m.Frame.cadence.distinct())
+            .join(m.Frame.frame_type)
+            .join(m.Frame.orbit)
+            .where(
+                m.Orbit.sector.in_(sectors),
+                m.FrameType.name == "Raw FFI"
+                if frame_type is None
+                else frame_type,
+            )
+            .order_by(m.Frame.cadence.asc())
+        )
+        return [c for c, in self.execute(q).fetchall()]
