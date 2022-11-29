@@ -240,6 +240,11 @@ class LightcurveManager:
             .join(m.ArrayOrbitLightcurve.aperture)
             .join(m.ArrayOrbitLightcurve.lightcurve_type)
             .where(m.ArrayOrbitLightcurve.tic_id.in_(tic_ids))
+            .group_by(
+                m.ArrayOrbitLightcurve.tic_id,
+                m.LightcurveType.name,
+                m.Aperture.name,
+            )
         )
 
         if apertures is not None:

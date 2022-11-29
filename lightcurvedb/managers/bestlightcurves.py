@@ -48,19 +48,26 @@ class BestLightcurveManager(LightcurveManager):
         return self._reduce_defaultdict(result)
 
     def get_lightcurve(self, tic_ids):
-        q = sa.select(
-            m.ArrayOrbitLightcurve.tic_id,
-            sa.func.array_agg(m.ArrayOrbitLightcurve.cadences),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.barycentric_julian_dates),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.data),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.errors),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.x_centroids),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.y_centroids),
-            sa.func.array_agg(m.ArrayOrbitLightcurve.quality_flags),
-        ).join(
-            m.BestOrbitLightcurve,
-            m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
+        q = (
+            sa.select(
+                m.ArrayOrbitLightcurve.tic_id,
+                sa.func.array_agg(m.ArrayOrbitLightcurve.cadences),
+                sa.func.array_agg(
+                    m.ArrayOrbitLightcurve.barycentric_julian_dates
+                ),
+                sa.func.array_agg(m.ArrayOrbitLightcurve.data),
+                sa.func.array_agg(m.ArrayOrbitLightcurve.errors),
+                sa.func.array_agg(m.ArrayOrbitLightcurve.x_centroids),
+                sa.func.array_agg(m.ArrayOrbitLightcurve.y_centroids),
+                sa.func.array_agg(m.ArrayOrbitLightcurve.quality_flags),
+            )
+            .join(
+                m.BestOrbitLightcurve,
+                m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
+            )
+            .group_by(m.ArrayOrbitLightcurve.tic_id)
         )
+
         if isinstance(tic_ids, int):
             q = q.where(m.ArrayOrbitLightcurve.tic_id == tic_ids)
         elif len(tic_ids) == 1:
