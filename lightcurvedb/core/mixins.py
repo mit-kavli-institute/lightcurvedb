@@ -435,7 +435,7 @@ class LegacyAPIMixin(APIMixin):
         )
         return np.array(list(map(tuple, orbits)), dtype=m.Orbit.ORBIT_DTYPE)
 
-    def query_frames_by_orbit(self, orbit_number, cadence_type, camera):
+    def query_frames_by_orbit(self, orbit_number, camera, frame_type=None):
         """
         Determines the per-frame parameters of a given orbit, camera, and
         cadence type.
@@ -444,11 +444,11 @@ class LegacyAPIMixin(APIMixin):
         ----------
         orbit_number : int
             The physical orbit number wanted.
-        cadence_type : int
-            The frame cadence type to consider. TESS switched to 10 minute
-            cadences starting July 2020.
         camera : int
             Only frames recorded in this camera will be queried for.
+        frame_type: str, optional
+            The frame type to limit the frames to, if None 'Raw FFI' will
+            be used.
 
         Returns
         -------
@@ -462,10 +462,13 @@ class LegacyAPIMixin(APIMixin):
         values = (
             self.query(*cols)
             .join(m.Frame.orbit)
+            .join(m.Frame.frame_type)
             .filter(
-                m.Frame.cadence_type == cadence_type,
                 m.Frame.camera == camera,
                 m.Orbit.orbit_number == orbit_number,
+                m.FrameType.name == "Raw FFI"
+                if frame_type is None
+                else frame_type,
             )
             .order_by(m.Frame.cadence.asc())
             .all()
@@ -475,13 +478,42 @@ class LegacyAPIMixin(APIMixin):
             list(map(tuple, values)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
 
-    def cadences_in_orbit(self, orbit_numbers, frame_type=None):
+    def query_frames_by_cadence(self, camera, cadences):
+        columns = [m.Orbit.orbit_number] + list(m.Frame.get_legacy_attrs())
+
+        q = (
+            sa.select(*columns)
+            .join(m.Frame.orbit)
+            .filter(m.Frame.camera == camera, m.Frame.cadence.in_(cadences))
+            .order_by(m.Frame.cadence.asc())
+        )
+        results = self.execute(q)
+        return np.array(
+            list(map(tuple, results)), dtype=m.Frame.FRAME_COMP_DTYPE
+        )
+
+    def get_cadences_in_orbits(self, orbit_numbers, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
             .join(m.Frame.frame_type)
             .join(m.Frame.orbit)
             .where(
                 m.Orbit.orbit_number.in_(orbit_numbers),
+                m.FrameType.name == "Raw FFI"
+                if frame_type is None
+                else frame_type,
+            )
+            .order_by(m.Frame.cadence.asc())
+        )
+        return [c for c, in self.execute(q).fetchall()]
+
+    def get_cadences_in_sectors(self, sectors, frame_type=None):
+        q = (
+            sa.select(m.Frame.cadence.distinct())
+            .join(m.Frame.frame_type)
+            .join(m.Frame.orbit)
+            .where(
+                m.Orbit.sector.in_(sectors),
                 m.FrameType.name == "Raw FFI"
                 if frame_type is None
                 else frame_type,
