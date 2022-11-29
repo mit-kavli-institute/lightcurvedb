@@ -160,7 +160,7 @@ class LightcurveManager:
         datum = []
         columns = (
             "cadences",
-            "barycentric_julian_date",
+            "barycentric_julian_dates",
             "data",
             "errors",
             "x_centroids",
