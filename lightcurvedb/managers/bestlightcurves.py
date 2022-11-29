@@ -1,6 +1,8 @@
 """
 This module describes the best-orbit lightcurve manager subclasses
 """
+from itertools import groupby
+
 import cachetools
 import sqlalchemy as sa
 
@@ -42,7 +44,8 @@ class BestLightcurveManager(LightcurveManager):
         result = _nested_defaultdict()
 
         with db_from_config(self._config) as db:
-            for tic_id, *data in db.execute(q):
+            groups = groupby(db.execute(q), lambda row: row[0])
+            for tic_id, data in groups:
                 result[tic_id] = self.construct_lightcurve(tic_id, data)
 
         return self._reduce_defaultdict(result)
@@ -51,21 +54,22 @@ class BestLightcurveManager(LightcurveManager):
         q = (
             sa.select(
                 m.ArrayOrbitLightcurve.tic_id,
-                sa.func.array_agg(m.ArrayOrbitLightcurve.cadences),
-                sa.func.array_agg(
-                    m.ArrayOrbitLightcurve.barycentric_julian_dates
-                ),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.data),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.errors),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.x_centroids),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.y_centroids),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.quality_flags),
+                m.ArrayOrbitLightcurve.cadences,
+                m.ArrayOrbitLightcurve.barycentric_julian_dates,
+                m.ArrayOrbitLightcurve.data,
+                m.ArrayOrbitLightcurve.errors,
+                m.ArrayOrbitLightcurve.x_centroids,
+                m.ArrayOrbitLightcurve.y_centroids,
+                m.ArrayOrbitLightcurve.quality_flags,
             )
             .join(
                 m.BestOrbitLightcurve,
                 m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
             )
-            .group_by(m.ArrayOrbitLightcurve.tic_id)
+            .join(m.ArrayOrbitLightcurve.orbit)
+            .order_by(
+                m.ArrayOrbitLightcurve.tic_id.asc(), m.Orbit.orbit_number.asc()
+            )
         )
 
         if isinstance(tic_ids, int):

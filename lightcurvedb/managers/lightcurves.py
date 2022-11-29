@@ -1,6 +1,7 @@
 import multiprocessing as mp
 from collections import defaultdict
 from functools import partial
+from itertools import groupby
 
 import cachetools
 import numpy as np
@@ -205,7 +206,10 @@ class LightcurveManager:
         result = _nested_defaultdict()
 
         with db_from_config(self._config) as db:
-            for tic_id, aperture, type, *data in db.execute(q):
+            groups = groupby(
+                db.execute(q), lambda row: (row[0], row[1], row[2])
+            )
+            for (tic_id, aperture, type), data in groups:
                 result[tic_id][aperture][type] = self.construct_lightcurve(
                     tic_id, data
                 )
@@ -227,23 +231,23 @@ class LightcurveManager:
                 m.ArrayOrbitLightcurve.tic_id,
                 m.LightcurveType.name,
                 m.Aperture.name,
-                sa.func.array_agg(m.ArrayOrbitLightcurve.cadences),
-                sa.func.array_agg(
-                    m.ArrayOrbitLightcurve.barycentric_julian_dates
-                ),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.data),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.errors),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.x_centroids),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.y_centroids),
-                sa.func.array_agg(m.ArrayOrbitLightcurve.quality_flags),
+                m.ArrayOrbitLightcurve.cadences,
+                m.ArrayOrbitLightcurve.barycentric_julian_dates,
+                m.ArrayOrbitLightcurve.data,
+                m.ArrayOrbitLightcurve.errors,
+                m.ArrayOrbitLightcurve.x_centroids,
+                m.ArrayOrbitLightcurve.y_centroids,
+                m.ArrayOrbitLightcurve.quality_flags,
             )
             .join(m.ArrayOrbitLightcurve.aperture)
             .join(m.ArrayOrbitLightcurve.lightcurve_type)
+            .join(m.ArrayOrbitLightcurve.orbit)
             .where(m.ArrayOrbitLightcurve.tic_id.in_(tic_ids))
-            .group_by(
-                m.ArrayOrbitLightcurve.tic_id,
-                m.LightcurveType.name,
-                m.Aperture.name,
+            .order_by(
+                m.ArrayOrbitLightcurve.tic_id.asc(),
+                m.LightcurveType.id.asc(),
+                m.Aperture.id.asc(),
+                m.Orbit.orbit_number.asc(),
             )
         )
 
