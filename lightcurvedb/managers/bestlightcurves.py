@@ -3,10 +3,13 @@ This module describes the best-orbit lightcurve manager subclasses
 """
 import cachetools
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import aggregate_order_by
 
-from lightcurvedb import db_from_config, models
-from lightcurvedb.managers.lightcurves import LightcurveManager
+from lightcurvedb import db_from_config
+from lightcurvedb import models as m
+from lightcurvedb.managers.lightcurves import (
+    LightcurveManager,
+    _nested_defaultdict,
+)
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 
 
@@ -30,47 +33,37 @@ class BestLightcurveManager(LightcurveManager):
 
     def __init__(self, config=None, cache_size=4096):
         self._config = __DEFAULT_PATH__ if config is None else config
-        self._lightcurve_id_cache = cachetools.LFUCache(cache_size)
-        self._lightpoint_cache = cachetools.LRUCache(cache_size)
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
-    def __getitem__(self, tic_id):
-        return self.get_lightcurve(tic_id)
+    def __getitem__(self, key):
+        return self.get_lightcurve(key)
 
-    def _resolve_lightcurve_ids_for(self, tic_id):
-        q = (
-            sa.select(
-                models.ArrayOrbitLightcurve.tic_id,
-                sa.func.array_agg(
-                    aggregate_order_by(
-                        models.ArrayOrbitLightcurve.id,
-                        models.Orbit.orbit_number.asc(),
-                    )
-                ),
-            )
-            .join(models.ArrayOrbitLightcurve.orbit)
-            .join(
-                models.BestOrbitLightcurve,
-                models.BestOrbitLightcurve.lightcurve_join(
-                    models.ArrayOrbitLightcurve
-                ),
-            )
-            .where(models.ArrayOrbitLightcurve.tic_id == tic_id)
-            .group_by(models.ArrayOrbitLightcurve.tic_id)
-        )
+    def _execute_q(self, q):
+        result = _nested_defaultdict()
 
         with db_from_config(self._config) as db:
-            for tic_id, ids in db.execute(q):
-                yield tic_id, ids
+            for tic_id, *data in db.execute(q):
+                result[tic_id] = self.construct_lightcurve(tic_id, data)
 
-    def _resolve_key(self, tic_id):
-        try:
-            ids = self._lightcurve_id_cache[tic_id]
-        except KeyError:
-            _, ids = list(self._resolve_lightcurve_ids_for(tic_id))[0]
-            self._lightcurve_id_cache[tic_id] = ids
-        return ids
+        return self._reduce_defaultdict(result)
 
-    def get_lightcurve(self, tic_id):
-        ids = self._resolve_key(tic_id)
-        return self.construct_lightcurve(ids)
+    def get_lightcurve(self, tic_ids):
+        q = sa.select(
+            m.ArrayOrbitLightcurve.tic_id,
+            sa.func.array_agg(m.ArrayOrbitLightcurve.cadences),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.barycentric_julian_dates),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.data),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.errors),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.x_centroids),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.y_centroids),
+            sa.func.array_agg(m.ArrayOrbitLightcurve.quality_flags),
+        ).join(
+            m.BestOrbitLightcurve,
+            m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
+        )
+        if len(tic_ids) == 1:
+            q = q.where(m.ArrayOrbitLightcurve.tic_id == list(tic_ids)[0])
+        else:
+            q = q.where(m.ArrayOrbitLightcurve.tic_id.in_(tic_ids))
+
+        return self._execute_q(q)
