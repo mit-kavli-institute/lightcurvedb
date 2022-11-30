@@ -81,12 +81,12 @@ def list_defined(ctx):
 
 
 @admin.group()
-@click.pass_context
 def maintenance(ctx):
     pass
 
 
 @maintenance.command()
+@click.pass_context
 @click.argument("hyper-table", type=str)
 @click.argument("indexer", type=str)
 @click.option("--n-processes", type=int, default=16)
