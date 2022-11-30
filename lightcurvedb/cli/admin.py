@@ -1,4 +1,8 @@
+import multiprocessing as mp
+
 import click
+import sqlalchemy as sa
+from ligthcurvedb.core import partitioning
 from sqlalchemy import text
 from tabulate import tabulate
 
@@ -80,6 +84,27 @@ def list_defined(ctx):
 @click.pass_context
 def maintenance(ctx):
     pass
+
+
+@maintenance.command()
+@click.argument("hyper-table", type=str)
+@click.argument("indexer", type=str)
+@click.option("--n-processes", type=int, default=16)
+def cluster_hyper_table(ctx, hyper_table, indexer, n_processes):
+    chunk_q = sa.select(
+        sa.func.concat(
+            sa.column("chunk_schema"), ".", sa.column("chunk_name")
+        ).label("chunk_path")
+    ).select_from(sa.func.chunks_detailed_size(hyper_table))
+    jobs = []
+    with db_from_config(ctx.obj["dbconf"]) as db:
+        for (chunkpath,) in db.execute(chunk_q):
+            jobs.append((ctx.obj["dbconf"], chunkpath, indexer))
+            click.echo(f"Ordering {chunkpath} using {indexer}")
+    with mp.Pool(n_processes) as pool:
+        pool.starmap(partitioning.reorder_chunk, jobs)
+
+    return
 
 
 @admin.group()
