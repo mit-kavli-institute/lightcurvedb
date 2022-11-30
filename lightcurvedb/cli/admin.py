@@ -2,7 +2,6 @@ import multiprocessing as mp
 
 import click
 import sqlalchemy as sa
-from ligthcurvedb.core import partitioning
 from sqlalchemy import text
 from tabulate import tabulate
 
@@ -10,6 +9,7 @@ from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import ModelField
 from lightcurvedb.cli.utils import tabulate_query
+from lightcurvedb.core import partitioning
 from lightcurvedb.core.psql_tables import PGStatActivity
 
 
