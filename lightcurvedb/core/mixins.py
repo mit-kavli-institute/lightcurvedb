@@ -222,7 +222,7 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
             )
 
         if resolve:
-            return q.one()
+            return self._process_lc_selection(q)
 
         return q
 
