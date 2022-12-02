@@ -295,7 +295,7 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         type = self.execute(q).fetchone()
         return type
 
-    def get_best_lightcurve_baseline(
+    def get_multisector_best_lightcurve(
         self, tic_id, aperture=None, lightcurve_type=None
     ):
         BEST_LC = m.BestOrbitLightcurve
