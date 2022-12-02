@@ -72,16 +72,13 @@ class OrbitAPIMixin(APIMixin):
     def query_orbit_cadence_limit(
         self,
         orbit_number: int,
-        cadence_type: int,
         camera: int,
         frame_type: typing.Optional[str] = None,
     ):
         """
         Returns the upper and lower cadence boundaries of an orbit. Since each
         orbit will have frames from multiple cameras a camera parameter is
-        needed. In addition, TESS switched to 10 minute cadence numberings
-        in July 2020.
-
+        needed.
         Parameters
         ----------
         orbit_number : int
