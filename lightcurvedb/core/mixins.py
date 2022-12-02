@@ -169,37 +169,6 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
             structs.append(lc.to_numpy(normalize=True, offset=tmag))
         return np.concatenate(structs)
 
-    def get_missing_id_ranges(self):
-        """
-        Parse through all orbit lightcurves to find gaps in the primary key
-        sequence.
-
-        Returns
-        -------
-        List[(int, int)]
-        Returns a list of tuples indicating lack of assigned ids in the range
-        of [start, end].
-
-        Note
-        ----
-        This query must parse all ids and hence can take a few minutes to
-        complete. As such, if pipeline operations are occuring, this list
-        may not include the newest gaps.
-        """
-        subq = sa.select(
-            m.ArrayOrbitLightcurve.id,
-            (
-                sa.func.lead(m.ArrayOrbitLightcurve.id)
-                .over(order_by=m.ArrayOrbitLightcurve.id)
-                .label("next_id")
-            ),
-        ).subquery()
-        q = sa.select(
-            (subq.c.id + 1).label("gap_start"),
-            (subq.c.next_id - 1).label("gap_end"),
-        ).where(subq.c.id + 1 != subq.c.next_id)
-        return self.execute(q).fetchall()
-
     def get_lightcurve(
         self, tic_id, lightcurve_type, aperture, orbit, resolve=True
     ):
