@@ -244,6 +244,21 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
 
 class BestOrbitLightcurveAPIMixin(APIMixin):
     def get_best_aperture_assignment(self, tic_id, orbit_number):
+        """
+        Return the best aperture assignment for the given tic id and
+        orbit_number.
+
+        Parameters
+        ----------
+        tic_id: int
+            The TIC identifier desired.
+        orbit_number: int
+            The Orbit number desired.
+
+        Returns
+        -------
+        lightcurvedb.models.Aperture
+        """
         q = (
             sa.select(m.Aperture)
             .join(m.BestOrbitLightcurve.aperture)
@@ -257,6 +272,22 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         return aperture
 
     def get_best_lightcurve_type_assignment(self, tic_id, orbit_number):
+        """
+        Return the best lightcurve type assignment for the given tic id and
+        orbit_number.
+
+        Parameters
+        ----------
+        tic_id: int
+            The TIC identifier desired.
+        orbit_number: int
+            The Orbit number desired.
+
+        Returns
+        -------
+        lightcurvedb.models.LightcurveType
+        """
+
         q = sa.select(m.LightcurveType).where(
             m.BestOrbitLightcurve.tic_id == tic_id,
             m.Orbit.orbit_number == orbit_number,
