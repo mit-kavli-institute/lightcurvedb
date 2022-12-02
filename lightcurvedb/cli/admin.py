@@ -81,7 +81,7 @@ def list_defined(ctx):
 
 
 @admin.group()
-def maintenance(ctx):
+def maintenance():
     pass
 
 

@@ -10,7 +10,6 @@ def reorder_chunk(db_config, chunkpath, index):
     reorder_q = sa.select().select_from(
         sa.func.reorder_chunk(chunkpath, index)
     )
-    with db_from_config(db_config) as db:
+    with db_from_config(db_config, isolation_level="AUTOCOMMIT") as db:
         db.execute(reorder_q)
-        db.commit()
     return chunkpath
