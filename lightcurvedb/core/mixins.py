@@ -243,19 +243,26 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
 
 
 class BestOrbitLightcurveAPIMixin(APIMixin):
-    def resolve_best_aperture_id(self, bestap):
-        q = sa.select(m.Aperture.id).filter(
-            m.Aperture.name.ilike(f"%{bestap}%")
+    def get_best_aperture_assignment(self, tic_id, orbit_number):
+        q = (
+            sa.select(m.Aperture)
+            .join(m.BestOrbitLightcurve.aperture)
+            .join(m.BestOrbitLightcurve.orbit)
+            .where(
+                m.BestOrbitLightcurve.tic_id == tic_id,
+                m.Orbit.orbit_number == orbit_number,
+            )
         )
-        id_ = self.execute(q).fetchone()[0]
-        return id_
+        aperture = self.execute(q).fetchone()
+        return aperture
 
-    def resolve_best_lightcurve_type_id(self, detrend_name):
-        q = sa.select(m.LightcurveType.id).filter(
-            m.LightcurveType.name.ilike(detrend_name.lower())
+    def get_best_lightcurve_type_assignment(self, tic_id, orbit_number):
+        q = sa.select(m.LightcurveType).where(
+            m.BestOrbitLightcurve.tic_id == tic_id,
+            m.Orbit.orbit_number == orbit_number,
         )
-        id_ = self.execute(q).fetchone()[0]
-        return id_
+        type = self.execute(q).fetchone()
+        return type
 
     def get_best_lightcurve_baseline(
         self, tic_id, aperture=None, lightcurve_type=None
