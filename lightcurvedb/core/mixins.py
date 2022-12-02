@@ -202,22 +202,22 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
         q = (
             sa.select(m.ArrayOrbitLightcurve)
             .join(m.ArrayOrbitLightcurve.orbit)
-            .filter(m.Orbit.orbit_number == orbit)
+            .where(m.Orbit.orbit_number == orbit)
         )
 
         if isinstance(aperture, str):
             q = q.join(m.ArrayOrbitLightcurve.aperture)
-            q = q.filter(m.ArrayOrbitLightcurve.aperture_name == aperture)
+            q = q.where(m.ArrayOrbitLightcurve.aperture_name == aperture)
         else:
-            q = q.filter(m.ArrayOrbitLightcurve.aperture_id == aperture)
+            q = q.where(m.ArrayOrbitLightcurve.aperture_id == aperture)
 
         if isinstance(lightcurve_type, str):
             q = q.join(m.ArrayOrbitLightcurve.lightcurve_type)
-            q = q.filter(
+            q = q.where(
                 m.ArrayOrbitLightcurve.lightcurve_type_name == lightcurve_type
             )
         else:
-            q = q.filter(
+            q = q.where(
                 m.ArrayOrbitLightcurve.lightcurve_type_id == lightcurve_type
             )
 
