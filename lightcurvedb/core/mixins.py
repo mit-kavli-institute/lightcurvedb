@@ -5,6 +5,7 @@ import pandas as pd
 import pyticdb
 import sqlalchemy as sa
 
+from lightcurvedb import exceptions
 from lightcurvedb import models as m
 from lightcurvedb.core import psql_tables
 
@@ -158,6 +159,16 @@ class OrbitAPIMixin(APIMixin):
 
 class ArrayOrbitLightcurveAPIMixin(APIMixin):
     def _process_lc_selection(self, select_q):
+        """
+        Process a lightcurve query statement into a numpy structured
+        array.
+
+        Raises
+        ------
+        lightcurvedb.exceptions.EmptyLightcurve
+            If the query results in an empty array, this exception will
+            be raised with the statement executed.
+        """
         structs = []
         stellar_param_info = {}
         for lc in self.execute(select_q).scalars():
@@ -167,6 +178,10 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
                 tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
                 stellar_param_info[lc.tic_id] = tmag
             structs.append(lc.to_numpy(normalize=True, offset=tmag))
+
+        if len(structs) == 0:
+            raise exceptions.EmptyLightcurve(q=select_q)
+
         return np.concatenate(structs)
 
     def get_lightcurve(

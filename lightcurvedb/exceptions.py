@@ -1,6 +1,7 @@
 """
 Base module for all lightcurvedb specific exceptions.
 """
+from sqlalchemy.dialects import postgresql
 
 
 class LightcurveDBException(Exception):
@@ -25,4 +26,9 @@ class EmptyLightcurve(LightcurveDBException):
     Raised when a given lightcurve has a definition but no timeseries data.
     """
 
-    pass
+    def __init__(self, q):
+        statement = q.compile(dialect=postgresql.dialect())
+        super().__init__(
+            "Could not find any lightcurves with "
+            f"the given context: {statement}"
+        )
