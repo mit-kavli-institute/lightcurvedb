@@ -524,7 +524,7 @@ class LegacyAPIMixin(APIMixin):
             )
             .order_by(m.Frame.cadence.asc())
         )
-        return [c for c, in self.execute(q).fetchall()]
+        return self.execute(q).scalars().fetchall()
 
     def get_cadences_in_sectors(self, sectors, frame_type=None):
         q = (
@@ -539,4 +539,4 @@ class LegacyAPIMixin(APIMixin):
             )
             .order_by(m.Frame.cadence.asc())
         )
-        return [c for c, in self.execute(q).fetchall()]
+        return self.execute(q).scalars().fetchall()
