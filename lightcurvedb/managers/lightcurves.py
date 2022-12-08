@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 from lightcurvedb import db_from_config
 from lightcurvedb import models as m
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 LP_DATA_COLUMNS = (
     "cadence",
@@ -40,7 +40,7 @@ class LightcurveManager:
     def __init__(
         self, config=None, cache_size=4096, n_lc_readers=mp.cpu_count()
     ):
-        self._config = __DEFAULT_PATH__ if config is None else config
+        self._config = DEFAULT_CONFIG_PATH if config is None else config
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
         self.n_lc_readers = n_lc_readers
 

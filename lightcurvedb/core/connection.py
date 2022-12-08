@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from lightcurvedb import models
 from lightcurvedb.core import mixins
 from lightcurvedb.core.engines import thread_safe_engine
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
 class DB(
@@ -129,6 +129,6 @@ def db_from_config(
 
 # Try and instantiate "global" lcdb
 try:
-    db = db_from_config(__DEFAULT_PATH__)
+    db = db_from_config(DEFAULT_CONFIG_PATH)
 except KeyError:
     db = None

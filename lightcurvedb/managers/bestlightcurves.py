@@ -12,7 +12,7 @@ from lightcurvedb.managers.lightcurves import (
     LightcurveManager,
     _nested_defaultdict,
 )
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
 class BestLightcurveManager(LightcurveManager):
@@ -34,7 +34,7 @@ class BestLightcurveManager(LightcurveManager):
     """
 
     def __init__(self, config=None, cache_size=4096):
-        self._config = __DEFAULT_PATH__ if config is None else config
+        self._config = DEFAULT_CONFIG_PATH if config is None else config
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
 
     def __getitem__(self, key):
