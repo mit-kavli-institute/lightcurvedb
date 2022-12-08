@@ -4,6 +4,7 @@ This module describes the best-orbit lightcurve manager subclasses
 from itertools import groupby
 
 import cachetools
+import numpy as np
 import sqlalchemy as sa
 
 from lightcurvedb import db_from_config
@@ -73,7 +74,7 @@ class BestLightcurveManager(LightcurveManager):
             )
         )
 
-        if isinstance(tic_ids, int):
+        if isinstance(tic_ids, (int, np.integer)):
             q = q.where(m.ArrayOrbitLightcurve.tic_id == tic_ids)
         elif len(tic_ids) == 1:
             q = q.where(m.ArrayOrbitLightcurve.tic_id == list(tic_ids)[0])
