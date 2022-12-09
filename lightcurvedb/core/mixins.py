@@ -241,7 +241,7 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
 
         return q
 
-    def get_lightcurve_baseline(self, tic_id, lightcurve_type, aperture):
+    def get_multisector_lightcurve(self, tic_id, lightcurve_type, aperture):
         q = (
             sa.select(m.ArrayOrbitLightcurve)
             .join(m.ArrayOrbitLightcurve.aperture)
