@@ -49,8 +49,8 @@ class BLS(QLPModel, CreatedOnMixin):
     whitenoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     signal_to_noise = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)
     signal_to_pinknoise = sa.Column(DOUBLE_PRECISION, nullable=False)
-    sde = sa.Column(DOUBLE_PRECISION, nullable=False)
-    sr = sa.Column(DOUBLE_PRECISION, nullable=False)
+    signal_detection_efficiency = sa.Column(DOUBLE_PRECISION, nullable=False)
+    signal_residual = sa.Column(DOUBLE_PRECISION, nullable=False)
     period_inv_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
 
     # Click queryable parameters
