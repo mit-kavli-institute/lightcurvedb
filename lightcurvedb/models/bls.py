@@ -1,76 +1,57 @@
+import sqlalchemt as sa
 from click import Choice
-from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    Column,
-    ForeignKey,
-    Integer,
-    SmallInteger,
-    UniqueConstraint,
-)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.schema import Index
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
-
-
-class BLSResultLookup(QLPModel, CreatedOnMixin):
-    """ """
-
-    __tablename__ = "bls_result_lookups"
-    __table_args__ = (UniqueConstraint("bls_id", "best_detrending_method_id"),)
-
-    id = Column(BigInteger, primary_key=True)
-    bls_id = Column(ForeignKey("bls.id"))
-    best_detrending_method_id = Column(ForeignKey("best_orbit_lightcurves.id"))
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 
 
 class BLS(QLPModel, CreatedOnMixin):
 
     __tablename__ = "bls"
 
-    id = Column(BigInteger, primary_key=True)
-    sector = Column(SmallInteger, index=True)
-    tic_id = Column(BigInteger, index=True)
+    id = sa.Column(sa.BigInteger, primary_key=True)
+    sector = sa.Column(sa.SmallInteger, index=True)
+    tic_id = sa.Column(sa.BigInteger, index=True)
 
-    tce_n = Column(
-        SmallInteger,
+    tce_n = sa.Column(
+        sa.SmallInteger,
         index=Index(name="tce_n_gin", postgresql_using="gin"),
         nullable=False,
     )
-    runtime_parameters = Column(
+    runtime_parameters = sa.Column(
         JSONB,
         nullable=False,
         index=Index(name="runtime_parameters_gin", postgresql_using="gin"),
     )
 
     # Begin Astrophysical parameters
-    period = Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
-    transit_depth = Column(DOUBLE_PRECISION, nullable=False)
-    transit_duration = Column(DOUBLE_PRECISION, nullable=False)  # Days
-    planet_radius = Column(
+    period = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
+    transit_depth = sa.Column(DOUBLE_PRECISION, nullable=False)
+    transit_duration = sa.Column(DOUBLE_PRECISION, nullable=False)  # Days
+    planet_radius = sa.Column(
         DOUBLE_PRECISION, nullable=False, index=True
     )  # Earth Radii
-    planet_radius_error = Column(
+    planet_radius_error = sa.Column(
         DOUBLE_PRECISION, nullable=False
     )  # Earth Radii
 
     # Begin BLS info
-    points_pre_transit = Column(Integer, nullable=False)
-    points_in_transit = Column(Integer, nullable=False)
-    points_post_transit = Column(Integer, nullable=False)
-    transits = Column(Integer, nullable=False, index=True)
-    transit_shape = Column(DOUBLE_PRECISION, nullable=False)
-    transit_center = Column(DOUBLE_PRECISION, nullable=False)
-    duration_rel_period = Column(DOUBLE_PRECISION, nullable=False)
-    rednoise = Column(DOUBLE_PRECISION, nullable=False)
-    whitenoise = Column(DOUBLE_PRECISION, nullable=False)
-    signal_to_noise = Column(DOUBLE_PRECISION, nullable=False, index=True)
-    signal_to_pinknoise = Column(DOUBLE_PRECISION, nullable=False)
-    sde = Column(DOUBLE_PRECISION, nullable=False)
-    sr = Column(DOUBLE_PRECISION, nullable=False)
-    period_inv_transit = Column(DOUBLE_PRECISION, nullable=False)
+    points_pre_transit = sa.Column(sa.Integer, nullable=False)
+    points_in_transit = sa.Column(sa.Integer, nullable=False)
+    points_post_transit = sa.Column(sa.Integer, nullable=False)
+    transits = sa.Column(sa.Integer, nullable=False, index=True)
+    transit_shape = sa.Column(DOUBLE_PRECISION, nullable=False)
+    transit_center = sa.Column(DOUBLE_PRECISION, nullable=False)
+    duration_rel_period = sa.Column(DOUBLE_PRECISION, nullable=False)
+    rednoise = sa.Column(DOUBLE_PRECISION, nullable=False)
+    whitenoise = sa.Column(DOUBLE_PRECISION, nullable=False)
+    signal_to_noise = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)
+    signal_to_pinknoise = sa.Column(DOUBLE_PRECISION, nullable=False)
+    sde = sa.Column(DOUBLE_PRECISION, nullable=False)
+    sr = sa.Column(DOUBLE_PRECISION, nullable=False)
+    period_inv_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
 
     # Click queryable parameters
     click_parameters = Choice(
@@ -148,5 +129,7 @@ class BLS(QLPModel, CreatedOnMixin):
     @is_legacy.expression
     def is_legacy(cls):
         return (
-            cls.runtime_parameters["legacy"].cast(Boolean).label("is_legacy")
+            cls.runtime_parameters["legacy"]
+            .cast(sa.Boolean)
+            .label("is_legacy")
         )
