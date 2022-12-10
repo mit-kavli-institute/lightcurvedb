@@ -41,6 +41,7 @@ class BLS(QLPModel, CreatedOnMixin):
     points_pre_transit = sa.Column(sa.Integer, nullable=False)
     points_in_transit = sa.Column(sa.Integer, nullable=False)
     points_post_transit = sa.Column(sa.Integer, nullable=False)
+    out_of_transit_magnitude = sa.Column(DOUBLE_PRECISION, nullable=False)
     transits = sa.Column(sa.Integer, nullable=False, index=True)
     transit_shape = sa.Column(DOUBLE_PRECISION, nullable=False)
     transit_center = sa.Column(DOUBLE_PRECISION, nullable=False)
