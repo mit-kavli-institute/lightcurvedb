@@ -1,4 +1,4 @@
-import sqlalchemt as sa
+import sqlalchemy as sa
 from click import Choice
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -130,15 +130,3 @@ class BLS(QLPModel, CreatedOnMixin):
     @tc.expression
     def tc(cls):
         return cls.transit_center.label("tc")
-
-    @hybrid_property
-    def is_legacy(self):
-        return self.runtime_parameters.get("legacy", False)
-
-    @is_legacy.expression
-    def is_legacy(cls):
-        return (
-            cls.runtime_parameters["legacy"]
-            .cast(sa.Boolean)
-            .label("is_legacy")
-        )
