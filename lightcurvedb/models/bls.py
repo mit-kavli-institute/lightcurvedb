@@ -45,7 +45,6 @@ class BLS(QLPModel, CreatedOnMixin):
     transits = sa.Column(sa.Integer, nullable=False, index=True)
     transit_shape = sa.Column(DOUBLE_PRECISION, nullable=False)
     transit_center = sa.Column(DOUBLE_PRECISION, nullable=False)
-    duration_rel_period = sa.Column(DOUBLE_PRECISION, nullable=False)
     rednoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     whitenoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     signal_to_noise = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)
@@ -83,6 +82,14 @@ class BLS(QLPModel, CreatedOnMixin):
         ],
         case_sensitive=False,
     )
+
+    @hybrid_property
+    def duration_rel_period(self):
+        return self.transit_duration / self.transit_period
+
+    @duration_rel_period.expression
+    def duration_rel_period(cls):
+        return cls.transit_duration / cls.transit_period
 
     @hybrid_property
     def qingress(self):
