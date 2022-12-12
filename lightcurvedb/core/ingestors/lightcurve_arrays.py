@@ -358,6 +358,10 @@ def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
+    if len(jobs) == 0:
+        logger.info("No jobs to ingest. Returning")
+        return
+
     with tqdm(total=len(jobs), unit=" jobs") as bar:
         if "logfile" not in cli_context:
             # If logging to standard out, we need to ensure loguru
