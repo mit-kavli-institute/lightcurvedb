@@ -15,11 +15,7 @@ class BLS(QLPModel, CreatedOnMixin):
     sector = sa.Column(sa.SmallInteger, index=True)
     tic_id = sa.Column(sa.BigInteger, index=True)
 
-    tce_n = sa.Column(
-        sa.SmallInteger,
-        index=Index(name="tce_n_gin", postgresql_using="gin"),
-        nullable=False,
-    )
+    tce_n = sa.Column(sa.SmallInteger, nullable=False, index=True)
     runtime_parameters = sa.Column(
         JSONB,
         nullable=False,
