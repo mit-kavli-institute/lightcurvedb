@@ -1,5 +1,4 @@
 import sqlalchemy as sa
-from click import Choice
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.schema import Index
@@ -16,14 +15,11 @@ class BLS(QLPModel, CreatedOnMixin):
     tic_id = sa.Column(sa.BigInteger, index=True)
 
     tce_n = sa.Column(sa.SmallInteger, nullable=False, index=True)
-    runtime_parameters = sa.Column(
-        JSONB,
-        nullable=False,
-        index=Index(name="runtime_parameters_gin", postgresql_using="gin"),
-    )
 
     # Begin Astrophysical parameters
-    period = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)  # Days
+    transit_period = sa.Column(
+        DOUBLE_PRECISION, nullable=False, index=True
+    )  # Days
     transit_depth = sa.Column(DOUBLE_PRECISION, nullable=False)
     transit_duration = sa.Column(DOUBLE_PRECISION, nullable=False)  # Days
     planet_radius = sa.Column(
@@ -39,44 +35,20 @@ class BLS(QLPModel, CreatedOnMixin):
     points_post_transit = sa.Column(sa.Integer, nullable=False)
     out_of_transit_magnitude = sa.Column(DOUBLE_PRECISION, nullable=False)
     transits = sa.Column(sa.Integer, nullable=False, index=True)
-    transit_shape = sa.Column(DOUBLE_PRECISION, nullable=False)
+    ingress = sa.Column(DOUBLE_PRECISION, nullable=False)
     transit_center = sa.Column(DOUBLE_PRECISION, nullable=False)
     rednoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     whitenoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     signal_to_noise = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)
     signal_to_pinknoise = sa.Column(DOUBLE_PRECISION, nullable=False)
-    signal_to_rednoise = sa.Column(DOUBLE_PRECISION, nullable=False)
     signal_detection_efficiency = sa.Column(DOUBLE_PRECISION, nullable=False)
     signal_residual = sa.Column(DOUBLE_PRECISION, nullable=False)
-    period_inv_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
+    zero_point_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
 
-    # Click queryable parameters
-    click_parameters = Choice(
-        [
-            "created_on",
-            "lightcurve",
-            "period",
-            "transit_depth",
-            "transit_duration",
-            "planet_radius",
-            "points_pre_transit",
-            "points_in_transit",
-            "points_post_transit",
-            "transits",
-            "transit_shape",
-            "transit_center",
-            "duration_rel_period",
-            "rednoise",
-            "whitenoise",
-            "signal_to_noise",
-            "signal_to_pinknoise",
-            "sde",
-            "sr",
-            "period_inv_transit",
-            "tic_id",
-            "sector",
-        ],
-        case_sensitive=False,
+    metadata = sa.Column(JSONB, default={})
+
+    __table_args__ = (
+        Index("bls_metadata_idx", metadata, postgresql_using="gin"),
     )
 
     @hybrid_property
@@ -126,3 +98,29 @@ class BLS(QLPModel, CreatedOnMixin):
     @tc.expression
     def tc(cls):
         return cls.transit_center.label("tc")
+
+    @classmethod
+    def from_bls_result(cls, bls_result):
+        return cls(
+            tic_id=bls_result["tic"],
+            tce_n=bls_result["planetno"],
+            period=bls_result["per"],
+            transit_depth=bls_result["dep"],
+            transit_duration=bls_result["dur"],
+            planet_radius=None,
+            planet_radius_error=None,
+            points_pre_transit=bls_result["nbefore"],
+            points_in_transit=bls_result["nt"],
+            points_post_transit=bls_result["nafter"],
+            out_of_transit_magnitude=bls_result["ootmag"],
+            transits=bls_result["Nt"],
+            ingress=bls_result["qin"] * bls_result["dur"],
+            transit_center=bls_result["epo"],
+            rednoise=bls_result["sig_r"],
+            whitenoise=bls_result["sig_w"],
+            signal_to_noise=bls_result["sn"],
+            signal_to_pinknoise=bls_result["spn"],
+            signal_detection_efficiency=bls_result["sde"],
+            signal_residual=bls_result["sr"],
+            zero_point_transit=bls_result["zpt"],
+        )
