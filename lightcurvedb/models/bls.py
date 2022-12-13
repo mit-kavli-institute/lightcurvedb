@@ -58,12 +58,14 @@ class BLS(QLPModel, CreatedOnMixin):
     signal_residual = sa.Column(DOUBLE_PRECISION, nullable=False)
     zero_point_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
 
-    metadata = sa.Column(JSONB, default={})
+    additional_data = sa.Column(JSONB, default={})
 
     tags = relationship("BLSTag", secondary=BLSTagAssociationTable)
 
     __table_args__ = (
-        Index("bls_metadata_idx", metadata, postgresql_using="gin"),
+        Index(
+            "bls_additional_data_idx", additional_data, postgresql_using="gin"
+        ),
     )
 
     @hybrid_property
