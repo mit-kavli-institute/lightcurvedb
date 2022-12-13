@@ -1,9 +1,22 @@
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
 
-from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
+from lightcurvedb.core.base_model import (
+    CreatedOnMixin,
+    NameAndDescriptionMixin,
+    QLPModel,
+)
+
+
+class BLSTagAssociationTable(QLPModel):
+    __tablename__ = "bls_association_table"
+
+    id = sa.Column(sa.BigInteger, primary_key=True)
+    bls = sa.Column(sa.ForeignKey("bls.id"))
+    tag = sa.Column(sa.ForeignKey("bls_tags.id"))
 
 
 class BLS(QLPModel, CreatedOnMixin):
@@ -46,6 +59,8 @@ class BLS(QLPModel, CreatedOnMixin):
     zero_point_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
 
     metadata = sa.Column(JSONB, default={})
+
+    tags = relationship("BLSTag", secondary=BLSTagAssociationTable)
 
     __table_args__ = (
         Index("bls_metadata_idx", metadata, postgresql_using="gin"),
@@ -124,3 +139,15 @@ class BLS(QLPModel, CreatedOnMixin):
             signal_residual=bls_result["sr"],
             zero_point_transit=bls_result["zpt"],
         )
+
+
+class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
+    __tablename__ = "bls_tags"
+    id = sa.Column(sa.Integer, primary_key=True)
+
+    bls_runs = relationship("BLS", secondary=BLSTagAssociationTable)
+
+    __table_args__ = (
+        sa.UniqueConstraint("name"),
+        Index("bls_tags_name_idx", "name", postgresql_using="gin"),
+    )
