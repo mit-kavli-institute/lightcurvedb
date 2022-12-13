@@ -151,5 +151,9 @@ class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     __table_args__ = (
         sa.UniqueConstraint("name"),
-        Index("bls_tags_name_idx", "name", postgresql_using="gin"),
+        Index(
+            "bls_tags_name_tsv",
+            sa.func.to_tsvector("english", "name"),
+            postgresql_using="gin",
+        ),
     )
