@@ -1,4 +1,4 @@
-__version__ = "0.14.0a7"
+__version__ = "0.14.0a8"
 
 from lightcurvedb.core.connection import db, db_from_config
 from lightcurvedb.models import Aperture, LightcurveType, Orbit
