@@ -11,6 +11,7 @@ from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 class DB(
     Session,
     mixins.BestOrbitLightcurveAPIMixin,
+    mixins.BLSAPIMixin,
     mixins.FrameAPIMixin,
     mixins.OrbitAPIMixin,
     mixins.ArrayOrbitLightcurveAPIMixin,
