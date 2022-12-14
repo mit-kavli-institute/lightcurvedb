@@ -123,7 +123,7 @@ class BLS(QLPModel, CreatedOnMixin):
 
         star_radius, star_radius_error = pyticdb.query_by_id(
             bls_result["tic"], "rad", "e_rad"
-        )
+        )[0]
         star_radius *= u.solRad
         star_radius_error *= u.solRad
 
