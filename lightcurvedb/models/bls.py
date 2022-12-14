@@ -1,4 +1,8 @@
+from math import isnan, sqrt
+
+import pyticdb
 import sqlalchemy as sa
+from astropy import units as u
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -116,14 +120,31 @@ class BLS(QLPModel, CreatedOnMixin):
 
     @classmethod
     def from_bls_result(cls, bls_result):
+
+        star_radius, star_radius_error = pyticdb.query_by_id(
+            bls_result["tic"], "rad", "e_rad"
+        )
+        star_radius *= u.solRad
+        star_radius_error *= u.solRad
+
+        if star_radius is None or isnan(star_radius):
+            planet_radius = float("nan")
+            planet_radius_error = float("nan")
+        else:
+            planet_radius = star_radius * sqrt(bls_result["dep"])
+            planet_radius_error = star_radius * sqrt(bls_result["dep"])
+
+            planet_radius = planet_radius.to(u.earthRad).value
+            planet_radius_error = planet_radius.to(u.earthRad).value
+
         return cls(
             tic_id=bls_result["tic"],
             tce_n=bls_result["planetno"],
             period=bls_result["per"],
             transit_depth=bls_result["dep"],
             transit_duration=bls_result["dur"],
-            planet_radius=None,
-            planet_radius_error=None,
+            planet_radius=planet_radius,
+            planet_radius_error=planet_radius_error,
             points_pre_transit=bls_result["nbefore"],
             points_in_transit=bls_result["nt"],
             points_post_transit=bls_result["nafter"],
