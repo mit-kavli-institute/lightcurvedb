@@ -124,13 +124,14 @@ class BLS(QLPModel, CreatedOnMixin):
         star_radius, star_radius_error = pyticdb.query_by_id(
             bls_result["tic"], "rad", "e_rad"
         )[0]
-        star_radius *= u.solRad
-        star_radius_error *= u.solRad
 
         if star_radius is None or isnan(star_radius):
             planet_radius = float("nan")
             planet_radius_error = float("nan")
         else:
+            star_radius *= u.solRad
+            star_radius_error *= u.solRad
+
             planet_radius = star_radius * sqrt(bls_result["dep"])
             planet_radius_error = star_radius_error * sqrt(bls_result["dep"])
 
