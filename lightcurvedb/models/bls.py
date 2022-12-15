@@ -144,7 +144,7 @@ class BLS(QLPModel, CreatedOnMixin):
         return cls(
             tic_id=bls_result["tic"],
             tce_n=bls_result["planetno"],
-            period=bls_result["per"],
+            transit_period=bls_result["per"],
             transit_depth=bls_result["dep"],
             transit_duration=bls_result["dur"],
             planet_radius=planet_radius,
