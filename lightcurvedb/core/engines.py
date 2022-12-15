@@ -1,32 +1,9 @@
-from __future__ import division, print_function
-
 import os
 
-try:
-    from configparser import ConfigParser
-except ImportError:
-    # Python 2?
-    from ConfigParser import ConfigParser
-
-from psycopg2 import connect
+import configurables as conf
 from sqlalchemy import create_engine, pool
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
-
-from lightcurvedb.util.constants import __DEFAULT_PATH__
-
-
-def __config_to_kwargs__(path):
-    parser = ConfigParser()
-    parser.read(path)
-    kwargs = {
-        "username": parser.get("Credentials", "username"),
-        "password": parser.get("Credentials", "password"),
-        "database": parser.get("Credentials", "database_name"),
-        "host": parser.get("Credentials", "database_host"),
-        "port": parser.get("Credentials", "database_port"),
-    }
-    return kwargs
 
 
 def __register_process_guards__(engine):
@@ -48,86 +25,33 @@ def __register_process_guards__(engine):
     return engine
 
 
-def __init_engine__(uri, **engine_kwargs):
-    engine = create_engine(uri, **engine_kwargs)
-    return __register_process_guards__(engine)
+def _PoolClass(name):
+    return getattr(pool, name)
 
 
-def psycopg_connection(uri_override=None):
-    """
-    Create a raw psycopg2 connection to a postgreSQL database using the
-    provided configuration path or using lightcurvedb's default config
-    path.
-
-    Parameters
-    ----------
-    uri_override: pathlike, optional
-        The path to a configuration file to configure a psycopg2 connection.
-        If not provided then lightcurvedb will use the default user
-        configuration path
-    Returns
-    -------
-    psycopg2.Connection
-    """
-    kwargs = __config_to_kwargs__(
-        uri_override if uri_override else __DEFAULT_PATH__
-    )
-
-    return connect(
-        dbname=kwargs["database"],
-        user=kwargs["username"],
-        password=kwargs["password"],
-        host=kwargs["host"],
-        port=kwargs["port"],
-    )
-
-
-ENGINE_CONF_REQ_ARGS = {
-    "username": "username",
-    "password": "password",
-    "database": "database_name",
-}
-
-ENGINE_CONF_OPT_ARGS = {
-    "dialect": "dialect",
-    "host": "database_host",
-    "port": "database_port",
-}
-
-OPT_DEFAULTS = {
-    "dialect": "postgresql+psycopg2",
-    "host": "localhost",
-    "port": 5432,
-}
-
-
-def engine_from_config(
-    config_path,
-    config_group="Credentials",
-    uri_template="{dialect}://{username}:{password}@{host}:{port}/{database}",
-    **engine_overrides
+@conf.configurable("Credentials")
+@conf.param("database_name")
+@conf.param("username")
+@conf.param("password")
+@conf.option("database_host", default="localhost")
+@conf.option("database_port", type=int, default=5432)
+@conf.option("poolclass", type=_PoolClass, default=pool.NullPool)
+@conf.option("dialect", default="postgresql+psycopg2")
+def thread_safe_engine(
+    database_name,
+    username,
+    password,
+    database_host,
+    database_port,
+    dialect,
+    **engine_overrides,
 ):
     """
     Create an SQLAlchemy engine from the configuration path.
     """
-    config = ConfigParser()
-    config.read(os.path.expanduser(config_path))
-
-    section = config[config_group]
-
-    kwargs = {}
-    # Absolutely required
-    for kwarg, config_path in ENGINE_CONF_REQ_ARGS.items():
-        kwargs[kwarg] = section[config_path]
-
-    for kwarg, config_path in ENGINE_CONF_OPT_ARGS.items():
-        kwargs[kwarg] = section.get(config_path, OPT_DEFAULTS[kwarg])
-
-    if "poolclass" not in engine_overrides:
-        engine_overrides["poolclass"] = getattr(
-            pool, kwargs.pop("poolclass", "NullPool")
-        )
-
-    url = uri_template.format(**kwargs)
-    engine = __init_engine__(url, **engine_overrides)
+    url = (
+        f"{dialect}://{username}:{password}"
+        f"@{database_host}:{database_port}/{database_name}"
+    )
+    engine = create_engine(url, **engine_overrides)
     return __register_process_guards__(engine)

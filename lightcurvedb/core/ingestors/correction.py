@@ -2,13 +2,13 @@ import warnings
 from datetime import datetime
 
 import numpy as np
+import pyticdb
 from astropy import constants as const
 from astropy import time
 from loguru import logger
 from scipy.interpolate import interp1d
 
 from lightcurvedb.core.ingestors import contexts
-from lightcurvedb.core.tic8 import one_off
 
 LIGHTSPEED_AU_DAY = const.c.to("m/day") / const.au
 BJD_EPOC = time.Time(2457000, format="jd", scale="tdb")
@@ -53,7 +53,7 @@ class LightcurveCorrector:
         try:
             row = self.tic_map[tic_id]
         except KeyError:
-            remote = one_off(tic_id, *TIC_PARAM_FIELDS)
+            remote = pyticdb.query_by_id(tic_id, *TIC_PARAM_FIELDS)
             row = dict(zip(TIC_PARAM_FIELDS, remote))
             self.tic_map[tic_id] = row
 

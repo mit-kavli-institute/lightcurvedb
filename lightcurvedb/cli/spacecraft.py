@@ -62,7 +62,7 @@ def ingest(ctx, ephemeris_csv):
     ephemeris_df = ephemeris_df[~ephemeris_df.index.duplicated(keep="last")]
     ephemeris_df.sort_index(inplace=True)
 
-    with ctx.obj["dbconf"] as db:
+    with ctx.obj["db"] as db:
         for i, row in ephemeris_df.iterrows():
             eph = SpacecraftEphemeris(
                 barycentric_dynamical_time=i, **dict(row)

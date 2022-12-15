@@ -3,6 +3,7 @@ This module describes the best-orbit lightcurve manager subclasses
 """
 import cachetools
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb import db_from_config, models
 from lightcurvedb.managers.lightcurves import LightcurveManager
@@ -40,8 +41,14 @@ class BestLightcurveManager(LightcurveManager):
         q = (
             sa.select(
                 models.ArrayOrbitLightcurve.tic_id,
-                sa.func.array_agg(models.ArrayOrbitLightcurve.id),
+                sa.func.array_agg(
+                    aggregate_order_by(
+                        models.ArrayOrbitLightcurve.id,
+                        models.Orbit.orbit_number.asc(),
+                    )
+                ),
             )
+            .join(models.ArrayOrbitLightcurve.orbit)
             .join(
                 models.BestOrbitLightcurve,
                 models.BestOrbitLightcurve.lightcurve_join(

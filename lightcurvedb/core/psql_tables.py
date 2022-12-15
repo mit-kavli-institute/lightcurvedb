@@ -381,14 +381,10 @@ class PGIndex(PGCatalogModel):
     indexdef = Column(Text)
 
     index_on = relationship(
-        "PGClass",
-        foreign_keys=[tablename],
-        back_populates="index_definitions"
+        "PGClass", foreign_keys=[tablename], back_populates="index_definitions"
     )
     index_class = relationship(
-        "PGClass",
-        foreign_keys=[indexname],
-        back_populates="index_classes"
+        "PGClass", foreign_keys=[indexname], back_populates="index_classes"
     )
 
     @hybrid_property
@@ -447,8 +443,14 @@ class PGClass(PGCatalogModel):
     owner = relationship(PGAuthID, backref="classes")
     namespace = relationship("PGNamespace", backref="pg_classes")
 
-    index_definitions = relationship("PGIndex", foreign_keys=[PGIndex.tablename], back_populates="index_on")
-    index_classes = relationship("PGIndex", foreign_keys=[PGIndex.indexname], back_populates="index_class")
+    index_definitions = relationship(
+        "PGIndex", foreign_keys=[PGIndex.tablename], back_populates="index_on"
+    )
+    index_classes = relationship(
+        "PGIndex",
+        foreign_keys=[PGIndex.indexname],
+        back_populates="index_class",
+    )
 
     parent = relationship(
         "PGClass",
@@ -490,23 +492,3 @@ class PGBuffer(PGExtensionModel):
     pg_class = relationship(
         PGClass, foreign_keys=[relfilenode], back_populates="buffers"
     )
-
-
-class PGCatalogMixin(object):
-    """
-    Mixing to provide database objects PGCatalog API methods.
-    """
-
-    def get_pg_oid(self, tablename):
-        """
-        Obtain postgres's internal OID for the given tablename.
-
-        Returns
-        -------
-        int or None:
-            Returns the OID (int) of the given table or ``None`` if no such
-            table exists.
-        """
-        return (
-            self.query(PGClass.oid).filter_by(relname=tablename).one_or_none()
-        )

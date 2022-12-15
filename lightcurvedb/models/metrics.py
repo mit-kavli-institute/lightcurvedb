@@ -8,7 +8,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    Sequence,
     String,
     Text,
     between,
@@ -19,7 +18,7 @@ from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.orm import relationship
 
 from lightcurvedb import __version__
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 
 
 class QLPStage(QLPModel, CreatedOnMixin):
@@ -29,8 +28,10 @@ class QLPStage(QLPModel, CreatedOnMixin):
     """
 
     __tablename__ = "qlpstages"
-    id = Column(Integer, Sequence("qlpstage_id_seq"), primary_key=True)
+    id = Column(Integer, primary_key=True)
     slug = Column(String(64), unique=True)
+    name = Column(String(64), unique=True)
+    description = Column(Text(), nullable=True)
 
     processes = relationship("QLPProcess", backref="stage")
 
@@ -70,7 +71,7 @@ class QLPProcess(QLPModel, CreatedOnMixin):
 
     __tablename__ = "qlpprocesses"
 
-    id = Column(Integer, Sequence("qlpprocess_id_seq"), primary_key=True)
+    id = Column(Integer, primary_key=True)
     stage_id = Column(Integer, ForeignKey(QLPStage.id), nullable=False)
 
     lcdb_version = Column(String(32), index=True, default=__version__)
@@ -100,6 +101,7 @@ class QLPProcess(QLPModel, CreatedOnMixin):
     @classmethod
     def current_version(cls):
         from lightcurvedb import __version__
+
         return cls.lcdb_version == __version__
 
 
@@ -115,7 +117,6 @@ class QLPOperation(QLPModel, CreatedOnMixin):
     __tablename__ = "qlpoperations"
     id = Column(
         BigInteger,
-        Sequence("qlpoperation_id_seq"),
         primary_key=True,
     )
     process_id = Column(Integer, ForeignKey(QLPProcess.id), nullable=False)
@@ -132,14 +133,3 @@ class QLPOperation(QLPModel, CreatedOnMixin):
     @date_during_job.expression
     def date_during_job(cls, target_date):
         return between(target_date, cls.time_start, cls.time_end)
-
-
-class QLPMetricAPIMixin:
-    """
-    Provide interaction with the previously defined models here to avoid
-    making the database connection object too large.
-    """
-
-    def get_qlp_stage(self, slug):
-        stage = self.query(QLPStage).filter_by(slug=slug).one()
-        return stage

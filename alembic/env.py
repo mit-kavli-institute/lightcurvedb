@@ -1,3 +1,4 @@
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -8,6 +9,16 @@ from lightcurvedb.core.base_model import QLPModel
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+if "PROVISIONING" in os.environ:
+    port = os.environ.get("PROVISION_PORT", 5342)
+    dbname = os.environ["PROVISION_NAME"]
+    username = os.environ["PROVISION_USERNAME"]
+    password = os.environ["PROVISION_PASSWORD"]
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"postgresql://{username}:{password}@pdodb2:{port}/{dbname}",
+    )
+
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
