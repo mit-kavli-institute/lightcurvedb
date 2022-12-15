@@ -19,8 +19,11 @@ class BLSTagAssociationTable(QLPModel):
     __tablename__ = "bls_association_table"
 
     id = sa.Column(sa.BigInteger, primary_key=True)
-    bls = sa.Column(sa.ForeignKey("bls.id"))
-    tag = sa.Column(sa.ForeignKey("bls_tags.id"))
+    bls_id = sa.Column(sa.ForeignKey("bls.id"))
+    tag_id = sa.Column(sa.ForeignKey("bls_tags.id"))
+
+    bls = relationship("BLS", "bls.id")
+    tag = relationship("BLSTag", "bls_tags.id")
 
 
 class BLS(QLPModel, CreatedOnMixin):
