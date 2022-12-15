@@ -67,7 +67,9 @@ class BLS(QLPModel, CreatedOnMixin):
 
     additional_data = sa.Column(JSONB, default={})
 
-    tags = relationship("BLSTag", secondary=BLSTagAssociationTable)
+    tags = relationship(
+        "BLSTag", secondary=BLSTagAssociationTable, back_populates="bls_runs"
+    )
 
     __table_args__ = (
         Index(
@@ -172,7 +174,9 @@ class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     __tablename__ = "bls_tags"
     id = sa.Column(sa.Integer, primary_key=True)
 
-    bls_runs = relationship("BLS", secondary=BLSTagAssociationTable)
+    bls_runs = relationship(
+        "BLS", secondary=BLSTagAssociationTable, back_populates="tags"
+    )
 
     __table_args__ = (
         sa.UniqueConstraint("name"),
