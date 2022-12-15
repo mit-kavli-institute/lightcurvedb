@@ -14,16 +14,13 @@ from lightcurvedb.core.base_model import (
     QLPModel,
 )
 
-
-class BLSTagAssociationTable(QLPModel):
-    __tablename__ = "bls_association_table"
-
-    id = sa.Column(sa.BigInteger, primary_key=True)
-    bls_id = sa.Column(sa.ForeignKey("bls.id"))
-    tag_id = sa.Column(sa.ForeignKey("bls_tags.id"))
-
-    bls = relationship("BLS", "bls.id")
-    tag = relationship("BLSTag", "bls_tags.id")
+BLSTagAssociationTable = sa.Table(
+    "bls_association_table",
+    QLPModel.metadata,
+    sa.Column("id", sa.BigInteger, primary_key=True),
+    sa.Column("bls_id", sa.ForeignKey("bls.id")),
+    sa.Column("bls_tags_id", sa.ForeignKey("bls_tags.id")),
+)
 
 
 class BLS(QLPModel, CreatedOnMixin):
