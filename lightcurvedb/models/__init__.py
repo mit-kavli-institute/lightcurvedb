@@ -1,5 +1,6 @@
 from .aperture import Aperture
 from .best_lightcurve import BestOrbitLightcurve
+from .bls import BLS, BLSTag
 from .camera_quaternion import CameraQuaternion
 from .frame import Frame, FrameType
 from .lightcurve import ArrayOrbitLightcurve, LightcurveType
@@ -10,6 +11,8 @@ from .spacecraft import SpacecraftEphemeris
 __all__ = [
     "Aperture",
     "ArrayOrbitLightcurve",
+    "BLS",
+    "BLSTag",
     "BestOrbitLightcurve",
     "CameraQuaternion",
     "FrameType",
