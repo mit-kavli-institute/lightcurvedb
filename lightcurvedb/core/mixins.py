@@ -20,6 +20,21 @@ class ApertureAPIMixin(APIMixin):
         return self.execute(q).fetchone()[0]
 
 
+class BLSAPIMixin(APIMixin):
+    def get_or_create_bls_tags(self, *tags):
+        existing_tags_q = sa.select(m.BLSTag.name, m.BLSTag).where(
+            m.BLSTag.name.in_(tags)
+        )
+        existing_tags = dict(self.execute(existing_tags_q))
+        for tag in tags:
+            if tag not in existing_tags:
+                new_tag = m.BLSTag(name=tag)
+                self.add(new_tag)
+                existing_tags[tag] = new_tag
+        self.commit()
+        return existing_tags
+
+
 class LightcurveTypeMixin(APIMixin):
     def get_lightcurve_type_by_name(self, name: str):
         q = sa.select(m.LightcurveType).where(m.LightcurveType.name == name)
