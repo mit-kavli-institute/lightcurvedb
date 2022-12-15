@@ -9,7 +9,6 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 
 from lightcurvedb import db_from_config, models
-from lightcurvedb.models.lightpoint import LIGHTPOINT_NP_DTYPES
 from lightcurvedb.util.constants import __DEFAULT_PATH__
 from lightcurvedb.util.iter import chunkify
 
@@ -22,11 +21,6 @@ LP_DATA_COLUMNS = (
     "y_centroid",
     "quality_flag",
 )
-
-
-def _np_dtype(*cols):
-    for col in cols:
-        yield col, LIGHTPOINT_NP_DTYPES[col]
 
 
 def fetch_lightcurve_data(config, lightcurve_ids):
