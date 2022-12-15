@@ -139,7 +139,7 @@ class BLS(QLPModel, CreatedOnMixin):
         planet_radius_error = star_radius_error * sqrt(bls_result["dep"])
 
         planet_radius = planet_radius.to(u.earthRad).value
-        planet_radius_error = planet_radius.to(u.earthRad).value
+        planet_radius_error = planet_radius_error.to(u.earthRad).value
 
         return cls(
             tic_id=bls_result["tic"],
