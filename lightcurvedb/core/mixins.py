@@ -23,7 +23,7 @@ class ApertureAPIMixin(APIMixin):
 class BLSAPIMixin(APIMixin):
     def get_or_create_bls_tags(self, *tags):
         existing_tags_q = sa.select(m.BLSTag).where(m.BLSTag.name.in_(tags))
-        existing_tags = {t.name: t for t in self.execute(existing_tags_q)}
+        existing_tags = {t.name: t for t in self.scalars(existing_tags_q)}
         for tag in tags:
             if tag not in existing_tags:
                 new_tag = m.BLSTag(name=tag)
