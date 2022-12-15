@@ -1,4 +1,4 @@
-from math import sqrt
+from math import isnan, sqrt
 
 import pyticdb
 import sqlalchemy as sa
@@ -140,6 +140,11 @@ class BLS(QLPModel, CreatedOnMixin):
 
         planet_radius = planet_radius.to(u.earthRad).value
         planet_radius_error = planet_radius_error.to(u.earthRad).value
+
+        if isnan(planet_radius):
+            planet_radius = "NaN"
+        if isnan(planet_radius_error):
+            planet_radius_error = "NaN"
 
         return cls(
             tic_id=bls_result["tic"],
