@@ -1,4 +1,4 @@
-from math import isnan, sqrt
+from math import sqrt
 
 import pyticdb
 import sqlalchemy as sa
@@ -13,6 +13,7 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
+from lightcurvedb.util import type_check
 
 BLSTagAssociationTable = sa.Table(
     "bls_association_table",
@@ -128,19 +129,17 @@ class BLS(QLPModel, CreatedOnMixin):
         star_radius, star_radius_error = pyticdb.query_by_id(
             bls_result["tic"], "rad", "e_rad"
         )[0]
+        star_radius = type_check.safe_float(star_radius)
+        star_radius_error = type_check.safe_float(star_radius_error)
 
-        if star_radius is None or isnan(star_radius):
-            planet_radius = float("nan")
-            planet_radius_error = float("nan")
-        else:
-            star_radius *= u.solRad
-            star_radius_error *= u.solRad
+        star_radius *= u.solRad
+        star_radius_error *= u.solRad
 
-            planet_radius = star_radius * sqrt(bls_result["dep"])
-            planet_radius_error = star_radius_error * sqrt(bls_result["dep"])
+        planet_radius = star_radius * sqrt(bls_result["dep"])
+        planet_radius_error = star_radius_error * sqrt(bls_result["dep"])
 
-            planet_radius = planet_radius.to(u.earthRad).value
-            planet_radius_error = planet_radius.to(u.earthRad).value
+        planet_radius = planet_radius.to(u.earthRad).value
+        planet_radius_error = planet_radius.to(u.earthRad).value
 
         return cls(
             tic_id=bls_result["tic"],
