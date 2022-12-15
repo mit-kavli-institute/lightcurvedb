@@ -20,7 +20,7 @@ BLSTagAssociationTable = sa.Table(
     QLPModel.metadata,
     sa.Column("id", sa.BigInteger, primary_key=True),
     sa.Column("bls_id", sa.ForeignKey("bls.id")),
-    sa.Column("bls_tags_id", sa.ForeignKey("bls_tags.id")),
+    sa.Column("tag_id", sa.ForeignKey("bls_tags.id")),
 )
 
 
