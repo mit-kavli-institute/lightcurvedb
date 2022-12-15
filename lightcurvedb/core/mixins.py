@@ -35,7 +35,7 @@ class BLSAPIMixin(APIMixin):
         return existing_tags
 
 
-class LightcurveTypeMixin(APIMixin):
+class LightcurveTypeAPIMixin(APIMixin):
     def get_lightcurve_type_by_name(self, name: str):
         q = sa.select(m.LightcurveType).where(m.LightcurveType.name == name)
         return self.execute(q).fetchone()[0]
