@@ -123,6 +123,8 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
         for path in paths:
             orbit_map[path] = orbit
 
+    db.flush()
+
     frames = []
 
     # Now construct each frame and build relations
