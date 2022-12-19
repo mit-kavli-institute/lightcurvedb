@@ -1,6 +1,7 @@
+import sqlalchemy as sa
 from loguru import logger
 
-from lightcurvedb.models import CameraQuaternion
+from lightcurvedb.models import CameraQuaternion, get_utc_time
 from lightcurvedb.util.contexts import extract_pdo_path_context
 
 QUAT_FIELD_ORDER = (
@@ -23,6 +24,24 @@ QUAT_FIELD_TYPES = (
     int,
     int,
 )
+
+
+def get_min_max_datetime(quaternion_path, delimiter=None):
+    """
+    Obtain min and max datetimes from a camera quaternion file.
+    """
+
+    datetimes = []
+    with open(quaternion_path, "rt") as fin:
+        for line in fin:
+            tokens = line.strip().split(
+                " " if delimiter is None else delimiter
+            )
+            gps_str_token = tokens[0]
+            utc_time = get_utc_time(gps_str_token).datetime
+            datetimes.append(utc_time)
+
+    return min(datetimes), max(datetimes)
 
 
 def _parse_quat_str(string, delimiter=None):
@@ -67,11 +86,15 @@ def ingest_quat_file(db, filepath):
         raise ValueError(f"Could not find camera context in {filepath}")
     camera_quaternions = []
 
+    logger.debug("Getting datetime range...")
+    min_date, max_date = get_min_max_datetime(filepath)
+
     logger.debug("Querying for existing camera quaternion timeseries")
-    mask = set(
-        date
-        for date, in db.query(CameraQuaternion.date).filter_by(camera=camera)
+    q = sa.select(CameraQuaternion.date).where(
+        CameraQuaternion.camera == camera,
+        CameraQuaternion.date.between(min_date, max_date),
     )
+    mask = set(date for date, in db.execute(q))
     logger.debug(f"Comparing file against {len(mask)} quaternions")
 
     for line in open(filepath, "rt"):
