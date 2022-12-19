@@ -32,19 +32,27 @@ QUAT_FIELD_TYPES = (
 def get_min_max_datetime(quaternion_path, delimiter=None):
     """
     Obtain min and max datetimes from a camera quaternion file.
+    Assumes the file is ordered by ascending datetimes.
     """
 
-    datetimes = []
     with open(quaternion_path, "rt") as fin:
-        for line in fin:
-            tokens = line.strip().split(
-                " " if delimiter is None else delimiter
-            )
-            gps_str_token = tokens[0]
-            utc_time = get_utc_time(gps_str_token).datetime
-            datetimes.append(utc_time)
+        line_iter = iter(fin)
+        first_line = next(line_iter)
+        for last_line in line_iter:
+            pass
+    first_tokens = first_line.strip().split(
+        " " if delimiter is None else delimiter
+    )
+    last_tokens = last_line.strip().split(
+        " " if delimiter is None else delimiter
+    )
+    first_gps_token = first_tokens[0]
+    last_gps_token = last_tokens[0]
 
-    return min(datetimes), max(datetimes)
+    return (
+        get_utc_time(first_gps_token).datetime,
+        get_utc_time(last_gps_token).datetime,
+    )
 
 
 def _parse_quat_str(string, delimiter=None):
