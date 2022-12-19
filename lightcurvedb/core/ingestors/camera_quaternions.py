@@ -1,7 +1,10 @@
 import sqlalchemy as sa
 from loguru import logger
 
-from lightcurvedb.models import CameraQuaternion, get_utc_time
+from lightcurvedb.models.camera_quaternions import (
+    CameraQuaternion,
+    get_utc_time,
+)
 from lightcurvedb.util.contexts import extract_pdo_path_context
 
 QUAT_FIELD_ORDER = (
