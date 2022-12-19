@@ -1,7 +1,7 @@
 import sqlalchemy as sa
 from loguru import logger
 
-from lightcurvedb.models.camera_quaternions import (
+from lightcurvedb.models.camera_quaternion import (
     CameraQuaternion,
     get_utc_time,
 )
