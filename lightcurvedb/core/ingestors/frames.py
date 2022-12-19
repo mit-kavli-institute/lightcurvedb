@@ -110,7 +110,7 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
     logger.debug(f"Found {len(existing_paths)} existing frame paths")
 
     orbit_map = {}
-    for orbit, paths in generate_from_fits(files, parallel=False):
+    for orbit, paths in generate_from_fits(files, parallel=True):
         # Attempt to locate any existing orbit
         q = db.query(Orbit).filter_by(orbit_number=orbit.orbit_number)
         remote_orbit = q.one_or_none()
