@@ -124,7 +124,6 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
             orbit_map[path] = orbit
 
     frames = []
-    logger.debug(orbit_map)
 
     # Now construct each frame and build relations
     for path in new_paths:
