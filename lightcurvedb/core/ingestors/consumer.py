@@ -6,7 +6,7 @@ from queue import Empty
 
 from loguru import logger
 
-from lightcurvedb import db_from_config
+from lightcurvedb.core.connection import db_from_config
 
 
 class BufferedDatabaseIngestor(Process):
@@ -14,9 +14,9 @@ class BufferedDatabaseIngestor(Process):
     name = "Worker"
     buffer_order = []
 
-    def __init__(self, config, name, job_queue):
+    def __init__(self, db_config, name, job_queue):
         super().__init__(daemon=True, name=name)
-        self.db_config = config
+        self.db_config = db_config
         self.name = name
         self.job_queue = job_queue
         self.log("Initialized")

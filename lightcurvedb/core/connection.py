@@ -1,16 +1,19 @@
-import pathlib
-
-from sqlalchemy.orm import Session, sessionmaker
+import configurables as conf
+from sqlalchemy import pool
+from sqlalchemy.orm import Session
 
 from lightcurvedb import models
 from lightcurvedb.core import mixins
 from lightcurvedb.core.engines import thread_safe_engine
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
 class DB(
     Session,
+    mixins.ApertureAPIMixin,
+    mixins.LightcurveTypeAPIMixin,
     mixins.BestOrbitLightcurveAPIMixin,
+    mixins.BLSAPIMixin,
     mixins.FrameAPIMixin,
     mixins.OrbitAPIMixin,
     mixins.ArrayOrbitLightcurveAPIMixin,
@@ -35,6 +38,11 @@ class DB(
         db = db_from_config('path_to_config')
 
     """
+
+    def __init__(self, *args, **kwargs):
+        config = kwargs.pop("config", None)
+        super().__init__(*args, **kwargs)
+        self.config = config
 
     @property
     def orbits(self):
@@ -81,7 +89,22 @@ class DB(
         return self.query(models.LightcurveType)
 
 
-def db_from_config(config_path=None, db_class=None, **engine_kwargs):
+@conf.configurable("Credentials")
+@conf.param("database_name")
+@conf.param("username")
+@conf.param("password")
+@conf.option("database_host", default="localhost")
+@conf.option("database_port", type=int, default=5432)
+@conf.option("dialect", default="postgresql+psycopg2")
+def db_from_config(
+    database_name,
+    username,
+    password,
+    database_host,
+    database_port,
+    dialect,
+    **engine_kwargs
+):
     """
     Create a DB instance from a configuration file.
 
@@ -95,20 +118,20 @@ def db_from_config(config_path=None, db_class=None, **engine_kwargs):
         Arguments to pass off into engine construction.
     """
     engine = thread_safe_engine(
-        pathlib.Path(
-            config_path if config_path else __DEFAULT_PATH__
-        ).expanduser(),
+        database_name,
+        username,
+        password,
+        database_host,
+        database_port,
+        dialect,
+        poolclass=pool.NullPool,
         **engine_kwargs
     )
-
-    db_class = DB if db_class is None else db_class
-
-    factory = sessionmaker(bind=engine, class_=db_class)
-    return factory()
+    return DB(engine)
 
 
 # Try and instantiate "global" lcdb
 try:
-    db = db_from_config()
+    db = db_from_config(DEFAULT_CONFIG_PATH)
 except KeyError:
     db = None

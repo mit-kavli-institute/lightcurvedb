@@ -495,8 +495,8 @@ def simulate_lightcurve_ingestion_environment(
     ]
     db.add(background_type)
     db.add(background_aperture)
-    db.session.add_all(magnitude_types)
-    db.session.add_all(photometric_apertures)
+    db.add_all(magnitude_types)
+    db.add_all(photometric_apertures)
 
     note(f"PUSHING {photometric_apertures}")
     note(f"{db.query(models.Aperture).all()}")

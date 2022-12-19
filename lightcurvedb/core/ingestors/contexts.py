@@ -242,7 +242,7 @@ def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
         "kmag",
         "vmag",
     )
-    chunks = chunkify(tqdm(results, unit=" tics"), chunksize // 9)
+    chunks = chunkify(tqdm(map(tuple, results), unit=" tics"), chunksize // 9)
     for chunk in chunks:
         stmt = TicParameter.insert().values(chunk)
         conn.execute(stmt)

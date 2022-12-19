@@ -4,6 +4,7 @@ import tempfile
 import click
 from loguru import logger
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import lightcurve_arrays as ingest_em2_array
@@ -54,7 +55,7 @@ def ingest_dir(
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
-        with ctx.obj["db"] as db:
+        with db_from_config(ctx.obj["dbconf"]) as db:
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
@@ -62,7 +63,9 @@ def ingest_dir(
             for directory in directories:
                 logger.info(f"Considering {directory}")
 
-            plan = DirectoryPlan(directories, db, recursive=recursive)
+            plan = DirectoryPlan(
+                directories, ctx.obj["dbconf"], recursive=recursive
+            )
 
             jobs = plan.get_jobs()
             if tic_catalog:
@@ -109,25 +112,26 @@ def ingest_tic_list(
     fill_id_gaps,
 ):
     tic_ids = set(map(int, open(tic_file, "rt").readlines()))
+    ctx.obj["n_processes"] = n_processes
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        with ctx.obj["db"] as db:
+        with db_from_config(ctx.obj["dbconf"]) as db:
             contexts.populate_ephemeris(cache_path, db)
             contexts.populate_tjd_mapping(cache_path, db)
 
-            plan = TICListPlan(tic_ids, db)
-            if fill_id_gaps:
-                plan.fill_id_gaps()
-            jobs = plan.get_jobs()
+        plan = TICListPlan(tic_ids, ctx.obj["dbconf"])
+        if fill_id_gaps:
+            plan.fill_id_gaps()
+        jobs = plan.get_jobs()
 
-            contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
+        contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
 
-            for args in plan.yield_needed_quality_flags(
-                path_template=quality_flag_template
-            ):
-                logger.debug(f"Requiring quality flags {args}")
-                contexts.populate_quality_flags(cache_path, *args)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_flag_template
+        ):
+            logger.debug(f"Requiring quality flags {args}")
+            contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
             ctx.obj,
