@@ -92,7 +92,7 @@ def ingest_quat_file(db, filepath):
     logger.debug(
         f"Pushing {len(camera_quaternions)} quaternion rows to remote"
     )
-    db.add_all(camera_quaternions)
+    db.bulk_save_objects(camera_quaternions)
     db.flush()
 
 
