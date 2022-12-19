@@ -58,17 +58,21 @@ def ingest_quat_file(db, filepath):
     the callee.
     """
     # Double check we have all the needed contexts from the filepath
+    logger.debug(f"Ingesting camera quaternion file: {filepath}")
     context = extract_pdo_path_context(str(filepath))
     try:
         camera = context["camera"]
+        logger.debug(f"Ingesting camera {camera} quaternions")
     except (TypeError, KeyError):
         raise ValueError(f"Could not find camera context in {filepath}")
     camera_quaternions = []
 
+    logger.debug("Querying for existing camera quaternion timeseries")
     mask = set(
         date
         for date, in db.query(CameraQuaternion.date).filter_by(camera=camera)
     )
+    logger.debug(f"Comparing file against {len(mask)} quaternions")
 
     for line in open(filepath, "rt"):
         model = _parse_quat_str(line)
@@ -85,6 +89,9 @@ def ingest_quat_file(db, filepath):
             mask.add(model.date)
 
         camera_quaternions.append(model)
+    logger.debug(
+        f"Pushing {len(camera_quaternions)} quaternion rows to remote"
+    )
     db.add_all(camera_quaternions)
     db.flush()
 
