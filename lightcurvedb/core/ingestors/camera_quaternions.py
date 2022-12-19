@@ -1,3 +1,5 @@
+import multiprocessing as mp
+
 import sqlalchemy as sa
 from loguru import logger
 
@@ -107,24 +109,16 @@ def ingest_quat_file(db, filepath):
     )
     mask = set(date for date, in db.execute(q))
     logger.debug(f"Comparing file against {len(mask)} quaternions")
-
-    for line in open(filepath, "rt"):
-        model = _parse_quat_str(line)
-        model.camera = camera
-
-        if model.date in mask:
-            logger.warning(
-                "Camera Quaternion time uniqueness failed check "
-                f"on camera {camera}: date {model.date}"
-            )
-            continue
-        else:
-            # Update mask to avoid duplicates inside the file, if any
-            mask.add(model.date)
-
-        camera_quaternions.append(model)
+    with mp.Pool() as pool:
+        models = filter(
+            lambda m: m.date not in mask,
+            pool.imap_unordered(_parse_quat_str, open(filepath, "rt")),
+        )
+        for model in models:
+            model.camera = camera
+            camera_quaternions.append(model)
     logger.debug(
-        f"Pushing {len(camera_quaternions)} quaternion rows to remote"
+        f"Pushing {len(camera_quaternions)} new quaternion rows to remote"
     )
     db.bulk_save_objects(camera_quaternions)
     db.flush()
