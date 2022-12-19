@@ -81,8 +81,8 @@ def from_fits(path, frame_type=None, orbit=None):
             exp_time=header["EXPTIME"],
             quality_bit=header["QUAL_BIT"],
             file_path=abspath,
-            frame_type=frame_type,
-            orbit=orbit,
+            frame_type_id=frame_type.id,
+            orbit_id=orbit.id,
         )
     except KeyError as e:
         print(e)
