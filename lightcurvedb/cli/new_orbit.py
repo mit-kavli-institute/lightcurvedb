@@ -1,6 +1,7 @@
 import pathlib
 
 import click
+from loguru import logger
 
 from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
@@ -38,14 +39,19 @@ def ingest_frames(
 
         for orbit_directory in ingest_directories:
             # Ingest Camera Quaternion Files
+            quaternion_path = orbit_directory / quaternion_subdir
+            ffi_path = orbit_directory / ffi_subdir
+
+            logger.debug(
+                f"Looking for camera quaternions in {quaternion_path}"
+            )
             camera_quaternions.ingest_directory(
-                db, orbit_directory / quaternion_subdir, "*quat.txt"
+                db, quaternion_path, "*quat.txt"
             )
 
+            logger.debug(f"Looking for FFI files in {ffi_path}")
             # Ingest FITS frames
-            frames.ingest_directory(
-                db, frame_type, orbit_directory / ffi_subdir, "*.fits"
-            )
+            frames.ingest_directory(db, frame_type, ffi_path, "*.fits")
         if not ctx.obj["dryrun"]:
             db.commit()
         else:
