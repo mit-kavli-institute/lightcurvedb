@@ -4,6 +4,7 @@ import click
 import pandas as pd
 from tabulate import tabulate
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import (
     ClickSQLParameter,
@@ -44,7 +45,7 @@ def query(ctx, model):
 @click.option("--header/--no-header", default=True)
 def print_table(ctx, parameters, filters, orders, table_fmt, header):
     # Construct an SQL query given the cli parameters
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         cols = tuple(col["column"] for col in parameters)
         names = tuple(col["alias"] for col in parameters)
 

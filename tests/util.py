@@ -1,4 +1,4 @@
 def import_lc_prereqs(db, lightcurves):
     for lc in lightcurves:
-        db.session.merge(lc.aperture)
-        db.session.merge(lc.lightcurve_type)
+        db.merge(lc.aperture)
+        db.merge(lc.lightcurve_type)

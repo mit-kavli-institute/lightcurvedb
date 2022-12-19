@@ -11,6 +11,7 @@ from loguru import logger
 from sqlalchemy.exc import InternalError
 
 from lightcurvedb import db_from_config
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
 def db_scope(application_name=None, config_override=None, **connection_kwargs):
@@ -43,9 +44,11 @@ def db_scope(application_name=None, config_override=None, **connection_kwargs):
         def wrapper(*args, **kwargs):
             func_results = None
             configured_db = db_from_config(
-                config_path=config_override,
+                DEFAULT_CONFIG_PATH
+                if config_override is None
+                else config_override,
                 connect_args=connect_args,
-                **connection_kwargs
+                **connection_kwargs,
             )
             with configured_db as db_object:
                 logger.trace(

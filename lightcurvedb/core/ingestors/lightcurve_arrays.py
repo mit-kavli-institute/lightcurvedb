@@ -231,7 +231,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
         self.log(f"Flushing {len(lightcurves):,} lightcurves")
         start = datetime.now()
         mgr = CopyManager(
-            db.session.connection().connection,
+            db.connection().connection,
             models.ArrayOrbitLightcurve.__tablename__,
             INGESTION_COLS,
         )
@@ -242,8 +242,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             process_id=self.process.id,
             time_start=start,
             time_end=end,
-            job_size=len(lightcurves),
-            unit="array_lightcurves",
+            job_size=sum(len(lc) for lc in lightcurves),
+            unit="lightpoints",
         )
         return metric
 
@@ -259,7 +259,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             .values(best_lcs)
             .on_conflict_do_nothing()
         )
-        db.session.execute(q)
+        db.execute(q)
         end = datetime.now()
 
         metric = models.QLPOperation(
@@ -283,7 +283,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             runtime_parameters=self.determine_process_parameters(),
         )
         db.add(process)
-        db.session.flush()
+        db.flush()
         self.log(
             f"Updating runtime parameters to {process.runtime_parameters}"
         )
@@ -302,10 +302,11 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
     @property
     def should_flush(self):
-        return (
-            len(self.buffers[models.ArrayOrbitLightcurve.__tablename__])
-            >= self.runtime_parameters["n_lightcurves"]
+        n_lightpoints = sum(
+            len(lc)
+            for lc in self.buffers[models.ArrayOrbitLightcurve.__tablename__]
         )
+        return n_lightpoints >= self.runtime_parameters["n_lightpoints"]
 
     @property
     def should_refresh_parameters(self):
@@ -313,8 +314,8 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
 
 class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
-    step_size = 10
-    max_steps = 1000
+    step_size = 1000
+    max_steps = 10
 
     def determine_process_parameters(self):
         step_col = cast(models.QLPOperation.job_size / self.step_size, Integer)
@@ -339,7 +340,7 @@ class EM2ArrayParamSearchIngestor(BaseEM2ArrayIngestor):
 
         step = sample(possible_steps, 1)[0]
 
-        return {"n_lightcurves": self.step_size * step}
+        return {"n_lightpoints": self.step_size * step}
 
 
 def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
@@ -357,9 +358,11 @@ def ingest_jobs(cli_context, jobs, cache_path):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
-    with cli_context["dbconf"] as db, tqdm(
-        total=len(jobs), unit=" jobs"
-    ) as bar:
+    if len(jobs) == 0:
+        logger.info("No jobs to ingest. Returning")
+        return
+
+    with tqdm(total=len(jobs), unit=" jobs") as bar:
         if "logfile" not in cli_context:
             # If logging to standard out, we need to ensure loguru
             # does not step over tqdm output.
@@ -373,7 +376,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
 
         workers = _initialize_workers(
             EM2ArrayParamSearchIngestor,
-            db.config,
+            cli_context["dbconf"],
             cli_context["n_processes"],
             job_queue=job_queue,
             cache_path=cache_path,
