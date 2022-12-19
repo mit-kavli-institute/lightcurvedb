@@ -131,8 +131,10 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
         frame = from_fits(path, frame_type=frame_type, orbit=orbit_map[path])
         frames.append(frame)
 
+    logger.debug("Pushing to remote")
     db.bulk_save_objects(frames)
     db.flush()
+    logger.debug("Emitted frames")
 
     if update:
         for path in existing_paths:
