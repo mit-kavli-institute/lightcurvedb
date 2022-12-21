@@ -11,16 +11,6 @@ from lightcurvedb import db_from_config
 from lightcurvedb import models as m
 from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
-LP_DATA_COLUMNS = (
-    "cadence",
-    "barycentric_julian_date",
-    "data",
-    "error",
-    "x_centroid",
-    "y_centroid",
-    "quality_flag",
-)
-
 
 def _nested_defaultdict():
     """
