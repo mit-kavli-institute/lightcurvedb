@@ -401,63 +401,6 @@ class LegacyAPIMixin(APIMixin):
     mixins.
     """
 
-    def get_all_orbit_ids(self):
-        """
-        A legacy method to return all orbit numbers in ascending
-        order.
-
-        Returns
-        -------
-        list
-            A list of 1 element tuples containing ``(orbit_number,)``
-
-        Note
-        ----
-        This is a legacy method. In this context ``orbit_id`` corresponds
-        to the parameter ``Orbit.orbit_number`` and **not** ``Orbit.id``.
-        """
-        q = sa.select(m.Orbit.orbit_number).order_by(
-            m.Orbit.orbit_number.asc()
-        )
-        self.execute(q).fetchall()
-
-    def query_lightcurves(self, tics=None, apertures=None, types=None):
-        """
-        Make a query of lightcurves that meet the provided
-        parameters. The emitted SQL clause is an IN statement for the given
-        tics, apertures, and types (grouped using an AND).
-
-        Arguments
-        ---------
-        tics : list, optional
-            Filter lightcurves that have TIC identifiers contained in this
-            list. If this list is empty then no filter will be applied using
-            ``tics``.
-        apertures : list, optional
-            Filter lightcurves that have one of the given ``Aperture.name``
-            strings. If this list is empty then no filter will be applied
-            using ``apertures``.
-        types : list, optional
-            Filter lightcurves that have of of the given
-            ``LightcurveType.name`` strings. If this list is empty then no
-            filter will be applied using ``types``.
-
-        Returns
-        -------
-        sqlalchemy.orm.query.Query
-            A query of lightcurves that match the given parameters.
-        """
-        q = sa.select(m.ArrayOrbitLightcurve)
-        if apertures is not None:
-            q = q.join(m.ArrayOrbitLightcurve.aperture)
-            q = q.filter(m.Aperture.in_(apertures))
-        if types is not None:
-            q = q.join(m.ArrayOrbitLightcurve.lightcurve_type)
-            q = q.filter(m.LightcurveType.name.in_(types))
-        if tics is not None:
-            q = q.filter(m.ArrayOrbitLightcurve.tic_id.in_(tics))
-        return q
-
     def query_orbits_by_id(self, orbit_numbers):
         """Grab a numpy array representing the orbits"""
         orbits = (
@@ -510,20 +453,6 @@ class LegacyAPIMixin(APIMixin):
             list(map(tuple, values)), dtype=m.Frame.FRAME_COMP_DTYPE
         )
 
-    def query_frames_by_cadence(self, camera, cadences):
-        columns = [m.Orbit.orbit_number] + list(m.Frame.get_legacy_attrs())
-
-        q = (
-            sa.select(*columns)
-            .join(m.Frame.orbit)
-            .filter(m.Frame.camera == camera, m.Frame.cadence.in_(cadences))
-            .order_by(m.Frame.cadence.asc())
-        )
-        results = self.execute(q)
-        return np.array(
-            list(map(tuple, results)), dtype=m.Frame.FRAME_COMP_DTYPE
-        )
-
     def get_cadences_in_orbits(self, orbit_numbers, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
@@ -531,21 +460,6 @@ class LegacyAPIMixin(APIMixin):
             .join(m.Frame.orbit)
             .where(
                 m.Orbit.orbit_number.in_(orbit_numbers),
-                m.FrameType.name == "Raw FFI"
-                if frame_type is None
-                else frame_type,
-            )
-            .order_by(m.Frame.cadence.asc())
-        )
-        return self.execute(q).scalars().fetchall()
-
-    def get_cadences_in_sectors(self, sectors, frame_type=None):
-        q = (
-            sa.select(m.Frame.cadence.distinct())
-            .join(m.Frame.frame_type)
-            .join(m.Frame.orbit)
-            .where(
-                m.Orbit.sector.in_(sectors),
                 m.FrameType.name == "Raw FFI"
                 if frame_type is None
                 else frame_type,
