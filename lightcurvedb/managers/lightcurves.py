@@ -1,132 +1,22 @@
-import itertools as it
 import multiprocessing as mp
-from functools import partial
+from collections import defaultdict
+from itertools import groupby
 
 import cachetools
 import numpy as np
 import pyticdb
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import aggregate_order_by
 
-from lightcurvedb import db_from_config, models
-from lightcurvedb.util.constants import __DEFAULT_PATH__
-from lightcurvedb.util.iter import chunkify
-
-LP_DATA_COLUMNS = (
-    "cadence",
-    "barycentric_julian_date",
-    "data",
-    "error",
-    "x_centroid",
-    "y_centroid",
-    "quality_flag",
-)
+from lightcurvedb import db_from_config
+from lightcurvedb import models as m
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
-def fetch_lightcurve_data(config, lightcurve_ids):
+def _nested_defaultdict():
     """
-    Resolve lightpoint data from the given lightcurve ids.
-
-    Parameters
-    ----------
-    config: pathlike
-        Path to a configuration file for a lightcurvedb db instance.
-
-    lightcurve_ids: List[int]
-        A list of lightcurve ids to get orbit baselines for.
-
-    Returns
-    -------
-    Dict[int, Dict[int, List]]
-        A dictionary of lightcurve ids -> data where data is also a
-        dictionary of baseline-name -> array.
-
-    Note
-    ----
-    Duplicates in the input id list will result in overwrites in the return
-    dictionary. Order is also not guaranteed in the return.
+    A quick infinitely nestable default dictionary.
     """
-    q = sa.select(models.ArrayOrbitLightcurve).where(
-        models.ArrayOrbitLightcurve.id.in_(lightcurve_ids)
-    )
-    results = {}
-    with db_from_config(config) as db:
-        for lightcurve in db.execute(q).scalars().all():
-            results[lightcurve.id] = lightcurve
-
-    return results
-
-
-def fetch_lightcurve_data_multiprocessing(
-    config, lightcurve_ids, workers=None, id_chunk_size=32
-):
-    """
-    Resolve lightcurve ids using a multiprocessing queue. See
-    ``fetch_lightcurve_data`` for behavior.
-
-    Parameters
-    ----------
-    config: pathlike
-        Path to a configuration file for a lightcurvedb db instance.
-
-    lightcurve_ids: List[int]
-        A list of lightcurve ids to get orbit baselines for.
-
-    workers: int, optional
-        The `maximum` number of multiprocess workers to use. By default
-        this is ``mp.cpu_count()``. This function will use the minimum of
-        either the specified cpu count or the length of the chunkified
-        lightcurve ids.
-
-        If this value is set to 0, then no multiprocessing workers will be
-        spawned; instead, fetching logic will be done in the current process.
-
-    id_chunk_size: int, optional
-        Granularity of the multiprocess workload. It's inefficient
-        to query a lightcurve at a time for both remote resource utilization
-        and python serialization of the return (which could be in the order
-        of millions to billions of rows).
-
-    Returns
-    -------
-    Dict[int, Dict[int, List]]
-        A dictionary of lightcurve ids -> data where data is also a
-        dictionary of baseline-name -> array.
-
-    Note
-    ----
-    Duplicates in the input id list will result in overwrites in the return
-    dictionary. Order is also not guaranteed in the return.
-
-    As of the latest doc, it is unknown of the best chunk size to use.
-    """
-    f = partial(fetch_lightcurve_data, config)
-    results = {}
-    jobs = list(chunkify(sorted(lightcurve_ids), id_chunk_size))
-    if workers is None:
-        workers = min(mp.cpu_count(), len(jobs))
-    if workers > 0:
-        with mp.Pool(workers) as pool:
-            for result in pool.map(f, jobs):
-                results.update(result)
-    else:
-        for chunk in jobs:
-            for result in f(chunk):
-                results.update(result)
-
-    return results
-
-
-def resolve_keywords_for(config, tic_id):
-    q = (
-        sa.select(models.Aperture.name, models.LightcurveType.name)
-        .join(models.ArrayOrbitLightcurve.aperture)
-        .join(models.ArrayOrbitLightcurve.lightcurve_type)
-        .filter(models.ArrayOrbitLightcurve.tic_id == tic_id)
-        .distinct()
-    )
-    with db_from_config(config) as db:
-        return db.execute(q).fetchall()
+    return defaultdict(_nested_defaultdict)
 
 
 class LightcurveManager:
@@ -140,26 +30,24 @@ class LightcurveManager:
     def __init__(
         self, config=None, cache_size=4096, n_lc_readers=mp.cpu_count()
     ):
-        self._config = __DEFAULT_PATH__ if config is None else config
-        self._keyword_lookups = {}
-        self._lightcurve_id_cache = cachetools.LRUCache(cache_size)
-        self._lightpoint_cache = cachetools.LRUCache(cache_size)
+        self._config = DEFAULT_CONFIG_PATH if config is None else config
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
         self.n_lc_readers = n_lc_readers
 
     def __getitem__(self, key):
-        tic_id = None
+        tic_ids = []
         apertures = []
         lightcurve_types = []
 
         if isinstance(key, int):
             # Just keying by integer
-            tic_id = key
+            tic_ids.append(key)
         elif isinstance(key, tuple):
             # Tiered slice of data
             for token in key:
                 if isinstance(token, int):
                     tic_id = token
+                    tic_ids.append(tic_id)
                 else:
                     if "Aperture" in token:
                         apertures.append(token)
@@ -168,55 +56,82 @@ class LightcurveManager:
         else:
             raise KeyError(f"Cannot access lightcurve data using {key}.")
 
+        if len(tic_ids) == 0:
+            raise KeyError("You must specify at least 1 TIC id.")
+
         return self.get_lightcurve(
-            tic_id, apertures=apertures, lightcurve_types=lightcurve_types
+            tic_ids, apertures=apertures, lightcurve_types=lightcurve_types
         )
 
-    def keywords_for(self, tic_id):
-        try:
-            keywords = self._keyword_lookups[tic_id]
-        except KeyError:
-            keywords = resolve_keywords_for(self._config, tic_id)
-            self._keyword_lookups[tic_id] = keywords
-        return keywords
-
-    def get_lightcurve(self, tic_id, apertures=None, lightcurve_types=None):
-        """ """
-        if apertures is None or len(apertures) == 0:
-            # Pivot around types
-            apertures = [keywords[0] for keywords in self.keywords_for(tic_id)]
-        if lightcurve_types is None or len(lightcurve_types) == 0:
-            lightcurve_types = [
-                keywords[1] for keywords in self.keywords_for(tic_id)
-            ]
-        keys = list(it.product([tic_id], apertures, lightcurve_types))
-        if len(keys) == 1:
-            return self.construct_lightcurve(
-                self._resolve_key(tic_id, apertures[0], lightcurve_types[0])
-            )
-
-        result = {}
-        if len(apertures) == 1:
-            for tic_id, aperture, type in keys:
-                result[type] = self.construct_lightcurve(
-                    self._resolve_key(tic_id, aperture, type)
-                )
-        elif len(lightcurve_types) == 1:
-            for tic_id, aperture, type in keys:
-                result[aperture] = self.construct_lightcurve(
-                    self._resolve_key(tic_id, aperture, type)
-                )
-
+    @classmethod
+    def _reduce_defaultdict(cls, dictionary):
+        """
+        Quickly flatten dictionaries if their keys are only of length 1.
+        """
+        if len(dictionary) == 1:
+            key = list(dictionary.keys())[0]
+            return dictionary[key]
         else:
-            # Composite keys...construct tiered dictionary
-            for tic_id, aperture, type in keys:
-                types = result.get(aperture, dict())
-                types[type] = self.construct_lightcurve(
-                    self._resolve_key(tic_id, aperture, type)
-                )
-                result[aperture] = types
+            keys = list(dictionary.keys())
+            for key in keys:
+                if isinstance(dictionary[key], dict):
+                    dictionary[key] = cls._reduce_defaultdict(dictionary[key])
+        return dictionary
 
-        return result
+    def _execute_q(self, q):
+        result = _nested_defaultdict()
+
+        with db_from_config(self._config) as db:
+            groups = groupby(
+                db.execute(q), lambda row: (row[0], row[1], row[2])
+            )
+            for (tic_id, aperture, type), group in groups:
+                data = [row[3:] for row in group]
+                result[tic_id][aperture][type] = self.construct_lightcurve(
+                    tic_id, data
+                )
+
+        return self._reduce_defaultdict(result)
+
+    def get_lightcurve(self, tic_ids, apertures=None, lightcurve_types=None):
+        """ """
+        q = (
+            sa.select(
+                m.ArrayOrbitLightcurve.tic_id,
+                m.LightcurveType.name,
+                m.Aperture.name,
+                m.ArrayOrbitLightcurve.cadences,
+                m.ArrayOrbitLightcurve.barycentric_julian_dates,
+                m.ArrayOrbitLightcurve.data,
+                m.ArrayOrbitLightcurve.errors,
+                m.ArrayOrbitLightcurve.x_centroids,
+                m.ArrayOrbitLightcurve.y_centroids,
+                m.ArrayOrbitLightcurve.quality_flags,
+            )
+            .join(m.ArrayOrbitLightcurve.aperture)
+            .join(m.ArrayOrbitLightcurve.lightcurve_type)
+            .join(m.ArrayOrbitLightcurve.orbit)
+            .where(m.ArrayOrbitLightcurve.tic_id.in_(tic_ids))
+            .order_by(
+                m.ArrayOrbitLightcurve.tic_id.asc(),
+                m.LightcurveType.id.asc(),
+                m.Aperture.id.asc(),
+                m.Orbit.orbit_number.asc(),
+            )
+        )
+
+        if apertures is not None:
+            if len(apertures) == 1:
+                q = q.where(m.Aperture.name == apertures[0])
+            else:
+                q = q.where(m.Aperture.name.in_(apertures))
+        if lightcurve_types is not None:
+            if len(lightcurve_types) == 1:
+                q = q.where(m.LightcurveType.name == lightcurve_types[0])
+            else:
+                q = q.where(m.Lightcurvetype.name.in_(lightcurve_types))
+
+        return self._execute_q(q)
 
     def get_magnitude_median_offset(self, tic_id, struct):
         try:
@@ -232,68 +147,23 @@ class LightcurveManager:
 
         return offset
 
-    def _resolve_lightcurve_ids_for(self, tic_id, aperture, lightcurve_type):
-        q = (
-            sa.select(
-                models.ArrayOrbitLightcurve.tic_id,
-                models.Aperture.name,
-                models.LightcurveType.name,
-                sa.func.array_agg(
-                    aggregate_order_by(
-                        models.ArrayOrbitLightcurve.id,
-                        models.Orbit.orbit_number.asc(),
-                    )
-                ),
-            )
-            .join(models.ArrayOrbitLightcurve.aperture)
-            .join(models.ArrayOrbitLightcurve.lightcurve_type)
-            .join(models.ArrayOrbitLightcurve.orbit)
-            .where(
-                models.ArrayOrbitLightcurve.tic_id == tic_id,
-                models.Aperture.name == aperture,
-                models.LightcurveType.name == lightcurve_type,
-            )
-            .group_by(
-                models.ArrayOrbitLightcurve.tic_id,
-                models.Aperture.name,
-                models.LightcurveType.name,
-            )
-        )
-
-        with db_from_config(self._config) as db:
-            for tic_id, aperture, type, ids in db.execute(q):
-                yield (tic_id, aperture, type), ids
-
-    def _resolve_key(self, tic_id, aperture, lightcurve_type):
-        idx = (tic_id, aperture, lightcurve_type)
-        try:
-            ids = self._lightcurve_id_cache[idx]
-        except KeyError:
-            _, ids = list(self._resolve_lightcurve_ids_for(*idx))[0]
-            self._lightcurve_id_cache[idx] = ids
-
-        return ids
-
-    def construct_lightcurve(self, ids):
+    def construct_lightcurve(self, tic_id, data_list):
         datum = []
-        misses = []
-        for id in ids:
-            try:
-                data = self._lightpoint_cache[id]
-                datum.append(data)
-            except KeyError:
-                misses.append(id)
-
-        if len(misses) > 0:
-            search = fetch_lightcurve_data(self._config, misses)
-            for id, lightcurve in search.items():
-                tic_id = lightcurve.tic_id
-                array = lightcurve.to_numpy()
-
-                offset = self.get_magnitude_median_offset(tic_id, array)
-                array["data"] -= offset
-                self._lightpoint_cache[id] = array
-                datum.append(array)
+        columns = (
+            "cadences",
+            "barycentric_julian_dates",
+            "data",
+            "errors",
+            "x_centroids",
+            "y_centroids",
+            "quality_flags",
+        )
+        dtype = m.ArrayOrbitLightcurve.create_structured_dtype(*columns)
+        for row_aggregate in data_list:
+            struct = np.array(list(zip(*row_aggregate)), dtype=dtype)
+            offset = self.get_magnitude_median_offset(tic_id, struct)
+            struct["data"] -= offset
+            datum.append(struct)
 
         full_struct = np.concatenate(
             sorted(datum, key=lambda struct: struct["cadences"][0])

@@ -132,12 +132,12 @@ class DirectoryPlan:
     def __init__(
         self,
         directories: list[pathlib.Path],
-        db,
+        db_config,
         recursive=False,
     ):
         self.source_dirs = directories
         self.recursive = recursive
-        self.db = db
+        self.db_config = db_config
         self._look_for_files()
         self._preprocess_files()
 
@@ -152,7 +152,7 @@ class DirectoryPlan:
 
     def _look_for_files(self):
         n_workers = min((len(self.source_dirs), cpu_count()))
-        func = partial(look_for_relevant_files, self.db.config)
+        func = partial(look_for_relevant_files, self.db_config)
         with Pool(n_workers) as pool:
             results = pool.imap(func, self.source_dirs)
             contexts = list(chain.from_iterable(results))
@@ -209,8 +209,8 @@ class DirectoryPlan:
 
 
 class TICListPlan(DirectoryPlan):
-    def __init__(self, tic_ids, db):
-        self.db = db
+    def __init__(self, tic_ids, db_config):
+        self.db_config = db_config
         self._tic_ids = set(tic_ids)
         self._look_for_files()
         self._preprocess_files()
@@ -220,7 +220,7 @@ class TICListPlan(DirectoryPlan):
         cameras = [1, 2, 3, 4]
         ccds = [1, 2, 3, 4]
         paths = []
-        with self.db as db:
+        with db_from_config(self.db_config) as db:
             orbits = [
                 number
                 for number, in db.query(Orbit.orbit_number).order_by(
@@ -236,7 +236,7 @@ class TICListPlan(DirectoryPlan):
 
         with Pool() as pool:
             func = partial(
-                look_for_relevant_files, self.db.config, tic_mask=self.tic_ids
+                look_for_relevant_files, self.db_config, tic_mask=self.tic_ids
             )
             contexts = list(
                 chain.from_iterable(pool.imap_unordered(func, paths))

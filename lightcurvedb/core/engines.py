@@ -1,7 +1,6 @@
 import os
 
-import configurables as conf
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine
 from sqlalchemy.event import listens_for
 from sqlalchemy.exc import DisconnectionError
 
@@ -25,18 +24,6 @@ def __register_process_guards__(engine):
     return engine
 
 
-def _PoolClass(name):
-    return getattr(pool, name)
-
-
-@conf.configurable("Credentials")
-@conf.param("database_name")
-@conf.param("username")
-@conf.param("password")
-@conf.option("database_host", default="localhost")
-@conf.option("database_port", type=int, default=5432)
-@conf.option("poolclass", type=_PoolClass, default=pool.NullPool)
-@conf.option("dialect", default="postgresql+psycopg2")
 def thread_safe_engine(
     database_name,
     username,

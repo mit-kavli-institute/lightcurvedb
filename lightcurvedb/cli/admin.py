@@ -1,10 +1,15 @@
+import multiprocessing as mp
+
 import click
+import sqlalchemy as sa
 from sqlalchemy import text
 from tabulate import tabulate
 
+from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.cli.types import ModelField
 from lightcurvedb.cli.utils import tabulate_query
+from lightcurvedb.core import partitioning
 from lightcurvedb.core.psql_tables import PGStatActivity
 
 
@@ -32,7 +37,7 @@ def reload(ctx):
     """
     from lightcurvedb.io.procedures.procedure import _yield_procedure_ddl
 
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         for ddl in _yield_procedure_ddl():
             click.echo("Executing {0}".format(ddl))
             db.execute(ddl)
@@ -65,7 +70,7 @@ def list_defined(ctx):
             WHERE routines.specific_schema='my_specified_schema_name'
             ORDER BY routines.routine_name, parameters.ordinal_position;
     """
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         results = db.execute(text(RAW_SQL))
         click.echo(
             tabulate(
@@ -76,9 +81,30 @@ def list_defined(ctx):
 
 
 @admin.group()
-@click.pass_context
-def maintenance(ctx):
+def maintenance():
     pass
+
+
+@maintenance.command()
+@click.pass_context
+@click.argument("hyper-table", type=str)
+@click.argument("indexer", type=str)
+@click.option("--n-processes", type=int, default=16)
+def cluster_hyper_table(ctx, hyper_table, indexer, n_processes):
+    chunk_q = sa.select(
+        sa.func.concat(
+            sa.column("chunk_schema"), ".", sa.column("chunk_name")
+        ).label("chunk_path")
+    ).select_from(sa.func.chunks_detailed_size(hyper_table))
+    jobs = []
+    with db_from_config(ctx.obj["dbconf"]) as db:
+        for (chunkpath,) in db.execute(chunk_q):
+            jobs.append((ctx.obj["dbconf"], chunkpath, indexer))
+            click.echo(f"Ordering {chunkpath} using {indexer}")
+    with mp.Pool(n_processes) as pool:
+        pool.starmap(partitioning.reorder_chunk, jobs)
+
+    return
 
 
 @admin.group()
@@ -98,7 +124,7 @@ def state(ctx):
     default=["pid", "state", "application_name", "query"],
 )
 def get_all_queries(ctx, columns):
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         q = db.query(*columns).filter(
             PGStatActivity.database == "lightpointdb"
         )
@@ -116,7 +142,7 @@ def get_all_queries(ctx, columns):
     default=["pid", "query", "application_name", "blocked_by"],
 )
 def get_blocked_queries(ctx, columns):
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         q = db.query(*columns).filter(
             PGStatActivity.database == "lightpointdb",
             PGStatActivity.is_blocked(),
@@ -136,7 +162,7 @@ def get_blocked_queries(ctx, columns):
     default=["pid", "state", "application_name", "query"],
 )
 def get_info(ctx, pids, columns):
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         q = db.query(*columns).filter(PGStatActivity.pid.in_(pids))
         click.echo(tabulate_query(q))
 
@@ -145,7 +171,7 @@ def get_info(ctx, pids, columns):
 @click.pass_context
 @click.argument("pids", type=int, nargs=-1)
 def terminate(ctx, pids):
-    with ctx.obj["db"] as db:
+    with db_from_config(ctx.obj["dbconf"]) as db:
         queries = db.query(PGStatActivity.query).filter(
             PGStatActivity.pid.in_(pids)
         )

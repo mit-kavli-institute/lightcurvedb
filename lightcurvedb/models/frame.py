@@ -122,7 +122,7 @@ class Frame(QLPModel, CreatedOnMixin):
         index=True,
     )
     frame_type_id = Column(
-        ForeignKey(FrameType.name, ondelete="RESTRICT"),
+        ForeignKey(FrameType.id, ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

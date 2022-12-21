@@ -1,6 +1,12 @@
+import multiprocessing as mp
+
+import sqlalchemy as sa
 from loguru import logger
 
-from lightcurvedb.models import CameraQuaternion
+from lightcurvedb.models.camera_quaternion import (
+    CameraQuaternion,
+    get_utc_time,
+)
 from lightcurvedb.util.contexts import extract_pdo_path_context
 
 QUAT_FIELD_ORDER = (
@@ -23,6 +29,32 @@ QUAT_FIELD_TYPES = (
     int,
     int,
 )
+
+
+def get_min_max_datetime(quaternion_path, delimiter=None):
+    """
+    Obtain min and max datetimes from a camera quaternion file.
+    Assumes the file is ordered by ascending datetimes.
+    """
+
+    with open(quaternion_path, "rt") as fin:
+        line_iter = iter(fin)
+        first_line = next(line_iter)
+        for last_line in line_iter:
+            pass
+    first_tokens = first_line.strip().split(
+        " " if delimiter is None else delimiter
+    )
+    last_tokens = last_line.strip().split(
+        " " if delimiter is None else delimiter
+    )
+    first_gps_token = first_tokens[0]
+    last_gps_token = last_tokens[0]
+
+    return (
+        get_utc_time(first_gps_token).datetime,
+        get_utc_time(last_gps_token).datetime,
+    )
 
 
 def _parse_quat_str(string, delimiter=None):
@@ -58,34 +90,41 @@ def ingest_quat_file(db, filepath):
     the callee.
     """
     # Double check we have all the needed contexts from the filepath
+    logger.debug(f"Ingesting camera quaternion file: {filepath}")
     context = extract_pdo_path_context(str(filepath))
     try:
         camera = context["camera"]
+        logger.debug(f"Ingesting camera {camera} quaternions")
     except (TypeError, KeyError):
         raise ValueError(f"Could not find camera context in {filepath}")
     camera_quaternions = []
 
-    mask = set(
-        date
-        for date, in db.query(CameraQuaternion.date).filter_by(camera=camera)
+    logger.debug("Getting datetime range...")
+    min_date, max_date = get_min_max_datetime(filepath)
+
+    logger.debug("Querying for existing camera quaternion timeseries")
+    q = sa.select(CameraQuaternion.date).where(
+        CameraQuaternion.camera == camera,
+        CameraQuaternion.date.between(min_date, max_date),
     )
-
-    for line in open(filepath, "rt"):
-        model = _parse_quat_str(line)
-        model.camera = camera
-
-        if model.date in mask:
-            logger.warning(
-                "Camera Quaternion time uniqueness failed check "
-                f"on camera {camera}: date {model.date}"
-            )
-            continue
-        else:
-            # Update mask to avoid duplicates inside the file, if any
-            mask.add(model.date)
-
-        camera_quaternions.append(model)
-    db.session.add_all(camera_quaternions)
+    mask = set(date for date, in db.execute(q))
+    logger.debug(f"Comparing file against {len(mask)} quaternions")
+    with mp.Pool() as pool:
+        models = filter(
+            lambda m: m.date not in mask,
+            pool.imap_unordered(
+                _parse_quat_str,
+                open(filepath, "rt").readlines(),
+                chunksize=1000,
+            ),
+        )
+        for model in models:
+            model.camera = camera
+            camera_quaternions.append(model)
+    logger.debug(
+        f"Pushing {len(camera_quaternions)} new quaternion rows to remote"
+    )
+    db.bulk_save_objects(camera_quaternions)
     db.flush()
 
 

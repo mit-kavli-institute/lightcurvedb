@@ -242,7 +242,7 @@ def populate_tic_catalog_w_db(conn, tic_ids, chunksize=MAX_PARAM):
         "kmag",
         "vmag",
     )
-    chunks = chunkify(tqdm(results, unit=" tics"), chunksize // 9)
+    chunks = chunkify(tqdm(map(tuple, results), unit=" tics"), chunksize // 9)
     for chunk in chunks:
         stmt = TicParameter.insert().values(chunk)
         conn.execute(stmt)
@@ -327,7 +327,7 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     type_name = "Raw FFI" if frame_type is None else frame_type
     q = (
         db.query(Frame.cadence, Frame.camera, Frame.mid_tjd)
-        .join(FrameType, FrameType.name == Frame.frame_type_id)
+        .join(Frame.frame_type)
         .filter(FrameType.name == type_name)
     )
     payload = [dict(zip(cols, row)) for row in q]

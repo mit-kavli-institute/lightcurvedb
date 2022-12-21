@@ -3,7 +3,12 @@ from __future__ import division, print_function
 from sqlalchemy import Column, DateTime, String, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import ColumnProperty, RelationshipProperty, as_declarative, declarative_mixin
+from sqlalchemy.orm import (
+    ColumnProperty,
+    RelationshipProperty,
+    as_declarative,
+    declarative_mixin,
+)
 from sqlalchemy.sql import func
 
 from lightcurvedb.core.admin import get_psql_catalog_tables
@@ -98,12 +103,15 @@ class QLPModel:
                 "Could not find any SQL properties on {0} with the "
                 "path '{1}'".format(cls, path)
             )
+
+
 @declarative_mixin
 class CreatedOnMixin:
     """
     Mixin for describing QLP Dataproducts such as frames, lightcurves,
     and BLS results
     """
+
     created_on = Column(DateTime, server_default=func.now())
 
 

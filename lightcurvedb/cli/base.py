@@ -1,18 +1,19 @@
 import pathlib
 import sys
+import tempfile
 
 import click
 from loguru import logger
 
 from lightcurvedb.core.connection import db_from_config
-from lightcurvedb.util.constants import __DEFAULT_PATH__
+from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
 
 
 @click.group()
 @click.pass_context
 @click.option(
     "--dbconf",
-    default=__DEFAULT_PATH__,
+    default=DEFAULT_CONFIG_PATH,
     type=click.Path(exists=True, dir_okay=False),
     help="Specify a database config for connections",
 )
@@ -61,9 +62,14 @@ def lcdbcli(
     if db_port_override:
         overrides["database_port"] = db_port_override
 
-    session = db_from_config(dbconf, **overrides)
-    ctx.obj["db"] = session
+    ctx.obj["dbconf_file"] = tempfile.NamedTemporaryFile(suffix=".ini")
+    tmp_config = db_from_config.emit(
+        pathlib.Path(ctx.obj["dbconf_file"].name),
+        _filepath=dbconf,
+        _ignore_options=False,
+        **overrides,
+    )
 
     ctx.obj["log_level"] = logging
     ctx.obj["dryrun"] = dryrun
-    ctx.obj["dbconf"] = dbconf
+    ctx.obj["dbconf"] = tmp_config

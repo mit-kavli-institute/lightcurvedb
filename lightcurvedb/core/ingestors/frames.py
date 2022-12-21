@@ -7,7 +7,6 @@ from lightcurvedb.models import Frame, Orbit
 
 from .orbits import generate_from_fits
 
-
 FITS_TO_FRAME_MAP = {
     "cadence_type": "INT_TIME",
     "camera": ["CAM", "CAMNUM"],
@@ -20,6 +19,7 @@ FITS_TO_FRAME_MAP = {
     "exp_time": "EXPTIME",
     "quality_bit": "QUAL_BIT",
 }
+
 
 def _resolve_fits_value(header, key):
     if isinstance(key, str):
@@ -81,8 +81,8 @@ def from_fits(path, frame_type=None, orbit=None):
             exp_time=header["EXPTIME"],
             quality_bit=header["QUAL_BIT"],
             file_path=abspath,
-            frame_type=frame_type,
-            orbit=orbit,
+            frame_type_id=frame_type.id,
+            orbit_id=orbit.id,
         )
     except KeyError as e:
         print(e)
@@ -92,7 +92,6 @@ def from_fits(path, frame_type=None, orbit=None):
 
 
 def ingest_directory(db, frame_type, directory, extension, update=False):
-    parent_dir = directory.parent
     files = list(directory.glob(extension))
     new_paths = []
     existing_paths = []
@@ -101,25 +100,17 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
         q = db.query(Frame).filter_by(file_path=str(path))
         if q.one_or_none() is not None:
             # File Exists
-            logger.warning(
-                f"Frame path already exists in database: {path}"
-            )
+            logger.warning(f"Frame path already exists in database: {path}")
             existing_paths.append(path)
         else:
-            logger.debug(
-                f"New Frame path: {path}"
-            )
+            logger.debug(f"New Frame path: {path}")
             new_paths.append(path)
 
-    logger.debug(
-        f"Found {len(new_paths)} new frame paths"
-    )
-    logger.debug(
-        f"Found {len(existing_paths)} existing frame paths"
-    )
+    logger.debug(f"Found {len(new_paths)} new frame paths")
+    logger.debug(f"Found {len(existing_paths)} existing frame paths")
 
     orbit_map = {}
-    for orbit, paths in generate_from_fits(files, parallel=False):
+    for orbit, paths in generate_from_fits(files, parallel=True):
         # Attempt to locate any existing orbit
         q = db.query(Orbit).filter_by(orbit_number=orbit.orbit_number)
         remote_orbit = q.one_or_none()
@@ -132,20 +123,20 @@ def ingest_directory(db, frame_type, directory, extension, update=False):
         for path in paths:
             orbit_map[path] = orbit
 
+    db.flush()
+
     frames = []
-    logger.debug(orbit_map)
 
     # Now construct each frame and build relations
     for path in new_paths:
         logger.debug(path)
-        frame = from_fits(
-            path,
-            frame_type=frame_type,
-            orbit=orbit_map[path]
-        )
-        db.add(frame)
-        db.flush()
+        frame = from_fits(path, frame_type=frame_type, orbit=orbit_map[path])
         frames.append(frame)
+
+    logger.debug("Pushing to remote")
+    db.bulk_save_objects(frames)
+    db.flush()
+    logger.debug("Emitted frames")
 
     if update:
         for path in existing_paths:
