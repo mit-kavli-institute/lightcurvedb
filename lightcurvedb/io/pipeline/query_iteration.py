@@ -10,6 +10,11 @@ def map_query_to_function(
     config_override=None,
     **function_constants
 ):
+    """
+    A decorator which will execute the given query function and pass the
+    results to the wrapped function.
+    """
+
     def _internal(func):
 
         connect_args = {
