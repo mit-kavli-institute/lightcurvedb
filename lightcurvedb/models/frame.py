@@ -27,17 +27,6 @@ from lightcurvedb.core.base_model import (
 from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
-FRAME_DTYPE = [
-    ("cadence", np.int64),
-    ("start_tjd", np.float64),
-    ("mid_tjd", np.float64),
-    ("end_tjd", np.float64),
-    ("gps_time", np.float64),
-    ("exp_time", np.float64),
-    ("quality_bit", np.int32),
-]
-FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
-
 
 def adapt_pathlib(path):
     return ext.QuotedString(str(path))
@@ -95,6 +84,17 @@ class Frame(QLPModel, CreatedOnMixin):
             )
         )
 
+    FRAME_DTYPE = [
+        ("cadence", np.int64),
+        ("start_tjd", np.float64),
+        ("mid_tjd", np.float64),
+        ("end_tjd", np.float64),
+        ("gps_time", np.float64),
+        ("exp_time", np.float64),
+        ("quality_bit", np.int32),
+    ]
+    FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
+
     # Model attributes
     id = Column(
         Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
@@ -137,7 +137,7 @@ class Frame(QLPModel, CreatedOnMixin):
         if dtype_override:
             columns = dtype_override
         else:
-            columns = FRAME_DTYPE
+            columns = cls.FRAME_DTYPE
 
         return tuple(getattr(cls, column) for column, dtype in columns)
 
