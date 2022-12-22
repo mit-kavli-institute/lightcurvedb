@@ -1,5 +1,6 @@
+import numpy as np
+from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import types
-
 
 _SQL_ALIASES = {
     "bigint": types.BigInteger,
@@ -27,9 +28,7 @@ def _str_to_sql_type(string):
     try:
         return _SQL_ALIASES[string.lower()]
     except KeyError:
-        raise KeyError(
-            f"Unknown specified type {string}"
-        )
+        raise KeyError(f"Unknown specified type {string}")
 
 
 def _resolve_type(type_):
@@ -54,3 +53,15 @@ def psql_safe_str(string):
         The psql safe string.
     """
     return string.replace("\x00", "\uFFFD")
+
+
+def adapt_numpy_integer(numpy_integer):
+    return AsIs(numpy_integer)
+
+
+def adapt_numpy_float(numpy_float):
+    return AsIs(numpy_float)
+
+
+register_adapter(adapt_numpy_integer, np.integer)
+register_adapter(adapt_numpy_float, np.floating)
