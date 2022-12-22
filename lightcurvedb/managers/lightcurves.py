@@ -137,7 +137,7 @@ class LightcurveManager:
         try:
             tmag = self._stellar_parameter_cache[tic_id]
         except KeyError:
-            tmag = pyticdb.query_by_id(tic_id, "tmag")[0]
+            tmag = pyticdb.query_by_id(tic_id, "tmag")[0][0]
 
             self._stellar_parameter_cache[tic_id] = tmag
 
