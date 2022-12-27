@@ -75,6 +75,14 @@ class BLS(QLPModel, CreatedOnMixin):
         ),
     )
 
+    def __repr__(self):
+        return (
+            f"<BLS {self.id} "
+            f"tic={self.tic_id} "
+            f"sector={self.sector} "
+            f"radius={self.planet_radius}>"
+        )
+
     @hybrid_property
     def duration_rel_period(self):
         return self.transit_duration / self.transit_period
