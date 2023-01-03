@@ -1,4 +1,4 @@
-from math import isnan, sqrt
+from math import sqrt
 
 import pyticdb
 import sqlalchemy as sa
@@ -141,33 +141,34 @@ class BLS(QLPModel, CreatedOnMixin):
         planet_radius = planet_radius.to(u.earthRad).value
         planet_radius_error = planet_radius_error.to(u.earthRad).value
 
-        if isnan(planet_radius):
-            planet_radius = "NaN"
-        if isnan(planet_radius_error):
-            planet_radius_error = "NaN"
-
         return cls(
             tic_id=bls_result["tic"],
             tce_n=bls_result["planetno"],
-            transit_period=bls_result["per"],
-            transit_depth=bls_result["dep"],
-            transit_duration=bls_result["dur"],
-            planet_radius=planet_radius,
-            planet_radius_error=planet_radius_error,
-            points_pre_transit=bls_result["nbefore"],
-            points_in_transit=bls_result["nt"],
-            points_post_transit=bls_result["nafter"],
-            out_of_transit_magnitude=bls_result["ootmag"],
+            transit_period=type_check.sql_nan_cast(bls_result["per"]),
+            transit_depth=type_check.sql_nan_cast(bls_result["dep"]),
+            transit_duration=type_check.sql_nan_cast(bls_result["dur"]),
+            planet_radius=type_check.sql_nan_cast(planet_radius),
+            planet_radius_error=type_check.sql_nan_cast(planet_radius_error),
+            points_pre_transit=type_check.sql_nan_cast(bls_result["nbefore"]),
+            points_in_transit=type_check.sql_nan_cast(bls_result["nt"]),
+            points_post_transit=type_check.sql_nan_cast(bls_result["nafter"]),
+            out_of_transit_magnitude=type_check.sql_nan_cast(
+                bls_result["ootmag"]
+            ),
             transits=bls_result["Nt"],
-            ingress=bls_result["qin"] * bls_result["dur"],
-            transit_center=bls_result["epo"],
-            rednoise=bls_result["sig_r"],
-            whitenoise=bls_result["sig_w"],
-            signal_to_noise=bls_result["sn"],
-            signal_to_pinknoise=bls_result["spn"],
-            signal_detection_efficiency=bls_result["sde"],
-            signal_residual=bls_result["sr"],
-            zero_point_transit=bls_result["zpt"],
+            ingress=type_check.sql_nan_cast(
+                bls_result["qin"] * bls_result["dur"]
+            ),
+            transit_center=type_check.sql_nan_cast(bls_result["epo"]),
+            rednoise=type_check.sql_nan_cast(bls_result["sig_r"]),
+            whitenoise=type_check.sql_nan_cast(bls_result["sig_w"]),
+            signal_to_noise=type_check.sql_nan_cast(bls_result["sn"]),
+            signal_to_pinknoise=type_check.sql_nan_cast(bls_result["spn"]),
+            signal_detection_efficiency=type_check.sql_nan_cast(
+                bls_result["sde"]
+            ),
+            signal_residual=type_check.sql_nan_cast(bls_result["sr"]),
+            zero_point_transit=type_check.sql_nan_cast(bls_result["zpt"]),
         )
 
 

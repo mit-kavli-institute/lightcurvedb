@@ -1,3 +1,6 @@
+from math import isnan
+
+
 def isiterable(x):
     try:
         iter(x)
@@ -11,3 +14,7 @@ def safe_float(x):
         return float(x)
     except (ValueError, TypeError):
         return float("nan")
+
+
+def sql_nan_cast(x):
+    return "NaN" if isnan(x) else x
