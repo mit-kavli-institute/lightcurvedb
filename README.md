@@ -57,8 +57,14 @@ for every detrending algorithm used, including the raw photometric lightcurve wi
 | x_centroids | The _flux_ weighted aperture centroid (x axis)* |
 | y_centroids | The _flux_ weighted aperture centroid (y axis)* |
 | quality_flags | The quality flag field |
-| ------------- | ----------------------- |
 
 * For centroid values without any flux-weights, use the `Background` lightcurve type.
 
 All array fields (barycentric times, magnitude/flux values and errors, centroids and quality flags) are ordered by the cadences field.
+
+#### Best Lightcurve Model
+When using the `BestLightcurveManager` lightcurves are returned by their "best types". Meaning that for all the detrending methods produced, only 1 is used
+for further planet candidate processing (such as the BLS search). This is done by joining a lightcurve table, with all lightcurve definitions, against a best-lightcurve table
+which specifies which detrending is the "best". For the ease of most use cases within QLP, this has been abstracted away using the `BestLightcurveManager`.
+
+For further control on reading lightcurves or constructing your own queries, consult the wiki for instructions.
