@@ -98,7 +98,7 @@ def ingest(
         cut_len = len(ephemeris_df)
         logger.info(
             f"Reduced position payload from {cur_len} to {cut_len} "
-            "after sector date cutoff {date_cutoff}"
+            f"after sector date cutoff {date_cutoff}"
         )
 
     min_bjd = min(ephemeris_df.index)
@@ -123,10 +123,11 @@ def ingest(
                         .values(**dict(row))
                     )
                     db.execute(q)
-            eph = m.SpacecraftEphemeris(
-                barycentric_dynamical_time=i, **dict(row)
-            )
-            db.add(eph)
+            else:
+                eph = m.SpacecraftEphemeris(
+                    barycentric_dynamical_time=i, **dict(row)
+                )
+                db.add(eph)
             logger.info(f"Added {eph}")
         if not ctx.obj["dryrun"]:
             db.commit()
