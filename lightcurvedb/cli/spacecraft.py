@@ -101,8 +101,8 @@ def ingest(
             "after sector date cutoff {date_cutoff}"
         )
 
-    min_bjd = ephemeris_df.iloc[0]["barycentric_dynamical_time"]
-    max_bjd = ephemeris_df.iloc[-1]["barycentric_dynamical_time"]
+    min_bjd = min(ephemeris_df.index)
+    max_bjd = max(ephemeris_df.index)
 
     mask_q = sa.select(m.SpacecraftEphemeris.bjd).where(
         m.SpacecraftEphemeris.bjd.between(min_bjd, max_bjd)
