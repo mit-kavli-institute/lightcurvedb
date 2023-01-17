@@ -35,9 +35,25 @@ def spacecraft(ctx):
 @click.argument(
     "ephemeris_csv", nargs=-1, type=click.Path(dir_okay=False, exists=True)
 )
-@click.option("--update-on-date-collision", is_flag=True)
-@click.option("--ignore-on-date-collision", is_flag=True)
-@click.option("--only-consider-past-sector", type=int, default=None)
+@click.option(
+    "--update-on-date-collision",
+    is_flag=True,
+    help="On a BJD date collision, update the row with the csv data",
+)
+@click.option(
+    "--ignore-on-date-collision",
+    is_flag=True,
+    help="On a BJD date collision, ignore the colliding csv row",
+)
+@click.option(
+    "--only-consider-past-sector",
+    type=int,
+    default=None,
+    help=(
+        "Ignore any csv rows that have calendar-dates past the "
+        "latest date in the specified sector"
+    ),
+)
 def ingest(
     ctx,
     ephemeris_csv,
