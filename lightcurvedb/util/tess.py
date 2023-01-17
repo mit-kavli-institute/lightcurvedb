@@ -29,4 +29,4 @@ def gps_time_to_datetime(gps_time: float) -> datetime:
         The converted time.
     """
     t = Time(gps_time, format="gps")
-    return Time(t, format="isot", format="utc").datetime
+    return Time(t, format="isot", scale="utc").datetime
