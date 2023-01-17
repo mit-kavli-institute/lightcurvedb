@@ -128,7 +128,7 @@ def ingest(
                     barycentric_dynamical_time=i, **dict(row)
                 )
                 db.add(eph)
-            logger.info(f"Added {eph}")
+                logger.info(f"Added {eph}")
         if not ctx.obj["dryrun"]:
             db.commit()
             logger.success("Committed changes!")
