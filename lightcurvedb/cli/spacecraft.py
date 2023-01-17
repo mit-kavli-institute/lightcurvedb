@@ -132,3 +132,5 @@ def ingest(
         if not ctx.obj["dryrun"]:
             db.commit()
             logger.success("Committed changes!")
+        else:
+            logger.warning("Respecting dryrun, rolling back changes")
