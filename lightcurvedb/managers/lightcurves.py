@@ -120,12 +120,12 @@ class LightcurveManager:
             )
         )
 
-        if apertures is not None:
+        if apertures is not None and len(apertures) > 0:
             if len(apertures) == 1:
                 q = q.where(m.Aperture.name == apertures[0])
             else:
                 q = q.where(m.Aperture.name.in_(apertures))
-        if lightcurve_types is not None:
+        if lightcurve_types is not None and len(lightcurve_types) > 0:
             if len(lightcurve_types) == 1:
                 q = q.where(m.LightcurveType.name == lightcurve_types[0])
             else:
