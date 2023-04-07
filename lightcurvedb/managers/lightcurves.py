@@ -129,7 +129,7 @@ class LightcurveManager:
             if len(lightcurve_types) == 1:
                 q = q.where(m.LightcurveType.name == lightcurve_types[0])
             else:
-                q = q.where(m.Lightcurvetype.name.in_(lightcurve_types))
+                q = q.where(m.LightcurveType.name.in_(lightcurve_types))
 
         return self._execute_q(q)
 
