@@ -112,6 +112,11 @@ class Frame(QLPModel, CreatedOnMixin):
 
     quality_bit = Column(Boolean, nullable=False)
 
+    fine_pointing = Column(Boolean, nullable=True)
+    coarse_pointing = Column(Boolean, nullable=True)
+    reaction_wheel_desaturation = Column(Boolean, nullable=True)
+    stray_light = Column(Boolean, nullable=True)
+
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys

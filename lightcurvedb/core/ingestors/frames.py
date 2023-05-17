@@ -1,4 +1,5 @@
 import os
+import typing
 
 from astropy.io import fits
 from loguru import logger
@@ -47,6 +48,18 @@ def _ffi_to_frame_kwargs(path):
     return kwargs
 
 
+def try_get(header, key, *fallbacks, default=None) -> typing.Any:
+    try:
+        return header[key]
+    except KeyError:
+        for k in fallbacks:
+            try:
+                return header[k]
+            except KeyError:
+                continue
+    return default
+
+
 def from_fits(path, frame_type=None, orbit=None):
     """
     Generates a Frame instance from a FITS file.
@@ -67,28 +80,39 @@ def from_fits(path, frame_type=None, orbit=None):
         The constructed frame.
     """
     abspath = os.path.abspath(path)
-    header = fits.open(abspath)[0].header
-    try:
-        return Frame(
-            cadence_type=header["INT_TIME"],
-            camera=header.get("CAM", header.get("CAMNUM", None)),
-            ccd=header.get("CCD", header.get("CCDNUM", None)),
-            cadence=header["CADENCE"],
-            gps_time=header["TIME"],
-            start_tjd=header["STARTTJD"],
-            mid_tjd=header["MIDTJD"],
-            end_tjd=header["ENDTJD"],
-            exp_time=header["EXPTIME"],
-            quality_bit=header["QUAL_BIT"],
-            file_path=abspath,
-            frame_type_id=frame_type.id,
-            orbit_id=orbit.id,
-        )
-    except KeyError as e:
-        print(e)
-        print("==={0} HEADER===".format(abspath))
-        print(repr(header))
-        raise
+
+    frame = Frame()
+    with fits.open(abspath) as fin:
+        header = fin[0].header
+        try:
+            frame.cadence_type = header["INT_TIME"]
+            frame.camera = try_get(header, "CAM", "CAMNUM")
+            frame.ccd = try_get(header, "CCD", "CCDNUM")
+            frame.cadence = header["CADENCE"]
+            frame.gps_time = header["TIME"]
+            frame.start_tjd = header["STARTTJD"]
+            frame.mid_tjd = header["MIDTJD"]
+            frame.end_tjd = header["ENDTJD"]
+            frame.exp_time = header["EXPTIME"]
+            frame.quality_bit = header["QUAL_BIT"]
+            frame.fine_pointing = try_get(header, "FINE")
+            frame.coarse_pointing = try_get(header, "COARSE")
+            frame.reaction_wheel_desaturation = try_get(header, "RW_DESAT")
+
+            stray_light_key = f"STRAYLT{frame.camera}"
+            frame.stray_light = try_get(header, stray_light_key)
+        except KeyError as e:
+            print(e)
+            print("==={0} HEADER===".format(abspath))
+            print(repr(header))
+            raise
+
+    if frame_type is not None:
+        frame.frame_type_id = frame_type.id
+    if orbit is not None:
+        frame.orbit_id = orbit.id
+
+    return frame
 
 
 def ingest_directory(db, frame_type, directory, extension, update=False):
