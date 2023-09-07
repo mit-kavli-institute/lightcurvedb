@@ -184,7 +184,7 @@ class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         sa.UniqueConstraint("name"),
         Index(
             "bls_tags_name_tsv",
-            sa.func.to_tsvector("'english'", "name"),
+            sa.func.to_tsvector(sa.literal_column('"english"'), "name"),
             postgresql_using="gin",
         ),
     )
