@@ -133,5 +133,5 @@ def db_from_config(
 # Try and instantiate "global" lcdb
 try:
     db = db_from_config(DEFAULT_CONFIG_PATH)
-except KeyError:
+except (FileNotFoundError, KeyError):
     db = None

@@ -1,6 +1,5 @@
-from __future__ import division, print_function
-
-from sqlalchemy import Column, DateTime, String, select
+import datetime
+from sqlalchemy import String, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
@@ -8,6 +7,8 @@ from sqlalchemy.orm import (
     RelationshipProperty,
     as_declarative,
     declarative_mixin,
+    Mapped,
+    mapped_column
 )
 from sqlalchemy.sql import func
 
@@ -112,7 +113,7 @@ class CreatedOnMixin:
     and BLS results
     """
 
-    created_on = Column(DateTime, server_default=func.now())
+    created_on: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
 
 
 @declarative_mixin
@@ -121,8 +122,8 @@ class NameAndDescriptionMixin:
     Mixin for describing QLP data subtypes such as lightcurve types.
     """
 
-    _name = Column("name", String(64), unique=True, nullable=False)
-    _description = Column("description", String)
+    _name: Mapped[str] = mapped_column("name", String(64), unique=True, nullable=False)
+    _description: Mapped[str] = mapped_column("description")
 
     @hybrid_property
     def name(self):
