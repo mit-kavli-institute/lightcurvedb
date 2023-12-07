@@ -22,9 +22,8 @@ from sqlalchemy import (
     inspect,
 )
 from sqlalchemy.dialects.postgresql import INET, OID
-from sqlalchemy.ext.declarative import as_declarative
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import backref, relationship
+from sqlalchemy.orm import DeclarativeBase, backref, relationship
 from sqlalchemy.sql import func
 from sqlalchemy.types import CHAR
 
@@ -33,8 +32,7 @@ XID = Integer
 NAME = String(64)
 
 
-@as_declarative()
-class PGInternalModel(object):
+class PGInternalModel(DeclarativeBase):
     """
     Core internal wrapper for all reflected postgres catalogs
     """
