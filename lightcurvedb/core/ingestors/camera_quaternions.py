@@ -40,6 +40,7 @@ def get_min_max_datetime(quaternion_path, delimiter=None):
     with open(quaternion_path, "rt") as fin:
         line_iter = iter(fin)
         first_line = next(line_iter)
+        last_line = first_line
         for last_line in line_iter:
             pass
     first_tokens = first_line.strip().split(

@@ -103,6 +103,7 @@ def db_from_config(
     database_host,
     database_port,
     dialect,
+    db_class=DB,
     **engine_kwargs
 ):
     """
@@ -127,7 +128,7 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    return DB(engine)
+    return db_class(engine)
 
 
 # Try and instantiate "global" lcdb
