@@ -1,5 +1,5 @@
-psycopg2>=2.8.4
-sqlalchemy>=1.4
+psycopg2-binary>=2.8.4
+sqlalchemy>=2.0
 click
 astropy
 numpy

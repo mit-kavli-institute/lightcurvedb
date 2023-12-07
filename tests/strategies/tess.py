@@ -3,85 +3,82 @@ from hypothesis import strategies as st
 MIN_TJD, MAX_TJD = 1325.29, 2796.12
 
 
-@st.composite
-def ccds(draw):
-    return draw(st.integers(min_value=1, max_value=4))
+def ccds():
+    return st.integers(min_value=1, max_value=4)
 
 
-@st.composite
-def cameras(draw):
-    return draw(st.integers(min_value=1, max_value=4))
+def cameras():
+    return st.integers(min_value=1, max_value=4)
 
 
-@st.composite
-def sectors(draw):
-    return draw(st.integers(min_value=1, max_value=1000))
+def sectors():
+    return st.integers(min_value=1, max_value=1000)
 
 
-@st.composite
-def orbits(draw):
-    return draw(st.integers(min_value=9, max_value=2009))
+def orbits():
+    return st.integers(min_value=9, max_value=2009)
 
 
-@st.composite
-def sector_str(draw, sector=None):
-    sector = draw(st.just(sector)) if sector else draw(sectors())
-    return f"sector-{sector}"
+def sector_str(sector=None):
+    sector = st.just(sector) if sector else sectors()
+    return sector.map(lambda s: f"sector-{s}")
 
 
-@st.composite
-def orbit_str(draw, orbit=None):
-    orbit = draw(st.just(orbit)) if orbit else draw(orbits())
-    return f"orbit-{orbit}"
+def orbit_str(orbit=None):
+    orbit = st.just(orbit) if orbit else orbits()
+    return orbit.map(lambda o: f"orbit-{o}")
 
 
-@st.composite
-def camera_str(draw, camera=None):
-    camera = draw(st.just(camera)) if camera else draw(cameras())
-    return f"cam{camera}"
+def camera_str(camera=None):
+    camera = st.just(camera) if camera else cameras()
+    return camera.map(lambda c: f"cam{c}")
 
 
-@st.composite
-def ccd_str(draw, ccd=None):
-    ccd = draw(st.just(ccd)) if ccd else draw(ccds())
-    return f"ccd{ccd}"
+def ccd_str(ccd=None):
+    ccd = st.just(ccd) if ccd else ccds()
+    return ccd.map(lambda c: f"ccd{c}")
 
 
-@st.composite
-def tic_ids(draw):
-    return draw(st.integers(min_value=1, max_value=10005000540))
+def tic_ids():
+    return st.integers(min_value=1, max_value=10005000540)
 
 
-@st.composite
-def cadences(draw):
-    return draw(st.integers(min_value=1, max_value=100000))
+def cadences():
+    return st.integers(min_value=1, max_value=100000)
 
 
-@st.composite
-def quality_flags(draw):
-    return draw(st.integers(min_value=0, max_value=1))
+def quality_flags():
+    return st.integers(min_value=0, max_value=1)
 
 
-@st.composite
-def tic_parameters(draw):
-    return draw(
-        st.builds(
-            dict,
-            tic_id=tic_ids(),
-            ra=st.floats(min_value=0, max_value=180),
-            dec=st.floats(min_value=0, max_value=180),
-            tmag=st.floats(allow_nan=False, allow_infinity=False),
-            pmra=st.floats(min_value=-180, max_value=180),
-            pmdec=st.floats(min_value=-180, max_value=180),
-            jmag=st.floats(),
-            kmag=st.floats(),
-            vmag=st.floats(),
-        )
+def right_ascensions():
+    return st.floats(min_value=-180, max_value=180)
+
+
+def declinations():
+    return st.floats(min_value=-180, max_value=180)
+
+
+def rolls():
+    return st.floats(min_value=-180, max_value=180)
+
+
+def tic_parameters():
+    return st.builds(
+        dict,
+        tic_id=tic_ids(),
+        ra=right_ascensions(),
+        dec=declinations(),
+        tmag=st.floats(allow_nan=False, allow_infinity=False),
+        pmra=st.floats(min_value=-180, max_value=180),
+        pmdec=st.floats(min_value=-180, max_value=180),
+        jmag=st.floats(),
+        kmag=st.floats(),
+        vmag=st.floats(),
     )
 
 
-@st.composite
-def gps_times(draw):
+def gps_times():
     """
     Minimum gathered from minimum GPS time stored in the production FRAME
     database.
@@ -95,38 +92,18 @@ def gps_times(draw):
 
 
     """
-    return draw(
-        st.floats(
-            min_value=1216580520.25,
-            max_value=1248116533.96,
-            allow_nan=False,
-            allow_infinity=False,
-        )
+    return st.floats(
+        min_value=1216580520.25,
+        max_value=1248116533.96,
+        allow_nan=False,
+        allow_infinity=False,
     )
 
 
-@st.composite
-def tjds(draw, **kwargs):
-    return draw(
-        st.floats(
-            allow_nan=False,
-            allow_infinity=False,
-            min_value=MIN_TJD,
-            max_value=MAX_TJD,
-        )
+def tjds():
+    return st.floats(
+        allow_nan=False,
+        allow_infinity=False,
+        min_value=MIN_TJD,
+        max_value=MAX_TJD,
     )
-
-
-@st.composite
-def right_ascensions(draw):
-    return draw(st.floats(min_value=-180, max_value=180))
-
-
-@st.composite
-def declinations(draw):
-    return draw(st.floats(min_value=-180, max_value=180))
-
-
-@st.composite
-def rolls(draw):
-    return draw(st.floats(min_value=-180, max_value=180))

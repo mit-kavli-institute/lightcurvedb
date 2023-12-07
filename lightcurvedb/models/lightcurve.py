@@ -10,7 +10,7 @@ import numpy as np
 import sqlalchemy as sa
 from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy.dialects import postgresql as psql
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from lightcurvedb.core.base_model import (
     CreatedOnMixin,
@@ -37,8 +37,8 @@ class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     __tablename__ = "lightcurvetypes"
 
-    id = sa.Column(sa.SmallInteger, primary_key=True, unique=True)
-    lightcurves = relationship(
+    id: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True)
+    lightcurves: Mapped[list["ArrayOrbitLightcurve"]] = relationship(
         "ArrayOrbitLightcurve", back_populates="lightcurve_type"
     )
 
@@ -109,22 +109,28 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
             ("quality_flags", "uint16"),
         ]
     )
-    tic_id = sa.Column(sa.BigInteger, primary_key=True, index=True)
-    camera = sa.Column(sa.SmallInteger, primary_key=True, index=True)
-    ccd = sa.Column(sa.SmallInteger, primary_key=True, index=True)
-    orbit_id = sa.Column(
+    tic_id: Mapped[int] = mapped_column(
+        sa.BigInteger, primary_key=True, index=True
+    )
+    camera: Mapped[int] = mapped_column(
+        sa.SmallInteger, primary_key=True, index=True
+    )
+    ccd: Mapped[int] = mapped_column(
+        sa.SmallInteger, primary_key=True, index=True
+    )
+    orbit_id: Mapped[int] = mapped_column(
         sa.SmallInteger,
         sa.ForeignKey("orbits.id", onupdate="CASCADE", ondelete="CASCADE"),
         primary_key=True,
         index=True,
     )
-    aperture_id = sa.Column(
+    aperture_id: Mapped[int] = mapped_column(
         sa.SmallInteger,
         sa.ForeignKey("apertures.id", onupdate="CASCADE", ondelete="RESTRICT"),
         primary_key=True,
         index=True,
     )
-    lightcurve_type_id = sa.Column(
+    lightcurve_type_id: Mapped[int] = mapped_column(
         sa.SmallInteger,
         sa.ForeignKey("lightcurvetypes.id"),
         primary_key=True,

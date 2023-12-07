@@ -1,21 +1,14 @@
 from datetime import datetime
+from decimal import Decimal
 
 from astropy.time import Time, formats
 from dateutil import parser
 from pyquaternion import Quaternion
-from sqlalchemy import (
-    CheckConstraint,
-    Column,
-    DateTime,
-    Integer,
-    SmallInteger,
-    UniqueConstraint,
-    func,
-)
+from sqlalchemy import CheckConstraint, SmallInteger, UniqueConstraint, func
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, mapped_column
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
-from lightcurvedb.core.fields import high_precision_column
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.util.constants import GPS_LEAP_SECONDS
 
 PYQUAT_KEYWORDS = {
@@ -83,14 +76,14 @@ class CameraQuaternion(QLPModel, CreatedOnMixin):
 
     __tablename__ = "camera_quaternions"
 
-    id = Column(Integer, primary_key=True)
-    date = Column(DateTime, index=True, nullable=False)
-    camera = Column(SmallInteger, index=True, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[datetime] = mapped_column(index=True)
+    camera: Mapped[int] = mapped_column(SmallInteger, index=True)
 
-    _w = high_precision_column(name="w", nullable=False)
-    _x = high_precision_column(name="x", nullable=False)
-    _y = high_precision_column(name="y", nullable=False)
-    _z = high_precision_column(name="z", nullable=False)
+    _w: Mapped[Decimal] = mapped_column(name="w")
+    _x: Mapped[Decimal] = mapped_column(name="x")
+    _y: Mapped[Decimal] = mapped_column(name="y")
+    _z: Mapped[Decimal] = mapped_column(name="z")
 
     # Define logical constraints
     __table_args__ = (
