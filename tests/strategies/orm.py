@@ -38,9 +38,8 @@ def psql_integers(draw, **overrides):
     )
 
 
-@st.composite
-def psql_small_integers(draw, **overrides):
-    return draw(st.integers(min_value=-32768, max_value=32767, **overrides))
+def psql_small_integers(**overrides):
+    return st.integers(min_value=-32768, max_value=32767, **overrides)
 
 
 @st.composite
@@ -58,7 +57,7 @@ def orbits(draw):
             quaternion_z=st.floats(),
             quaternion_q=st.floats(),
             crm=st.booleans(),
-            crm_n=psql_integers(),
+            crm_n=psql_small_integers(),
             basename=st.text(min_size=1, max_size=256),
         )
     )

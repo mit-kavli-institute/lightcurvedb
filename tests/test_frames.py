@@ -61,14 +61,11 @@ def test_frame_ingestion(db, frame_type, data):
         file_path, ffi_kwargs = ingestion.simulate_fits(
             data, pathlib.Path(tempdir)
         )
-        frames = ingest_directory(
-            db, frame_type, pathlib.Path(tempdir), "*.fits"
-        )
-
+        ingest_directory(db, frame_type, pathlib.Path(tempdir), "*.fits")
         q = db.query(Frame).filter_by(file_path=file_path).count()
         assert q == 1
         q = db.query(Frame.orbit_id).filter_by(file_path=file_path).first()[0]
-        assert q == frames[0].orbit.id
+        assert q == ffi_kwargs["ORBIT_ID"]
 
 
 @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
@@ -102,7 +99,7 @@ def test_new_orbit_cli(clirunner, db, data):
                 lcdbcli,
                 [
                     "--dbconf",
-                    db._config,
+                    db.config,
                     "ingest-frames",
                     tempdir,
                     "--frame-type-name",

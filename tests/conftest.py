@@ -67,16 +67,13 @@ def _populate_configuration(testdb_name):
 
 
 class TestDB(DB):
-    def close(self):
-        if self.is_active:
-            self.session.rollback()
-        if self.depth <= 1:
-            for table in reversed(QLPModel.metadata.sorted_tables):
-                if table.name == models.SpacecraftEphemeris.__tablename__:
-                    continue
-                q = text(f"TRUNCATE TABLE {table.name} CASCADE")
-                self.session.execute(q)
-            self.session.commit()
+    def exit(self):
+        for table in reversed(QLPModel.metadata.sorted_tables):
+            if table.name == models.SpacecraftEphemeris.__tablename__:
+                continue
+            q = text(f"TRUNCATE TABLE {table.name} CASCADE")
+            self.session.execute(q)
+        self.commit()
         return super().close()
 
 
