@@ -3,7 +3,7 @@ from math import sqrt
 import pyticdb
 import sqlalchemy as sa
 from astropy import units as u
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB, REGCONFIG
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.schema import Index
@@ -184,7 +184,9 @@ class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         sa.UniqueConstraint("name"),
         Index(
             "bls_tags_name_tsv",
-            sa.func.to_tsvector("english", "name"),
+            sa.func.to_tsvector(
+                sa.cast(sa.literal("english"), type_=REGCONFIG), "name"
+            ),
             postgresql_using="gin",
         ),
     )
