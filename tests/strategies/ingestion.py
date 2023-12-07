@@ -15,7 +15,6 @@ from hypothesis.extra import pandas as pd_st
 
 from lightcurvedb import models
 from lightcurvedb.models.camera_quaternion import get_utc_time
-from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -201,66 +200,6 @@ def shallow_lightpoint_dfs(draw):
 
 
 @st.composite
-def lightpoint_arrays(draw, **overrides):
-    length = draw(overrides.get("length", st.just(20)))
-    cadence_sample = draw(cadences(length=st.just(length)))
-    bjd = draw(julian_dates(length=st.just(length)))
-    data = np.random.rand(length)
-    error = np.random.rand(length)
-    x_centroids = np.random.rand(length)
-    y_centroids = np.random.rand(length)
-    quality_flags = np.random.randint(2, size=length)
-
-    array = np.empty(
-        length,
-        dtype=get_lightpoint_dtypes(
-            "cadence",
-            "barycentric_julian_date",
-            "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
-        ),
-    )
-    array["cadence"] = cadence_sample
-    array["barycentric_julian_date"] = bjd
-    array["data"] = data
-    array["error"] = error
-    array["x_centroid"] = x_centroids
-    array["y_centroid"] = y_centroids
-    array["quality_flag"] = quality_flags
-    return draw(st.just(array))
-
-
-@st.composite
-def shallow_lightpoint_arrays(draw, **overrides):
-    length = draw(overrides.get("length", st.just(20)))
-    data = np.random.rand(length)
-    error = np.random.rand(length)
-    x_centroids = np.random.rand(length)
-    y_centroids = np.random.rand(length)
-    quality_flags = np.random.randint(2, size=length)
-
-    array = np.empty(
-        length,
-        dtype=get_lightpoint_dtypes(
-            "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
-        ),
-    )
-    array["data"] = data
-    array["error"] = error
-    array["x_centroid"] = x_centroids
-    array["y_centroid"] = y_centroids
-    array["quality_flag"] = quality_flags
-    return draw(st.just(array))
-
-
-@st.composite
 def lightcurves(draw, **overrides):
     return draw(
         st.builds(
@@ -331,7 +270,7 @@ def simulate_h5_file(
     tic_id = data.draw(overrides.get("tic_id", tess_st.tic_ids()))
     filename = pathlib.Path(f"{tic_id}.h5")
 
-    background_lc = data.draw(lightpoint_arrays())
+    background_lc = data.draw(lightpoint_dfs())
     data_gen_ref = {
         "tic_id": tic_id,
         "background": background_lc,
@@ -358,7 +297,7 @@ def simulate_h5_file(
             )
 
             for lightcurve_type in lightcurve_types:
-                sample = data.draw(shallow_lightpoint_arrays())
+                sample = data.draw(lightpoint_dfs())
                 data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                 try:
                     api.create_dataset(lightcurve_type, data=sample["data"][0])
