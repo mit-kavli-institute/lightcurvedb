@@ -1,5 +1,5 @@
 import sqlalchemy as sa
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import UniqueConstraint
 
 from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
@@ -13,25 +13,25 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     """
 
     __tablename__ = "best_orbit_lightcurves"
-    __table_args = (
+    __table_args__ = (
         UniqueConstraint(
             "tic_id",
             "orbit_id",
         ),
     )
 
-    id = sa.Column(sa.BigInteger, primary_key=True)
-    tic_id = sa.Column(sa.BigInteger, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True)
+    tic_id: Mapped[int] = mapped_column(sa.BigInteger, index=True)
 
-    aperture_id = sa.Column(
+    aperture_id: Mapped[int] = mapped_column(
         sa.ForeignKey("apertures.id", ondelete="RESTRICT"),
         index=True,
     )
-    lightcurve_type_id = sa.Column(
+    lightcurve_type_id: Mapped[int] = mapped_column(
         sa.ForeignKey("lightcurvetypes.id", ondelete="RESTRICT"),
         index=True,
     )
-    orbit_id = sa.Column(
+    orbit_id: Mapped[int] = mapped_column(
         sa.ForeignKey("orbits.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,

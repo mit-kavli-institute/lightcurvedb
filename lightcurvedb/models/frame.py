@@ -1,11 +1,12 @@
 import os
+from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from astropy.io import fits
 from psycopg2 import extensions as ext
 from sqlalchemy import (
-    Boolean,
     Column,
     ForeignKey,
     Integer,
@@ -15,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
@@ -24,7 +25,6 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
-from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
 
@@ -39,7 +39,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-    id = Column(SmallInteger, primary_key=True, unique=True)
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -96,34 +96,31 @@ class Frame(QLPModel, CreatedOnMixin):
     FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
     # Model attributes
-    id = Column(
-        Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
+    id: Mapped[int] = mapped_column(
+        Sequence("frames_id_seq", cache=2400), primary_key=True
     )
-    cadence_type = Column(SmallInteger, index=True, nullable=False)
-    camera = Column(SmallInteger, index=True, nullable=False)
-    ccd = Column(SmallInteger, index=True, nullable=True)
-    cadence = Column(Integer, index=True, nullable=False)
+    cadence_type: Mapped[int] = mapped_column(SmallInteger, index=True)
+    camera: Mapped[int] = mapped_column(SmallInteger, index=True)
+    ccd: Mapped[Optional[int]] = mapped_column(SmallInteger, index=True)
+    cadence: Mapped[int] = mapped_column(Integer, index=True)
 
-    gps_time = high_precision_column(nullable=False)
-    start_tjd = high_precision_column(nullable=False)
-    mid_tjd = high_precision_column(nullable=False)
-    end_tjd = high_precision_column(nullable=False)
-    exp_time = high_precision_column(nullable=False)
+    gps_time: Mapped[Decimal]
+    start_tjd: Mapped[Decimal]
+    mid_tjd: Mapped[Decimal]
+    end_tjd: Mapped[Decimal]
+    exp_time: Mapped[Decimal]
 
-    quality_bit = Column(Boolean, nullable=False)
+    quality_bit: Mapped[bool]
 
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
-    orbit_id = Column(
-        Integer,
+    orbit_id: Mapped[int] = mapped_column(
         ForeignKey("orbits.id", ondelete="RESTRICT"),
-        nullable=False,
         index=True,
     )
-    frame_type_id = Column(
+    frame_type_id: Mapped[int] = mapped_column(
         ForeignKey(FrameType.id, ondelete="RESTRICT"),
-        nullable=False,
         index=True,
     )
 

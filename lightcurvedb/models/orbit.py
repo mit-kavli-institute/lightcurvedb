@@ -1,23 +1,14 @@
 import os
+from decimal import Decimal
 
 import click
 import numpy as np
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Sequence,
-    SmallInteger,
-    String,
-    func,
-    inspect,
-    select,
-)
+from sqlalchemy import Sequence, SmallInteger, String, func, inspect, select
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
-from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 from lightcurvedb.models.camera_quaternion import CameraQuaternion
 from lightcurvedb.models.frame import Frame
@@ -45,24 +36,26 @@ class Orbit(QLPModel, CreatedOnMixin):
     ORBIT_DTYPE = ORBIT_DTYPE
 
     # Model Attributes
-    id = Column(SmallInteger, Sequence("orbit_id_seq"), primary_key=True)
-    orbit_number = Column(SmallInteger, unique=True, nullable=False)
-    sector = Column(SmallInteger, nullable=False)
+    id: Mapped[int] = mapped_column(
+        SmallInteger, Sequence("orbit_id_seq"), primary_key=True
+    )
+    orbit_number: Mapped[int] = mapped_column(SmallInteger, unique=True)
+    sector: Mapped[int] = mapped_column(SmallInteger)
 
-    right_ascension = high_precision_column(nullable=False)
-    declination = high_precision_column(nullable=False)
-    roll = high_precision_column(nullable=False)
+    right_ascension: Mapped[Decimal]
+    declination: Mapped[Decimal]
+    roll: Mapped[Decimal]
 
-    quaternion_x = high_precision_column(nullable=False)
-    quaternion_y = high_precision_column(nullable=False)
-    quaternion_z = high_precision_column(nullable=False)
-    quaternion_q = high_precision_column(nullable=False)
+    quaternion_x: Mapped[Decimal]
+    quaternion_y: Mapped[Decimal]
+    quaternion_z: Mapped[Decimal]
+    quaternion_q: Mapped[Decimal]
 
-    crm = Column(Boolean, nullable=False)  # Has been correct for CRM
-    crm_n = Column(
+    crm: Mapped[bool]
+    crm_n: Mapped[int] = mapped_column(
         SmallInteger, nullable=False
     )  # Cosmic Ray Mitigation Number
-    _basename = Column("basename", String(256), nullable=False)
+    _basename: Mapped[str] = mapped_column("basename", String(256))
 
     # Relationships
     frames = relationship("Frame", back_populates="orbit")
