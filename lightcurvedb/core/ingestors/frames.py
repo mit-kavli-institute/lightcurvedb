@@ -1,11 +1,16 @@
+import multiprocessing as mp
 import os
+import pathlib
+from itertools import groupby
+from typing import Any, Optional
 
+import numpy as np
+import sqlalchemy as sa
 from astropy.io import fits
 from loguru import logger
 
 from lightcurvedb.models import Frame, Orbit
-
-from .orbits import generate_from_fits
+from lightcurvedb.models.frame import FrameType
 
 FITS_TO_FRAME_MAP = {
     "cadence_type": "INT_TIME",
@@ -37,14 +42,55 @@ def _resolve_fits_value(header, key):
         return _resolve_fits_value(header, key[1:])
 
 
-def _ffi_to_frame_kwargs(path):
-    kwargs = {}
+def orbit_from_header_group(
+    db, group: list[tuple[dict[str, Any], pathlib.Path]]
+) -> tuple[Orbit, bool]:
+    consistent_fields = ["ORBIT_ID", "SC_RA", "SC_DEC", "SC_ROLL"]
+
+    check_arrays = {
+        field: np.array([header[0][field] for header in group])
+        for field in consistent_fields
+    }
+
+    for field in consistent_fields:
+        check_array = check_arrays[field]
+        if np.all(np.isclose(check_array, check_array[0])):
+            # All fields are consistent
+            continue
+        else:
+            min_val = check_array.min()
+            max_val = check_array.max()
+            mean_val = np.nanmedian(check_array)
+            std_val = np.nanstd(check_array)
+
+            logger.warning(
+                f"Field {field} is inconsistent within orbit. "
+                f"Min: {min_val}, Max: {max_val} "
+                f"Mean: {mean_val}, stddev: {std_val}"
+            )
+    orbit = Orbit(
+        orbit_number=group[0][0]["ORBIT_ID"],
+        right_ascension=group[0][0]["SC_RA"],
+        declination=group[0][0]["SC_DEC"],
+        roll=group[0][0]["ROLL"],
+        quaternion_x=group[0][0]["SC_QUATX"],
+        quaternion_y=group[0][0]["SC_QUATY"],
+        quaternion_z=group[0][0]["SC_QUATZ"],
+        quaternion_q=group[0][0]["SC_QUATQ"],
+    )
+    return orbit
+
+
+def _pull_fits_header(
+    path: pathlib.Path,
+) -> tuple[dict[str, Any], pathlib.Path]:
+    """
+    Parse the given path as a FITS file and return the primary header
+    information as a python dict as well as the initial path parsed.
+    """
     with fits.open(path) as fin:
-        header = fin[0].header
-        for frame_key, header_keys in FITS_TO_FRAME_MAP:
-            value = _resolve_fits_value(header, header_keys)
-            kwargs[frame_key] = value
-    return kwargs
+        header = dict(fin[0].header)
+    return header, path
 
 
 def from_fits(path, frame_type=None, orbit=None):
@@ -91,54 +137,74 @@ def from_fits(path, frame_type=None, orbit=None):
         raise
 
 
-def ingest_directory(db, frame_type, directory, extension, update=False):
-    files = list(directory.glob(extension))
-    new_paths = []
-    existing_paths = []
+def ingest_directory(
+    db,
+    frame_type,
+    directory: pathlib.Path,
+    extension: str,
+    n_workers: Optional[int] = None,
+):
 
-    for path in files:
-        q = db.query(Frame).filter_by(file_path=str(path))
-        if q.one_or_none() is not None:
-            # File Exists
-            logger.warning(f"Frame path already exists in database: {path}")
-            existing_paths.append(path)
+    files = list(directory.rglob(extension))
+
+    if n_workers:
+        with mp.Pool(n_workers) as pool:
+            header_pairs = list(pool.imap_unordered(_pull_fits_header, files))
+    else:
+        header_pairs = list(map(_pull_fits_header, files))
+
+    header_pairs = sorted(header_pairs, key=lambda row: row[0]["ORBIT_ID"])
+    orbit_grouped_headers = groupby(
+        header_pairs, key=lambda row: row[0]["ORBIT_ID"]
+    )
+
+    new_frames = 0
+    for orbit_number, group in orbit_grouped_headers:
+        orbit_exists_q = sa.select(Orbit).where(
+            Orbit.orbit_number == orbit_number
+        )
+        if db.scalar(orbit_exists_q.count()):
+            orbit = db.execute(orbit_exists_q).scalar()
         else:
-            logger.debug(f"New Frame path: {path}")
-            new_paths.append(path)
-
-    logger.debug(f"Found {len(new_paths)} new frame paths")
-    logger.debug(f"Found {len(existing_paths)} existing frame paths")
-
-    orbit_map = {}
-    for orbit, paths in generate_from_fits(files, parallel=True):
-        # Attempt to locate any existing orbit
-        q = db.query(Orbit).filter_by(orbit_number=orbit.orbit_number)
-        remote_orbit = q.one_or_none()
-        if remote_orbit is None:
-            # Brand new orbit
+            orbit = orbit_from_header_group(db, list(group))
             db.add(orbit)
-        else:
-            orbit = remote_orbit
+            db.flush()
 
-        for path in paths:
-            orbit_map[path] = orbit
+        existing_files_q = (
+            sa.select(Frame.cadence, Frame.camera, Frame.ccd)
+            .join(Frame.orbit)
+            .join(Frame.frame_type)
+            .where(
+                Orbit.orbit_number == orbit_number,
+                FrameType.name == frame_type,
+            )
+        )
+        keys = set(db.execute(existing_files_q))
 
-    db.flush()
+        for header, path in group:
+            current_key = (
+                header["CADENCE"],
+                header["CAM"],
+                header.get("CCD", None),
+            )
+            if current_key in keys:
+                # File Exists
+                logger.warning(f"Frame already exists in database: {path}")
+                frame_q = (
+                    sa.select(Frame)
+                    .join(Frame.frame_type)
+                    .join(Frame.orbit)
+                    .where(
+                        Orbit.orbit_number == orbit_number,
+                        FrameType.name == frame_type,
+                    )
+                )
+                frame = db.execute(frame_q).scalar()
+            else:
+                logger.debug(f"New Frame: {path}")
+                frame = from_fits(path, frame_type=frame_type, orbit=orbit)
+                db.add(frame)
+                new_frames += 1
 
-    frames = []
-
-    # Now construct each frame and build relations
-    for path in new_paths:
-        logger.debug(path)
-        frame = from_fits(path, frame_type=frame_type, orbit=orbit_map[path])
-        frames.append(frame)
-
-    logger.debug("Pushing to remote")
-    db.bulk_save_objects(frames)
-    db.flush()
+    logger.debug(f"Found {new_frames} new frames")
     logger.debug("Emitted frames")
-
-    if update:
-        for path in existing_paths:
-            raise NotImplementedError
-    return frames
