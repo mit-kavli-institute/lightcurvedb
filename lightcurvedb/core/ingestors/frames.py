@@ -144,6 +144,10 @@ def ingest_directory(
     extension: str,
     n_workers: Optional[int] = None,
 ):
+    """
+    Recursively ingest a target directory using the given Frame Type. Setting
+    n_workers > 1 will utilize multiprocessing to read FITS files in parallel.
+    """
 
     files = list(directory.rglob(extension))
 
