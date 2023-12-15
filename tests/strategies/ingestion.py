@@ -13,8 +13,8 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
-from lightcurvedb import models
 from lightcurvedb.models.camera_quaternion import get_utc_time
+from lightcurvedb.models.frame import Frame
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -386,11 +386,10 @@ def simulate_lightcurve_ingestion_environment(
     camera = data.draw(tess_st.cameras())
     ccd = data.draw(tess_st.ccds())
 
-    frame_type = data.draw(orm_st.frame_types())
+    frame_type = db.query(Frame).first()
     orbit = data.draw(orm_st.orbits())
     orbit.id = 1
     db.add(orbit)
-    db.add(frame_type)
 
     run_path = directory / pathlib.Path(
         f"orbit-{orbit.orbit_number}", "ffi", "run"
@@ -411,26 +410,27 @@ def simulate_lightcurve_ingestion_environment(
     lightcurve_dump_path = directory / subpath
     lightcurve_dump_path.mkdir(parents=True)
 
-    background_type = models.LightcurveType(name="Background")
+    background_type = data.draw(
+        orm_st.lightcurve_types(name=st.just("Background"))
+    )
     magnitude_types = [
-        models.LightcurveType(name="RawMagnitude"),
-        models.LightcurveType(name="KSPMagnitude"),
+        data.draw(orm_st.lightcurve_types(name=st.just("RawMagnitude"))),
+        data.draw(orm_st.lightcurve_types(name=st.just("KSPMagnitude"))),
     ]
 
-    background_aperture = models.Aperture(
-        name="BackgroundAperture",
-        star_radius=0,
-        inner_radius=0,
-        outer_radius=0,
+    background_aperture = data.draw(
+        orm_st.apertures(name=st.just("BackgroundAperture"))
     )
     photometric_apertures = [
-        models.Aperture(
-            name=f"Aperture_00{i}",
-            star_radius=i + 1,
-            inner_radius=i + 1,
-            outer_radius=i + 1,
+        data.draw(
+            orm_st.apertures(
+                name=st.just(f"Aperture_00{i}"),
+                star_radius=st.just(float(i)),
+                inner_radius=st.just(float(i)),
+                outer_radius=st.just(float(i)),
+            )
         )
-        for i in range(5)
+        for i in range(1, 6)
     ]
     db.add(background_type)
     db.add(background_aperture)
@@ -438,9 +438,6 @@ def simulate_lightcurve_ingestion_environment(
     db.add_all(photometric_apertures)
 
     note(f"PUSHING {photometric_apertures}")
-    note(f"{db.query(models.Aperture).all()}")
-
-    db.commit()
     quality_flags = []
     for ith, cadence in enumerate(cadences):
         frame = data.draw(
@@ -454,7 +451,6 @@ def simulate_lightcurve_ingestion_environment(
         )
         frame.file_path = f"{frame.cadence}_{frame.file_path}"
         db.add(frame)
-        db.flush()
         quality_flags.append((cadence, int(frame.quality_bit)))
 
     # Generate tic parameters
@@ -474,4 +470,5 @@ def simulate_lightcurve_ingestion_environment(
             ["RawMagnitude", "KSPMagnitude"],
             tic_id=st.just(parameters["tic_id"]),
         )
+    db.flush()
     return run_path, lightcurve_dump_path

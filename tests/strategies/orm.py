@@ -58,15 +58,24 @@ def orbits():
     )
 
 
-def apertures(**overrides):
+def apertures(
+    star_radius=st.floats(),
+    inner_radius=st.floats(),
+    outer_radius=st.floats(),
+    **overrides
+):
     return st.builds(
         models.Aperture,
-        name=overrides.get("name", st.text(min_size=10, max_size=64)).filter(
-            lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
+        name=overrides.get(
+            "name",
+            st.text(min_size=10, max_size=64).filter(
+                lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
+            ),
         ),
-        star_radius=st.floats(),
-        inner_radius=st.floats(),
-        outer_radius=st.floats(),
+        star_radius=star_radius,
+        inner_radius=inner_radius,
+        outer_radius=outer_radius,
+        description=psql_texts(),
     )
 
 
@@ -78,12 +87,15 @@ def frame_types(**overrides):
     )
 
 
-def lightcurve_types(**overrides):
+def lightcurve_types(
+    name=st.text(min_size=10, max_size=64).filter(
+        lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
+    ),
+    **overrides
+):
     return st.builds(
         models.LightcurveType,
-        name=overrides.get("name", st.text(min_size=10, max_size=64)).filter(
-            lambda name: name not in FORBIDDEN_KEYWORDS and "/" not in name
-        ),
+        name=name,
         description=st.text(),
     )
 

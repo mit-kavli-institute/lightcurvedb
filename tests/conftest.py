@@ -91,6 +91,14 @@ def clirunner():
 
 
 @pytest.fixture(scope="module")
+def config():
+    test_path = os.path.dirname(os.path.relpath(__file__))
+    config_path = os.path.join(test_path, "config.conf")
+
+    return config_path
+
+
+@pytest.fixture(scope="module")
 def db():
     testdbname = "lightpointtesting_" + version.replace(".", "_")
     _create_testdb(testdbname)
