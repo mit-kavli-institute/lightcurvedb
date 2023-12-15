@@ -1,4 +1,5 @@
 import os
+import typing
 from decimal import Decimal
 
 import click
@@ -235,3 +236,18 @@ class Orbit(QLPModel, CreatedOnMixin):
         elif len(cameras) > 1:
             q = q.filter(CameraQuaternion.camera.in_(cameras))
         return q
+
+    @classmethod
+    def from_fits_header(cls, header: dict[str, typing.Any]):
+        return cls(
+            orbit_number=header["ORBIT_ID"],
+            right_ascension=header["SC_RA"],
+            declination=header["SC_DEC"],
+            roll=header["SC_ROLL"],
+            quaternion_x=header["SC_QUATX"],
+            quaternion_y=header["SC_QUATY"],
+            quaternion_z=header["SC_QUATZ"],
+            quaternion_q=header["SC_QUATQ"],
+            crm=header["CRM"],
+            crm_n=header["CRM_N"],
+        )

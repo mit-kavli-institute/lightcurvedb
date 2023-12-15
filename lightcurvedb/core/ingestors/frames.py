@@ -4,11 +4,11 @@ import pathlib
 from itertools import groupby
 from typing import Any, Optional
 
-import numpy as np
 import sqlalchemy as sa
 from astropy.io import fits
 from loguru import logger
 
+from lightcurvedb.core.ingestors import orbits as orbit_ingestion
 from lightcurvedb.models import Frame, Orbit
 from lightcurvedb.models.frame import FrameType
 
@@ -40,45 +40,6 @@ def _resolve_fits_value(header, key):
                 f"Could not resolve {key} in header. Out of fallbacks."
             )
         return _resolve_fits_value(header, key[1:])
-
-
-def orbit_from_header_group(
-    db, group: list[tuple[dict[str, Any], pathlib.Path]]
-) -> tuple[Orbit, bool]:
-    consistent_fields = ["ORBIT_ID", "SC_RA", "SC_DEC", "SC_ROLL"]
-
-    check_arrays = {
-        field: np.array([header[0][field] for header in group])
-        for field in consistent_fields
-    }
-
-    for field in consistent_fields:
-        check_array = check_arrays[field]
-        if np.all(np.isclose(check_array, check_array[0])):
-            # All fields are consistent
-            continue
-        else:
-            min_val = check_array.min()
-            max_val = check_array.max()
-            mean_val = np.nanmedian(check_array)
-            std_val = np.nanstd(check_array)
-
-            logger.warning(
-                f"Field {field} is inconsistent within orbit. "
-                f"Min: {min_val}, Max: {max_val} "
-                f"Mean: {mean_val}, stddev: {std_val}"
-            )
-    orbit = Orbit(
-        orbit_number=group[0][0]["ORBIT_ID"],
-        right_ascension=group[0][0]["SC_RA"],
-        declination=group[0][0]["SC_DEC"],
-        roll=group[0][0]["ROLL"],
-        quaternion_x=group[0][0]["SC_QUATX"],
-        quaternion_y=group[0][0]["SC_QUATY"],
-        quaternion_z=group[0][0]["SC_QUATZ"],
-        quaternion_q=group[0][0]["SC_QUATQ"],
-    )
-    return orbit
 
 
 def _pull_fits_header(
@@ -150,6 +111,7 @@ def ingest_directory(
     """
 
     files = list(directory.rglob(extension))
+    logger.debug(f"Considering {len(files)} FITS files")
 
     if n_workers:
         with mp.Pool(n_workers) as pool:
@@ -164,13 +126,17 @@ def ingest_directory(
 
     new_frames = 0
     for orbit_number, group in orbit_grouped_headers:
-        orbit_exists_q = sa.select(Orbit).where(
-            Orbit.orbit_number == orbit_number
+        group = list(group)
+        logger.debug(
+            f"Determining {len(group)} frames and "
+            f"orbit parameters for orbit {orbit_number}"
         )
-        if db.scalar(orbit_exists_q.count()):
-            orbit = db.execute(orbit_exists_q).scalar()
+        orbit_q = sa.select(Orbit).where(Orbit.orbit_number == orbit_number)
+        orbit_exists_q = sa.select(orbit_q.exists())
+        if db.scalar(orbit_exists_q):
+            orbit = db.execute(orbit_q).scalar()
         else:
-            orbit = orbit_from_header_group(db, list(group))
+            orbit = orbit_ingestion.orbit_from_header_group(list(group))
             db.add(orbit)
             db.flush()
 
@@ -180,7 +146,7 @@ def ingest_directory(
             .join(Frame.frame_type)
             .where(
                 Orbit.orbit_number == orbit_number,
-                FrameType.name == frame_type,
+                FrameType.name == frame_type.name,
             )
         )
         keys = set(db.execute(existing_files_q))
@@ -212,3 +178,4 @@ def ingest_directory(
 
     logger.debug(f"Found {new_frames} new frames")
     logger.debug("Emitted frames")
+    db.flush()
