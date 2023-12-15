@@ -46,7 +46,7 @@ def test_corrector_instantiation(db, data):
         contexts.populate_ephemeris(cache_path, db)
         contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
 
-        plan = DirectoryPlan([directory], db)
+        plan = DirectoryPlan([directory], db.config)
         catalog_template = (
             str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
         )

@@ -14,7 +14,6 @@ from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
 from lightcurvedb.models.camera_quaternion import get_utc_time
-from lightcurvedb.models.frame import Frame
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -153,20 +152,40 @@ def lightpoints(draw, **overrides):
     )
 
 
-@st.composite
-def lightpoint_dfs(draw):
-    return draw(
-        pd_st.data_frames(
+def lightpoint_dfs():
+    return pd_st.data_frames(
+        [
+            pd_st.column("cadence", dtype=int),
+            pd_st.column("barycentric_julian_date", dtype=float),
+            pd_st.column("data", dtype=float),
+            pd_st.column("error", dtype=float),
+            pd_st.column("x_centroid", dtype=float),
+            pd_st.column("y_centroid", dtype=float),
+            pd_st.column("quality_flag", dtype=float),
+        ]
+    )
+
+
+def lightpoint_dtypes():
+    return st.just(
+        np.dtype(
             [
-                pd_st.column("cadence", dtype=int),
-                pd_st.column("barycentric_julian_date", dtype=float),
-                pd_st.column("data", dtype=float),
-                pd_st.column("error", dtype=float),
-                pd_st.column("x_centroid", dtype=float),
-                pd_st.column("y_centroid", dtype=float),
-                pd_st.column("quality_flag", dtype=float),
+                ("cadence", int),
+                ("barycentric_julian_date", float),
+                ("data", float),
+                ("error", float),
+                ("x_centroid", float),
+                ("y_centroid", float),
+                ("quality_flag", float),
             ]
         )
+    )
+
+
+def lightpoint_arrays():
+    return np_st.arrays(
+        dtype=lightpoint_dtypes(),
+        shape=st.tuples(st.integers(min_value=1, max_value=1000), st.just(6)),
     )
 
 
@@ -270,7 +289,7 @@ def simulate_h5_file(
     tic_id = data.draw(overrides.get("tic_id", tess_st.tic_ids()))
     filename = pathlib.Path(f"{tic_id}.h5")
 
-    background_lc = data.draw(lightpoint_dfs())
+    background_lc = data.draw(lightpoint_arrays())
     data_gen_ref = {
         "tic_id": tic_id,
         "background": background_lc,
@@ -280,37 +299,35 @@ def simulate_h5_file(
     with H5File(directory / filename, "w") as h5:
         lc = h5.create_group("LightCurve")
         lc.create_dataset("Cadence", data=background_lc["cadence"])
-        lc.create_dataset(
-            "BJD", data=background_lc["barycentric_julian_date"][0]
-        )
-        lc.create_dataset("X", data=background_lc["x_centroid"][0])
-        lc.create_dataset("Y", data=background_lc["y_centroid"][0])
+        lc.create_dataset("BJD", data=background_lc["barycentric_julian_date"])
+        lc.create_dataset("X", data=background_lc["x_centroid"])
+        lc.create_dataset("Y", data=background_lc["y_centroid"])
 
         photometry = lc.create_group("AperturePhotometry")
         for ap in apertures:
-            note(photometry.keys())
+            note(str(photometry.keys()))
             api = photometry.create_group(ap)
-            api.create_dataset("X", data=background_lc["x_centroid"][0])
-            api.create_dataset("Y", data=background_lc["y_centroid"][0])
+            api.create_dataset("X", data=background_lc["x_centroid"])
+            api.create_dataset("Y", data=background_lc["y_centroid"])
             api.create_dataset(
-                "QualityFlag", data=background_lc["quality_flag"][0]
+                "QualityFlag", data=background_lc["quality_flag"]
             )
 
             for lightcurve_type in lightcurve_types:
-                sample = data.draw(lightpoint_dfs())
+                sample = data.draw(lightpoint_arrays())
                 data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                 try:
-                    api.create_dataset(lightcurve_type, data=sample["data"][0])
+                    api.create_dataset(lightcurve_type, data=sample["data"])
                 except ValueError:
                     raise ValueError(
                         f"{api.keys()}, {lightcurve_type}, {lightcurve_types}"
                     )
                 api.create_dataset(
-                    f"{lightcurve_type}Error", data=sample["error"][0]
+                    f"{lightcurve_type}Error", data=sample["error"]
                 )
         bg = lc.create_group(background_type)
-        bg.create_dataset("Value", data=background_lc["data"][0])
-        bg.create_dataset("Error", data=background_lc["error"][0])
+        bg.create_dataset("Value", data=background_lc["data"])
+        bg.create_dataset("Error", data=background_lc["error"])
 
     return directory / filename, data_gen_ref
 
@@ -386,10 +403,11 @@ def simulate_lightcurve_ingestion_environment(
     camera = data.draw(tess_st.cameras())
     ccd = data.draw(tess_st.ccds())
 
-    frame_type = db.query(Frame).first()
+    frame_type = data.draw(orm_st.frame_types())
     orbit = data.draw(orm_st.orbits())
-    orbit.id = 1
     db.add(orbit)
+    db.add(frame_type)
+    db.flush()
 
     run_path = directory / pathlib.Path(
         f"orbit-{orbit.orbit_number}", "ffi", "run"
