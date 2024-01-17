@@ -85,11 +85,11 @@ class BLS(QLPModel, CreatedOnMixin):
 
     @hybrid_property
     def qingress(self):
-        return self.transit_shape
+        return self.ingress / self.transit_duration
 
     @qingress.expression
     def qingress(cls):
-        return cls.transit_shape.label("qingress")
+        return cls.ingress / cls.transit_duration
 
     @hybrid_property
     def qtran(self):
