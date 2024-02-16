@@ -101,7 +101,7 @@ class BestLightcurveManager(LightcurveManager):
             q = q.join(m.ArrayOrbitLightcurve.lightcurve_type)
             q = q.filter(m.LightcurveType.name == self.type_constraint)
 
-        q = q.join(m.BestOrbitLightcurve, *join_conditions)
+        q = q.join(m.BestOrbitLightcurve, sa.and_(*join_conditions))
 
         if isinstance(tic_ids, (int, np.integer)):
             q = q.where(m.ArrayOrbitLightcurve.tic_id == tic_ids)
