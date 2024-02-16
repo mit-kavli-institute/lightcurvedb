@@ -41,12 +41,14 @@ class BestLightcurveManager(LightcurveManager):
         aperture_constraint=None,
         type_constraint=None,
         orbit_constraint=None,
+        sector_constraint=None,
     ):
         self._config = DEFAULT_CONFIG_PATH if config is None else config
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
         self.aperture_constraint = aperture_constraint
         self.type_constraint = type_constraint
         self.orbit_constraint = orbit_constraint
+        self.sector_constraint = sector_constraint
 
     def __getitem__(self, key):
         return self.get_lightcurve(key)
@@ -105,6 +107,9 @@ class BestLightcurveManager(LightcurveManager):
 
         if self.orbit_constraint:
             q = q.filter(m.Orbit.orbit_number <= self.orbit_constraint)
+
+        if self.sector_constraint:
+            q = q.filter(m.Orbit.sector <= self.sector_constraint)
 
         q = q.join(m.BestOrbitLightcurve, sa.and_(*join_conditions))
 
