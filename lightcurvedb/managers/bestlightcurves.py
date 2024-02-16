@@ -34,9 +34,17 @@ class BestLightcurveManager(LightcurveManager):
     ```
     """
 
-    def __init__(self, config=None, cache_size=4096):
+    def __init__(
+        self,
+        config=None,
+        cache_size=4096,
+        aperture_constraint=None,
+        type_constraint=None,
+    ):
         self._config = DEFAULT_CONFIG_PATH if config is None else config
         self._stellar_parameter_cache = cachetools.LRUCache(cache_size)
+        self.aperture_constraint = aperture_constraint
+        self.type_constraint = type_constraint
 
     def __getitem__(self, key):
         return self.get_lightcurve(key)
@@ -64,15 +72,36 @@ class BestLightcurveManager(LightcurveManager):
                 m.ArrayOrbitLightcurve.y_centroids,
                 m.ArrayOrbitLightcurve.quality_flags,
             )
-            .join(
-                m.BestOrbitLightcurve,
-                m.BestOrbitLightcurve.lightcurve_join(m.ArrayOrbitLightcurve),
-            )
             .join(m.ArrayOrbitLightcurve.orbit)
             .order_by(
                 m.ArrayOrbitLightcurve.tic_id.asc(), m.Orbit.orbit_number.asc()
             )
         )
+
+        join_conditions = [
+            m.BestOrbitLightcurve.tic_id == m.ArrayOrbitLightcurve.tic_id,
+            m.BestOrbitLightcurve.orbit_id == m.ArrayOrbitLightcurve.orbit_id,
+        ]
+
+        if self.aperture_constraint is None:
+            join_conditions.append(
+                m.BestOrbitLightcurve.aperture_id
+                == m.ArrayOrbitLightcurve.aperture_id
+            )
+        else:
+            q = q.join(m.ArrayOrbitLightcurve.aperture)
+            q = q.filter(m.Aperture.name == self.aperture_constraint)
+
+        if self.type_constraint is None:
+            join_conditions.append(
+                m.BestOrbitLightcurve.lightcurve_type_id
+                == m.ArrayOrbitLightcurve.lightcurve_type_id
+            )
+        else:
+            q = q.join(m.ArrayOrbitLightcurve.lightcurve_type)
+            q = q.filter(m.LightcurveType.name == self.type_constraint)
+
+        q = q.join(m.BestOrbitLightcurve, *join_conditions)
 
         if isinstance(tic_ids, (int, np.integer)):
             q = q.where(m.ArrayOrbitLightcurve.tic_id == tic_ids)
