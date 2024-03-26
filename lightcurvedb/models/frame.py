@@ -7,6 +7,7 @@ from psycopg2 import extensions as ext
 from sqlalchemy import (
     Boolean,
     Column,
+    Float,
     ForeignKey,
     Integer,
     Sequence,
@@ -35,6 +36,59 @@ def adapt_pathlib(path):
 ext.register_adapter(Path, adapt_pathlib)
 
 
+_FRAME_MAPPER_LOOKUP = {
+    "INT_TIME": ("cadence_type", Column(SmallInteger, index=True)),
+    "CAM": ("camera", Column(SmallInteger, index=True)),
+    "CAMNUM": ("camera", Column(SmallInteger, index=True, nullable=True)),
+    "CCD": ("ccd", Column(SmallInteger, index=True, nullable=True)),
+    "CADENCE": ("cadence", Column(Integer, index=True)),
+    "TIME": ("gps_time", high_precision_column(nullable=False)),
+    "STARTTJD": ("start_tjd", high_precision_column(nullable=False)),
+    "MIDTJD": ("mid_tjd", high_precision_column(nullable=False)),
+    "ENDTJD": ("end_tjd", high_precision_column(nullable=False)),
+    "EXPTIME": ("exp_time", high_precision_column(nullable=False)),
+    "QUAL_BIT": ("quality_bit", Column(Boolean)),
+    "FINE": ("fine_pointing", Column(Boolean)),
+    "COARSE": ("coarse_pointing", Column(Boolean)),
+    "RW_DESAT": ("reaction_wheel_desaturation", Column(Boolean)),
+    "SIMPLE": ("simple", Column(Boolean, nullable=True)),
+    "BITPIX": ("bit_pix", Column(SmallInteger, nullable=True)),
+    "NAXIS": ("n_axis", Column(SmallInteger, nullable=True)),
+    "EXTENDED": ("extended", Column(Boolean, nullable=True)),
+    "ACS_MODE": ("acs_mode", Column(String, nullable=True)),
+    "PIX_CAT": ("pix_cat", Column(Integer, nullable=True)),
+    "REQUANT": ("requant", Column(Integer, nullable=True)),
+    "DIFF_HUF": ("huffman_difference", Column(Integer, nullable=True)),
+    "PRIM_HUF": ("huffman_prime", Column(Integer, nullable=True)),
+    "SPM": ("spm", Column(Integer, nullable=True)),
+    "CRM": ("cosmic_ray_mitigation", Column(Boolean, nullable=True)),
+    "ORB_SEG": ("orbital_segment", Column(String, nullable=True)),
+    "SCIPIXS": ("science_pixels", Column(String, nullable=True)),
+    "GAIN_A": ("gain_a", Column(Float, nullable=True)),
+    "GAIN_B": ("gain_b", Column(Float, nullable=True)),
+    "GAIN_C": ("gain_c", Column(Float, nullable=True)),
+    "GAIN_D": ("gain_d", Column(Float, nullable=True)),
+    "UNITS": ("units", Column(String, nullable=True)),
+    "EQUINOX": ("equinox", Column(Float, nullable=True)),
+    "INSTRUME": ("instrument", Column(String, nullable=True)),
+    "TELESCOP": ("telescope", Column(String, nullable=True)),
+    "MJD-BEG": ("mjd-beg", Column(Float, nullable=True)),
+    "MJD-END": ("mjd-end", Column(Float, nullable=True)),
+    "TESS_X": ("tess_x_position", Column(Float, nullable=True)),
+    "TESS_Y": ("tess_y_position", Column(Float, nullable=True)),
+    "TESS_Z": ("tess_z_position", Column(Float, nullable=True)),
+    "TESS_VX": ("tess_x_velocity", Column(Float, nullable=True)),
+    "TESS_VY": ("tess_y_velocity", Column(Float, nullable=True)),
+    "TESS_VZ": ("tess_z_velocity", Column(Float, nullable=True)),
+    "RA_TARG": ("target_ra", Column(Float, nullable=True)),
+    "DEC_TARG": ("target_dec", Column(Float, nullable=True)),
+    "WCSGDF": ("wcsgdf", Column(Float, nullable=True)),
+    "CHECKSUM": ("checksum", Column(String, nullable=True)),
+    "DATASUM": ("datasum", Column(Integer, nullable=True)),
+    "COMMENT": ("comment", Column(String, nullable=True)),
+}
+
+
 class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
@@ -48,7 +102,31 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         )
 
 
-class Frame(QLPModel, CreatedOnMixin):
+class FrameFFIMapper(type):
+    def __new__(cls, name, bases, attrs):
+        # Dynamically assign FFI fields, their translations, and
+        # fallback FFI Keyword
+        for ffi_name, (model_name, col) in _FRAME_MAPPER_LOOKUP.items():
+            if model_name not in attrs:
+                attrs[model_name] = col  # Avoid redefinitions
+            # Define hybrid properties
+            fallback = ffi_name.replace("-", "_")
+            setter_name = f"_{model_name}_setter"
+            expr_name = f"_{model_name}_expression"
+
+            attrs[fallback] = hybrid_property(
+                lambda self: getattr(self, model_name)
+            )
+            attrs[setter_name] = attrs[fallback].inline.setter(
+                lambda self, value: setattr(self, model_name, value)
+            )
+            attrs[expr_name] = attrs[fallback].inline.expression(
+                classmethod(lambda cls: getattr(cls, model_name))
+            )
+        return super().__new__(cls, name, bases, attrs)
+
+
+class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     """
     Provides ORM implementation of various Frame models
     """
@@ -99,24 +177,6 @@ class Frame(QLPModel, CreatedOnMixin):
     id = Column(
         Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
     )
-    cadence_type = Column(SmallInteger, index=True, nullable=False)
-    camera = Column(SmallInteger, index=True, nullable=False)
-    ccd = Column(SmallInteger, index=True, nullable=True)
-    cadence = Column(Integer, index=True, nullable=False)
-
-    gps_time = high_precision_column(nullable=False)
-    start_tjd = high_precision_column(nullable=False)
-    mid_tjd = high_precision_column(nullable=False)
-    end_tjd = high_precision_column(nullable=False)
-    exp_time = high_precision_column(nullable=False)
-
-    quality_bit = Column(Boolean, nullable=False)
-
-    fine_pointing = Column(Boolean, nullable=True)
-    coarse_pointing = Column(Boolean, nullable=True)
-    reaction_wheel_desaturation = Column(Boolean, nullable=True)
-    stray_light = Column(Boolean, nullable=True)
-
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
@@ -136,6 +196,19 @@ class Frame(QLPModel, CreatedOnMixin):
     orbit = relationship("Orbit", back_populates="frames")
     frame_type = relationship("FrameType", back_populates="frames")
     lightcurves = association_proxy("lightcurveframemapping", "lightcurve")
+
+    @hybrid_property
+    def file_path(self):
+        return self._file_path
+
+    @file_path.inline.setter
+    def _file_path_setter(self, value):
+        self._file_path = psql_safe_str(value)
+
+    @file_path.inline.expression
+    @classmethod
+    def _file_path_expression(cls):
+        return cls._file_path
 
     @classmethod
     def get_legacy_attrs(cls, dtype_override=None):
@@ -231,27 +304,3 @@ class Frame(QLPModel, CreatedOnMixin):
             print("===LOADED HEADER===")
             print(repr(header))
             raise
-
-    @hybrid_property
-    def file_path(self):
-        return self._file_path
-
-    @file_path.setter
-    def file_path(self, value):
-        self._file_path = psql_safe_str(value)
-
-    @file_path.expression
-    def file_path(cls):
-        return cls._file_path
-
-    @property
-    def data(self):
-        return fits.open(self.file_path)[0].data
-
-    @hybrid_property
-    def tjd(self):
-        return self.mid_tjd
-
-    @tjd.expression
-    def tjd(cls):
-        return cls.mid_tjd
