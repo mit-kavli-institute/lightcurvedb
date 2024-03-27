@@ -89,28 +89,15 @@ def from_fits(path, frame_type=None, orbit=None):
     frame = Frame()
     with fits.open(abspath) as fin:
         header = fin[0].header
-        try:
-            frame.cadence_type = header["INT_TIME"]
-            frame.camera = try_get(header, "CAM", "CAMNUM")
-            frame.ccd = try_get(header, "CCD", "CCDNUM")
-            frame.cadence = header["CADENCE"]
-            frame.gps_time = header["TIME"]
-            frame.start_tjd = header["STARTTJD"]
-            frame.mid_tjd = header["MIDTJD"]
-            frame.end_tjd = header["ENDTJD"]
-            frame.exp_time = header["EXPTIME"]
-            frame.quality_bit = header["QUAL_BIT"]
-            frame.fine_pointing = try_get(header, "FINE")
-            frame.coarse_pointing = try_get(header, "COARSE")
-            frame.reaction_wheel_desaturation = try_get(header, "RW_DESAT")
 
-            stray_light_key = f"STRAYLT{frame.camera}"
-            frame.stray_light = try_get(header, stray_light_key)
-        except KeyError as e:
-            print(e)
-            print("==={0} HEADER===".format(abspath))
-            print(repr(header))
-            raise
+        for attr, value in header.items():
+            if hasattr(Frame, attr):
+                setattr(frame, attr, value)
+
+        # Stray light is duplicated by camera per FFI, just grab the
+        # relevant flag
+        stray_light_key = f"STRAYLT{frame.camera}"
+        frame.stray_light = try_get(header, stray_light_key)
 
     if frame_type is not None:
         frame.frame_type_id = frame_type.id

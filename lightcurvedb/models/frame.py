@@ -104,25 +104,46 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
 class FrameFFIMapper(QLPModel.__class__):
     def __new__(cls, name, bases, attrs):
+        def fallback_func(model_name: str):
+            @hybrid_property
+            def method(self):
+                return getattr(self, model_name)
+
+            return method
+
+        def setter_func(method, model_name):
+            @method.inplace.setter
+            def setter(self, value):
+                setattr(self, model_name, value)
+
+            return setter
+
+        def expression_func(method, model_name):
+            @method.inplace.expression
+            @classmethod
+            def expression(cls):
+                return getattr(cls, model_name)
+
+            return expression
+
         # Dynamically assign FFI fields, their translations, and
         # fallback FFI Keyword
         for ffi_name, (model_name, col) in _FRAME_MAPPER_LOOKUP.items():
             if model_name not in attrs:
                 attrs[model_name] = col  # Avoid redefinitions
+
             # Define hybrid properties
             fallback = ffi_name.replace("-", "_")
             setter_name = f"_{model_name}_setter"
             expr_name = f"_{model_name}_expression"
 
-            attrs[fallback] = hybrid_property(
-                lambda self: getattr(self, model_name)
-            )
-            attrs[setter_name] = attrs[fallback].inplace.setter(
-                lambda self, value: setattr(self, model_name, value)
-            )
-            attrs[expr_name] = attrs[fallback].inplace.expression(
-                classmethod(lambda cls: getattr(cls, model_name))
-            )
+            fallback_method = fallback_func(model_name)
+            setter_method = setter_func(fallback_method, model_name)
+            expr_method = expression_func(fallback_method, model_name)
+
+            attrs[fallback] = fallback_method
+            attrs[setter_name] = setter_method
+            attrs[expr_name] = expr_method
         return super().__new__(cls, name, bases, attrs)
 
 
