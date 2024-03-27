@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from astropy.io import fits
@@ -214,6 +215,7 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     id: Mapped[int] = mapped_column(
         Sequence("frames_id_seq", cache=2400), primary_key=True
     )
+    stray_light: Mapped[Optional[bool]]
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
