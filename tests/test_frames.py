@@ -48,6 +48,14 @@ def test_from_fits(tempdir, data):
     path, header = ingestion.simulate_fits(data, tempdir)
     frame = from_fits(path)
 
+    for attr, val in header.items():
+        if hasattr(Frame, attr):
+            to_check = getattr(frame, attr)
+            if isinstance(val, float) and isinstance(to_check, float):
+                assert np.isclose(val, to_check)
+            else:
+                assert val == getattr(frame, attr)
+
     assert header["INT_TIME"] == frame.cadence_type
     assert header["CAM"] == frame.camera
     assert np.isclose(header["TIME"], frame.gps_time)
