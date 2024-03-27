@@ -91,8 +91,9 @@ def from_fits(path, frame_type=None, orbit=None):
         header = fin[0].header
 
         for attr, value in header.items():
-            if hasattr(Frame, attr):
-                setattr(frame, attr, value)
+            safe_attr = attr.replace("-", "_")
+            if hasattr(Frame, safe_attr):
+                setattr(frame, safe_attr, value)
 
         # Stray light is duplicated by camera per FFI, just grab the
         # relevant flag
