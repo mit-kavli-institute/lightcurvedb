@@ -103,6 +103,22 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
 
 class FrameFFIMapper(QLPModel.__class__):
+    """
+    It's really hard mapping relevant FFI headers to SQL Models as they
+    are numerous. So instead, reference the schema defined in
+    ``_FRAME_MAPPER_LOOKUP`` to build the fallback functions.
+
+    The keys within the schema are the expected names within the FFI
+    headers. The values are a 2 element tuple with the first element
+    being the human-readable column name. This name must be a valid
+    python class attribute name. The second element is the compatible
+    SQL datatype that can represent the corresponding values within the
+    FFI header.
+
+    The mapping is performed via a metaclass in order to dynamically
+    assign methods to the decorated class.
+    """
+
     def __new__(cls, name, bases, attrs):
         def fallback_func(model_name: str):
             @hybrid_property
