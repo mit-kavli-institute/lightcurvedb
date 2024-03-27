@@ -235,9 +235,9 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
         """
         return self.cadence_type // 60 if clamp else self.cadence_type / 60
 
-    @cadence_type_in_minutes.expression
+    @cadence_type_in_minutes.inplace.expression
     @classmethod
-    def cadence_type_in_minutes(cls, clamp=False):
+    def _cadence_type_in_minutes(cls, clamp=False):
         """
         Evaluate an expression using cadence_type in minutes.
 
@@ -261,6 +261,15 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
         if clamp:
             return cast(param, Integer)
         return param
+
+    @hybrid_property
+    def tjd(self):
+        return self.mid_tjd
+
+    @tjd.inplace.expression
+    @classmethod
+    def _tjd(cls):
+        return cls.mid_tjd
 
     def copy(self, other):
         self.cadence_type = other.cadence_type
