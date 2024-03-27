@@ -1,11 +1,13 @@
+from decimal import Decimal
 from math import sqrt
+from typing import Any
 
 import pyticdb
 import sqlalchemy as sa
 from astropy import units as u
-from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, JSONB
+from sqlalchemy.dialects.postgresql import REGCONFIG
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import Index
 
 from lightcurvedb.core.base_model import (
@@ -28,42 +30,36 @@ class BLS(QLPModel, CreatedOnMixin):
 
     __tablename__ = "bls"
 
-    id = sa.Column(sa.BigInteger, primary_key=True)
-    sector = sa.Column(sa.SmallInteger, index=True)
-    tic_id = sa.Column(sa.BigInteger, index=True)
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True)
+    sector: Mapped[int] = mapped_column(sa.SmallInteger, index=True)
+    tic_id: Mapped[int] = mapped_column(sa.BigInteger, index=True)
 
-    tce_n = sa.Column(sa.SmallInteger, nullable=False, index=True)
+    tce_n: Mapped[int] = mapped_column(sa.SmallInteger, index=True)
 
     # Begin Astrophysical parameters
-    transit_period = sa.Column(
-        DOUBLE_PRECISION, nullable=False, index=True
-    )  # Days
-    transit_depth = sa.Column(DOUBLE_PRECISION, nullable=False)
-    transit_duration = sa.Column(DOUBLE_PRECISION, nullable=False)  # Days
-    planet_radius = sa.Column(
-        DOUBLE_PRECISION, nullable=False, index=True
-    )  # Earth Radii
-    planet_radius_error = sa.Column(
-        DOUBLE_PRECISION, nullable=False
-    )  # Earth Radii
+    transit_period: Mapped[Decimal] = mapped_column(index=True)  # Days
+    transit_depth: Mapped[Decimal]
+    transit_duration: Mapped[Decimal]  # Days
+    planet_radius: Mapped[Decimal] = mapped_column(index=True)  # Earth Radii
+    planet_radius_error: Mapped[Decimal]
 
     # Begin BLS info
-    points_pre_transit = sa.Column(sa.Integer, nullable=False)
-    points_in_transit = sa.Column(sa.Integer, nullable=False)
-    points_post_transit = sa.Column(sa.Integer, nullable=False)
-    out_of_transit_magnitude = sa.Column(DOUBLE_PRECISION, nullable=False)
-    transits = sa.Column(sa.Integer, nullable=False, index=True)
-    ingress = sa.Column(DOUBLE_PRECISION, nullable=False)
-    transit_center = sa.Column(DOUBLE_PRECISION, nullable=False)
-    rednoise = sa.Column(DOUBLE_PRECISION, nullable=False)
-    whitenoise = sa.Column(DOUBLE_PRECISION, nullable=False)
-    signal_to_noise = sa.Column(DOUBLE_PRECISION, nullable=False, index=True)
-    signal_to_pinknoise = sa.Column(DOUBLE_PRECISION, nullable=False)
-    signal_detection_efficiency = sa.Column(DOUBLE_PRECISION, nullable=False)
-    signal_residual = sa.Column(DOUBLE_PRECISION, nullable=False)
-    zero_point_transit = sa.Column(DOUBLE_PRECISION, nullable=False)
+    points_pre_transit: Mapped[int]
+    points_in_transit: Mapped[int]
+    points_post_transit: Mapped[int]
+    out_of_transit_magnitude: Mapped[Decimal]
+    transits: Mapped[Decimal] = mapped_column(index=True)
+    ingress: Mapped[Decimal]
+    transit_center: Mapped[Decimal]
+    rednoise: Mapped[Decimal]
+    whitenoise: Mapped[Decimal]
+    signal_to_noise: Mapped[Decimal] = mapped_column(index=True)
+    signal_to_pinknoise: Mapped[Decimal]
+    signal_detection_efficiency: Mapped[Decimal]
+    signal_residual: Mapped[Decimal]
+    zero_point_transit: Mapped[Decimal]
 
-    additional_data = sa.Column(JSONB, default={})
+    additional_data: Mapped[dict[str, Any]] = mapped_column(default={})
 
     tags = relationship(
         "BLSTag", secondary=BLSTagAssociationTable, back_populates="bls_runs"
@@ -184,7 +180,9 @@ class BLSTag(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         sa.UniqueConstraint("name"),
         Index(
             "bls_tags_name_tsv",
-            sa.func.to_tsvector("english", "name"),
+            sa.func.to_tsvector(
+                sa.cast(sa.literal("english"), type_=REGCONFIG), "name"
+            ),
             postgresql_using="gin",
         ),
     )

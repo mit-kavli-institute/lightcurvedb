@@ -332,7 +332,9 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         q = (
             sa.select(m.ArrayOrbitLightcurve)
             .join(m.ArrayOrbitLightcurve.orbit)
-            .order_by(m.Orbit.orbit_number.asc())
+            .order_by(
+                m.Orbit.orbit_number.asc(), m.ArrayOrbitLightcurve.camera.asc()
+            )
         )
 
         join_conditions = []
@@ -356,6 +358,9 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
             join_conditions.append(BEST_LC.orbit_id == LC.orbit_id)
             q = q.join(BEST_LC, sa.and_(*join_conditions))
         q = q.where(*filter_conditions)
+
+        # Ensure we grab lowest camera
+        q = q.distinct(m.Orbit.orbit_number)
 
         return self._process_lc_selection(q)
 

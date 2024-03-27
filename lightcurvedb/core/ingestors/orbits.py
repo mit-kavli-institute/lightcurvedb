@@ -1,13 +1,11 @@
-import itertools
-from astropy.io import fits
-from collections import defaultdict
+import pathlib
+import typing
+
+import numpy as np
 from loguru import logger
 
 from lightcurvedb.models.orbit import Orbit
 from lightcurvedb.util.tess import sector_from_orbit_number
-
-from multiprocessing import Pool
-
 
 FITS_TO_ORBIT_MAP = {
     "ORBIT_ID": "orbit_number",
@@ -37,82 +35,55 @@ ORBIT_CONSISTENCY_KEYS = (
     "crm_n",
 )
 
-def _basename_from_fits(path):
+
+def basename_from_fits(path: pathlib.Path) -> str:
     filename = path.stem
     basename, *_ = filename.split("-")
     return basename
 
 
-def _ffi_to_orbit_kwargs(f):
-    with fits.open(f) as fin:
-        kwargs = {}
-        for key, value in fin[0].header.items():
-            try:
-                kwargs[FITS_TO_ORBIT_MAP[key]] = value
-            except KeyError:
-                continue
+def ffi_header_to_orbit_kwargs(header):
+    kwargs = {}
+    for key, value in header.items():
+        try:
+            kwargs[FITS_TO_ORBIT_MAP[key]] = value
+        except KeyError:
+            continue
 
     kwargs["sector"] = sector_from_orbit_number(kwargs["orbit_number"])
-    kwargs["basename"] = _basename_from_fits(f)
-    kwargs["file_path"] = f
     return kwargs
 
 
-def generate_from_fits(files, parallel=True):
-    """
-    Generate orbits from a list of astropy.fits file paths.
+def orbit_from_header_group(
+    group: list[tuple[dict[str, typing.Any], pathlib.Path]]
+) -> Orbit:
 
-    Parameters
-    ----------
-    files: pathlib.Path sequence
-        An iterable of Paths to consider as fits files.
-    parallel: boolean
-        If true, extract header information in parallel.
+    converted_headers = [
+        ffi_header_to_orbit_kwargs(header) for header, _ in group
+    ]
 
-    Returns
-    -------
-    [Orbit, [str]
-        Returns a list of orbit models which have consistent
-        astrophysical parameters across their observed frames
-        and then the list of FITS files which have been used
-        to verify the orbit.
-    """
-    if parallel:
-        with Pool() as p:
-            orbit_kwargs = p.map(_ffi_to_orbit_kwargs, files)
-    else:
-        orbit_kwargs = [
-            _ffi_to_orbit_kwargs(file)
-            for file in files
-        ]
+    check_arrays = {
+        field: np.array([header[field] for header in converted_headers])
+        for field in ORBIT_CONSISTENCY_KEYS
+    }
 
-    grouped = defaultdict(list)
+    for field in ORBIT_CONSISTENCY_KEYS:
+        check_array = check_arrays[field]
+        if np.all(np.isclose(check_array, check_array[0])):
+            # All fields are consistent
+            continue
+        else:
+            min_val = check_array.min()
+            max_val = check_array.max()
+            mean_val = np.nanmedian(check_array)
+            std_val = np.nanstd(check_array)
 
-    for kwargs in orbit_kwargs:
-        grouped[kwargs["orbit_number"]].append(kwargs)
-
-    # Check that all headers are congruent for each found orbit
-    new_orbits = []
-    for orbit_number, kwargs_array in grouped.items():
-        files = [k.pop("file_path") for k in kwargs_array]
-        for attr in ORBIT_CONSISTENCY_KEYS:
-            ref = kwargs_array[0]
-            check = all(
-                kwargs[attr] == ref[attr] for kwargs in kwargs_array[1:]
+            logger.warning(
+                f"Field {field} is inconsistent within orbit. "
+                f"Min: {min_val}, Max: {max_val} "
+                f"Mean: {mean_val}, stddev: {std_val}"
             )
-            if not check:
-                logger.error(
-                    f"FITS files for orbit {orbit_number}"
-                        "are not consistent! Rejecting ingestion."
-                    )
-                return []
-
-        orbit = Orbit(**kwargs)
-        logger.debug(f"Generated orbit {orbit}")
-
-        new_orbits.append((
-            orbit,
-            files,
-        ))
-
-    return new_orbits
+    orbit = Orbit(**ffi_header_to_orbit_kwargs(group[0][0]))
+    orbit.sector = sector_from_orbit_number(orbit.orbit_number)
+    orbit.basename = basename_from_fits(group[0][1])
+    return orbit

@@ -1,4 +1,6 @@
 click
+psycopg2-binary
+sqlalchemy>=2.0
 pytest
 decorator
 hypothesis
@@ -7,8 +9,6 @@ hypothesis-fspaths
 pgcopy
 factory_boy
 astropy
-sqlalchemy>=1.4
-psycopg2-binary
 h5py
 numpy
 pandas

@@ -1,13 +1,17 @@
-from __future__ import division, print_function
+import datetime
+from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import Column, DateTime, String, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import DOUBLE_PRECISION, String, select
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import (
     ColumnProperty,
+    DeclarativeBase,
+    Mapped,
     RelationshipProperty,
-    as_declarative,
     declarative_mixin,
+    mapped_column,
 )
 from sqlalchemy.sql import func
 
@@ -15,14 +19,18 @@ from lightcurvedb.core.admin import get_psql_catalog_tables
 from lightcurvedb.core.psql_tables import PGClass
 from lightcurvedb.core.sql import psql_safe_str
 
+DBL_PRECISION = float
 
-@as_declarative()
-class QLPModel:
+
+class QLPModel(DeclarativeBase):
     """
     Common SQLAlchemy base model for all QLP Models
     """
 
     __abstract__ = True
+
+    # Type Hint Registration
+    type_annotation_map = {dict[str, Any]: JSONB, Decimal: DOUBLE_PRECISION}
 
     @classmethod
     def insert(cls, *args, **kwargs):
@@ -112,7 +120,9 @@ class CreatedOnMixin:
     and BLS results
     """
 
-    created_on = Column(DateTime, server_default=func.now())
+    created_on: Mapped[datetime.datetime] = mapped_column(
+        server_default=func.now()
+    )
 
 
 @declarative_mixin
@@ -121,8 +131,10 @@ class NameAndDescriptionMixin:
     Mixin for describing QLP data subtypes such as lightcurve types.
     """
 
-    _name = Column("name", String(64), unique=True, nullable=False)
-    _description = Column("description", String)
+    _name: Mapped[str] = mapped_column(
+        "name", String(64), unique=True, nullable=False
+    )
+    _description: Mapped[str] = mapped_column("description")
 
     @hybrid_property
     def name(self):

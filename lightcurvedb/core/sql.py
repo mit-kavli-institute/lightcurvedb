@@ -1,6 +1,5 @@
 from sqlalchemy import types
 
-
 _SQL_ALIASES = {
     "bigint": types.BigInteger,
     "biginteger": types.BigInteger,
@@ -27,9 +26,7 @@ def _str_to_sql_type(string):
     try:
         return _SQL_ALIASES[string.lower()]
     except KeyError:
-        raise KeyError(
-            f"Unknown specified type {string}"
-        )
+        raise KeyError(f"Unknown specified type {string}")
 
 
 def _resolve_type(type_):
@@ -53,4 +50,6 @@ def psql_safe_str(string):
     str
         The psql safe string.
     """
-    return string.replace("\x00", "\uFFFD")
+    if isinstance(string, str):
+        return string.replace("\x00", "\uFFFD")
+    return string

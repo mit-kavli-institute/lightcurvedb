@@ -14,9 +14,10 @@ from sqlalchemy import (
     SmallInteger,
     String,
 )
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
@@ -25,7 +26,6 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
-from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
 
@@ -42,11 +42,11 @@ _FRAME_MAPPER_LOOKUP = {
     "CAMNUM": ("camera", Column(SmallInteger, index=True, nullable=True)),
     "CCD": ("ccd", Column(SmallInteger, index=True, nullable=True)),
     "CADENCE": ("cadence", Column(Integer, index=True)),
-    "TIME": ("gps_time", high_precision_column(nullable=False)),
-    "STARTTJD": ("start_tjd", high_precision_column(nullable=False)),
-    "MIDTJD": ("mid_tjd", high_precision_column(nullable=False)),
-    "ENDTJD": ("end_tjd", high_precision_column(nullable=False)),
-    "EXPTIME": ("exp_time", high_precision_column(nullable=False)),
+    "TIME": ("gps_time", Column(DOUBLE_PRECISION)),
+    "STARTTJD": ("start_tjd", Column(DOUBLE_PRECISION)),
+    "MIDTJD": ("mid_tjd", Column(DOUBLE_PRECISION)),
+    "ENDTJD": ("end_tjd", Column(DOUBLE_PRECISION)),
+    "EXPTIME": ("exp_time", Column(DOUBLE_PRECISION)),
     "QUAL_BIT": ("quality_bit", Column(Boolean)),
     "FINE": ("fine_pointing", Column(Boolean)),
     "COARSE": ("coarse_pointing", Column(Boolean)),
@@ -93,7 +93,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-    id = Column(SmallInteger, primary_key=True, unique=True)
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -102,7 +102,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         )
 
 
-class FrameFFIMapper(type):
+class FrameFFIMapper(QLPModel.__class__):
     def __new__(cls, name, bases, attrs):
         # Dynamically assign FFI fields, their translations, and
         # fallback FFI Keyword
@@ -117,10 +117,10 @@ class FrameFFIMapper(type):
             attrs[fallback] = hybrid_property(
                 lambda self: getattr(self, model_name)
             )
-            attrs[setter_name] = attrs[fallback].inline.setter(
+            attrs[setter_name] = attrs[fallback].inplace.setter(
                 lambda self, value: setattr(self, model_name, value)
             )
-            attrs[expr_name] = attrs[fallback].inline.expression(
+            attrs[expr_name] = attrs[fallback].inplace.expression(
                 classmethod(lambda cls: getattr(cls, model_name))
             )
         return super().__new__(cls, name, bases, attrs)
@@ -174,21 +174,18 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
     # Model attributes
-    id = Column(
-        Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
+    id: Mapped[int] = mapped_column(
+        Sequence("frames_id_seq", cache=2400), primary_key=True
     )
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
-    orbit_id = Column(
-        Integer,
+    orbit_id: Mapped[int] = mapped_column(
         ForeignKey("orbits.id", ondelete="RESTRICT"),
-        nullable=False,
         index=True,
     )
-    frame_type_id = Column(
+    frame_type_id: Mapped[int] = mapped_column(
         ForeignKey(FrameType.id, ondelete="RESTRICT"),
-        nullable=False,
         index=True,
     )
 
@@ -201,11 +198,11 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     def file_path(self):
         return self._file_path
 
-    @file_path.inline.setter
+    @file_path.inplace.setter
     def _file_path_setter(self, value):
         self._file_path = psql_safe_str(value)
 
-    @file_path.inline.expression
+    @file_path.inplace.expression
     @classmethod
     def _file_path_expression(cls):
         return cls._file_path
@@ -239,6 +236,7 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
         return self.cadence_type // 60 if clamp else self.cadence_type / 60
 
     @cadence_type_in_minutes.expression
+    @classmethod
     def cadence_type_in_minutes(cls, clamp=False):
         """
         Evaluate an expression using cadence_type in minutes.
