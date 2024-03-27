@@ -117,6 +117,8 @@ def from_fits(path, frame_type=None, orbit=None):
     if orbit is not None:
         frame.orbit_id = orbit.id
 
+    frame.file_path = abspath
+
     return frame
 
 
