@@ -5,18 +5,21 @@ from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors.camera_quaternions import ingest_quat_file
 from lightcurvedb.models.camera_quaternion import (
-        CameraQuaternion,
-        get_utc_time,
-        )
-from .strategies import ingestion, orm
+    CameraQuaternion,
+    get_utc_time,
+)
+
+from .strategies import ingestion
 
 no_scope_check = HealthCheck.function_scoped_fixture
 
 
-@settings(deadline=None)
+@settings(
+    suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None
+)
 @given(st.data())
-def test_camera_quaternion_ingest(db, data):
-    with tempfile.TemporaryDirectory() as tempdir, db:
+def test_camera_quaternion_ingest(db_session, data):
+    with tempfile.TemporaryDirectory() as tempdir, db_session as db:
         quat_path, camera, quaternions = ingestion.simulate_hk_file(
             data, tempdir
         )
@@ -26,7 +29,7 @@ def test_camera_quaternion_ingest(db, data):
             utc_time = get_utc_time(quaternion.gps_time)
             q = template.filter(
                 CameraQuaternion.date == utc_time.datetime,
-                CameraQuaternion.camera == camera,
+                CameraQuaternion.camera == int(camera),
             )
             orm_quaternion = q.one()
             for quatfield in ("q1", "q2", "q3", "q4"):

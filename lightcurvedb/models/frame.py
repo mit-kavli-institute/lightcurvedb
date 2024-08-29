@@ -1,5 +1,4 @@
 import os
-from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -7,13 +6,16 @@ import numpy as np
 from astropy.io import fits
 from psycopg2 import extensions as ext
 from sqlalchemy import (
+    Boolean,
     Column,
+    Float,
     ForeignKey,
     Integer,
     Sequence,
     SmallInteger,
     String,
 )
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -35,6 +37,59 @@ def adapt_pathlib(path):
 ext.register_adapter(Path, adapt_pathlib)
 
 
+_FRAME_MAPPER_LOOKUP = {
+    "INT_TIME": ("cadence_type", Column(SmallInteger, index=True)),
+    "CAM": ("camera", Column(SmallInteger, index=True)),
+    "CAMNUM": ("camera", Column(SmallInteger, index=True, nullable=True)),
+    "CCD": ("ccd", Column(SmallInteger, index=True, nullable=True)),
+    "CADENCE": ("cadence", Column(Integer, index=True)),
+    "TIME": ("gps_time", Column(DOUBLE_PRECISION)),
+    "STARTTJD": ("start_tjd", Column(DOUBLE_PRECISION)),
+    "MIDTJD": ("mid_tjd", Column(DOUBLE_PRECISION)),
+    "ENDTJD": ("end_tjd", Column(DOUBLE_PRECISION)),
+    "EXPTIME": ("exp_time", Column(DOUBLE_PRECISION)),
+    "QUAL_BIT": ("quality_bit", Column(Boolean)),
+    "FINE": ("fine_pointing", Column(Boolean)),
+    "COARSE": ("coarse_pointing", Column(Boolean)),
+    "RW_DESAT": ("reaction_wheel_desaturation", Column(Boolean)),
+    "SIMPLE": ("simple", Column(Boolean, nullable=True)),
+    "BITPIX": ("bit_pix", Column(SmallInteger, nullable=True)),
+    "NAXIS": ("n_axis", Column(SmallInteger, nullable=True)),
+    "EXTENDED": ("extended", Column(Boolean, nullable=True)),
+    "ACS_MODE": ("acs_mode", Column(String, nullable=True)),
+    "PIX_CAT": ("pix_cat", Column(Integer, nullable=True)),
+    "REQUANT": ("requant", Column(Integer, nullable=True)),
+    "DIFF_HUF": ("huffman_difference", Column(Integer, nullable=True)),
+    "PRIM_HUF": ("huffman_prime", Column(Integer, nullable=True)),
+    "SPM": ("spm", Column(Integer, nullable=True)),
+    "CRM": ("cosmic_ray_mitigation", Column(Boolean, nullable=True)),
+    "ORB_SEG": ("orbital_segment", Column(String, nullable=True)),
+    "SCIPIXS": ("science_pixels", Column(String, nullable=True)),
+    "GAIN_A": ("gain_a", Column(Float, nullable=True)),
+    "GAIN_B": ("gain_b", Column(Float, nullable=True)),
+    "GAIN_C": ("gain_c", Column(Float, nullable=True)),
+    "GAIN_D": ("gain_d", Column(Float, nullable=True)),
+    "UNITS": ("units", Column(String, nullable=True)),
+    "EQUINOX": ("equinox", Column(Float, nullable=True)),
+    "INSTRUME": ("instrument", Column(String, nullable=True)),
+    "TELESCOP": ("telescope", Column(String, nullable=True)),
+    "MJD-BEG": ("mjd-beg", Column(Float, nullable=True)),
+    "MJD-END": ("mjd-end", Column(Float, nullable=True)),
+    "TESS_X": ("tess_x_position", Column(Float, nullable=True)),
+    "TESS_Y": ("tess_y_position", Column(Float, nullable=True)),
+    "TESS_Z": ("tess_z_position", Column(Float, nullable=True)),
+    "TESS_VX": ("tess_x_velocity", Column(Float, nullable=True)),
+    "TESS_VY": ("tess_y_velocity", Column(Float, nullable=True)),
+    "TESS_VZ": ("tess_z_velocity", Column(Float, nullable=True)),
+    "RA_TARG": ("target_ra", Column(Float, nullable=True)),
+    "DEC_TARG": ("target_dec", Column(Float, nullable=True)),
+    "WCSGDF": ("wcsgdf", Column(Float, nullable=True)),
+    "CHECKSUM": ("checksum", Column(String, nullable=True)),
+    "DATASUM": ("datasum", Column(Integer, nullable=True)),
+    "COMMENT": ("comment", Column(String, nullable=True)),
+}
+
+
 class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
@@ -48,7 +103,68 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         )
 
 
-class Frame(QLPModel, CreatedOnMixin):
+class FrameFFIMapper(QLPModel.__class__):
+    """
+    It's really hard mapping relevant FFI headers to SQL Models as they
+    are numerous. So instead, reference the schema defined in
+    ``_FRAME_MAPPER_LOOKUP`` to build the fallback functions.
+
+    The keys within the schema are the expected names within the FFI
+    headers. The values are a 2 element tuple with the first element
+    being the human-readable column name. This name must be a valid
+    python class attribute name. The second element is the compatible
+    SQL datatype that can represent the corresponding values within the
+    FFI header.
+
+    The mapping is performed via a metaclass in order to dynamically
+    assign methods to the decorated class.
+    """
+
+    def __new__(cls, name, bases, attrs):
+        def fallback_func(model_name: str):
+            @hybrid_property
+            def method(self):
+                return getattr(self, model_name)
+
+            return method
+
+        def setter_func(method, model_name):
+            @method.inplace.setter
+            def setter(self, value):
+                setattr(self, model_name, value)
+
+            return setter
+
+        def expression_func(method, model_name):
+            @method.inplace.expression
+            @classmethod
+            def expression(cls):
+                return getattr(cls, model_name)
+
+            return expression
+
+        # Dynamically assign FFI fields, their translations, and
+        # fallback FFI Keyword
+        for ffi_name, (model_name, col) in _FRAME_MAPPER_LOOKUP.items():
+            if model_name not in attrs:
+                attrs[model_name] = col  # Avoid redefinitions
+
+            # Define hybrid properties
+            fallback = ffi_name.replace("-", "_")
+            setter_name = f"_{model_name}_setter"
+            expr_name = f"_{model_name}_expression"
+
+            fallback_method = fallback_func(model_name)
+            setter_method = setter_func(fallback_method, model_name)
+            expr_method = expression_func(fallback_method, model_name)
+
+            attrs[fallback] = fallback_method
+            attrs[setter_name] = setter_method
+            attrs[expr_name] = expr_method
+        return super().__new__(cls, name, bases, attrs)
+
+
+class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     """
     Provides ORM implementation of various Frame models
     """
@@ -99,19 +215,7 @@ class Frame(QLPModel, CreatedOnMixin):
     id: Mapped[int] = mapped_column(
         Sequence("frames_id_seq", cache=2400), primary_key=True
     )
-    cadence_type: Mapped[int] = mapped_column(SmallInteger, index=True)
-    camera: Mapped[int] = mapped_column(SmallInteger, index=True)
-    ccd: Mapped[Optional[int]] = mapped_column(SmallInteger, index=True)
-    cadence: Mapped[int] = mapped_column(Integer, index=True)
-
-    gps_time: Mapped[Decimal]
-    start_tjd: Mapped[Decimal]
-    mid_tjd: Mapped[Decimal]
-    end_tjd: Mapped[Decimal]
-    exp_time: Mapped[Decimal]
-
-    quality_bit: Mapped[bool]
-
+    stray_light: Mapped[Optional[bool]]
     _file_path = Column("file_path", String, nullable=False, unique=True)
 
     # Foreign Keys
@@ -128,6 +232,19 @@ class Frame(QLPModel, CreatedOnMixin):
     orbit = relationship("Orbit", back_populates="frames")
     frame_type = relationship("FrameType", back_populates="frames")
     lightcurves = association_proxy("lightcurveframemapping", "lightcurve")
+
+    @hybrid_property
+    def file_path(self):
+        return self._file_path
+
+    @file_path.inplace.setter
+    def _file_path_setter(self, value):
+        self._file_path = psql_safe_str(value)
+
+    @file_path.inplace.expression
+    @classmethod
+    def _file_path_expression(cls):
+        return cls._file_path
 
     @classmethod
     def get_legacy_attrs(cls, dtype_override=None):
@@ -157,8 +274,9 @@ class Frame(QLPModel, CreatedOnMixin):
         """
         return self.cadence_type // 60 if clamp else self.cadence_type / 60
 
-    @cadence_type_in_minutes.expression
-    def cadence_type_in_minutes(cls, clamp=False):
+    @cadence_type_in_minutes.inplace.expression
+    @classmethod
+    def _cadence_type_in_minutes(cls, clamp=False):
         """
         Evaluate an expression using cadence_type in minutes.
 
@@ -182,6 +300,15 @@ class Frame(QLPModel, CreatedOnMixin):
         if clamp:
             return cast(param, Integer)
         return param
+
+    @hybrid_property
+    def tjd(self):
+        return self.mid_tjd
+
+    @tjd.inplace.expression
+    @classmethod
+    def _tjd(cls):
+        return cls.mid_tjd
 
     def copy(self, other):
         self.cadence_type = other.cadence_type
@@ -223,27 +350,3 @@ class Frame(QLPModel, CreatedOnMixin):
             print("===LOADED HEADER===")
             print(repr(header))
             raise
-
-    @hybrid_property
-    def file_path(self):
-        return self._file_path
-
-    @file_path.setter
-    def file_path(self, value):
-        self._file_path = psql_safe_str(value)
-
-    @file_path.expression
-    def file_path(cls):
-        return cls._file_path
-
-    @property
-    def data(self):
-        return fits.open(self.file_path)[0].data
-
-    @hybrid_property
-    def tjd(self):
-        return self.mid_tjd
-
-    @tjd.expression
-    def tjd(cls):
-        return cls.mid_tjd

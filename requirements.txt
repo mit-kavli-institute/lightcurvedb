@@ -1,9 +1,9 @@
-psycopg2-binary>=2.8.4
+psycopg[binary]
 sqlalchemy>=2.0
 click
 astropy
 numpy
-h5py
+h5py>=3.1
 pandas
 packaging
 datetime

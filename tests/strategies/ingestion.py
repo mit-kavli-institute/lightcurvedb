@@ -3,6 +3,8 @@ Generate data and push to a static file to test for ingestion correctness
 """
 import pathlib
 from collections import namedtuple
+from itertools import product
+from shutil import rmtree
 
 import numpy as np
 from astropy.io import fits
@@ -264,7 +266,7 @@ def simulate_fits(data, directory):
     basename_time = str(start.iso).replace("-", "")
 
     filename = pathlib.Path(
-        f"tess{basename_time}-{cadence:08}-{cam}-crm-ffi.fits"
+        f"tess{basename_time}-{cadence: 08}-{cam}-crm-ffi.fits"
     )
 
     hdu = fits.PrimaryHDU(ffi_data)
@@ -275,6 +277,128 @@ def simulate_fits(data, directory):
         hdr[key] = value
     hdul.writeto(directory / filename, overwrite=True)
     return directory / filename, header
+
+
+def simulate_tica_header(
+    exposure_time: float, camera: int, ccd: int, cadence: int
+):
+    return st.fixed_dictionaries(
+        {
+            "SIMPLE": st.just(True),
+            "BITPIX": st.just(32),
+            "NAXIS": st.just(2),
+            "NAXIS1": st.integers(min_value=1, max_value=2048),
+            "NAXIS2": st.integers(min_value=1, max_value=2048),
+            "EXTEND": st.just(True),
+            "BSCALE": st.just(1),
+            "BZERO": st.just(2147483648),
+            "ORBIT_ID": tess_st.orbits(),
+            "ACS_MODE": st.one_of(st.just("FP"), st.just("CPI")),
+            "SC_RA": tess_st.right_ascensions(),
+            "SC_DEC": tess_st.declinations(),
+            "SC_ROLL": tess_st.rolls(),
+            "SC_QUATX": st.floats(min_value=0, max_value=1),
+            "SC_QUATY": st.floats(min_value=0, max_value=1),
+            "SC_QUATZ": st.floats(min_value=0, max_value=1),
+            "SC_QUATQ": st.floats(min_value=0, max_value=1),
+            "TJD_ZERO": st.just(2457000.0),
+            "INT_TIME": st.just(int(exposure_time * cadence)),
+            "CAM": st.just(camera),
+            "CCD": st.just(ccd),
+            "CADENCE": st.just(cadence),
+            "TIME": st.just(exposure_time * cadence),
+            "STARTTJD": st.just(exposure_time * cadence),
+            "MIDTJD": st.just(exposure_time * cadence),
+            "ENDTJD": st.just(exposure_time * cadence),
+            "EXPTIME": st.just(exposure_time),
+            "QUAL_BIT": st.booleans(),
+            "FINE": st.booleans(),
+            "COARSE": st.booleans(),
+            "RW_DESAT": st.booleans(),
+            "PIX_CAT": st.just(0),
+            "REQUANT": st.just(411),
+            "DIFF_HUF": st.just(10407),
+            "PRIM_HUF": st.just(17),
+            "SPM": st.just(2),
+            "CRM": st.just(True),
+            "ORB_SEG": st.sampled_from(["o2a", "o1a", "o1b", "o2b"]),
+            "SCIPIXS": st.just("[45:2092,1:2048]"),
+            "GAIN_A": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_B": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_C": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_D": st.floats(allow_infinity=False, allow_nan=False),
+            "UNITS": st.just("electrons"),
+            "EQUINOX": st.just(2000),
+            "INSTRUME": st.just("TESS Photometer"),
+            "MJD-BEG": st.floats(allow_infinity=False, allow_nan=False),
+            "MJD-END": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_X": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_Y": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_Z": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VX": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VY": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VZ": st.floats(allow_infinity=False, allow_nan=False),
+            "RA_TARG": tess_st.right_ascensions(),
+            "DEC_TARG": tess_st.declinations(),
+            "WCSGDF": st.floats(allow_infinity=False, allow_nan=False),
+            "CHECKSUM": st.integers(),
+            "DATASUM": st.integers(),
+            "COMMENT": st.just("comment"),
+        }
+    )
+
+
+def simulate_tica_fits(
+    data, raw_directory: pathlib.Path
+) -> tuple[list[pathlib.Path], list[dict]]:
+    sector = data.draw(tess_st.sectors())
+    cadences = data.draw(st.lists(st.integers(min_value=1), unique=True))
+    cameras = [1, 2, 3, 4]
+    ccds = [1, 2, 3, 4]
+    exposure_time = data.draw(
+        st.sampled_from([158.4, 1437.76728, 479.25576, 159.75192])
+    )
+    sector_string = f"s{sector: 04d}"
+    sector_directory = raw_directory / sector_string
+
+    if sector_directory.exists():
+        rmtree(sector_directory)
+    sector_directory.mkdir(parents=True)
+
+    for camera, ccd in product(cameras, ccds):
+        subdir = sector_directory / f"cam{camera}-ccd{ccd}"
+        subdir.mkdir()
+
+    files: list[pathlib.Path] = []
+    headers: list[dict] = []
+
+    for camera, ccd, cadence in product(cameras, ccds, cadences):
+        subdir = sector_directory / f"cam{camera}-ccd{ccd}"
+
+        header = data.draw(
+            simulate_tica_header(exposure_time, camera, ccd, cadence)
+        )
+        ffi_data = data.draw(
+            np_st.arrays(np.int32, (header["NAXIS1"], header["NAXIS2"]))
+        )
+        hdu = fits.PrimaryHDU(ffi_data)
+        hdr = hdu.header
+        hdul = fits.HDUList([hdu])
+
+        for key, value in header.items():
+            hdr[key] = value
+
+        # hlsp_tica_tess_ffi_s0081-o2-00990440-cam1-ccd1_tess_v01_img.fits
+        filename = (
+            f"hlsp_tica_tess_ffi_{sector_string}-{header['ORB_SEG'][:2]}"
+            f"-{cadence: 08d}-cam{header['CAM']}-ccd{header['CCD']}_tess"
+            "v01_img.fits"
+        )
+        hdul.writeto(subdir / filename, overwrite=True)
+        files.append(subdir / filename)
+        headers.append(header)
+
+    return files, headers
 
 
 def simulate_h5_file(

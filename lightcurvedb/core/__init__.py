@@ -1,3 +1,3 @@
-from .fields import nan_safe_adapter
+from . import fields
 
-__all__ = ["nan_safe_adapter"]
+__all__ = ["fields"]

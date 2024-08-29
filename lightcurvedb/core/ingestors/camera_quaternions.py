@@ -105,7 +105,7 @@ def ingest_quat_file(db, filepath):
 
     logger.debug("Querying for existing camera quaternion timeseries")
     q = sa.select(CameraQuaternion.date).where(
-        CameraQuaternion.camera == camera,
+        CameraQuaternion.camera == int(camera),
         CameraQuaternion.date.between(min_date, max_date),
     )
     mask = set(date for date, in db.execute(q))

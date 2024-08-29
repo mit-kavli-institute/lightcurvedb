@@ -1,16 +1,19 @@
 import multiprocessing as mp
 import os
 import pathlib
+import typing
 from itertools import groupby
-from typing import Any, Optional
 
 import sqlalchemy as sa
 from astropy.io import fits
 from loguru import logger
 
+from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import orbits as orbit_ingestion
 from lightcurvedb.models import Frame, Orbit
 from lightcurvedb.models.frame import FrameType
+
+FFI_HEADER = dict[str, typing.Any]
 
 FITS_TO_FRAME_MAP = {
     "cadence_type": "INT_TIME",
@@ -44,7 +47,7 @@ def _resolve_fits_value(header, key):
 
 def _pull_fits_header(
     path: pathlib.Path,
-) -> tuple[dict[str, Any], pathlib.Path]:
+) -> tuple[dict[str, typing.Any], pathlib.Path]:
     """
     Parse the given path as a FITS file and return the primary header
     information as a python dict as well as the initial path parsed.
@@ -52,6 +55,18 @@ def _pull_fits_header(
     with fits.open(path) as fin:
         header = dict(fin[0].header)
     return header, path
+
+
+def try_get(header, key, *fallbacks, default=None) -> typing.Any:
+    try:
+        return header[key]
+    except KeyError:
+        for k in fallbacks:
+            try:
+                return header[k]
+            except KeyError:
+                continue
+    return default
 
 
 def from_fits(path, frame_type=None, orbit=None):
@@ -74,28 +89,69 @@ def from_fits(path, frame_type=None, orbit=None):
         The constructed frame.
     """
     abspath = os.path.abspath(path)
-    header = fits.open(abspath)[0].header
-    try:
-        return Frame(
-            cadence_type=header["INT_TIME"],
-            camera=header.get("CAM", header.get("CAMNUM", None)),
-            ccd=header.get("CCD", header.get("CCDNUM", None)),
-            cadence=header["CADENCE"],
-            gps_time=header["TIME"],
-            start_tjd=header["STARTTJD"],
-            mid_tjd=header["MIDTJD"],
-            end_tjd=header["ENDTJD"],
-            exp_time=header["EXPTIME"],
-            quality_bit=header["QUAL_BIT"],
-            file_path=abspath,
-            frame_type_id=frame_type.id if frame_type else None,
-            orbit_id=orbit.id if orbit else None,
+    frame = Frame()
+    with fits.open(abspath) as fin:
+        header = fin[0].header
+
+        for attr, value in header.items():
+            safe_attr = attr.replace("-", "_")
+            if hasattr(Frame, safe_attr):
+                setattr(frame, safe_attr, value)
+
+        # Stray light is duplicated by camera per FFI, just grab the
+        # relevant flag
+        stray_light_key = f"STRAYLT{frame.camera}"
+        frame.stray_light = try_get(header, stray_light_key)
+
+    if frame_type is not None:
+        frame.frame_type_id = frame_type.id
+    if orbit is not None:
+        frame.orbit_id = orbit.id
+
+    frame.file_path = abspath
+
+    return frame
+
+
+def ingest_orbit(
+    db: DB,
+    frame_type: FrameType,
+    orbit_number: int,
+    header_group: list[tuple[FFI_HEADER, pathlib.Path]],
+):
+    orbit_q = sa.select(Orbit).where(Orbit.orbit_number == orbit_number)
+    orbit = db.scalar(orbit_q)
+
+    if orbit is None:
+        orbit = orbit_ingestion.orbit_from_header_group(header_group)
+        db.add(orbit)
+        db.flush()
+
+    existing_files_q = (
+        sa.select(Frame.cadence, Frame.camera, Frame.ccd)
+        .join(Frame.orbit)
+        .join(Frame.frame_type)
+        .where(
+            Orbit.orbit_number == orbit_number,
+            FrameType.name == frame_type.name,
         )
-    except KeyError as e:
-        print(e)
-        print("==={0} HEADER===".format(abspath))
-        print(repr(header))
-        raise
+    )
+
+    keys = set(db.execute(existing_files_q))
+
+    frame_payload: list[Frame] = []
+    for header, path in header_group:
+        key = (header["CADENCE"], header["CAM"], header.get("CCD", None))
+        if key in keys:
+            # Frame already exists
+            continue
+        frame = from_fits(path, frame_type=frame_type, orbit=orbit)
+        frame_payload.append(frame)
+
+    logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")
+    db.add_all(frame_payload)
+    db.flush()
+    logger.success(f"Inserted {len(frame_payload)} frame(s)")
 
 
 def ingest_directory(
@@ -103,7 +159,7 @@ def ingest_directory(
     frame_type,
     directory: pathlib.Path,
     extension: str,
-    n_workers: Optional[int] = None,
+    n_workers: typing.Optional[int] = None,
 ):
     """
     Recursively ingest a target directory using the given Frame Type. Setting
@@ -124,58 +180,5 @@ def ingest_directory(
         header_pairs, key=lambda row: row[0]["ORBIT_ID"]
     )
 
-    new_frames = 0
     for orbit_number, group in orbit_grouped_headers:
-        group = list(group)
-        logger.debug(
-            f"Determining {len(group)} frames and "
-            f"orbit parameters for orbit {orbit_number}"
-        )
-        orbit_q = sa.select(Orbit).where(Orbit.orbit_number == orbit_number)
-        orbit_exists_q = sa.select(orbit_q.exists())
-        if db.scalar(orbit_exists_q):
-            orbit = db.execute(orbit_q).scalar()
-        else:
-            orbit = orbit_ingestion.orbit_from_header_group(list(group))
-            db.add(orbit)
-            db.flush()
-
-        existing_files_q = (
-            sa.select(Frame.cadence, Frame.camera, Frame.ccd)
-            .join(Frame.orbit)
-            .join(Frame.frame_type)
-            .where(
-                Orbit.orbit_number == orbit_number,
-                FrameType.name == frame_type.name,
-            )
-        )
-        keys = set(db.execute(existing_files_q))
-
-        for header, path in group:
-            current_key = (
-                header["CADENCE"],
-                header["CAM"],
-                header.get("CCD", None),
-            )
-            if current_key in keys:
-                # File Exists
-                logger.warning(f"Frame already exists in database: {path}")
-                frame_q = (
-                    sa.select(Frame)
-                    .join(Frame.frame_type)
-                    .join(Frame.orbit)
-                    .where(
-                        Orbit.orbit_number == orbit_number,
-                        FrameType.name == frame_type,
-                    )
-                )
-                frame = db.execute(frame_q).scalar()
-            else:
-                logger.debug(f"New Frame: {path}")
-                frame = from_fits(path, frame_type=frame_type, orbit=orbit)
-                db.add(frame)
-                new_frames += 1
-
-    logger.debug(f"Found {new_frames} new frames")
-    logger.debug("Emitted frames")
-    db.flush()
+        ingest_orbit(db, frame_type, orbit_number, list(group))

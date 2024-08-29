@@ -2,7 +2,7 @@ import pathlib
 import tempfile
 
 import numpy as np
-from hypothesis import given, note, settings
+from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.core.ingestors import contexts as ctx
@@ -97,8 +97,8 @@ def test_quality_flag_np(data):
             check == flag
 
 
-def test_spacecraft_eph_cache(db):
-    with db, tempfile.TemporaryDirectory() as tempdir:
+def test_spacecraft_eph_cache(db_session):
+    with db_session as db, tempfile.TemporaryDirectory() as tempdir:
         db_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
 
         ctx.make_shared_context(db_path)
@@ -121,7 +121,9 @@ def test_spacecraft_eph_cache(db):
         assert np.array_equal(check_z, ref_z)
 
 
-@settings(deadline=None)
+@settings(
+    deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
 @given(
     orm_st.frame_types(name=st.just("Raw FFI")),
     orm_st.orbits(),
@@ -131,8 +133,8 @@ def test_spacecraft_eph_cache(db):
         unique_by=(lambda f: (f.cadence, f.camera), lambda f: f.file_path),
     ),
 )
-def test_tjd_cache(db, raw_ffi_type, orbit, frames):
-    with db, tempfile.TemporaryDirectory() as tempdir:
+def test_tjd_cache(db_session, raw_ffi_type, orbit, frames):
+    with db_session as db, tempfile.TemporaryDirectory() as tempdir:
         cache_path = pathlib.Path(tempdir) / pathlib.Path("db.sqlite3")
         db.add(raw_ffi_type)
         db.add(orbit)
