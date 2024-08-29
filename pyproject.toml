@@ -41,6 +41,10 @@ dependencies = [
 Home = "https://tessgit.mit.edu/wcfong/lightcurve-database"
 
 
+[project.scripts]
+lcdb = 'lightcurvedb.cli:lcdbcli'
+
+
 [project.optional-dependencies]
 dev = [
     "black>=24.4",
