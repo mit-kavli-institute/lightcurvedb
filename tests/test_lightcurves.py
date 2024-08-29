@@ -32,8 +32,8 @@ FORBIDDEN_KEYWORDS = (
     ),
 )
 @given(st.data())
-def test_corrector_instantiation(db, data):
-    with TemporaryDirectory() as tempdir, db:
+def test_corrector_instantiation(db_session, data):
+    with TemporaryDirectory() as tempdir, db_session as db:
         (
             run_path,
             directory,

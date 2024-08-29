@@ -8,9 +8,12 @@ import sqlalchemy as sa
 from astropy.io import fits
 from loguru import logger
 
+from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import orbits as orbit_ingestion
 from lightcurvedb.models import Frame, Orbit
 from lightcurvedb.models.frame import FrameType
+
+FFI_HEADER = dict[str, typing.Any]
 
 FITS_TO_FRAME_MAP = {
     "cadence_type": "INT_TIME",
@@ -110,6 +113,47 @@ def from_fits(path, frame_type=None, orbit=None):
     return frame
 
 
+def ingest_orbit(
+    db: DB,
+    frame_type: FrameType,
+    orbit_number: int,
+    header_group: list[tuple[FFI_HEADER, pathlib.Path]],
+):
+    orbit_q = sa.select(Orbit).where(Orbit.orbit_number == orbit_number)
+    orbit = db.scalar(orbit_q)
+
+    if orbit is None:
+        orbit = orbit_ingestion.orbit_from_header_group(header_group)
+        db.add(orbit)
+        db.flush()
+
+    existing_files_q = (
+        sa.select(Frame.cadence, Frame.camera, Frame.ccd)
+        .join(Frame.orbit)
+        .join(Frame.frame_type)
+        .where(
+            Orbit.orbit_number == orbit_number,
+            FrameType.name == frame_type.name,
+        )
+    )
+
+    keys = set(db.execute(existing_files_q))
+
+    frame_payload: list[Frame] = []
+    for header, path in header_group:
+        key = (header["CADENCE"], header["CAM"], header.get("CCD", None))
+        if key in keys:
+            # Frame already exists
+            continue
+        frame = from_fits(path, frame_type=frame_type, orbit=orbit)
+        frame_payload.append(frame)
+
+    logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")
+    db.add_all(frame_payload)
+    db.flush()
+    logger.success(f"Inserted {len(frame_payload)} frame(s)")
+
+
 def ingest_directory(
     db,
     frame_type,
@@ -136,58 +180,5 @@ def ingest_directory(
         header_pairs, key=lambda row: row[0]["ORBIT_ID"]
     )
 
-    new_frames = 0
     for orbit_number, group in orbit_grouped_headers:
-        group = list(group)
-        logger.debug(
-            f"Determining {len(group)} frames and "
-            f"orbit parameters for orbit {orbit_number}"
-        )
-        orbit_q = sa.select(Orbit).where(Orbit.orbit_number == orbit_number)
-        orbit_exists_q = sa.select(orbit_q.exists())
-        if db.scalar(orbit_exists_q):
-            orbit = db.execute(orbit_q).scalar()
-        else:
-            orbit = orbit_ingestion.orbit_from_header_group(list(group))
-            db.add(orbit)
-            db.flush()
-
-        existing_files_q = (
-            sa.select(Frame.cadence, Frame.camera, Frame.ccd)
-            .join(Frame.orbit)
-            .join(Frame.frame_type)
-            .where(
-                Orbit.orbit_number == orbit_number,
-                FrameType.name == frame_type.name,
-            )
-        )
-        keys = set(db.execute(existing_files_q))
-
-        for header, path in group:
-            current_key = (
-                header["CADENCE"],
-                header["CAM"],
-                header.get("CCD", None),
-            )
-            if current_key in keys:
-                # File Exists
-                logger.warning(f"Frame already exists in database: {path}")
-                frame_q = (
-                    sa.select(Frame)
-                    .join(Frame.frame_type)
-                    .join(Frame.orbit)
-                    .where(
-                        Orbit.orbit_number == orbit_number,
-                        FrameType.name == frame_type,
-                    )
-                )
-                frame = db.execute(frame_q).scalar()
-            else:
-                logger.debug(f"New Frame: {path}")
-                frame = from_fits(path, frame_type=frame_type, orbit=orbit)
-                db.add(frame)
-                new_frames += 1
-
-    logger.debug(f"Found {new_frames} new frames")
-    logger.debug("Emitted frames")
-    db.flush()
+        ingest_orbit(db, frame_type, orbit_number, list(group))
