@@ -29,22 +29,6 @@ FITS_TO_FRAME_MAP = {
 }
 
 
-def _resolve_fits_value(header, key):
-    if isinstance(key, str):
-        return header[key]
-
-    # Assume key is iterable of primary and fallback keys
-    try:
-        return header[key[0]]
-    except KeyError:
-        # Try fallback
-        if len(key) < 2:
-            raise ValueError(
-                f"Could not resolve {key} in header. Out of fallbacks."
-            )
-        return _resolve_fits_value(header, key[1:])
-
-
 def _pull_fits_header(
     path: pathlib.Path,
 ) -> tuple[dict[str, typing.Any], pathlib.Path]:
