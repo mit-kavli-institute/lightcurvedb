@@ -1,20 +1,9 @@
 import os
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import sqlalchemy as sa
 from astropy.io import fits
-from psycopg2 import extensions as ext
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Float,
-    ForeignKey,
-    Integer,
-    Sequence,
-    SmallInteger,
-    String,
-)
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -29,64 +18,59 @@ from lightcurvedb.core.base_model import (
 )
 from lightcurvedb.core.sql import psql_safe_str
 
-
-def adapt_pathlib(path):
-    return ext.QuotedString(str(path))
-
-
-ext.register_adapter(Path, adapt_pathlib)
-
-
 _FRAME_MAPPER_LOOKUP = {
-    "INT_TIME": ("cadence_type", Column(SmallInteger, index=True)),
-    "CAM": ("camera", Column(SmallInteger, index=True)),
-    "CAMNUM": ("camera", Column(SmallInteger, index=True, nullable=True)),
-    "CCD": ("ccd", Column(SmallInteger, index=True, nullable=True)),
-    "CADENCE": ("cadence", Column(Integer, index=True)),
-    "TIME": ("gps_time", Column(DOUBLE_PRECISION)),
-    "STARTTJD": ("start_tjd", Column(DOUBLE_PRECISION)),
-    "MIDTJD": ("mid_tjd", Column(DOUBLE_PRECISION)),
-    "ENDTJD": ("end_tjd", Column(DOUBLE_PRECISION)),
-    "EXPTIME": ("exp_time", Column(DOUBLE_PRECISION)),
-    "QUAL_BIT": ("quality_bit", Column(Boolean)),
-    "FINE": ("fine_pointing", Column(Boolean)),
-    "COARSE": ("coarse_pointing", Column(Boolean)),
-    "RW_DESAT": ("reaction_wheel_desaturation", Column(Boolean)),
-    "SIMPLE": ("simple", Column(Boolean, nullable=True)),
-    "BITPIX": ("bit_pix", Column(SmallInteger, nullable=True)),
-    "NAXIS": ("n_axis", Column(SmallInteger, nullable=True)),
-    "EXTENDED": ("extended", Column(Boolean, nullable=True)),
-    "ACS_MODE": ("acs_mode", Column(String, nullable=True)),
-    "PIX_CAT": ("pix_cat", Column(Integer, nullable=True)),
-    "REQUANT": ("requant", Column(Integer, nullable=True)),
-    "DIFF_HUF": ("huffman_difference", Column(Integer, nullable=True)),
-    "PRIM_HUF": ("huffman_prime", Column(Integer, nullable=True)),
-    "SPM": ("spm", Column(Integer, nullable=True)),
-    "CRM": ("cosmic_ray_mitigation", Column(Boolean, nullable=True)),
-    "ORB_SEG": ("orbital_segment", Column(String, nullable=True)),
-    "SCIPIXS": ("science_pixels", Column(String, nullable=True)),
-    "GAIN_A": ("gain_a", Column(Float, nullable=True)),
-    "GAIN_B": ("gain_b", Column(Float, nullable=True)),
-    "GAIN_C": ("gain_c", Column(Float, nullable=True)),
-    "GAIN_D": ("gain_d", Column(Float, nullable=True)),
-    "UNITS": ("units", Column(String, nullable=True)),
-    "EQUINOX": ("equinox", Column(Float, nullable=True)),
-    "INSTRUME": ("instrument", Column(String, nullable=True)),
-    "TELESCOP": ("telescope", Column(String, nullable=True)),
-    "MJD-BEG": ("mjd-beg", Column(Float, nullable=True)),
-    "MJD-END": ("mjd-end", Column(Float, nullable=True)),
-    "TESS_X": ("tess_x_position", Column(Float, nullable=True)),
-    "TESS_Y": ("tess_y_position", Column(Float, nullable=True)),
-    "TESS_Z": ("tess_z_position", Column(Float, nullable=True)),
-    "TESS_VX": ("tess_x_velocity", Column(Float, nullable=True)),
-    "TESS_VY": ("tess_y_velocity", Column(Float, nullable=True)),
-    "TESS_VZ": ("tess_z_velocity", Column(Float, nullable=True)),
-    "RA_TARG": ("target_ra", Column(Float, nullable=True)),
-    "DEC_TARG": ("target_dec", Column(Float, nullable=True)),
-    "WCSGDF": ("wcsgdf", Column(Float, nullable=True)),
-    "CHECKSUM": ("checksum", Column(String, nullable=True)),
-    "DATASUM": ("datasum", Column(Integer, nullable=True)),
-    "COMMENT": ("comment", Column(String, nullable=True)),
+    "INT_TIME": ("cadence_type", sa.Column(sa.SmallInteger, index=True)),
+    "CAM": ("camera", sa.Column(sa.SmallInteger, index=True)),
+    "CAMNUM": (
+        "camera",
+        sa.Column(sa.SmallInteger, index=True, nullable=True),
+    ),
+    "CCD": ("ccd", sa.Column(sa.SmallInteger, index=True, nullable=True)),
+    "CADENCE": ("cadence", sa.Column(sa.Integer, index=True)),
+    "TIME": ("gps_time", sa.Column(DOUBLE_PRECISION)),
+    "STARTTJD": ("start_tjd", sa.Column(DOUBLE_PRECISION)),
+    "MIDTJD": ("mid_tjd", sa.Column(DOUBLE_PRECISION)),
+    "ENDTJD": ("end_tjd", sa.Column(DOUBLE_PRECISION)),
+    "EXPTIME": ("exp_time", sa.Column(DOUBLE_PRECISION)),
+    "QUAL_BIT": ("quality_bit", sa.Column(sa.Boolean)),
+    "FINE": ("fine_pointing", sa.Column(sa.Boolean)),
+    "COARSE": ("coarse_pointing", sa.Column(sa.Boolean)),
+    "RW_DESAT": ("reaction_wheel_desaturation", sa.Column(sa.Boolean)),
+    "SIMPLE": ("simple", sa.Column(sa.Boolean, nullable=True)),
+    "BITPIX": ("bit_pix", sa.Column(sa.SmallInteger, nullable=True)),
+    "NAXIS": ("n_axis", sa.Column(sa.SmallInteger, nullable=True)),
+    "EXTENDED": ("extended", sa.Column(sa.Boolean, nullable=True)),
+    "ACS_MODE": ("acs_mode", sa.Column(sa.String, nullable=True)),
+    "PIX_CAT": ("pix_cat", sa.Column(sa.Integer, nullable=True)),
+    "REQUANT": ("requant", sa.Column(sa.Integer, nullable=True)),
+    "DIFF_HUF": ("huffman_difference", sa.Column(sa.Integer, nullable=True)),
+    "PRIM_HUF": ("huffman_prime", sa.Column(sa.Integer, nullable=True)),
+    "SPM": ("spm", sa.Column(sa.Integer, nullable=True)),
+    "CRM": ("cosmic_ray_mitigation", sa.Column(sa.Boolean, nullable=True)),
+    "ORB_SEG": ("orbital_segment", sa.Column(sa.String, nullable=True)),
+    "SCIPIXS": ("science_pixels", sa.Column(sa.String, nullable=True)),
+    "GAIN_A": ("gain_a", sa.Column(sa.Float, nullable=True)),
+    "GAIN_B": ("gain_b", sa.Column(sa.Float, nullable=True)),
+    "GAIN_C": ("gain_c", sa.Column(sa.Float, nullable=True)),
+    "GAIN_D": ("gain_d", sa.Column(sa.Float, nullable=True)),
+    "UNITS": ("units", sa.Column(sa.String, nullable=True)),
+    "EQUINOX": ("equinox", sa.Column(sa.Float, nullable=True)),
+    "INSTRUME": ("instrument", sa.Column(sa.String, nullable=True)),
+    "TELESCOP": ("telescope", sa.Column(sa.String, nullable=True)),
+    "MJD-BEG": ("mjd-beg", sa.Column(sa.Float, nullable=True)),
+    "MJD-END": ("mjd-end", sa.Column(sa.Float, nullable=True)),
+    "TESS_X": ("tess_x_position", sa.Column(sa.Float, nullable=True)),
+    "TESS_Y": ("tess_y_position", sa.Column(sa.Float, nullable=True)),
+    "TESS_Z": ("tess_z_position", sa.Column(sa.Float, nullable=True)),
+    "TESS_VX": ("tess_x_velocity", sa.Column(sa.Float, nullable=True)),
+    "TESS_VY": ("tess_y_velocity", sa.Column(sa.Float, nullable=True)),
+    "TESS_VZ": ("tess_z_velocity", sa.Column(sa.Float, nullable=True)),
+    "RA_TARG": ("target_ra", sa.Column(sa.Float, nullable=True)),
+    "DEC_TARG": ("target_dec", sa.Column(sa.Float, nullable=True)),
+    "WCSGDF": ("wcsgdf", sa.Column(sa.Float, nullable=True)),
+    "CHECKSUM": ("checksum", sa.Column(sa.String, nullable=True)),
+    "DATASUM": ("datasum", sa.Column(sa.Integer, nullable=True)),
+    "COMMENT": ("comment", sa.Column(sa.String, nullable=True)),
 }
 
 
@@ -94,7 +78,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -213,18 +197,18 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
 
     # Model attributes
     id: Mapped[int] = mapped_column(
-        Sequence("frames_id_seq", cache=2400), primary_key=True
+        sa.Sequence("frames_id_seq", cache=2400), primary_key=True
     )
     stray_light: Mapped[Optional[bool]]
-    _file_path = Column("file_path", String, nullable=False, unique=True)
+    _file_path = sa.Column("file_path", sa.String, nullable=False, unique=True)
 
     # Foreign Keys
     orbit_id: Mapped[int] = mapped_column(
-        ForeignKey("orbits.id", ondelete="RESTRICT"),
+        sa.ForeignKey("orbits.id", ondelete="RESTRICT"),
         index=True,
     )
     frame_type_id: Mapped[int] = mapped_column(
-        ForeignKey(FrameType.id, ondelete="RESTRICT"),
+        sa.ForeignKey(FrameType.id, ondelete="RESTRICT"),
         index=True,
     )
 
@@ -298,7 +282,7 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
         """
         param = cls.cadence_type / 60
         if clamp:
-            return cast(param, Integer)
+            return cast(param, sa.Integer)
         return param
 
     @hybrid_property
