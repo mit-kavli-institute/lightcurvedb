@@ -10,10 +10,10 @@ namespaces = false
 
 [project]
 name = "lightcurvedb"
-version = "0.16.0"
 description = "SQLAlchemy models and APIs for storing lightcurve timeseries."
 authors = [{name="William Fong", email="willfong@mit.edu"}]
 readme = "README.rst"
+dynamic = ["version"]
 
 dependencies = [
     "sqlalchemy>=2.0",
@@ -36,6 +36,11 @@ dependencies = [
 
     "pyticdb @ git+ssh://git@tessgit.mit.edu/wcfong/pyticdb.git",
 ]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "lightcurvedb.__version__"}
+
 
 [project.urls]
 Home = "https://tessgit.mit.edu/wcfong/lightcurve-database"
