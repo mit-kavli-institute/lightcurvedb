@@ -136,6 +136,7 @@ def test_new_orbit_cli(db_session, data):
                     assert remote_value == check
 
                 assert remote_frame.orbit.orbit_number == header["ORBIT_ID"]
+                assert remote_frame.stray_light is not None
 
         finally:
             db.rollback()
