@@ -1,9 +1,7 @@
-import os
 from typing import Optional
 
 import numpy as np
 import sqlalchemy as sa
-from astropy.io import fits
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -293,44 +291,3 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     @classmethod
     def _tjd(cls):
         return cls.mid_tjd
-
-    def copy(self, other):
-        self.cadence_type = other.cadence_type
-        self.camera = other.camera
-        self.ccd = other.ccd
-        self.cadence = other.cadence
-        self.gps_time = other.gps_time
-        self.start_tjd = other.start_tjd
-        self.mid_tjd = other.mid_tjd
-        self.end_tjd = other.end_tjd
-        self.exp_time = other.exp_time
-        self.quality_bit = other.quality_bit
-        self.file_path = other.file_path
-        self.orbit = other.orbit
-        self.frame_type = other.frame_type
-
-    @classmethod
-    def from_fits(cls, path, cadence_type=30, frame_type=None, orbit=None):
-        abspath = os.path.abspath(path)
-        header = fits.open(abspath)[0].header
-        try:
-            return cls(
-                cadence_type=cadence_type,
-                camera=header.get("CAM", header.get("CAMNUM", None)),
-                ccd=header.get("CCD", header.get("CCDNUM", None)),
-                cadence=header["CADENCE"],
-                gps_time=header["TIME"],
-                start_tjd=header["STARTTJD"],
-                mid_tjd=header["MIDTJD"],
-                end_tjd=header["ENDTJD"],
-                exp_time=header["EXPTIME"],
-                quality_bit=header["QUAL_BIT"],
-                file_path=abspath,
-                frame_type=frame_type,
-                orbit=orbit,
-            )
-        except KeyError as e:
-            print(e)
-            print("===LOADED HEADER===")
-            print(repr(header))
-            raise
