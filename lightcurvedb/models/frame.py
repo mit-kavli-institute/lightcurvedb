@@ -172,8 +172,8 @@ class Frame(QLPModel, CreatedOnMixin):
     equinox: Mapped[Optional[float]]
     instrument: Mapped[Optional[str]]
     telescope: Mapped[Optional[str]]
-    mjd_beg: Mapped[Optional[float]]
-    mjd_end: Mapped[Optional[float]]
+    mjd_beg: Mapped[Optional[float]] = mapped_column(name="mjd-beg")
+    mjd_end: Mapped[Optional[float]] = mapped_column(name="mjd-end")
     tess_x_position: Mapped[Optional[float]]
     tess_y_position: Mapped[Optional[float]]
     tess_z_position: Mapped[Optional[float]]
