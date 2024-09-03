@@ -144,7 +144,9 @@ class Frame(QLPModel, CreatedOnMixin):
     start_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
     mid_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
     end_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
-    exposure_time: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    exposure_time: Mapped[float] = mapped_column(
+        DOUBLE_PRECISION, name="exp_time"
+    )
     quality_bit: Mapped[Optional[bool]]
     fine_pointing: Mapped[Optional[bool]]
     coarse_pointing: Mapped[Optional[bool]]
