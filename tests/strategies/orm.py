@@ -115,7 +115,7 @@ def frames(**overrides):
         start_tjd=overrides.get("start_tjd", tess_st.tjds()),
         mid_tjd=overrides.get("mid_tjd", tess_st.tjds()),
         end_tjd=overrides.get("end_tjd", tess_st.tjds()),
-        exp_time=overrides.get("exp_time", st.floats()),
+        exposure_time=overrides.get("exposure_time", st.floats()),
         quality_bit=st.booleans(),
         file_path=st.text(),
         orbit=overrides.get("orbit", st.none()),

@@ -11,7 +11,7 @@ from loguru import logger
 from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import orbits as orbit_ingestion
 from lightcurvedb.models import Frame, Orbit
-from lightcurvedb.models.frame import FrameType
+from lightcurvedb.models.frame import FRAME_MAPPER_LOOKUP, FrameType
 
 FFI_HEADER = dict[str, typing.Any]
 
@@ -78,9 +78,12 @@ def from_fits(path, frame_type=None, orbit=None):
         header = fin[0].header
 
         for attr, value in header.items():
-            safe_attr = attr.replace("-", "_")
-            if hasattr(Frame, safe_attr):
-                setattr(frame, safe_attr, value)
+            try:
+                model_attr = FRAME_MAPPER_LOOKUP[attr]
+            except KeyError:
+                continue
+            if hasattr(Frame, model_attr):
+                setattr(frame, model_attr, value)
 
         # Stray light is duplicated by camera per FFI, just grab the
         # relevant flag

@@ -10,7 +10,7 @@ from hypothesis import strategies as st
 from lightcurvedb.cli import lcdbcli
 from lightcurvedb.core.ingestors.frames import from_fits, ingest_directory
 from lightcurvedb.models import Frame, FrameType, Orbit
-from lightcurvedb.models.frame import _FRAME_MAPPER_LOOKUP
+from lightcurvedb.models.frame import FRAME_MAPPER_LOOKUP
 
 from .strategies import ingestion, orm
 
@@ -44,25 +44,27 @@ def test_frame_insertion(db_session, frame_type, orbit, frame):
 )
 @given(st.data())
 def test_from_fits(tempdir, data):
-    path, header = ingestion.simulate_fits(data, tempdir)
-    frame = from_fits(path)
+    files, headers = ingestion.simulate_tica_fits(data, tempdir)
 
-    for attr, val in header.items():
-        if hasattr(Frame, attr):
-            to_check = getattr(frame, attr)
-            if isinstance(val, float) and isinstance(to_check, float):
-                assert np.isclose(val, to_check)
-            else:
-                assert val == getattr(frame, attr)
+    for path, header in zip(files, headers):
+        frame = from_fits(path)
 
-    assert header["INT_TIME"] == frame.cadence_type
-    assert header["CAM"] == frame.camera
-    assert np.isclose(header["TIME"], frame.gps_time)
-    assert np.isclose(header["STARTTJD"], frame.start_tjd)
-    assert np.isclose(header["MIDTJD"], frame.mid_tjd)
-    assert np.isclose(header["EXPTIME"], frame.exp_time)
-    assert header["QUAL_BIT"] == frame.quality_bit
-    assert str(path) == str(frame.file_path)
+        for attr, val in header.items():
+            if hasattr(Frame, attr):
+                to_check = getattr(frame, attr)
+                if isinstance(val, float) and isinstance(to_check, float):
+                    assert np.isclose(val, to_check)
+                else:
+                    assert val == getattr(frame, attr)
+
+        assert header["INT_TIME"] == frame.cadence_type
+        assert header["CAM"] == frame.camera
+        assert np.isclose(header["TIME"], frame.gps_time)
+        assert np.isclose(header["STARTTJD"], frame.start_tjd)
+        assert np.isclose(header["MIDTJD"], frame.mid_tjd)
+        assert np.isclose(header["EXPTIME"], frame.exposure_time)
+        assert header["QUAL_BIT"] == frame.quality_bit
+        assert str(path) == str(frame.file_path)
 
 
 @settings(
@@ -130,7 +132,7 @@ def test_new_orbit_cli(db_session, data):
                 q = db.query(Frame).where(Frame.file_path == path)
                 assert q.count() == 1
                 remote_frame = db.scalar(q)
-                for key, (model_attr, _) in _FRAME_MAPPER_LOOKUP.items():
+                for key, model_attr in FRAME_MAPPER_LOOKUP.items():
                     check = header[key]
                     remote_value = getattr(remote_frame, model_attr)
                     assert remote_value == check

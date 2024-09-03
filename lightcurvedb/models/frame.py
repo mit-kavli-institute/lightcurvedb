@@ -16,59 +16,56 @@ from lightcurvedb.core.base_model import (
 )
 from lightcurvedb.core.sql import psql_safe_str
 
-_FRAME_MAPPER_LOOKUP = {
-    "INT_TIME": ("cadence_type", sa.Column(sa.SmallInteger, index=True)),
-    "CAM": ("camera", sa.Column(sa.SmallInteger, index=True)),
-    "CAMNUM": (
-        "camera",
-        sa.Column(sa.SmallInteger, index=True, nullable=True),
-    ),
-    "CCD": ("ccd", sa.Column(sa.SmallInteger, index=True, nullable=True)),
-    "CADENCE": ("cadence", sa.Column(sa.Integer, index=True)),
-    "TIME": ("gps_time", sa.Column(DOUBLE_PRECISION)),
-    "STARTTJD": ("start_tjd", sa.Column(DOUBLE_PRECISION)),
-    "MIDTJD": ("mid_tjd", sa.Column(DOUBLE_PRECISION)),
-    "ENDTJD": ("end_tjd", sa.Column(DOUBLE_PRECISION)),
-    "EXPTIME": ("exp_time", sa.Column(DOUBLE_PRECISION)),
-    "QUAL_BIT": ("quality_bit", sa.Column(sa.Boolean)),
-    "FINE": ("fine_pointing", sa.Column(sa.Boolean)),
-    "COARSE": ("coarse_pointing", sa.Column(sa.Boolean)),
-    "RW_DESAT": ("reaction_wheel_desaturation", sa.Column(sa.Boolean)),
-    "SIMPLE": ("simple", sa.Column(sa.Boolean, nullable=True)),
-    "BITPIX": ("bit_pix", sa.Column(sa.SmallInteger, nullable=True)),
-    "NAXIS": ("n_axis", sa.Column(sa.SmallInteger, nullable=True)),
-    "EXTENDED": ("extended", sa.Column(sa.Boolean, nullable=True)),
-    "ACS_MODE": ("acs_mode", sa.Column(sa.String, nullable=True)),
-    "PIX_CAT": ("pix_cat", sa.Column(sa.Integer, nullable=True)),
-    "REQUANT": ("requant", sa.Column(sa.Integer, nullable=True)),
-    "DIFF_HUF": ("huffman_difference", sa.Column(sa.Integer, nullable=True)),
-    "PRIM_HUF": ("huffman_prime", sa.Column(sa.Integer, nullable=True)),
-    "SPM": ("spm", sa.Column(sa.Integer, nullable=True)),
-    "CRM": ("cosmic_ray_mitigation", sa.Column(sa.Boolean, nullable=True)),
-    "ORB_SEG": ("orbital_segment", sa.Column(sa.String, nullable=True)),
-    "SCIPIXS": ("science_pixels", sa.Column(sa.String, nullable=True)),
-    "GAIN_A": ("gain_a", sa.Column(sa.Float, nullable=True)),
-    "GAIN_B": ("gain_b", sa.Column(sa.Float, nullable=True)),
-    "GAIN_C": ("gain_c", sa.Column(sa.Float, nullable=True)),
-    "GAIN_D": ("gain_d", sa.Column(sa.Float, nullable=True)),
-    "UNITS": ("units", sa.Column(sa.String, nullable=True)),
-    "EQUINOX": ("equinox", sa.Column(sa.Float, nullable=True)),
-    "INSTRUME": ("instrument", sa.Column(sa.String, nullable=True)),
-    "TELESCOP": ("telescope", sa.Column(sa.String, nullable=True)),
-    "MJD-BEG": ("mjd-beg", sa.Column(sa.Float, nullable=True)),
-    "MJD-END": ("mjd-end", sa.Column(sa.Float, nullable=True)),
-    "TESS_X": ("tess_x_position", sa.Column(sa.Float, nullable=True)),
-    "TESS_Y": ("tess_y_position", sa.Column(sa.Float, nullable=True)),
-    "TESS_Z": ("tess_z_position", sa.Column(sa.Float, nullable=True)),
-    "TESS_VX": ("tess_x_velocity", sa.Column(sa.Float, nullable=True)),
-    "TESS_VY": ("tess_y_velocity", sa.Column(sa.Float, nullable=True)),
-    "TESS_VZ": ("tess_z_velocity", sa.Column(sa.Float, nullable=True)),
-    "RA_TARG": ("target_ra", sa.Column(sa.Float, nullable=True)),
-    "DEC_TARG": ("target_dec", sa.Column(sa.Float, nullable=True)),
-    "WCSGDF": ("wcsgdf", sa.Column(sa.Float, nullable=True)),
-    "CHECKSUM": ("checksum", sa.Column(sa.String, nullable=True)),
-    "DATASUM": ("datasum", sa.Column(sa.Integer, nullable=True)),
-    "COMMENT": ("comment", sa.Column(sa.String, nullable=True)),
+FRAME_MAPPER_LOOKUP = {
+    "INT_TIME": "cadence_type",
+    "CAM": "camera",
+    "CAMNUM": "camera",
+    "CCD": "ccd",
+    "CADENCE": "cadence",
+    "TIME": "gps_time",
+    "STARTTJD": "start_tjd",
+    "MIDTJD": "mid_tjd",
+    "ENDTJD": "end_tjd",
+    "EXPTIME": "exposure_time",
+    "QUAL_BIT": "quality_bit",
+    "FINE": "fine_pointing",
+    "COARSE": "coarse_pointing",
+    "RW_DESAT": "reaction_wheel_desaturation",
+    "SIMPLE": "simple",
+    "BITPIX": "bit_pix",
+    "NAXIS": "n_axis",
+    "EXTENDED": "extended",
+    "ACS_MODE": "acs_mode",
+    "PIX_CAT": "pix_cat",
+    "REQUANT": "requant",
+    "DIFF_HUF": "huffman_difference",
+    "PRIM_HUF": "huffman_prime",
+    "SPM": "spm",
+    "CRM": "cosmic_ray_mitigation",
+    "ORB_SEG": "orbital_segment",
+    "SCIPIXS": "science_pixels",
+    "GAIN_A": "gain_a",
+    "GAIN_B": "gain_b",
+    "GAIN_C": "gain_c",
+    "GAIN_D": "gain_d",
+    "UNITS": "units",
+    "EQUINOX": "equinox",
+    "INSTRUME": "instrument",
+    "TELESCOP": "telescope",
+    "MJD-BEG": "mjd-beg",
+    "MJD-END": "mjd-end",
+    "TESS_X": "tess_x_position",
+    "TESS_Y": "tess_y_position",
+    "TESS_Z": "tess_z_position",
+    "TESS_VX": "tess_x_velocity",
+    "TESS_VY": "tess_y_velocity",
+    "TESS_VZ": "tess_z_velocity",
+    "RA_TARG": "target_ra",
+    "DEC_TARG": "target_dec",
+    "WCSGDF": "wcsgdf",
+    "CHECKSUM": "checksum",
+    "DATASUM": "datasum",
+    "COMMENT": "comment",
 }
 
 
@@ -85,68 +82,7 @@ class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         )
 
 
-class FrameFFIMapper(QLPModel.__class__):
-    """
-    It's really hard mapping relevant FFI headers to SQL Models as they
-    are numerous. So instead, reference the schema defined in
-    ``_FRAME_MAPPER_LOOKUP`` to build the fallback functions.
-
-    The keys within the schema are the expected names within the FFI
-    headers. The values are a 2 element tuple with the first element
-    being the human-readable column name. This name must be a valid
-    python class attribute name. The second element is the compatible
-    SQL datatype that can represent the corresponding values within the
-    FFI header.
-
-    The mapping is performed via a metaclass in order to dynamically
-    assign methods to the decorated class.
-    """
-
-    def __new__(cls, name, bases, attrs):
-        def fallback_func(model_name: str):
-            @hybrid_property
-            def method(self):
-                return getattr(self, model_name)
-
-            return method
-
-        def setter_func(method, model_name):
-            @method.inplace.setter
-            def setter(self, value):
-                setattr(self, model_name, value)
-
-            return setter
-
-        def expression_func(method, model_name):
-            @method.inplace.expression
-            @classmethod
-            def expression(cls):
-                return getattr(cls, model_name)
-
-            return expression
-
-        # Dynamically assign FFI fields, their translations, and
-        # fallback FFI Keyword
-        for ffi_name, (model_name, col) in _FRAME_MAPPER_LOOKUP.items():
-            if model_name not in attrs:
-                attrs[model_name] = col  # Avoid redefinitions
-
-            # Define hybrid properties
-            fallback = ffi_name.replace("-", "_")
-            setter_name = f"_{model_name}_setter"
-            expr_name = f"_{model_name}_expression"
-
-            fallback_method = fallback_func(model_name)
-            setter_method = setter_func(fallback_method, model_name)
-            expr_method = expression_func(fallback_method, model_name)
-
-            attrs[fallback] = fallback_method
-            attrs[setter_name] = setter_method
-            attrs[expr_name] = expr_method
-        return super().__new__(cls, name, bases, attrs)
-
-
-class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
+class Frame(QLPModel, CreatedOnMixin):
     """
     Provides ORM implementation of various Frame models
     """
@@ -199,6 +135,55 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     )
     stray_light: Mapped[Optional[bool]]
     _file_path = sa.Column("file_path", sa.String, nullable=False, unique=True)
+
+    cadence: Mapped[int] = mapped_column(index=True)
+    cadence_type: Mapped[int] = mapped_column(sa.SmallInteger)
+    camera: Mapped[int] = mapped_column(sa.SmallInteger, index=True)
+    ccd: Mapped[Optional[int]] = mapped_column(sa.SmallInteger, index=True)
+    gps_time: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    start_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    mid_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION, name="mid-tjd")
+    end_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION, name="end-tjd")
+    exposure_time: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    quality_bit: Mapped[Optional[bool]]
+    fine_pointing: Mapped[Optional[bool]]
+    coarse_pointing: Mapped[Optional[bool]]
+    reaction_wheel_desaturation: Mapped[Optional[bool]]
+    simple: Mapped[Optional[bool]]
+    bit_pix: Mapped[Optional[int]] = mapped_column(sa.SmallInteger)
+    n_axis: Mapped[Optional[int]] = mapped_column(sa.SmallInteger)
+    extended: Mapped[Optional[bool]]
+    acs_mode: Mapped[Optional[str]]
+    pix_cat: Mapped[Optional[int]]
+    requant: Mapped[Optional[int]]
+    huffman_difference: Mapped[Optional[int]]
+    huffman_prime: Mapped[Optional[int]]
+    spm: Mapped[Optional[int]]
+    cosmic_ray_mitigation: Mapped[Optional[bool]]
+    orbital_segment: Mapped[Optional[str]]
+    science_pixels: Mapped[Optional[str]]
+    gain_a: Mapped[Optional[float]]
+    gain_b: Mapped[Optional[float]]
+    gain_c: Mapped[Optional[float]]
+    gain_d: Mapped[Optional[float]]
+    units: Mapped[Optional[str]]
+    equinox: Mapped[Optional[float]]
+    instrument: Mapped[Optional[str]]
+    telescope: Mapped[Optional[str]]
+    mjd_beg: Mapped[Optional[float]]
+    mjd_end: Mapped[Optional[float]]
+    tess_x_position: Mapped[Optional[float]]
+    tess_y_position: Mapped[Optional[float]]
+    tess_z_position: Mapped[Optional[float]]
+    tess_x_velocity: Mapped[Optional[float]]
+    tess_y_velocity: Mapped[Optional[float]]
+    tess_z_velocity: Mapped[Optional[float]]
+    target_ra: Mapped[Optional[float]]
+    target_dec: Mapped[Optional[float]]
+    wcsgdf: Mapped[Optional[float]]
+    checksum: Mapped[Optional[str]]
+    datasum: Mapped[Optional[int]]
+    comment: Mapped[Optional[str]]
 
     # Foreign Keys
     orbit_id: Mapped[int] = mapped_column(
@@ -291,3 +276,7 @@ class Frame(QLPModel, CreatedOnMixin, metaclass=FrameFFIMapper):
     @classmethod
     def _tjd(cls):
         return cls.mid_tjd
+
+    @hybrid_property
+    def cam(self):
+        return self.camera
