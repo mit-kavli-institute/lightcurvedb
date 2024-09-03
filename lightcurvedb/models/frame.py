@@ -142,8 +142,8 @@ class Frame(QLPModel, CreatedOnMixin):
     ccd: Mapped[Optional[int]] = mapped_column(sa.SmallInteger, index=True)
     gps_time: Mapped[float] = mapped_column(DOUBLE_PRECISION)
     start_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
-    mid_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
-    end_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    mid_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION, name="mid-tjd")
+    end_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION, name="end-tjd")
     exposure_time: Mapped[float] = mapped_column(
         DOUBLE_PRECISION, name="exp_time"
     )
