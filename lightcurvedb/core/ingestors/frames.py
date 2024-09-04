@@ -15,19 +15,6 @@ from lightcurvedb.models.frame import FRAME_MAPPER_LOOKUP, FrameType
 
 FFI_HEADER = dict[str, typing.Any]
 
-FITS_TO_FRAME_MAP = {
-    "cadence_type": "INT_TIME",
-    "camera": ["CAM", "CAMNUM"],
-    "ccd": ["CCD", "CCDNUM"],
-    "cadence": "CADENCE",
-    "gps_time": "TIME",
-    "start_tjd": "STARTTJD",
-    "mid_tjd": "MIDTJD",
-    "end_tjd": "ENDTJD",
-    "exp_time": "EXPTIME",
-    "quality_bit": "QUAL_BIT",
-}
-
 
 def _pull_fits_header(
     path: pathlib.Path,
@@ -110,9 +97,14 @@ def ingest_orbit(
     orbit = db.scalar(orbit_q)
 
     if orbit is None:
+        logger.debug(
+            f"Determining orbit parameters for new orbit {orbit_number}"
+        )
         orbit = orbit_ingestion.orbit_from_header_group(header_group)
         db.add(orbit)
         db.flush()
+    else:
+        logger.debug(f"Mapped orbit {orbit_number} to {orbit}")
 
     existing_files_q = (
         sa.select(Frame.cadence, Frame.camera, Frame.ccd)
@@ -128,7 +120,7 @@ def ingest_orbit(
 
     frame_payload: list[Frame] = []
     for header, path in header_group:
-        key = (header["CADENCE"], header["CAM"], header.get("CCD", None))
+        key = (header["CADENCE"], header["CAMNUM"], header.get("CCD", None))
         if key in keys:
             # Frame already exists
             continue
@@ -168,4 +160,8 @@ def ingest_directory(
     )
 
     for orbit_number, group in orbit_grouped_headers:
-        ingest_orbit(db, frame_type, orbit_number, list(group))
+        fits_files = list(group)
+        logger.debug(
+            f"Processing orbit {orbit_number} with {len(fits_files)} FITS"
+        )
+        ingest_orbit(db, frame_type, orbit_number, fits_files)

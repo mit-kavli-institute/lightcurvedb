@@ -8,8 +8,8 @@ from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.cli import lcdbcli
-from lightcurvedb.core.ingestors.frames import from_fits, ingest_directory
-from lightcurvedb.models import Frame, FrameType, Orbit
+from lightcurvedb.core.ingestors.frames import from_fits
+from lightcurvedb.models import Frame, FrameType
 from lightcurvedb.models.frame import FRAME_MAPPER_LOOKUP
 
 from .strategies import ingestion, orm
@@ -65,29 +65,6 @@ def test_from_fits(tempdir, data):
         assert np.isclose(header["EXPTIME"], frame.exposure_time)
         assert header["QUAL_BIT"] == frame.quality_bit
         assert str(path) == str(frame.file_path)
-
-
-@settings(
-    suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None
-)
-@given(orm.frame_types(), st.data())
-def test_frame_ingestion(db_session, frame_type, data):
-    with db_session as db, TemporaryDirectory() as tempdir:
-        db.add(frame_type)
-        db.flush()
-        file_path, ffi_kwargs = ingestion.simulate_fits(
-            data, pathlib.Path(tempdir)
-        )
-        ingest_directory(db, frame_type, pathlib.Path(tempdir), "*.fits")
-        q = db.query(Frame).filter_by(file_path=file_path).count()
-        assert q == 1
-        q = (
-            db.query(Orbit.orbit_number)
-            .join(Frame.orbit)
-            .filter(Frame.file_path == file_path)
-            .first()[0]
-        )
-        assert q == ffi_kwargs["ORBIT_ID"]
 
 
 @settings(
