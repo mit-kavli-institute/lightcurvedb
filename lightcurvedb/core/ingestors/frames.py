@@ -1,5 +1,4 @@
 import multiprocessing as mp
-import os
 import pathlib
 import typing
 from itertools import groupby
@@ -40,13 +39,13 @@ def try_get(header, key, *fallbacks, default=None) -> typing.Any:
     return default
 
 
-def from_fits(path, frame_type=None, orbit=None):
+def from_fits_header(header: FFI_HEADER, frame_type=None, orbit=None) -> Frame:
     """
     Generates a Frame instance from a FITS file.
     Parameters
     ----------
-    path : str or pathlike
-        The path to the FITS file.
+    header : dict
+        The pulled header from a FITS file
     frame_type : FrameType, optional
         The FrameType relation for this Frame instance, by default this
         is not set (None).
@@ -59,30 +58,24 @@ def from_fits(path, frame_type=None, orbit=None):
     Frame
         The constructed frame.
     """
-    abspath = os.path.abspath(path)
     frame = Frame()
-    with fits.open(abspath) as fin:
-        header = fin[0].header
+    for attr, value in header.items():
+        try:
+            model_attr = FRAME_MAPPER_LOOKUP[attr]
+        except KeyError:
+            continue
+        if hasattr(Frame, model_attr):
+            setattr(frame, model_attr, value)
 
-        for attr, value in header.items():
-            try:
-                model_attr = FRAME_MAPPER_LOOKUP[attr]
-            except KeyError:
-                continue
-            if hasattr(Frame, model_attr):
-                setattr(frame, model_attr, value)
-
-        # Stray light is duplicated by camera per FFI, just grab the
-        # relevant flag
-        stray_light_key = f"STRAYLT{frame.camera}"
-        frame.stray_light = try_get(header, stray_light_key)
+    # Stray light is duplicated by camera per FFI, just grab the
+    # relevant flag
+    stray_light_key = f"STRAYLT{frame.camera}"
+    frame.stray_light = try_get(header, stray_light_key)
 
     if frame_type is not None:
         frame.frame_type_id = frame_type.id
     if orbit is not None:
         frame.orbit_id = orbit.id
-
-    frame.file_path = abspath
 
     return frame
 
@@ -124,7 +117,8 @@ def ingest_orbit(
         if key in keys:
             # Frame already exists
             continue
-        frame = from_fits(path, frame_type=frame_type, orbit=orbit)
+        frame = from_fits_header(header, frame_type=frame_type, orbit=orbit)
+        frame.file_path = path
         frame_payload.append(frame)
 
     logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")

@@ -8,7 +8,7 @@ from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
 
 from lightcurvedb.cli import lcdbcli
-from lightcurvedb.core.ingestors.frames import from_fits
+from lightcurvedb.core.ingestors.frames import from_fits_header
 from lightcurvedb.models import Frame, FrameType
 from lightcurvedb.models.frame import FRAME_MAPPER_LOOKUP
 
@@ -43,11 +43,12 @@ def test_frame_insertion(db_session, frame_type, orbit, frame):
     suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None
 )
 @given(st.data())
-def test_from_fits(tempdir, data):
+def test_from_fits_header(tempdir, data):
     files, headers = ingestion.simulate_tica_fits(data, tempdir)
 
     for path, header in zip(files, headers):
-        frame = from_fits(path)
+        frame = from_fits_header(header)
+        frame.file_path = path
 
         for attr, val in header.items():
             if hasattr(Frame, attr):

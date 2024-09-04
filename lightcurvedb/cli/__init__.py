@@ -1,7 +1,7 @@
 from .admin import admin
 from .apertures import add_aperture
 from .base import lcdbcli
-from .frames import add_frametype, tica
+from .frames import add_frametype
 from .lightcurves import lightcurve
 from .new_orbit import ingest_frames
 from .orbit import orbit
@@ -20,5 +20,4 @@ __all__ = [
     "lightcurve",
     "spacecraft",
     "query",
-    "tica",
 ]
