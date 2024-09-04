@@ -119,7 +119,7 @@ def ingest_orbit(
             # Frame already exists
             continue
         frame = from_fits_header(header, frame_type=frame_type, orbit=orbit)
-        frame.file_path = path
+        frame.file_path = str(path)
         frame_payload.append(frame)
 
     logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")
