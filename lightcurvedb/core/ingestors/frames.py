@@ -6,6 +6,7 @@ from itertools import groupby
 import sqlalchemy as sa
 from astropy.io import fits
 from loguru import logger
+from tqdm import tqdm
 
 from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import orbits as orbit_ingestion
@@ -143,10 +144,16 @@ def ingest_directory(
     logger.debug(f"Considering {len(files)} FITS files")
 
     if n_workers:
-        with mp.Pool(n_workers) as pool:
-            header_pairs = list(pool.imap_unordered(_pull_fits_header, files))
+        with mp.Pool(n_workers) as pool, tqdm(
+            total=len(files), unit=" FITS"
+        ) as bar:
+            header_pairs = []
+            for pair in pool.imap_unordered(_pull_fits_header, files):
+                header_pairs.append(pair)
+                bar.update()
+                bar.refresh()
     else:
-        header_pairs = list(map(_pull_fits_header, files))
+        header_pairs = list(map(_pull_fits_header, tqdm(files, unit=" FITS")))
 
     header_pairs = sorted(header_pairs, key=lambda row: row[0]["ORBIT_ID"])
     orbit_grouped_headers = groupby(
