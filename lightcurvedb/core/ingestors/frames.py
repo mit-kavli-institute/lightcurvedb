@@ -23,7 +23,7 @@ def _pull_fits_header(
     Parse the given path as a FITS file and return the primary header
     information as a python dict as well as the initial path parsed.
     """
-    with fits.open(path) as fin:
+    with fits.open(path, memmap=True) as fin:
         header = dict(fin[0].header)
     return header, path
 
