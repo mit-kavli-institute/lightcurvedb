@@ -184,7 +184,7 @@ class Frame(QLPModel, CreatedOnMixin):
     target_dec: Mapped[Optional[float]]
     wcsgdf: Mapped[Optional[float]]
     checksum: Mapped[Optional[str]]
-    datasum: Mapped[Optional[int]]
+    datasum: Mapped[Optional[int]] = mapped_column(sa.BigInteger)
     comment: Mapped[Optional[str]]
 
     # Foreign Keys
