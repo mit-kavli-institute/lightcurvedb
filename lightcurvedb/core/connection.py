@@ -1,6 +1,6 @@
 import configurables as conf
-from sqlalchemy import pool
-from sqlalchemy.orm import Session
+from sqlalchemy import URL, NullPool, create_engine, pool
+from sqlalchemy.orm import Session, sessionmaker
 
 from lightcurvedb import models
 from lightcurvedb.core import mixins
@@ -131,8 +131,34 @@ def db_from_config(
     return db_class(engine)
 
 
+@conf.configurable("Credentials")
+@conf.param("database_name")
+@conf.param("username")
+@conf.param("password")
+@conf.option("database_host", default="localhost")
+@conf.option("database_port", type=int, default=5432)
+@conf.option("dialect", default="postgresql+psycopg2")
+def configure_engine(
+    username, password, database_name, database_host, database_port
+):
+    url = URL.create(
+        "postgresql+psycopg",
+        database=database_name,
+        username=username,
+        password=password,
+        host=database_host,
+        port=database_port,
+    )
+    engine = create_engine(url, poolclass=NullPool)
+    return engine
+
+
+Session = sessionmaker(expire_on_commit=False, class_=DB)
+
+
 # Try and instantiate "global" lcdb
-try:
-    db = db_from_config(DEFAULT_CONFIG_PATH)
-except (FileNotFoundError, KeyError):
+if not DEFAULT_CONFIG_PATH.exists():
     db = None
+else:
+    Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
+    db = Session()
