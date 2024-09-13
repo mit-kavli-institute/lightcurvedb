@@ -135,7 +135,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             else:
                 bestap = bestaps[index - 1]
 
-        name = f"Aperture_{bestap:03}"
+        name = f"Aperture_{bestap: 03}"
         return self.get_aperture_id(name)
 
     def get_lightcurve_type_id(self, name):
@@ -228,7 +228,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
     def flush_array_orbit_lightcurves(self, db):
         lightcurves = self.buffers[models.ArrayOrbitLightcurve.__tablename__]
-        self.log(f"Flushing {len(lightcurves):,} lightcurves")
+        self.log(f"Flushing {len(lightcurves)} lightcurves")
         start = datetime.now()
         mgr = CopyManager(
             db.connection().connection,
@@ -347,7 +347,7 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     workers = []
     logger.debug(f"Initializing {n_processes} workers")
     for n in range(n_processes):
-        worker = WorkerClass(config, f"worker-{n:02}", **kwargs)
+        worker = WorkerClass(config, f"worker-{n: 02}", **kwargs)
         worker.start()
         workers.append(worker)
     logger.debug(f"{n_processes} workers initialized and started")

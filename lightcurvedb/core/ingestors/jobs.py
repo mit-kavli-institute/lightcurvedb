@@ -154,7 +154,7 @@ class DirectoryPlan:
         n_workers = min((len(self.source_dirs), cpu_count()))
         func = partial(look_for_relevant_files, self.db_config)
         with Pool(n_workers) as pool:
-            results = pool.imap(func, self.source_dirs)
+            results = pool.imap(func, list(self.source_dirs))
             contexts = list(chain.from_iterable(results))
 
         self._tic_ids = {int(c["tic_id"]) for c in contexts}

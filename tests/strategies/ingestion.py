@@ -3,6 +3,8 @@ Generate data and push to a static file to test for ingestion correctness
 """
 import pathlib
 from collections import namedtuple
+from itertools import product
+from shutil import rmtree
 
 import numpy as np
 from astropy.io import fits
@@ -13,9 +15,7 @@ from hypothesis import strategies as st
 from hypothesis.extra import numpy as np_st
 from hypothesis.extra import pandas as pd_st
 
-from lightcurvedb import models
 from lightcurvedb.models.camera_quaternion import get_utc_time
-from lightcurvedb.models.lightpoint import get_lightpoint_dtypes
 
 from . import orm as orm_st
 from . import tess as tess_st
@@ -154,20 +154,40 @@ def lightpoints(draw, **overrides):
     )
 
 
-@st.composite
-def lightpoint_dfs(draw):
-    return draw(
-        pd_st.data_frames(
+def lightpoint_dfs():
+    return pd_st.data_frames(
+        [
+            pd_st.column("cadence", dtype=int),
+            pd_st.column("barycentric_julian_date", dtype=float),
+            pd_st.column("data", dtype=float),
+            pd_st.column("error", dtype=float),
+            pd_st.column("x_centroid", dtype=float),
+            pd_st.column("y_centroid", dtype=float),
+            pd_st.column("quality_flag", dtype=float),
+        ]
+    )
+
+
+def lightpoint_dtypes():
+    return st.just(
+        np.dtype(
             [
-                pd_st.column("cadence", dtype=int),
-                pd_st.column("barycentric_julian_date", dtype=float),
-                pd_st.column("data", dtype=float),
-                pd_st.column("error", dtype=float),
-                pd_st.column("x_centroid", dtype=float),
-                pd_st.column("y_centroid", dtype=float),
-                pd_st.column("quality_flag", dtype=float),
+                ("cadence", int),
+                ("barycentric_julian_date", float),
+                ("data", float),
+                ("error", float),
+                ("x_centroid", float),
+                ("y_centroid", float),
+                ("quality_flag", float),
             ]
         )
+    )
+
+
+def lightpoint_arrays():
+    return np_st.arrays(
+        dtype=lightpoint_dtypes(),
+        shape=st.tuples(st.integers(min_value=1, max_value=1000), st.just(6)),
     )
 
 
@@ -198,66 +218,6 @@ def shallow_lightpoint_dfs(draw):
             ]
         )
     )
-
-
-@st.composite
-def lightpoint_arrays(draw, **overrides):
-    length = draw(overrides.get("length", st.just(20)))
-    cadence_sample = draw(cadences(length=st.just(length)))
-    bjd = draw(julian_dates(length=st.just(length)))
-    data = np.random.rand(length)
-    error = np.random.rand(length)
-    x_centroids = np.random.rand(length)
-    y_centroids = np.random.rand(length)
-    quality_flags = np.random.randint(2, size=length)
-
-    array = np.empty(
-        length,
-        dtype=get_lightpoint_dtypes(
-            "cadence",
-            "barycentric_julian_date",
-            "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
-        ),
-    )
-    array["cadence"] = cadence_sample
-    array["barycentric_julian_date"] = bjd
-    array["data"] = data
-    array["error"] = error
-    array["x_centroid"] = x_centroids
-    array["y_centroid"] = y_centroids
-    array["quality_flag"] = quality_flags
-    return draw(st.just(array))
-
-
-@st.composite
-def shallow_lightpoint_arrays(draw, **overrides):
-    length = draw(overrides.get("length", st.just(20)))
-    data = np.random.rand(length)
-    error = np.random.rand(length)
-    x_centroids = np.random.rand(length)
-    y_centroids = np.random.rand(length)
-    quality_flags = np.random.randint(2, size=length)
-
-    array = np.empty(
-        length,
-        dtype=get_lightpoint_dtypes(
-            "data",
-            "error",
-            "x_centroid",
-            "y_centroid",
-            "quality_flag",
-        ),
-    )
-    array["data"] = data
-    array["error"] = error
-    array["x_centroid"] = x_centroids
-    array["y_centroid"] = y_centroids
-    array["quality_flag"] = quality_flags
-    return draw(st.just(array))
 
 
 @st.composite
@@ -306,7 +266,7 @@ def simulate_fits(data, directory):
     basename_time = str(start.iso).replace("-", "")
 
     filename = pathlib.Path(
-        f"tess{basename_time}-{cadence:08}-{cam}-crm-ffi.fits"
+        f"tess{basename_time}-{cadence: 08}-{cam}-crm-ffi.fits"
     )
 
     hdu = fits.PrimaryHDU(ffi_data)
@@ -317,6 +277,128 @@ def simulate_fits(data, directory):
         hdr[key] = value
     hdul.writeto(directory / filename, overwrite=True)
     return directory / filename, header
+
+
+def simulate_tica_header(
+    exposure_time: float, camera: int, ccd: int, cadence: int
+):
+    return st.fixed_dictionaries(
+        {
+            "SIMPLE": st.just(True),
+            "BITPIX": st.just(32),
+            "NAXIS": st.just(2),
+            "NAXIS1": st.integers(min_value=1, max_value=2048),
+            "NAXIS2": st.integers(min_value=1, max_value=2048),
+            "EXTEND": st.just(True),
+            "BSCALE": st.just(1),
+            "BZERO": st.just(2147483648),
+            "ORBIT_ID": tess_st.orbits(),
+            "ACS_MODE": st.one_of(st.just("FP"), st.just("CPI")),
+            "SC_RA": tess_st.right_ascensions(),
+            "SC_DEC": tess_st.declinations(),
+            "SC_ROLL": tess_st.rolls(),
+            "SC_QUATX": st.floats(min_value=0, max_value=1),
+            "SC_QUATY": st.floats(min_value=0, max_value=1),
+            "SC_QUATZ": st.floats(min_value=0, max_value=1),
+            "SC_QUATQ": st.floats(min_value=0, max_value=1),
+            "TJD_ZERO": st.just(2457000.0),
+            "INT_TIME": st.just(int(exposure_time * cadence)),
+            "CAMNUM": st.just(camera),
+            "CCD": st.just(ccd),
+            "CADENCE": st.just(cadence),
+            "TIME": st.just(exposure_time * cadence),
+            "STARTTJD": st.just(exposure_time * cadence),
+            "MIDTJD": st.just(exposure_time * cadence),
+            "ENDTJD": st.just(exposure_time * cadence),
+            "EXPTIME": st.just(exposure_time),
+            "QUAL_BIT": st.booleans(),
+            "FINE": st.booleans(),
+            "COARSE": st.booleans(),
+            "RW_DESAT": st.booleans(),
+            "PIX_CAT": st.just(0),
+            "REQUANT": st.just(411),
+            "DIFF_HUF": st.just(10407),
+            "PRIM_HUF": st.just(17),
+            "SPM": st.just(2),
+            "CRM": st.just(True),
+            "ORB_SEG": st.sampled_from(["o2a", "o1a", "o1b", "o2b"]),
+            "SCIPIXS": st.just("[45:2092,1:2048]"),
+            "GAIN_A": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_B": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_C": st.floats(allow_infinity=False, allow_nan=False),
+            "GAIN_D": st.floats(allow_infinity=False, allow_nan=False),
+            "UNITS": st.just("electrons"),
+            "EQUINOX": st.just(2000),
+            "INSTRUME": st.just("TESS Photometer"),
+            "MJD-BEG": st.floats(allow_infinity=False, allow_nan=False),
+            "MJD-END": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_X": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_Y": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_Z": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VX": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VY": st.floats(allow_infinity=False, allow_nan=False),
+            "TESS_VZ": st.floats(allow_infinity=False, allow_nan=False),
+            "RA_TARG": tess_st.right_ascensions(),
+            "DEC_TARG": tess_st.declinations(),
+            "WCSGDF": st.floats(allow_infinity=False, allow_nan=False),
+            "CHECKSUM": st.integers(),
+            "DATASUM": st.integers(),
+            "COMMENT": st.just("comment"),
+        }
+    )
+
+
+def simulate_tica_fits(
+    data, raw_directory: pathlib.Path
+) -> tuple[list[pathlib.Path], list[dict]]:
+    sector = data.draw(tess_st.sectors())
+    cadences = data.draw(st.lists(st.integers(min_value=1), unique=True))
+    cameras = [1, 2, 3, 4]
+    ccds = [1, 2, 3, 4]
+    exposure_time = data.draw(
+        st.sampled_from([158.4, 1437.76728, 479.25576, 159.75192])
+    )
+    sector_string = f"s{sector: 04d}"
+    sector_directory = raw_directory / sector_string
+
+    if sector_directory.exists():
+        rmtree(sector_directory)
+    sector_directory.mkdir(parents=True)
+
+    for camera, ccd in product(cameras, ccds):
+        subdir = sector_directory / f"cam{camera}-ccd{ccd}"
+        subdir.mkdir()
+
+    files: list[pathlib.Path] = []
+    headers: list[dict] = []
+
+    for camera, ccd, cadence in product(cameras, ccds, cadences):
+        subdir = sector_directory / f"cam{camera}-ccd{ccd}"
+
+        header = data.draw(
+            simulate_tica_header(exposure_time, camera, ccd, cadence)
+        )
+        ffi_data = data.draw(
+            np_st.arrays(np.int32, (header["NAXIS1"], header["NAXIS2"]))
+        )
+        hdu = fits.PrimaryHDU(ffi_data)
+        hdr = hdu.header
+        hdul = fits.HDUList([hdu])
+
+        for key, value in header.items():
+            hdr[key] = value
+
+        # hlsp_tica_tess_ffi_s0081-o2-00990440-cam1-ccd1_tess_v01_img.fits
+        filename = (
+            f"hlsp_tica_tess_ffi_{sector_string}-{header['ORB_SEG'][:2]}"
+            f"-{cadence: 08d}-cam{header['CAMNUM']}-ccd{header['CCD']}_tess"
+            "v01_img.fits"
+        )
+        hdul.writeto(subdir / filename, overwrite=True)
+        files.append(subdir / filename)
+        headers.append(header)
+
+    return files, headers
 
 
 def simulate_h5_file(
@@ -341,37 +423,35 @@ def simulate_h5_file(
     with H5File(directory / filename, "w") as h5:
         lc = h5.create_group("LightCurve")
         lc.create_dataset("Cadence", data=background_lc["cadence"])
-        lc.create_dataset(
-            "BJD", data=background_lc["barycentric_julian_date"][0]
-        )
-        lc.create_dataset("X", data=background_lc["x_centroid"][0])
-        lc.create_dataset("Y", data=background_lc["y_centroid"][0])
+        lc.create_dataset("BJD", data=background_lc["barycentric_julian_date"])
+        lc.create_dataset("X", data=background_lc["x_centroid"])
+        lc.create_dataset("Y", data=background_lc["y_centroid"])
 
         photometry = lc.create_group("AperturePhotometry")
         for ap in apertures:
-            note(photometry.keys())
+            note(str(photometry.keys()))
             api = photometry.create_group(ap)
-            api.create_dataset("X", data=background_lc["x_centroid"][0])
-            api.create_dataset("Y", data=background_lc["y_centroid"][0])
+            api.create_dataset("X", data=background_lc["x_centroid"])
+            api.create_dataset("Y", data=background_lc["y_centroid"])
             api.create_dataset(
-                "QualityFlag", data=background_lc["quality_flag"][0]
+                "QualityFlag", data=background_lc["quality_flag"]
             )
 
             for lightcurve_type in lightcurve_types:
-                sample = data.draw(shallow_lightpoint_arrays())
+                sample = data.draw(lightpoint_arrays())
                 data_gen_ref["photometry"][(ap, lightcurve_type)] = sample
                 try:
-                    api.create_dataset(lightcurve_type, data=sample["data"][0])
+                    api.create_dataset(lightcurve_type, data=sample["data"])
                 except ValueError:
                     raise ValueError(
                         f"{api.keys()}, {lightcurve_type}, {lightcurve_types}"
                     )
                 api.create_dataset(
-                    f"{lightcurve_type}Error", data=sample["error"][0]
+                    f"{lightcurve_type}Error", data=sample["error"]
                 )
         bg = lc.create_group(background_type)
-        bg.create_dataset("Value", data=background_lc["data"][0])
-        bg.create_dataset("Error", data=background_lc["error"][0])
+        bg.create_dataset("Value", data=background_lc["data"])
+        bg.create_dataset("Error", data=background_lc["error"])
 
     return directory / filename, data_gen_ref
 
@@ -449,9 +529,9 @@ def simulate_lightcurve_ingestion_environment(
 
     frame_type = data.draw(orm_st.frame_types())
     orbit = data.draw(orm_st.orbits())
-    orbit.id = 1
     db.add(orbit)
     db.add(frame_type)
+    db.flush()
 
     run_path = directory / pathlib.Path(
         f"orbit-{orbit.orbit_number}", "ffi", "run"
@@ -472,26 +552,27 @@ def simulate_lightcurve_ingestion_environment(
     lightcurve_dump_path = directory / subpath
     lightcurve_dump_path.mkdir(parents=True)
 
-    background_type = models.LightcurveType(name="Background")
+    background_type = data.draw(
+        orm_st.lightcurve_types(name=st.just("Background"))
+    )
     magnitude_types = [
-        models.LightcurveType(name="RawMagnitude"),
-        models.LightcurveType(name="KSPMagnitude"),
+        data.draw(orm_st.lightcurve_types(name=st.just("RawMagnitude"))),
+        data.draw(orm_st.lightcurve_types(name=st.just("KSPMagnitude"))),
     ]
 
-    background_aperture = models.Aperture(
-        name="BackgroundAperture",
-        star_radius=0,
-        inner_radius=0,
-        outer_radius=0,
+    background_aperture = data.draw(
+        orm_st.apertures(name=st.just("BackgroundAperture"))
     )
     photometric_apertures = [
-        models.Aperture(
-            name=f"Aperture_00{i}",
-            star_radius=i + 1,
-            inner_radius=i + 1,
-            outer_radius=i + 1,
+        data.draw(
+            orm_st.apertures(
+                name=st.just(f"Aperture_00{i}"),
+                star_radius=st.just(float(i)),
+                inner_radius=st.just(float(i)),
+                outer_radius=st.just(float(i)),
+            )
         )
-        for i in range(5)
+        for i in range(1, 6)
     ]
     db.add(background_type)
     db.add(background_aperture)
@@ -499,9 +580,6 @@ def simulate_lightcurve_ingestion_environment(
     db.add_all(photometric_apertures)
 
     note(f"PUSHING {photometric_apertures}")
-    note(f"{db.query(models.Aperture).all()}")
-
-    db.commit()
     quality_flags = []
     for ith, cadence in enumerate(cadences):
         frame = data.draw(
@@ -515,7 +593,6 @@ def simulate_lightcurve_ingestion_environment(
         )
         frame.file_path = f"{frame.cadence}_{frame.file_path}"
         db.add(frame)
-        db.flush()
         quality_flags.append((cadence, int(frame.quality_bit)))
 
     # Generate tic parameters
@@ -535,4 +612,5 @@ def simulate_lightcurve_ingestion_environment(
             ["RawMagnitude", "KSPMagnitude"],
             tic_id=st.just(parameters["tic_id"]),
         )
+    db.flush()
     return run_path, lightcurve_dump_path

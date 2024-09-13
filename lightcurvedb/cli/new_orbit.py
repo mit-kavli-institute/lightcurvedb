@@ -13,14 +13,14 @@ from lightcurvedb.models import FrameType
 @click.pass_context
 @click.argument("ingest_directories", type=pathlib.Path, nargs=-1)
 @click.option("--frame-type-name", type=str, default="Raw FFI")
-@click.option("--ffi-subdir", type=pathlib.Path, default="ffi_fits")
 @click.option("--quaternion-subdir", type=pathlib.Path, default="hk")
+@click.option("--n-workers", type=int, default=1)
 def ingest_frames(
     ctx,
     ingest_directories: list[pathlib.Path],
     frame_type_name: str,
-    ffi_subdir: pathlib.Path,
     quaternion_subdir: pathlib.Path,
+    n_workers: int,
 ):
     with db_from_config(ctx.obj["dbconf"]) as db:
         frame_type = (
@@ -40,7 +40,7 @@ def ingest_frames(
         for orbit_directory in ingest_directories:
             # Ingest Camera Quaternion Files
             quaternion_path = orbit_directory / quaternion_subdir
-            ffi_path = orbit_directory / ffi_subdir
+            ffi_path = orbit_directory
 
             logger.debug(
                 f"Looking for camera quaternions in {quaternion_path}"
@@ -51,9 +51,12 @@ def ingest_frames(
 
             logger.debug(f"Looking for FFI files in {ffi_path}")
             # Ingest FITS frames
-            frames.ingest_directory(db, frame_type, ffi_path, "*.fits")
+            frames.ingest_directory(
+                db, frame_type, ffi_path, "*.fits", n_workers=n_workers
+            )
         if not ctx.obj["dryrun"]:
             db.commit()
         else:
             click.echo("Dryrun")
             db.rollback()
+    return 0

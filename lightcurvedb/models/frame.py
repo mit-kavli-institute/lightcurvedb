@@ -1,21 +1,11 @@
-import os
-from pathlib import Path
+from typing import Optional
 
 import numpy as np
-from astropy.io import fits
-from psycopg2 import extensions as ext
-from sqlalchemy import (
-    Boolean,
-    Column,
-    ForeignKey,
-    Integer,
-    Sequence,
-    SmallInteger,
-    String,
-)
+import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 from sqlalchemy.sql.expression import cast
 
@@ -24,22 +14,66 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
-from lightcurvedb.core.fields import high_precision_column
 from lightcurvedb.core.sql import psql_safe_str
 
-
-def adapt_pathlib(path):
-    return ext.QuotedString(str(path))
-
-
-ext.register_adapter(Path, adapt_pathlib)
+FRAME_MAPPER_LOOKUP = {
+    "INT_TIME": "cadence_type",
+    "CAM": "camera",
+    "CAMNUM": "camera",
+    "CCD": "ccd",
+    "CADENCE": "cadence",
+    "TIME": "gps_time",
+    "STARTTJD": "start_tjd",
+    "MIDTJD": "mid_tjd",
+    "ENDTJD": "end_tjd",
+    "EXPTIME": "exposure_time",
+    "QUAL_BIT": "quality_bit",
+    "FINE": "fine_pointing",
+    "COARSE": "coarse_pointing",
+    "RW_DESAT": "reaction_wheel_desaturation",
+    "SIMPLE": "simple",
+    "BITPIX": "bit_pix",
+    "NAXIS": "n_axis",
+    "EXTENDED": "extended",
+    "ACS_MODE": "acs_mode",
+    "PIX_CAT": "pix_cat",
+    "REQUANT": "requant",
+    "DIFF_HUF": "huffman_difference",
+    "PRIM_HUF": "huffman_prime",
+    "SPM": "spm",
+    "CRM": "cosmic_ray_mitigation",
+    "ORB_SEG": "orbital_segment",
+    "SCIPIXS": "science_pixels",
+    "GAIN_A": "gain_a",
+    "GAIN_B": "gain_b",
+    "GAIN_C": "gain_c",
+    "GAIN_D": "gain_d",
+    "UNITS": "units",
+    "EQUINOX": "equinox",
+    "INSTRUME": "instrument",
+    "TELESCOP": "telescope",
+    "MJD-BEG": "mjd-beg",
+    "MJD-END": "mjd-end",
+    "TESS_X": "tess_x_position",
+    "TESS_Y": "tess_y_position",
+    "TESS_Z": "tess_z_position",
+    "TESS_VX": "tess_x_velocity",
+    "TESS_VY": "tess_y_velocity",
+    "TESS_VZ": "tess_z_velocity",
+    "RA_TARG": "target_ra",
+    "DEC_TARG": "target_dec",
+    "WCSGDF": "wcsgdf",
+    "CHECKSUM": "checksum",
+    "DATASUM": "datasum",
+    "COMMENT": "comment",
+}
 
 
 class FrameType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     """Describes the numerous frame types"""
 
     __tablename__ = "frametypes"
-    id = Column(SmallInteger, primary_key=True, unique=True)
+    id: Mapped[int] = mapped_column(sa.SmallInteger, primary_key=True)
     frames = relationship("Frame", back_populates="frame_type")
 
     def __repr__(self):
@@ -96,34 +130,70 @@ class Frame(QLPModel, CreatedOnMixin):
     FRAME_COMP_DTYPE = [("orbit_id", np.int32)] + FRAME_DTYPE
 
     # Model attributes
-    id = Column(
-        Integer, Sequence("frames_id_seq", cache=2400), primary_key=True
+    id: Mapped[int] = mapped_column(
+        sa.Sequence("frames_id_seq", cache=2400), primary_key=True
     )
-    cadence_type = Column(SmallInteger, index=True, nullable=False)
-    camera = Column(SmallInteger, index=True, nullable=False)
-    ccd = Column(SmallInteger, index=True, nullable=True)
-    cadence = Column(Integer, index=True, nullable=False)
+    stray_light: Mapped[Optional[bool]]
+    _file_path = sa.Column("file_path", sa.String, nullable=False, unique=True)
 
-    gps_time = high_precision_column(nullable=False)
-    start_tjd = high_precision_column(nullable=False)
-    mid_tjd = high_precision_column(nullable=False)
-    end_tjd = high_precision_column(nullable=False)
-    exp_time = high_precision_column(nullable=False)
-
-    quality_bit = Column(Boolean, nullable=False)
-
-    _file_path = Column("file_path", String, nullable=False, unique=True)
+    cadence: Mapped[int] = mapped_column(index=True)
+    cadence_type: Mapped[int] = mapped_column(sa.SmallInteger)
+    camera: Mapped[int] = mapped_column(sa.SmallInteger, index=True)
+    ccd: Mapped[Optional[int]] = mapped_column(sa.SmallInteger, index=True)
+    gps_time: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    start_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    mid_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    end_tjd: Mapped[float] = mapped_column(DOUBLE_PRECISION)
+    exposure_time: Mapped[float] = mapped_column(
+        DOUBLE_PRECISION, name="exp_time"
+    )
+    quality_bit: Mapped[Optional[bool]]
+    fine_pointing: Mapped[Optional[bool]]
+    coarse_pointing: Mapped[Optional[bool]]
+    reaction_wheel_desaturation: Mapped[Optional[bool]]
+    simple: Mapped[Optional[bool]]
+    bit_pix: Mapped[Optional[int]] = mapped_column(sa.SmallInteger)
+    n_axis: Mapped[Optional[int]] = mapped_column(sa.SmallInteger)
+    extended: Mapped[Optional[bool]]
+    acs_mode: Mapped[Optional[str]]
+    pix_cat: Mapped[Optional[int]]
+    requant: Mapped[Optional[int]]
+    huffman_difference: Mapped[Optional[int]]
+    huffman_prime: Mapped[Optional[int]]
+    spm: Mapped[Optional[int]]
+    cosmic_ray_mitigation: Mapped[Optional[bool]]
+    orbital_segment: Mapped[Optional[str]]
+    science_pixels: Mapped[Optional[str]]
+    gain_a: Mapped[Optional[float]]
+    gain_b: Mapped[Optional[float]]
+    gain_c: Mapped[Optional[float]]
+    gain_d: Mapped[Optional[float]]
+    units: Mapped[Optional[str]]
+    equinox: Mapped[Optional[float]]
+    instrument: Mapped[Optional[str]]
+    telescope: Mapped[Optional[str]]
+    mjd_beg: Mapped[Optional[float]] = mapped_column(name="mjd-beg")
+    mjd_end: Mapped[Optional[float]] = mapped_column(name="mjd-end")
+    tess_x_position: Mapped[Optional[float]]
+    tess_y_position: Mapped[Optional[float]]
+    tess_z_position: Mapped[Optional[float]]
+    tess_x_velocity: Mapped[Optional[float]]
+    tess_y_velocity: Mapped[Optional[float]]
+    tess_z_velocity: Mapped[Optional[float]]
+    target_ra: Mapped[Optional[float]]
+    target_dec: Mapped[Optional[float]]
+    wcsgdf: Mapped[Optional[float]]
+    checksum: Mapped[Optional[str]]
+    datasum: Mapped[Optional[int]] = mapped_column(sa.BigInteger)
+    comment: Mapped[Optional[str]]
 
     # Foreign Keys
-    orbit_id = Column(
-        Integer,
-        ForeignKey("orbits.id", ondelete="RESTRICT"),
-        nullable=False,
+    orbit_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("orbits.id", ondelete="RESTRICT"),
         index=True,
     )
-    frame_type_id = Column(
-        ForeignKey(FrameType.id, ondelete="RESTRICT"),
-        nullable=False,
+    frame_type_id: Mapped[int] = mapped_column(
+        sa.ForeignKey(FrameType.id, ondelete="RESTRICT"),
         index=True,
     )
 
@@ -131,6 +201,19 @@ class Frame(QLPModel, CreatedOnMixin):
     orbit = relationship("Orbit", back_populates="frames")
     frame_type = relationship("FrameType", back_populates="frames")
     lightcurves = association_proxy("lightcurveframemapping", "lightcurve")
+
+    @hybrid_property
+    def file_path(self):
+        return self._file_path
+
+    @file_path.inplace.setter
+    def _file_path_setter(self, value):
+        self._file_path = psql_safe_str(value)
+
+    @file_path.inplace.expression
+    @classmethod
+    def _file_path_expression(cls):
+        return cls._file_path
 
     @classmethod
     def get_legacy_attrs(cls, dtype_override=None):
@@ -160,8 +243,9 @@ class Frame(QLPModel, CreatedOnMixin):
         """
         return self.cadence_type // 60 if clamp else self.cadence_type / 60
 
-    @cadence_type_in_minutes.expression
-    def cadence_type_in_minutes(cls, clamp=False):
+    @cadence_type_in_minutes.inplace.expression
+    @classmethod
+    def _cadence_type_in_minutes(cls, clamp=False):
         """
         Evaluate an expression using cadence_type in minutes.
 
@@ -183,70 +267,18 @@ class Frame(QLPModel, CreatedOnMixin):
         """
         param = cls.cadence_type / 60
         if clamp:
-            return cast(param, Integer)
+            return cast(param, sa.Integer)
         return param
-
-    def copy(self, other):
-        self.cadence_type = other.cadence_type
-        self.camera = other.camera
-        self.ccd = other.ccd
-        self.cadence = other.cadence
-        self.gps_time = other.gps_time
-        self.start_tjd = other.start_tjd
-        self.mid_tjd = other.mid_tjd
-        self.end_tjd = other.end_tjd
-        self.exp_time = other.exp_time
-        self.quality_bit = other.quality_bit
-        self.file_path = other.file_path
-        self.orbit = other.orbit
-        self.frame_type = other.frame_type
-
-    @classmethod
-    def from_fits(cls, path, cadence_type=30, frame_type=None, orbit=None):
-        abspath = os.path.abspath(path)
-        header = fits.open(abspath)[0].header
-        try:
-            return cls(
-                cadence_type=cadence_type,
-                camera=header.get("CAM", header.get("CAMNUM", None)),
-                ccd=header.get("CCD", header.get("CCDNUM", None)),
-                cadence=header["CADENCE"],
-                gps_time=header["TIME"],
-                start_tjd=header["STARTTJD"],
-                mid_tjd=header["MIDTJD"],
-                end_tjd=header["ENDTJD"],
-                exp_time=header["EXPTIME"],
-                quality_bit=header["QUAL_BIT"],
-                file_path=abspath,
-                frame_type=frame_type,
-                orbit=orbit,
-            )
-        except KeyError as e:
-            print(e)
-            print("===LOADED HEADER===")
-            print(repr(header))
-            raise
-
-    @hybrid_property
-    def file_path(self):
-        return self._file_path
-
-    @file_path.setter
-    def file_path(self, value):
-        self._file_path = psql_safe_str(value)
-
-    @file_path.expression
-    def file_path(cls):
-        return cls._file_path
-
-    @property
-    def data(self):
-        return fits.open(self.file_path)[0].data
 
     @hybrid_property
     def tjd(self):
         return self.mid_tjd
 
-    @tjd.expression
-    def tjd(cls):
+    @tjd.inplace.expression
+    @classmethod
+    def _tjd(cls):
         return cls.mid_tjd
+
+    @hybrid_property
+    def cam(self):
+        return self.camera

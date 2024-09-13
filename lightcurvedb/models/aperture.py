@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Numeric, SmallInteger
+from sqlalchemy import Numeric, SmallInteger
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 from lightcurvedb.core.base_model import (
@@ -40,10 +40,12 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     )
 
     # Model Attributes
-    id = Column(SmallInteger, primary_key=True, unique=True)
-    star_radius = Column(Numeric, nullable=False)
-    inner_radius = Column(Numeric, nullable=False)
-    outer_radius = Column(Numeric, nullable=False)
+    id: Mapped[int] = mapped_column(
+        SmallInteger, primary_key=True, unique=True
+    )
+    star_radius: Mapped[float] = mapped_column(Numeric)
+    inner_radius: Mapped[float] = mapped_column(Numeric)
+    outer_radius: Mapped[float] = mapped_column(Numeric)
 
     # Relationships
     lightcurves = relationship(

@@ -1,23 +1,26 @@
-from sqlalchemy import Column, DateTime, Float, Integer
-from sqlalchemy.ext.hybrid import hybrid_property
+from datetime import datetime
+from decimal import Decimal
+from typing import Optional
 
-from lightcurvedb.core.base_model import QLPModel, CreatedOnMixin
-from lightcurvedb.core.fields import high_precision_column
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, mapped_column
+
+from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
 
 
 class SpacecraftEphemeris(QLPModel, CreatedOnMixin):
     __tablename__ = "spacecraftephemeris"
 
-    id = Column(Integer, primary_key=True)
-    barycentric_dynamical_time = Column(Float, unique=True)
-    calendar_date = Column(DateTime, index=True)
-    x_coordinate = high_precision_column()
-    y_coordinate = high_precision_column()
-    z_coordinate = high_precision_column()
+    id: Mapped[int] = mapped_column(primary_key=True)
+    barycentric_dynamical_time: Mapped[Decimal] = mapped_column(unique=True)
+    calendar_date: Mapped[Optional[datetime]] = mapped_column(index=True)
+    x_coordinate: Mapped[Decimal]
+    y_coordinate: Mapped[Decimal]
+    z_coordinate: Mapped[Decimal]
 
-    light_travel_time = high_precision_column()
-    range_to = high_precision_column()
-    range_rate = high_precision_column()
+    light_travel_time: Mapped[Decimal]
+    range_to: Mapped[Decimal]
+    range_rate: Mapped[Decimal]
 
     def __repr__(self):
         return (
@@ -33,6 +36,7 @@ class SpacecraftEphemeris(QLPModel, CreatedOnMixin):
             "y": self.y,
             "z": self.x,
         }
+
     @hybrid_property
     def bjd(self):
         return self.barycentric_dynamical_time
