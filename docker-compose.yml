@@ -1,0 +1,12 @@
+services:
+  db:
+    image: postgres:14
+    env_file: .env
+  tester:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - .:/testing
+    working_dir: /testing
+    command: nox
