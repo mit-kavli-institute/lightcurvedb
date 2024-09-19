@@ -1,5 +1,5 @@
 import multiprocessing as mp
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from datetime import datetime
 from random import sample
 from time import sleep, time
@@ -8,34 +8,18 @@ import cachetools
 import h5py
 import numpy as np
 from loguru import logger
-from pgcopy import CopyManager
 from sqlalchemy import Integer, cast, func
 from sqlalchemy.dialects.postgresql import insert as psql_insert
 from tqdm import tqdm
 
 from lightcurvedb import models
+from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import lightcurves as em2
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
+from lightcurvedb.models.lightcurve import ArrayOrbitLightcurve
 
 INGESTION_TELEMETRY_SLUG = "lightpoint-ingestion"
-INGESTION_COLS = (
-    "tic_id",
-    "camera",
-    "ccd",
-    "orbit_id",
-    "aperture_id",
-    "lightcurve_type_id",
-    "cadences",
-    "barycentric_julian_dates",
-    "data",
-    "errors",
-    "x_centroids",
-    "y_centroids",
-    "quality_flags",
-)
-
-ArrayLCPayload = namedtuple("ArrayLCPayload", INGESTION_COLS)
 
 
 class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
@@ -203,7 +187,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
                     aperture_id = self.get_aperture_id(ap_name)
                     lightcurve_type_id = self.get_lightcurve_type_id(type_name)
-                    lightcurve = ArrayLCPayload(
+                    lightcurve = ArrayOrbitLightcurve(
                         tic_id=em2_h5_job.tic_id,
                         camera=em2_h5_job.camera,
                         ccd=em2_h5_job.ccd,
@@ -226,16 +210,11 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                     buffer.append(lightcurve)
         self.job_queue.task_done()
 
-    def flush_array_orbit_lightcurves(self, db):
+    def flush_array_orbit_lightcurves(self, db: DB):
         lightcurves = self.buffers[models.ArrayOrbitLightcurve.__tablename__]
         self.log(f"Flushing {len(lightcurves)} lightcurves")
         start = datetime.now()
-        mgr = CopyManager(
-            db.connection().connection,
-            models.ArrayOrbitLightcurve.__tablename__,
-            INGESTION_COLS,
-        )
-        mgr.threading_copy(lightcurves)
+        db.bulk_save_objects(lightcurves)
         end = datetime.now()
 
         metric = models.QLPOperation(

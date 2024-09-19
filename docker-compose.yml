@@ -2,6 +2,13 @@ services:
   db:
     image: postgres:14
     env_file: .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser -d testdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
   tester:
     build:
       context: .
@@ -10,3 +17,6 @@ services:
       - .:/testing
     working_dir: /testing
     command: nox
+    depends_on:
+      db:
+        condition: service_healthy

@@ -24,7 +24,6 @@ dependencies = [
     "numpy>=1.12",
     "astropy>=6",
     "pandas>=2.2.0",
-    "pgcopy>=1.6.0",
     "scipy>=1.13.0",
     "pyquaternion>=0.9.9",
     "tqdm>=4.66.4",
@@ -61,8 +60,13 @@ dev = [
     "pytest-sugar",
     "pytest-xdist",
     "pytest>=8.2",
-    "tox>=4",
-    "tox-docker>=4.1.0",
+    "pytest_postgresql",
+    "nox"
+]
+
+docs = [
+    "sphinx",
+    "sphinx_click",
 ]
 
 [tool.mypy]

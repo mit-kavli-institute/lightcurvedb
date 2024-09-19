@@ -1,7 +1,8 @@
 import nox
+from nox.sessions import Session
 
 
-@nox.session(python=["3.9"])
+@nox.session(python=["3.9", "3.10", "3.11", "3.12"])
 def property_tests(session):
     spec = nox.project.load_toml("pyproject.toml")
     project_requirements = spec["project"]["dependencies"]
@@ -9,3 +10,14 @@ def property_tests(session):
     session.install(*project_requirements)
     session.install(*test_requirements)
     session.run("pytest")
+
+
+@nox.session(python=["3.9"])
+def docs(session: Session):
+    spec = nox.project.load_toml("pyproject.toml")
+    project_requirements = spec["project"]["dependencies"]
+    requirements = spec["project"]["optional-dependencies"]["docs"]
+    session.install(*project_requirements)
+    session.install(*requirements)
+
+    session.run("sphinx-build", "-M", "html", "docs/source/", "docs/build/")

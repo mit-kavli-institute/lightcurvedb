@@ -10,14 +10,14 @@ from lightcurvedb.core.connection import DB
 
 
 @pytest.fixture
-def db_session(postgresql):
+def db_session():
     url = sa.URL.create(
         "postgresql+psycopg",
-        database=postgresql.info.dbname,
-        username=postgresql.info.user,
-        password=postgresql.info.password,
-        host=postgresql.info.host,
-        port=postgresql.info.port,
+        database="postgres",
+        username="postgres",
+        password="postgres",
+        host="db",
+        port=5432,
     )
 
     engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
