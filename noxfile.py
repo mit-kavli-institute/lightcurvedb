@@ -9,7 +9,8 @@ def property_tests(session):
     test_requirements = spec["project"]["optional-dependencies"]["dev"]
     session.install(*project_requirements)
     session.install(*test_requirements)
-    session.run("pytest")
+    flags = session.posargs if session.posargs else []
+    session.run("pytest", *flags)
 
 
 @nox.session(python=["3.9"])
