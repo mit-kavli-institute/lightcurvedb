@@ -110,7 +110,7 @@ def with_sqlite(function):
     @wraps(function)
     def wrapper(db_path, *args, **kwargs):
         path = pathlib.Path(db_path)
-        url = f"sqlite:///{path}"
+        url = f"sqlite:///{path}"  # noqa
         engine = sa.create_engine(url)
         with Session(engine) as session:
             return function(session, *args, **kwargs)

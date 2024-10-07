@@ -3,10 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["lightcurvedb"]
-exclude = []
-namespaces = false
+where = ["src"]
 
 [project]
 name = "lightcurvedb"
@@ -31,7 +28,6 @@ dependencies = [
     "cachetools>=5.3.2",
     "packaging>=23.2",
     "tabulate>=0.9.0",
-    "configurables @ git+ssh://git@tessgit.mit.edu/wcfong/configurables.git",
 
     "pyticdb @ git+ssh://git@tessgit.mit.edu/wcfong/pyticdb.git",
 ]

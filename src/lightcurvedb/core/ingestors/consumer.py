@@ -32,7 +32,7 @@ class BufferedDatabaseIngestor(Process):
 
     def log_telemetry(self):
         for name, elapsed in self.telemetry.items():
-            self.log(f"{name} took {elapsed:.2f}s")
+            self.log(f"{name} took {elapsed: .2f}s")
 
     @contextmanager
     def record_elapsed(self, telemetry_type, *resources):

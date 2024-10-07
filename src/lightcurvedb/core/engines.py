@@ -37,8 +37,8 @@ def thread_safe_engine(
     Create an SQLAlchemy engine from the configuration path.
     """
     url = (
-        f"{dialect}://{username}:{password}"
-        f"@{database_host}:{database_port}/{database_name}"
+        f"{dialect}://{username}:{password}"  # noqa
+        f"@{database_host}:{database_port}/{database_name}"  # noqa
     )
     engine = create_engine(url, **engine_overrides)
     return __register_process_guards__(engine)

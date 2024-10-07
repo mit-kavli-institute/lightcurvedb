@@ -33,7 +33,6 @@ if sys.version_info.major < 3:
             instance = self.EmissionModel(**emission_kwargs)
             return instance
 
-
 else:
     from abc import ABC, abstractmethod
 
