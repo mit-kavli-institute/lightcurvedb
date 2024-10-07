@@ -103,7 +103,6 @@ def db_from_config(
     database_host,
     database_port,
     dialect,
-    db_class=DB,
     **engine_kwargs
 ):
     """
@@ -128,7 +127,8 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    return db_class(engine)
+    session = Session(bind=engine)
+    return session
 
 
 @conf.configurable("Credentials")
@@ -153,12 +153,11 @@ def configure_engine(
     return engine
 
 
-Session = sessionmaker(expire_on_commit=False, class_=DB)
-
+LCDB_Session = sessionmaker(expire_on_commit=False, class_=DB)
 
 # Try and instantiate "global" lcdb
 if not DEFAULT_CONFIG_PATH.exists():
     db = None
 else:
-    Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
-    db = Session()
+    LCDB_Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
+    db = LCDB_Session()
