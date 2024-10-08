@@ -282,3 +282,12 @@ class Frame(QLPModel, CreatedOnMixin):
     @hybrid_property
     def cam(self):
         return self.camera
+
+    @hybrid_property
+    def exp_time(self):
+        return self.exposure_time
+
+    @exp_time.inplace.expression
+    @classmethod
+    def _exp_time(cls):
+        return cls.exposure_time
