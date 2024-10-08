@@ -95,7 +95,7 @@ class DB(
 @conf.param("password")
 @conf.option("database_host", default="localhost")
 @conf.option("database_port", type=int, default=5432)
-@conf.option("dialect", default="postgresql+psycopg2")
+@conf.option("dialect", default="postgresql+psycopg")
 def db_from_config(
     database_name,
     username,
@@ -103,7 +103,6 @@ def db_from_config(
     database_host,
     database_port,
     dialect,
-    db_class=DB,
     **engine_kwargs
 ):
     """
@@ -128,7 +127,8 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    return db_class(engine)
+    session = Session(bind=engine)
+    return session
 
 
 @conf.configurable("Credentials")
@@ -136,7 +136,7 @@ def db_from_config(
 @conf.param("username")
 @conf.param("password")
 @conf.option("database_host", default="localhost")
-@conf.option("database_port", type=int, default=5432)
+@conf.option("database_port", default=5432)
 def configure_engine(
     username, password, database_name, database_host, database_port
 ):
@@ -152,12 +152,11 @@ def configure_engine(
     return engine
 
 
-Session = sessionmaker(expire_on_commit=False, class_=DB)
-
+LCDB_Session = sessionmaker(expire_on_commit=False, class_=DB)
 
 # Try and instantiate "global" lcdb
 if not DEFAULT_CONFIG_PATH.exists():
     db = None
 else:
-    Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
-    db = Session()
+    LCDB_Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
+    db = LCDB_Session()
