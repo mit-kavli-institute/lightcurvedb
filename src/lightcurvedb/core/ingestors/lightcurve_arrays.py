@@ -333,7 +333,7 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     return workers
 
 
-def ingest_jobs(cli_context, jobs, cache_path):
+def ingest_jobs(cli_context, jobs, cache_path, poll_rate=1):
     manager = mp.Manager()
     job_queue = manager.Queue()
 
@@ -370,7 +370,7 @@ def ingest_jobs(cli_context, jobs, cache_path):
             completed_since_last_check = n_jobs_remaining - current_qsize
             n_jobs_remaining = current_qsize
             bar.update(completed_since_last_check)
-            sleep(1)
+            sleep(1 / poll_rate)
 
         job_queue.join()
 

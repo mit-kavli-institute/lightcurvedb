@@ -1,6 +1,7 @@
 import pathlib
 from tempfile import TemporaryDirectory
 
+import pytest
 import sqlalchemy as sa
 from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
@@ -73,6 +74,7 @@ def test_corrector_instantiation(isolated_database, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
+@pytest.mark.timeout(60)
 @given(st.data())
 def test_ingest(isolated_database, data):
     with TemporaryDirectory() as tempdir, isolated_database as db:
