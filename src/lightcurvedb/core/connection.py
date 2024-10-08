@@ -137,7 +137,6 @@ def db_from_config(
 @conf.param("password")
 @conf.option("database_host", default="localhost")
 @conf.option("database_port", type=int, default=5432)
-@conf.option("dialect", default="postgresql+psycopg2")
 def configure_engine(
     username, password, database_name, database_host, database_port
 ):
