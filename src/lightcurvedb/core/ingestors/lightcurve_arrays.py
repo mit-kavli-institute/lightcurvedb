@@ -135,7 +135,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             else:
                 bestap = bestaps[index - 1]
 
-        name = f"Aperture_{bestap: 03}"
+        name = f"Aperture_{bestap: 03d}"
         return self.get_aperture_id(name)
 
     def get_lightcurve_type_id(self, name):
