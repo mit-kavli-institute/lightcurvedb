@@ -60,6 +60,7 @@ def test_from_fits_header(tempdir, data):
         note(str(header))
         assert header["INT_TIME"] == frame.cadence_type
         assert header["CAM"] == frame.camera
+        assert header["CCD"] == frame.ccd
         assert np.isclose(header["TIME"], frame.gps_time)
         assert np.isclose(header["STARTTJD"], frame.start_tjd)
         assert np.isclose(header["MIDTJD"], frame.mid_tjd)

@@ -66,7 +66,8 @@ def from_fits_header(header: FFI_HEADER, frame_type=None, orbit=None) -> Frame:
         except KeyError:
             continue
         if hasattr(Frame, model_attr):
-            setattr(frame, model_attr, value)
+            if getattr(frame, model_attr) is None:
+                setattr(frame, model_attr, value)
 
     # Stray light is duplicated by camera per FFI, just grab the
     # relevant flag
