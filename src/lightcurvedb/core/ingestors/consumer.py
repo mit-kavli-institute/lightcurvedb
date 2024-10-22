@@ -1,7 +1,8 @@
+import pathlib
 import time
 from collections import defaultdict
 from contextlib import contextmanager
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from queue import Empty
 
 from loguru import logger
@@ -10,11 +11,10 @@ from lightcurvedb.core.connection import db_from_config
 
 
 class BufferedDatabaseIngestor(Process):
-    job_queue = None
     name = "Worker"
     buffer_order = []
 
-    def __init__(self, db_config, name, job_queue):
+    def __init__(self, db_config: pathlib.Path, name: str, job_queue: Queue):
         super().__init__(daemon=True, name=name)
         self.db_config = db_config
         self.name = name
@@ -128,7 +128,6 @@ class BufferedDatabaseIngestor(Process):
                     "Unhandled exception, cowardly exiting...",
                     level="exception",
                 )
-                break
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")

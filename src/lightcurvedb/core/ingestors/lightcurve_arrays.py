@@ -353,7 +353,7 @@ def ingest_jobs(cli_context, jobs, cache_path, poll_rate=1):
                 enqueue=True,
             )
 
-        workers = _initialize_workers(
+        workers: list[EM2ArrayParamSearchIngestor] = _initialize_workers(
             EM2ArrayParamSearchIngestor,
             cli_context["dbconf"],
             cli_context["n_processes"],
@@ -370,10 +370,8 @@ def ingest_jobs(cli_context, jobs, cache_path, poll_rate=1):
             completed_since_last_check = n_jobs_remaining - current_qsize
             n_jobs_remaining = current_qsize
             bar.update(completed_since_last_check)
+            for worker in workers:
+                worker.join()
             sleep(1 / poll_rate)
 
-        job_queue.join()
-
-    logger.debug("Waiting for workers to finish")
-    for worker in workers:
-        worker.join()
+    job_queue.join()

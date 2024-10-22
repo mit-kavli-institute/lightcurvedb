@@ -21,6 +21,7 @@ class H5_Job:
     camera: int
     ccd: int
     orbit_number: int
+    ttl: int = 3
 
     @classmethod
     def from_path_context(cls, context):

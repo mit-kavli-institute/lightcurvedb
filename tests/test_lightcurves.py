@@ -74,6 +74,49 @@ def test_corrector_instantiation(isolated_database, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
+@given(st.data())
+def test_lightcurve_jobs(isolated_database, data):
+    with TemporaryDirectory() as tempdir, isolated_database as db:
+        (
+            run_path,
+            directory,
+        ) = ingestion.simulate_lightcurve_ingestion_environment(
+            data, tempdir, db
+        )
+
+        frame_type = db.query(models.FrameType.name).first()[0]
+        cache_path = pathlib.Path(tempdir, "db.sqlite3")
+        contexts.make_shared_context(cache_path)
+        contexts.populate_ephemeris(cache_path, db)
+        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
+
+        plan = DirectoryPlan([directory], db.config)
+        catalog_template = (
+            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
+        )
+        quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
+
+        for catalog in plan.yield_needed_tic_catalogs(
+            path_template=catalog_template
+        ):
+            contexts.populate_tic_catalog(cache_path, catalog)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_template
+        ):
+            contexts.populate_quality_flags(cache_path, *args)
+
+        jobs = plan.get_jobs()
+        assert jobs is not None
+        assert len(jobs) == len(list(directory.glob("**/*.h5")))
+
+
+@settings(
+    deadline=None,
+    suppress_health_check=(
+        HealthCheck.too_slow,
+        HealthCheck.function_scoped_fixture,
+    ),
+)
 @pytest.mark.timeout(60)
 @given(st.data())
 def test_ingest(isolated_database, data):
@@ -107,6 +150,7 @@ def test_ingest(isolated_database, data):
             contexts.populate_quality_flags(cache_path, *args)
 
         jobs = plan.get_jobs()
+
         lightcurve_arrays.ingest_jobs(
             {
                 "log_level": "debug",
