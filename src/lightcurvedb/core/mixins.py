@@ -472,7 +472,7 @@ class LegacyAPIMixin(APIMixin):
         )
         return np.array(list(map(tuple, orbits)), dtype=m.Orbit.ORBIT_DTYPE)
 
-    def query_frames_by_orbit(self, orbit_number, camera, frame_type=None):
+    def query_frames_by_orbit(self, orbit_number, camera):
         """
         Determines the per-frame parameters of a given orbit, camera, and
         cadence type.
@@ -483,9 +483,6 @@ class LegacyAPIMixin(APIMixin):
             The physical orbit number wanted.
         camera : int
             Only frames recorded in this camera will be queried for.
-        frame_type: str, optional
-            The frame type to limit the frames to, if None 'Raw FFI' will
-            be used.
 
         Returns
         -------
@@ -503,9 +500,6 @@ class LegacyAPIMixin(APIMixin):
             .filter(
                 m.Frame.camera == camera,
                 m.Orbit.orbit_number == orbit_number,
-                m.FrameType.name == "Raw FFI"
-                if frame_type is None
-                else frame_type,
             )
             .distinct(m.Frame.cadence)
             .order_by(m.Frame.cadence.asc())
