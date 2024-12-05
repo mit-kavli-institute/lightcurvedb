@@ -507,6 +507,7 @@ class LegacyAPIMixin(APIMixin):
                 if frame_type is None
                 else frame_type,
             )
+            .distinct(m.Frame.cadence)
             .order_by(m.Frame.cadence.asc())
             .all()
         )
