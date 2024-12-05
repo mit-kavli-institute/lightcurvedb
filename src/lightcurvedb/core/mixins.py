@@ -42,16 +42,15 @@ class LightcurveTypeAPIMixin(APIMixin):
 
 class FrameAPIMixin(APIMixin):
     def get_mid_tjd_mapping(self, frame_type: typing.Union[str, None] = None):
-        if frame_type is None:
-            frame_type = "Raw FFI"
         cameras = sa.select(m.Frame.camera.distinct())
 
         tjd_q = (
             sa.select(m.Frame.cadence, m.Frame.mid_tjd)
-            .join(m.Frame.frame_type)
-            .where(m.FrameType.name == frame_type)
             .order_by(m.Frame.cadence)
         )
+
+        if frame_type is not None:
+            tjd_q = tjd_q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
 
         mapping = {}
         for (camera,) in self.execute(cameras):
@@ -88,6 +87,7 @@ class OrbitAPIMixin(APIMixin):
         orbit_number: int,
         camera: int,
         frame_type: typing.Optional[str] = None,
+        ccd: typing.Optional[int] = None,
     ):
         """
         Returns the upper and lower cadence boundaries of an orbit. Since each
@@ -100,25 +100,25 @@ class OrbitAPIMixin(APIMixin):
         camera : int
             The camera number.
         frame_type : optional, str
-            The frame type to consider. By default the type is of "Raw FFI".
-            But this can be changed for any defined ``FrameType.name``.
+            The frame type to consider.
+        ccd : optional, int
+            The CCD number.
         """
-        if frame_type is None:
-            frame_type = "Raw FFI"
-
         q = (
             sa.select(
                 sa.func.min(m.Frame.cadence).label("min_cadence"),
                 sa.func.max(m.Frame.cadence).label("max_cadence"),
             )
-            .join(m.Frame.frame_type)
             .join(m.Frame.orbit)
             .where(
-                m.FrameType.name == frame_type,
                 m.Frame.camera == camera,
                 m.Orbit.orbit_number == orbit_number,
             )
         )
+        if frame_type is not None:
+            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+        if ccd is not None:
+            q = q.where(m.Frame.ccd == ccd)
         return self.execute(q).fetchone()
 
     def query_orbit_tjd_limit(
@@ -126,6 +126,7 @@ class OrbitAPIMixin(APIMixin):
         orbit_number: int,
         camera: int,
         frame_type: typing.Optional[str] = None,
+        ccd: typing.Optional[int] = None,
     ):
         """
         Returns the upper and lower tjd boundaries of an orbit. Since each
@@ -140,8 +141,9 @@ class OrbitAPIMixin(APIMixin):
         camera : int
             The camera number.
         frame_type : optional, str
-            The frame type to consider. By default the type is of "Raw FFI".
-            But this can be changed for any defined ``FrameType.name``.
+            The frame type to consider.
+        ccd : optional, int
+            The ccd number.
 
         Returns
         -------
@@ -151,22 +153,21 @@ class OrbitAPIMixin(APIMixin):
 
         """
 
-        if frame_type is None:
-            frame_type = "Raw FFI"
-
         q = (
             sa.select(
                 sa.func.min(m.Frame.start_tjd).label("min_tjd"),
                 sa.func.max(m.Frame.end_tjd).label("max_tjd"),
             )
-            .join(m.Frame.frame_type)
             .join(m.Frame.orbit)
             .where(
-                m.FrameType.name == frame_type,
                 m.Frame.camera == camera,
                 m.Orbit.orbit_number == orbit_number,
             )
         )
+        if frame_type is not None:
+            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+        if ccd is not None:
+            q = q.where(m.Frame.ccd == ccd)
         return self.execute(q).fetchone()
 
 
@@ -472,7 +473,7 @@ class LegacyAPIMixin(APIMixin):
         )
         return np.array(list(map(tuple, orbits)), dtype=m.Orbit.ORBIT_DTYPE)
 
-    def query_frames_by_orbit(self, orbit_number, camera, frame_type=None):
+    def query_frames_by_orbit(self, orbit_number, camera):
         """
         Determines the per-frame parameters of a given orbit, camera, and
         cadence type.
@@ -483,9 +484,6 @@ class LegacyAPIMixin(APIMixin):
             The physical orbit number wanted.
         camera : int
             Only frames recorded in this camera will be queried for.
-        frame_type: str, optional
-            The frame type to limit the frames to, if None 'Raw FFI' will
-            be used.
 
         Returns
         -------
@@ -503,10 +501,8 @@ class LegacyAPIMixin(APIMixin):
             .filter(
                 m.Frame.camera == camera,
                 m.Orbit.orbit_number == orbit_number,
-                m.FrameType.name == "Raw FFI"
-                if frame_type is None
-                else frame_type,
             )
+            .distinct(m.Frame.cadence)
             .order_by(m.Frame.cadence.asc())
             .all()
         )
@@ -532,29 +528,25 @@ class LegacyAPIMixin(APIMixin):
     def get_cadences_in_orbits(self, orbit_numbers, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
-            .join(m.Frame.frame_type)
             .join(m.Frame.orbit)
             .where(
                 m.Orbit.orbit_number.in_(orbit_numbers),
-                m.FrameType.name == "Raw FFI"
-                if frame_type is None
-                else frame_type,
             )
             .order_by(m.Frame.cadence.asc())
         )
+        if frame_type is not None:
+            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
         return self.execute(q).scalars().fetchall()
 
     def get_cadences_in_sectors(self, sectors, frame_type=None):
         q = (
             sa.select(m.Frame.cadence.distinct())
-            .join(m.Frame.frame_type)
             .join(m.Frame.orbit)
             .where(
                 m.Orbit.sector.in_(sectors),
-                m.FrameType.name == "Raw FFI"
-                if frame_type is None
-                else frame_type,
             )
             .order_by(m.Frame.cadence.asc())
         )
+        if frame_type is not None:
+            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
         return self.execute(q).scalars().fetchall()
