@@ -328,6 +328,8 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     cols = ("cadence", "camera", "tjd")
     q = (
         db.query(Frame.cadence, Frame.camera, Frame.mid_tjd)
+        .join(FrameType.name)
+        .filter(~FrameType.name.icontains("sparse")).  # No Sparse Cadences 
         .distinct([Frame.cadence, Frame.camera])
     )
     if frame_type is not None:
