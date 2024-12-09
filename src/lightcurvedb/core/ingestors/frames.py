@@ -114,7 +114,7 @@ def ingest_orbit(
 
     frame_payload: list[Frame] = []
     for header, path in header_group:
-        key = (header["CADENCE"], header["CAMNUM"], header.get("CCD", None))
+        key = (header["CADENCE"], header["CAMNUM"], header.get("CCDNUM", None))
         if key in keys:
             # Frame already exists
             continue
