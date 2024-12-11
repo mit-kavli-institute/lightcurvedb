@@ -12,7 +12,7 @@ from lightcurvedb.models import FrameType
 @lcdbcli.command()
 @click.pass_context
 @click.argument("ingest_directories", type=pathlib.Path, nargs=-1)
-@click.option("--frame-type-name", type=str, default="Raw FFI")
+@click.option("--frame-type-name", type=str, default="TICA Calibrated FFI")
 @click.option("--quaternion-subdir", type=pathlib.Path, default="hk")
 @click.option("--n-workers", type=int, default=1)
 def ingest_frames(
