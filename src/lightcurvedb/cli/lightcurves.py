@@ -55,34 +55,30 @@ def ingest_dir(
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
-        with db_from_config(ctx.obj["dbconf"]) as db:
-            contexts.populate_ephemeris(cache_path, db)
-            contexts.populate_tjd_mapping(cache_path, db)
+        directories = [pathlib.Path(path) for path in paths]
+        for directory in directories:
+            logger.info(f"Considering {directory}")
 
-            directories = [pathlib.Path(path) for path in paths]
-            for directory in directories:
-                logger.info(f"Considering {directory}")
+        plan = DirectoryPlan(
+            directories, ctx.obj["dbconf"], recursive=recursive
+        )
 
-            plan = DirectoryPlan(
-                directories, ctx.obj["dbconf"], recursive=recursive
+        jobs = plan.get_jobs()
+        if tic_catalog:
+            path_iter = plan.yield_needed_tic_catalogs(
+                path_template=tic_catalog_path_template
             )
+            for catalog_path in path_iter:
+                contexts.populate_tic_catalog(cache_path, catalog_path)
+        else:
+            tic_ids = plan.tic_ids
+            contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
 
-            jobs = plan.get_jobs()
-            if tic_catalog:
-                path_iter = plan.yield_needed_tic_catalogs(
-                    path_template=tic_catalog_path_template
-                )
-                for catalog_path in path_iter:
-                    contexts.populate_tic_catalog(cache_path, catalog_path)
-            else:
-                tic_ids = plan.tic_ids
-                contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
-
-            for args in plan.yield_needed_quality_flags(
-                path_template=quality_flag_template
-            ):
-                logger.debug(f"Requiring quality flags {args}")
-                contexts.populate_quality_flags(cache_path, *args)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_flag_template
+        ):
+            logger.debug(f"Requiring quality flags {args}")
+            contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
             ctx.obj,

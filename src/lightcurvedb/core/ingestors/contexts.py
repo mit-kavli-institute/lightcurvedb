@@ -308,7 +308,7 @@ def populate_ephemeris(conn, db):
 
 
 @with_sqlite
-def populate_tjd_mapping(conn, db, frame_type=None):
+def populate_tjd_mapping(conn, db):
     """Populate the cache with tjd data.
 
     This method also requires a postgresql connection and will only
@@ -324,18 +324,14 @@ def populate_tjd_mapping(conn, db, frame_type=None):
     """
     logger.debug("Loading Frame TJD data")
     cols = ("cadence", "camera", "tjd")
-    type_name = "Raw FFI" if frame_type is None else frame_type
     q = (
-        db.query(Frame.cadence, Frame.camera, Frame.mid_tjd)
+        sa.select(Frame.cadence, Frame.camera, Frame.mid_tjd)
         .join(Frame.frame_type)
-        .filter(FrameType.name == type_name)
+        .where(~FrameType.name.icontains("sparse"))
     )
-    payload = [dict(zip(cols, row)) for row in q]
+    payload = [dict(zip(cols, row)) for row in db.execute(q)]
     if len(payload) == 0:
-        raise RuntimeError(
-            "Unable to find any TJD values from frame query using: "
-            f"frame type name: {type_name}"
-        )
+        raise RuntimeError("Unable to find any TJD values from frame query.")
     chunksize = MAX_PARAM // len(cols)
     for chunk in chunkify(tqdm(payload, unit=" tjds"), chunksize):
         stmt = TJDMapping.insert().values(chunk)
