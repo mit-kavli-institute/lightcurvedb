@@ -4,7 +4,6 @@ import tempfile
 import click
 from loguru import logger
 
-from lightcurvedb import db_from_config
 from lightcurvedb.cli.base import lcdbcli
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import lightcurve_arrays as ingest_em2_array
@@ -26,13 +25,6 @@ def lightcurve(ctx):
 )
 @click.option("--n-processes", default=16, type=click.IntRange(min=1))
 @click.option("--recursive", "-r", is_flag=True, default=False)
-@click.option("--tic-catalog/--tic-db", is_flag=True, default=True)
-@click.option(
-    "--tic-catalog-path-template",
-    type=str,
-    default=DirectoryPlan.DEFAULT_TIC_CATALOG_TEMPLATE,
-    show_default=True,
-)
 @click.option(
     "--quality-flag-template",
     type=str,
@@ -45,8 +37,6 @@ def ingest_dir(
     paths,
     n_processes,
     recursive,
-    tic_catalog,
-    tic_catalog_path_template,
     quality_flag_template,
     scratch,
 ):
@@ -55,34 +45,21 @@ def ingest_dir(
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
         contexts.make_shared_context(cache_path)
-        with db_from_config(ctx.obj["dbconf"]) as db:
-            contexts.populate_ephemeris(cache_path, db)
-            contexts.populate_tjd_mapping(cache_path, db)
+        directories = [pathlib.Path(path) for path in paths]
+        for directory in directories:
+            logger.info(f"Considering {directory}")
 
-            directories = [pathlib.Path(path) for path in paths]
-            for directory in directories:
-                logger.info(f"Considering {directory}")
+        plan = DirectoryPlan(
+            directories, ctx.obj["dbconf"], recursive=recursive
+        )
 
-            plan = DirectoryPlan(
-                directories, ctx.obj["dbconf"], recursive=recursive
-            )
+        jobs = plan.get_jobs()
 
-            jobs = plan.get_jobs()
-            if tic_catalog:
-                path_iter = plan.yield_needed_tic_catalogs(
-                    path_template=tic_catalog_path_template
-                )
-                for catalog_path in path_iter:
-                    contexts.populate_tic_catalog(cache_path, catalog_path)
-            else:
-                tic_ids = plan.tic_ids
-                contexts.populate_tic_catalog_w_db(cache_path, tic_ids)
-
-            for args in plan.yield_needed_quality_flags(
-                path_template=quality_flag_template
-            ):
-                logger.debug(f"Requiring quality flags {args}")
-                contexts.populate_quality_flags(cache_path, *args)
+        for args in plan.yield_needed_quality_flags(
+            path_template=quality_flag_template
+        ):
+            logger.debug(f"Requiring quality flags {args}")
+            contexts.populate_quality_flags(cache_path, *args)
 
         ingest_em2_array.ingest_jobs(
             ctx.obj,
@@ -116,9 +93,6 @@ def ingest_tic_list(
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        with db_from_config(ctx.obj["dbconf"]) as db:
-            contexts.populate_ephemeris(cache_path, db)
-            contexts.populate_tjd_mapping(cache_path, db)
 
         plan = TICListPlan(tic_ids, ctx.obj["dbconf"])
         if fill_id_gaps:

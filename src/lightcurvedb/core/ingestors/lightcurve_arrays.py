@@ -6,7 +6,6 @@ from time import sleep, time
 
 import cachetools
 import h5py
-import numpy as np
 from loguru import logger
 from sqlalchemy import Integer, cast, func
 from sqlalchemy.dialects.postgresql import insert as psql_insert
@@ -104,22 +103,9 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             self.aperture_cache[name] = id_
         return id_
 
-    def get_best_aperture_id(self, tic_id):
-        (tmag,) = self.corrector.resolve_tic_parameters(tic_id, "tmag")
-        magbins = np.array([6, 7, 8, 9, 10, 11, 12])
-        bestaps = np.array([4, 3, 3, 2, 2, 2, 1])
-        index = np.searchsorted(magbins, tmag)
-        if index == 0:
-            bestap = bestaps[0]
-        elif index >= len(magbins):
-            bestap = bestaps[-1]
-        else:
-            if tmag > magbins[index] - 0.5:
-                bestap = bestaps[index]
-            else:
-                bestap = bestaps[index - 1]
-
-        name = f"Aperture_{bestap: 03}"
+    def get_best_aperture_id(self, h5):
+        bestap = int(h5["LightCurve"]["AperturePhotometry"].attrs["bestap"])
+        name = f"Aperture_{bestap:03d}"  # noqa
         return self.get_aperture_id(name)
 
     def get_lightcurve_type_id(self, name):
@@ -144,20 +130,12 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             cadences = em2.get_cadences(h5)
             bjd = em2.get_barycentric_julian_dates(h5)
 
-            with self.record_elapsed("tjd-retrieval"):
-                mid_tjd = self.corrector.get_mid_tjd(
-                    em2_h5_job.camera, cadences
-                )
-            with self.record_elapsed("time-correction"):
-                bjd = self.corrector.correct_for_earth_time(
-                    em2_h5_job.tic_id, mid_tjd
-                )
             with self.record_elapsed("quality-flag-assignment"):
                 quality_flags = self.corrector.get_quality_flags(
                     em2_h5_job.camera, em2_h5_job.ccd, cadences
                 )
             with self.record_elapsed("best-lightcurve-construction"):
-                best_aperture_id = self.get_best_aperture_id(em2_h5_job.tic_id)
+                best_aperture_id = self.get_best_aperture_id(h5)
                 best_type_id = self.get_best_lightcurve_type_id(h5)
                 best_lightcurve_definition = {
                     "orbit_id": self.orbit_map[em2_h5_job.orbit_number],

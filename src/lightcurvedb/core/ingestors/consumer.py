@@ -78,11 +78,11 @@ class BufferedDatabaseIngestor(Process):
                         metrics.append(metric)
                 # Successful push
                 break
-            except RuntimeError:
+            except RuntimeError as e:
                 self.log(
                     "Encountered deadlock state, rolling back "
                     f"and performing backoff. {tries} tries remaining.",
-                    level="warning",
+                    level="exception",
                 )
                 db.rollback()
                 wait_time = 2 ** (5 - tries)
