@@ -7,7 +7,7 @@ from queue import Empty
 
 from loguru import logger
 
-from lightcurvedb.core.connection import db_from_config
+from lightcurvedb.core.connection import DB, db_from_config
 
 
 class BufferedDatabaseIngestor(Process):
@@ -55,16 +55,16 @@ class BufferedDatabaseIngestor(Process):
             with self.db as db:
                 self.flush(db)
 
-    def _preflush(self, db):
+    def _preflush(self, db: DB):
         pass
 
-    def _postflush(self, db):
+    def _postflush(self, db: DB):
         pass
 
     def process_job(self, job):
         raise NotImplementedError
 
-    def flush(self, db):
+    def flush(self, db: DB):
         self._preflush(db)
         metrics = []
         tries = 5
@@ -78,7 +78,7 @@ class BufferedDatabaseIngestor(Process):
                         metrics.append(metric)
                 # Successful push
                 break
-            except RuntimeError as e:
+            except RuntimeError:
                 self.log(
                     "Encountered deadlock state, rolling back "
                     f"and performing backoff. {tries} tries remaining.",
