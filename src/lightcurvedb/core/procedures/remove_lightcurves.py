@@ -29,4 +29,5 @@ def delete_lightcurves(
         )
         db.execute(lc_del_q)
         db.commit()
+        logger.success(f"Removed data for {len(tic_ids)} stars on {orbit}")
     return len(tic_ids)
