@@ -16,7 +16,7 @@ services:
     volumes:
       - .:/testing
     working_dir: /testing
-    command: nox
+    command: tail -f /dev/null
     depends_on:
       db:
         condition: service_healthy

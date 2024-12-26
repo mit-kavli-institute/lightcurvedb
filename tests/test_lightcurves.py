@@ -6,7 +6,6 @@ import sqlalchemy as sa
 from hypothesis import HealthCheck, given, note, settings
 from hypothesis import strategies as st
 
-from lightcurvedb import models
 from lightcurvedb.core.ingestors import contexts, lightcurve_arrays
 from lightcurvedb.core.ingestors.jobs import DirectoryPlan
 from lightcurvedb.models.lightcurve import ArrayOrbitLightcurve
@@ -43,22 +42,11 @@ def test_corrector_instantiation(isolated_database, data):
         ) = ingestion.simulate_lightcurve_ingestion_environment(
             data, tempdir, db
         )
-        frame_type = db.query(models.FrameType.name).first()[0]
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        contexts.populate_ephemeris(cache_path, db)
-        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
 
         plan = DirectoryPlan([directory], db.config)
-        catalog_template = (
-            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-        )
         quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
-
-        for catalog in plan.yield_needed_tic_catalogs(
-            path_template=catalog_template
-        ):
-            contexts.populate_tic_catalog(cache_path, catalog)
         for args in plan.yield_needed_quality_flags(
             path_template=quality_template
         ):
@@ -84,22 +72,12 @@ def test_lightcurve_jobs(isolated_database, data):
             data, tempdir, db
         )
 
-        frame_type = db.query(models.FrameType.name).first()[0]
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        contexts.populate_ephemeris(cache_path, db)
-        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
 
         plan = DirectoryPlan([directory], db.config)
-        catalog_template = (
-            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-        )
         quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
 
-        for catalog in plan.yield_needed_tic_catalogs(
-            path_template=catalog_template
-        ):
-            contexts.populate_tic_catalog(cache_path, catalog)
         for args in plan.yield_needed_quality_flags(
             path_template=quality_template
         ):
@@ -128,22 +106,12 @@ def test_ingest(isolated_database, data):
             data, tempdir, db
         )
 
-        frame_type = db.query(models.FrameType.name).first()[0]
         cache_path = pathlib.Path(tempdir, "db.sqlite3")
         contexts.make_shared_context(cache_path)
-        contexts.populate_ephemeris(cache_path, db)
-        contexts.populate_tjd_mapping(cache_path, db, frame_type=frame_type)
 
         plan = DirectoryPlan([directory], db.config)
-        catalog_template = (
-            str(run_path) + "/catalog_{orbit_number}_{camera}_{ccd}_full.txt"
-        )
         quality_template = str(run_path) + "/cam{camera}ccd{ccd}_qflag.txt"
 
-        for catalog in plan.yield_needed_tic_catalogs(
-            path_template=catalog_template
-        ):
-            contexts.populate_tic_catalog(cache_path, catalog)
         for args in plan.yield_needed_quality_flags(
             path_template=quality_template
         ):
