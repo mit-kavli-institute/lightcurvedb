@@ -304,7 +304,7 @@ def _initialize_workers(WorkerClass, config, n_processes, **kwargs):
     workers = []
     logger.debug(f"Initializing {n_processes} workers")
     for n in range(n_processes):
-        worker = WorkerClass(config, f"worker-{n: 02}", **kwargs)
+        worker = WorkerClass(config, f"worker-{n:02}", **kwargs)  # noqa
         worker.start()
         workers.append(worker)
     logger.debug(f"{n_processes} workers initialized and started")
