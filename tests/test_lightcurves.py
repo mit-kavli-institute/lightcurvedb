@@ -95,8 +95,8 @@ def test_lightcurve_jobs(isolated_database, data):
         HealthCheck.function_scoped_fixture,
     ),
 )
-@pytest.mark.timeout(60)
 @given(st.data())
+@pytest.mark.timeout(10)
 def test_ingest(isolated_database, data):
     with TemporaryDirectory() as tempdir, isolated_database as db:
         (

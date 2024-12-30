@@ -125,7 +125,7 @@ class BufferedDatabaseIngestor(Process):
                 break
             except Exception:
                 self.log(
-                    "Unhandled exception, cowardly exiting...",
+                    "Unhandled exception, current job not executed",
                     level="exception",
                 )
 
