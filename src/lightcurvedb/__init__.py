@@ -1,4 +1,4 @@
-__version__ = "0.16.3"
+__version__ = "0.16.4"
 
 from lightcurvedb.core.connection import db, db_from_config
 

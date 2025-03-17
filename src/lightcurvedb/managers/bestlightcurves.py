@@ -23,14 +23,16 @@ class BestLightcurveManager(LightcurveManager):
 
     Example
     -------
-    ```python
+    >>> mgr = BestLightcurveManager(db_config, normalize=True)
+    <BestLightcurveManager />
+    >>> lc = mgr[38696575]  # Emits query
 
-    mgr = BestLightcurveManager(db_config, normalize=True)
-    lc = mgr[38696575]  # Emits query
-
-    lc["cadence"] # np.array([1, 2, 3, 4])
-    lc["data"] # np.array([0.0, 10.0, 4.0, nan])
-    lc["quality_flag"] # np.array([0, 0, 0, 1])
+    >>> lc["cadence"]
+        np.array([1, 2, 3, 4])
+    >>> lc["data"]
+        np.array([0.0, 10.0, 4.0, nan])
+    >>> lc["quality_flag"]
+        np.array([0, 0, 0, 1])
     ```
     """
 

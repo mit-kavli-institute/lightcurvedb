@@ -6,8 +6,8 @@ guide where to apply these models and how to interact, create, destroy, and
 retrieve them.
 
 
-The following models are defined in the Metrics module. ``QLPMetric``,
-``QLPProcess`` and ``QLPAlteration``, the former being the base abstract class
+The following models are defined in the Metrics module. ``QLPStage``,
+``QLPProcess`` and ``QLPOperation``, the former being the base abstract class
 to differentiate them from the other Models defined in lightcurvedb.
 
 
@@ -28,11 +28,11 @@ objects.
 
 Classes
 #######
-.. autoclass:: lightcurvedb.core.base_model.QLPMetric
+.. autoclass:: lightcurvedb.models.QLPStage
     :members:
 
 .. autoclass:: lightcurvedb.models.metrics.QLPProcess
     :members:
 
-.. autoclass:: lightcurvedb.models.metrics.QLPAlteration
+.. autoclass:: lightcurvedb.models.metrics.QLPOperation
     :members:

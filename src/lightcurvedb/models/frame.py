@@ -21,6 +21,7 @@ FRAME_MAPPER_LOOKUP = {
     "CAM": "camera",
     "CAMNUM": "camera",
     "CCD": "ccd",
+    "CCDNUM": "ccd",
     "CADENCE": "cadence",
     "TIME": "gps_time",
     "STARTTJD": "start_tjd",

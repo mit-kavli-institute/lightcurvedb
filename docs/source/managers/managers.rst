@@ -62,5 +62,8 @@ one bulk query and interface the collection in a dictionary-like manner.
     # Keep this in mind when reducing queries.
 
 
-.. autoclass:: lightcurvedb.managers.lightcurve_query.LightcurveManager
+.. autoclass:: lightcurvedb.managers.lightcurves.LightcurveManager
+   :members:
+
+.. autoclass:: lightcurvedb.managers.bestlightcurves.BestLightcurveManager
    :members:

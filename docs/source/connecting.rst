@@ -3,7 +3,7 @@ Connecting to the Database
 
 Creating connection instance
 ############################
-All connection IO is served through a ``lightcurvedb.core.connection.ORM_DB``
+All connection IO is served through a `lightcurvedb.core.connection.DB`
 instance. There are a couple of methods of instantiating a ``DB`` instance.
 
 *********************
@@ -18,7 +18,7 @@ database class is by:
 
     from lightcurvedb import db
 
-Where ``db`` is a closed database connection object.
+Where ``db`` is an instantiated database connection object.
 
 ************************
 Overriding configuration
@@ -46,9 +46,9 @@ overrides/parameters.
     db = db_from_config(config_path="~/some/user/relativepath.conf")
 
 
-Opening A Connection
+Opening a Connection
 ####################
-Obtaining database instances will return a ``ORM_DB`` object in a closed state.
+Obtaining database instances will return a ``DB`` object in a closed state.
 There are a few ways to open and close connections to the database.
 
 
@@ -112,6 +112,7 @@ Repeatedly opening and closing a connection like this:
     for _ in range(20):
         db.open()
         db.close()
+
 This is *fine*, but an irresonsible use case that might interfere with
 database operation. But there is nothing logically wrong with this block.
 

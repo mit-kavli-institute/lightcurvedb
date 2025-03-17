@@ -66,7 +66,8 @@ def from_fits_header(header: FFI_HEADER, frame_type=None, orbit=None) -> Frame:
         except KeyError:
             continue
         if hasattr(Frame, model_attr):
-            setattr(frame, model_attr, value)
+            if getattr(frame, model_attr) is None:
+                setattr(frame, model_attr, value)
 
     # Stray light is duplicated by camera per FFI, just grab the
     # relevant flag
@@ -101,7 +102,7 @@ def ingest_orbit(
         logger.debug(f"Mapped orbit {orbit_number} to {orbit}")
 
     existing_files_q = (
-        sa.select(Frame.cadence, Frame.camera, Frame.ccd)
+        sa.select(Frame.file_path)
         .join(Frame.orbit)
         .join(Frame.frame_type)
         .where(
@@ -110,12 +111,11 @@ def ingest_orbit(
         )
     )
 
-    keys = set(db.execute(existing_files_q))
+    existing_paths = set(db.scalars(existing_files_q))
 
     frame_payload: list[Frame] = []
     for header, path in header_group:
-        key = (header["CADENCE"], header["CAMNUM"], header.get("CCD", None))
-        if key in keys:
+        if path in existing_paths:
             # Frame already exists
             continue
         frame = from_fits_header(header, frame_type=frame_type, orbit=orbit)
