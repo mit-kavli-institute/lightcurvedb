@@ -106,7 +106,7 @@ def ingest_orbit(
         .join(Frame.orbit)
         .join(Frame.frame_type)
         .where(
-            Orbit.orbit_number == orbit_number,
+            Orbit.sector == orbit.sector,
             FrameType.name == frame_type.name,
         )
     )
