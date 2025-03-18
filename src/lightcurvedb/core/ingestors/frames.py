@@ -103,35 +103,35 @@ def ingest_orbit(
 
     existing_files_q = (
         sa.select(Frame.file_path)
-        .join(Frame.orbit)
-        .join(Frame.frame_type)
-        .where(
-            Orbit.sector == orbit.sector,
-            FrameType.name == frame_type.name,
-        )
+        .where(Frame.orbit == orbit)
+        .where(Frame.frame_type == frame_type)
     )
 
-    existing_filenames = set(
-        (
-            pathlib.Path(raw_path).name
-            for raw_path in db.scalars(existing_files_q)
-        )
-    )
+    existing_filenames = set(map(pathlib.Path, db.scalars(existing_files_q)))
 
     frame_payload: list[Frame] = []
+    n_ignored = 0
     for header, path in header_group:
-        if path.name in existing_filenames:
+        if path in existing_filenames:
             # Frame already exists
+            n_ignored += 1
             continue
         frame = from_fits_header(header, frame_type=frame_type, orbit=orbit)
         frame.file_path = str(path)
         frame.comment = str(frame.comment)
         frame_payload.append(frame)
 
-    logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")
-    db.add_all(frame_payload)
-    db.flush()
-    logger.success(f"Inserted {len(frame_payload)} frame(s)")
+    logger.debug(
+        f"Ignoring {n_ignored} FFI files as they already exist in the database"
+    )
+
+    if len(frame_payload) > 0:
+        logger.debug(f"Pushing frame payload ({len(frame_payload)} frame(s))")
+        db.add_all(frame_payload)
+        db.flush()
+        logger.success(f"Inserted {len(frame_payload)} frame(s)")
+    else:
+        logger.warning(f"Not inserting any frames for {orbit}")
 
 
 def ingest_directory(
