@@ -111,11 +111,16 @@ def ingest_orbit(
         )
     )
 
-    existing_paths = set(db.scalars(existing_files_q))
+    existing_filenames = set(
+        (
+            pathlib.Path(raw_path).name
+            for raw_path in db.scalars(existing_files_q)
+        )
+    )
 
     frame_payload: list[Frame] = []
     for header, path in header_group:
-        if path in existing_paths:
+        if path.name in existing_filenames:
             # Frame already exists
             continue
         frame = from_fits_header(header, frame_type=frame_type, orbit=orbit)
