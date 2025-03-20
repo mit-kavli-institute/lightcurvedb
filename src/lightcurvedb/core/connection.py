@@ -1,5 +1,5 @@
 import configurables as conf
-from sqlalchemy import URL, NullPool, create_engine, pool
+from sqlalchemy import NullPool, pool
 from sqlalchemy.orm import Session, sessionmaker
 
 from lightcurvedb import models
@@ -140,15 +140,15 @@ def db_from_config(
 def configure_engine(
     username, password, database_name, database_host, database_port
 ):
-    url = URL.create(
+    engine = thread_safe_engine(
+        database_name,
+        username,
+        password,
+        database_host,
+        database_port,
         "postgresql+psycopg",
-        database=database_name,
-        username=username,
-        password=password,
-        host=database_host,
-        port=database_port,
+        poolclass=NullPool,
     )
-    engine = create_engine(url, poolclass=NullPool)
     return engine
 
 
