@@ -127,7 +127,7 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    session = Session(bind=engine)
+    session = sessionmaker(bind=engine, class_=DB)()
     return session
 
 
