@@ -1,5 +1,5 @@
 import configurables as conf
-from sqlalchemy import URL, NullPool, create_engine, pool
+from sqlalchemy import NullPool, pool
 from sqlalchemy.orm import Session, sessionmaker
 
 from lightcurvedb import models
@@ -95,7 +95,7 @@ class DB(
 @conf.param("password")
 @conf.option("database_host", default="localhost")
 @conf.option("database_port", type=int, default=5432)
-@conf.option("dialect", default="postgresql+psycopg2")
+@conf.option("dialect", default="postgresql+psycopg")
 def db_from_config(
     database_name,
     username,
@@ -103,7 +103,6 @@ def db_from_config(
     database_host,
     database_port,
     dialect,
-    db_class=DB,
     **engine_kwargs
 ):
     """
@@ -128,7 +127,8 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    return db_class(engine)
+    session = sessionmaker(bind=engine, class_=DB)()
+    return session
 
 
 @conf.configurable("Credentials")
@@ -136,28 +136,27 @@ def db_from_config(
 @conf.param("username")
 @conf.param("password")
 @conf.option("database_host", default="localhost")
-@conf.option("database_port", type=int, default=5432)
+@conf.option("database_port", default=5432)
 def configure_engine(
     username, password, database_name, database_host, database_port
 ):
-    url = URL.create(
+    engine = thread_safe_engine(
+        database_name,
+        username,
+        password,
+        database_host,
+        database_port,
         "postgresql+psycopg",
-        database=database_name,
-        username=username,
-        password=password,
-        host=database_host,
-        port=database_port,
+        poolclass=NullPool,
     )
-    engine = create_engine(url, poolclass=NullPool)
     return engine
 
 
-Session = sessionmaker(expire_on_commit=False, class_=DB)
-
+LCDB_Session = sessionmaker(expire_on_commit=False, class_=DB)
 
 # Try and instantiate "global" lcdb
 if not DEFAULT_CONFIG_PATH.exists():
     db = None
 else:
-    Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
-    db = Session()
+    LCDB_Session.configure(bind=configure_engine(DEFAULT_CONFIG_PATH))
+    db = LCDB_Session()

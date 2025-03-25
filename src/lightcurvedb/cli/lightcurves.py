@@ -1,13 +1,22 @@
+import multiprocessing as mp
+import os
 import pathlib
 import tempfile
+from functools import partial
 
 import click
+import sqlalchemy as sa
 from loguru import logger
+from tqdm import tqdm
 
+from lightcurvedb import models as m
 from lightcurvedb.cli.base import lcdbcli
+from lightcurvedb.core.connection import db_from_config
 from lightcurvedb.core.ingestors import contexts
 from lightcurvedb.core.ingestors import lightcurve_arrays as ingest_em2_array
 from lightcurvedb.core.ingestors.jobs import DirectoryPlan, TICListPlan
+from lightcurvedb.core.procedures.remove_lightcurves import delete_lightcurves
+from lightcurvedb.util.iter import chunkify
 
 
 @lcdbcli.group()
@@ -113,3 +122,37 @@ def ingest_tic_list(
             cache_path,
         )
         click.echo("Done!")
+
+
+@lightcurve.command()
+@click.pass_context
+@click.argument("orbit-number", type=int)
+@click.option("--n-workers", "-n", type=int, default=os.cpu_count())
+def remove_lightcurves(ctx, orbit_number: int, n_workers: int):
+    with db_from_config(ctx.obj["dbconf"]) as db:
+        q = (
+            sa.select(m.BestOrbitLightcurve.tic_id)
+            .join(m.BestOrbitLightcurve.orbit)
+            .where(m.Orbit.orbit_number == orbit_number)
+        )
+        tic_ids = list(db.scalars(q))
+
+    click.echo(f"Will remove {len(tic_ids)} stars in orbit {orbit_number}")
+    click.confirm("Irreversable command, confirm action", abort=True)
+    chunks = list(chunkify(tic_ids, 1000))
+    func = partial(delete_lightcurves, ctx.obj["dbconf"], orbit_number)
+
+    with mp.Pool(n_workers) as pool, tqdm(total=len(tic_ids)) as tbar:
+        if "logfile" not in ctx.obj:
+            # If logging to standard out, we need to ensure loguru
+            # does not step over tqdm output.
+            logger.remove()
+            logger.add(
+                lambda msg: tqdm.write(msg, end=""),
+                colorize=True,
+                level=ctx.obj["log_level"].upper(),
+                enqueue=True,
+            )
+        results = pool.imap_unordered(func, chunks)
+        for n_removed in results:
+            tbar.update(n_removed)

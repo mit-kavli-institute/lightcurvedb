@@ -1,0 +1,5 @@
+Host tessgit.mit.edu
+    Hostname tessgit.mit.edu
+    ControlMaster auto
+    ControlPath /tmp/.ssh-%u->%r@%h
+    ControlPersist 15m

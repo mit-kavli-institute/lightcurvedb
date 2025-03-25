@@ -1,20 +1,20 @@
+import pathlib
 import time
 from collections import defaultdict
 from contextlib import contextmanager
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from queue import Empty
 
 from loguru import logger
 
-from lightcurvedb.core.connection import db_from_config
+from lightcurvedb.core.connection import DB, db_from_config
 
 
 class BufferedDatabaseIngestor(Process):
-    job_queue = None
     name = "Worker"
     buffer_order = []
 
-    def __init__(self, db_config, name, job_queue):
+    def __init__(self, db_config: pathlib.Path, name: str, job_queue: Queue):
         super().__init__(daemon=True, name=name)
         self.db_config = db_config
         self.name = name
@@ -55,16 +55,16 @@ class BufferedDatabaseIngestor(Process):
             with self.db as db:
                 self.flush(db)
 
-    def _preflush(self, db):
+    def _preflush(self, db: DB):
         pass
 
-    def _postflush(self, db):
+    def _postflush(self, db: DB):
         pass
 
     def process_job(self, job):
         raise NotImplementedError
 
-    def flush(self, db):
+    def flush(self, db: DB):
         self._preflush(db)
         metrics = []
         tries = 5
@@ -78,7 +78,7 @@ class BufferedDatabaseIngestor(Process):
                         metrics.append(metric)
                 # Successful push
                 break
-            except RuntimeError as e:
+            except RuntimeError:
                 self.log(
                     "Encountered deadlock state, rolling back "
                     f"and performing backoff. {tries} tries remaining.",
@@ -125,10 +125,9 @@ class BufferedDatabaseIngestor(Process):
                 break
             except Exception:
                 self.log(
-                    "Unhandled exception, cowardly exiting...",
+                    "Unhandled exception, current job not executed",
                     level="exception",
                 )
-                break
 
         if self.any_data_buffered:
             self.log("Leftover data found in buffers, submitting")

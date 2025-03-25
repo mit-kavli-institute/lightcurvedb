@@ -31,7 +31,7 @@ def test_quality_flag_cache(data):
                 camera,
                 ccd,
             )
-            check == flag
+            assert check == flag
 
 
 @settings(deadline=None)

@@ -304,7 +304,6 @@ def simulate_tica_header(
             "TJD_ZERO": st.just(2457000.0),
             "INT_TIME": st.just(int(exposure_time * cadence)),
             "CAMNUM": st.just(camera),
-            "CCD": st.just(ccd),
             "CADENCE": st.just(cadence),
             "TIME": st.just(exposure_time * cadence),
             "STARTTJD": st.just(exposure_time * cadence),
@@ -344,8 +343,9 @@ def simulate_tica_header(
             "CHECKSUM": st.integers(),
             "DATASUM": st.integers(),
             "COMMENT": st.just("comment"),
-        }
-    )
+        },
+        optional={"CCDNUM": st.just(ccd), "CCD": st.just(ccd)},
+    ).filter(lambda header: ("CCD" in header) ^ ("CCDNUM" in header))
 
 
 def simulate_tica_fits(
@@ -388,10 +388,12 @@ def simulate_tica_fits(
         for key, value in header.items():
             hdr[key] = value
 
+        ccd = header.get("CCD", header.get("CCDNUM", None))
+
         # hlsp_tica_tess_ffi_s0081-o2-00990440-cam1-ccd1_tess_v01_img.fits
         filename = (
             f"hlsp_tica_tess_ffi_{sector_string}-{header['ORB_SEG'][:2]}"
-            f"-{cadence: 08d}-cam{header['CAMNUM']}-ccd{header['CCD']}_tess"
+            f"-{cadence: 08d}-cam{header['CAMNUM']}-ccd{ccd}_tess"
             "v01_img.fits"
         )
         hdul.writeto(subdir / filename, overwrite=True)

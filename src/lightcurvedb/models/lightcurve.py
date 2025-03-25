@@ -8,7 +8,6 @@ from collections import OrderedDict
 
 import numpy as np
 import sqlalchemy as sa
-from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy.dialects import postgresql as psql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,19 +16,6 @@ from lightcurvedb.core.base_model import (
     NameAndDescriptionMixin,
     QLPModel,
 )
-
-
-def adapt_as_is_type(type_class):
-    def adaptor(type_instance):
-        return AsIs(type_instance)
-
-    register_adapter(type_class, adaptor)
-
-
-adapt_as_is_type(np.int64)
-adapt_as_is_type(np.int32)
-adapt_as_is_type(np.float32)
-adapt_as_is_type(np.float64)
 
 
 class LightcurveType(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):

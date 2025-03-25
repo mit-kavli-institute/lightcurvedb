@@ -21,6 +21,7 @@ class H5_Job:
     camera: int
     ccd: int
     orbit_number: int
+    ttl: int = 3
 
     @classmethod
     def from_path_context(cls, context):
@@ -35,12 +36,12 @@ class H5_Job:
 
 
 def look_for_relevant_files(config, lc_path, tic_mask=None):
+    h5_files = lc_path.glob("*.h5")
+    contexts = []
+    n_accepted = 0
+    n_rejected = 0
+    path_context = extract_pdo_path_context(lc_path)
     try:
-        h5_files = lc_path.glob("*.h5")
-        contexts = []
-        n_accepted = 0
-        n_rejected = 0
-        path_context = extract_pdo_path_context(lc_path)
         lc_histogram_q = (
             sa.select(
                 ArrayOrbitLightcurve.tic_id,
@@ -48,36 +49,36 @@ def look_for_relevant_files(config, lc_path, tic_mask=None):
             )
             .join(ArrayOrbitLightcurve.orbit)
             .filter(
-                Orbit.orbit_number == path_context["orbit_number"],
-                ArrayOrbitLightcurve.camera == path_context["camera"],
-                ArrayOrbitLightcurve.ccd == path_context["ccd"],
+                Orbit.orbit_number == int(path_context["orbit_number"]),
+                ArrayOrbitLightcurve.camera == int(path_context["camera"]),
+                ArrayOrbitLightcurve.ccd == int(path_context["ccd"]),
             )
             .group_by(ArrayOrbitLightcurve.tic_id)
         )
-        with db_from_config(config) as db:
-            logger.debug(f"Querying for existing observations for {lc_path}")
-            observation_counts = {
-                tic_id: lc_count
-                for tic_id, lc_count in db.execute(lc_histogram_q)
-            }
-            if len(observation_counts) > 0:
-                counter = Counter(observation_counts.values())
-                count_cutoff, _ = counter.most_common(1)[0]
-                logger.debug(
-                    f"Will ignore files that have >= {count_cutoff} "
-                    "observations for orbit "
-                    "{orbit_number} camera {camera} ccd {ccd}".format(
-                        **path_context
-                    )
-                )
-            else:
-                count_cutoff = None
     except KeyError:
         logger.warning(
             "Could not determine good orbit, camera, ccd contexts for "
-            f"{lc_path}"
+            f"{lc_path}: {path_context}"
         )
         return []
+
+    with db_from_config(config) as db:
+        logger.debug(f"Querying for existing observations for {lc_path}")
+        observation_counts = {
+            tic_id: lc_count for tic_id, lc_count in db.execute(lc_histogram_q)
+        }
+        if len(observation_counts) > 0:
+            counter = Counter(observation_counts.values())
+            count_cutoff, _ = counter.most_common(1)[0]
+            logger.debug(
+                f"Will ignore files that have >= {count_cutoff} "
+                "observations for orbit "
+                "{orbit_number} camera {camera} ccd {ccd}".format(
+                    **path_context
+                )
+            )
+        else:
+            count_cutoff = None
 
     for path in h5_files:
         context = extract_pdo_path_context(path)
