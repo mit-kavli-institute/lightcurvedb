@@ -281,7 +281,7 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
     @property
     def should_flush(self):
         n_lightpoints = sum(
-            len(lc)
+            len(lc.cadences)
             for lc in self.buffers[models.ArrayOrbitLightcurve.__tablename__]
         )
         return n_lightpoints >= self.runtime_parameters["n_lightpoints"]
