@@ -149,6 +149,9 @@ class ArrayOrbitLightcurve(QLPModel, CreatedOnMixin):
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
+    def __len__(self) -> int:
+        return len(self.cadences)
+
     @classmethod
     def create_structured_dtype(cls, *names):
         return list((name, cls.DTYPE[name]) for name in names)
