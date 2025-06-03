@@ -104,8 +104,38 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
         return id_
 
     def get_best_aperture_id(self, h5):
-        bestap = int(h5["LightCurve"]["AperturePhotometry"].attrs["bestap"])
-        name = f"Aperture_{bestap:03d}"  # noqa
+        aperture_photometry = h5["LightCurve"]["AperturePhotometry"]
+        if "PrimaryAperture" in aperture_photometry.keys():
+            name = aperture_photometry["PrimaryAperture"].attrs["name"]
+        else:
+            bestap = int(
+                h5["LightCurve"]["AperturePhotometry"].attrs["bestap"]
+            )
+            name = f"Aperture_{bestap:03d}"  # noqa
+        return self.get_aperture_id(name)
+
+    def get_small_aperture_id(self, h5):
+        aperture_photometry = h5["LightCurve"]["AperturePhotometry"]
+        if "SmallAperture" in aperture_photometry.keys():
+            name = aperture_photometry["SmallAperture"].attrs["name"]
+        else:
+            bestap = int(
+                h5["LightCurve"]["AperturePhotometry"].attrs["bestap"]
+            )
+            smallap = max(0, bestap - 1)
+            name = f"Aperture_{smallap:03d}"  # noqa
+        return self.get_aperture_id(name)
+
+    def get_large_aperture_id(self, h5):
+        aperture_photometry = h5["LightCurve"]["AperturePhotometry"]
+        if "LargeAperture" in aperture_photometry.keys():
+            name = aperture_photometry["LargeAperture"].attrs["name"]
+        else:
+            bestap = int(
+                h5["LightCurve"]["AperturePhotometry"].attrs["bestap"]
+            )
+            largeap = min(4, bestap + 1)
+            name = f"Aperture_{largeap:03d}"  # noqa
         return self.get_aperture_id(name)
 
     def get_lightcurve_type_id(self, name):
@@ -136,10 +166,14 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                 )
             with self.record_elapsed("best-lightcurve-construction"):
                 best_aperture_id = self.get_best_aperture_id(h5)
+                small_aperture_id = self.get_small_aperture_id(h5)
+                large_aperture_id = self.get_large_aperture_id(h5)
                 best_type_id = self.get_best_lightcurve_type_id(h5)
                 best_lightcurve_definition = {
                     "orbit_id": self.orbit_map[em2_h5_job.orbit_number],
                     "aperture_id": best_aperture_id,
+                    "small_aperture_id": small_aperture_id,
+                    "large_aperture_id": large_aperture_id,
                     "lightcurve_type_id": best_type_id,
                     "tic_id": em2_h5_job.tic_id,
                 }

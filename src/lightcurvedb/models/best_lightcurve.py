@@ -27,6 +27,14 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
         sa.ForeignKey("apertures.id", ondelete="RESTRICT"),
         index=True,
     )
+    small_aperture_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("apertures.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    large_aperture_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("apertures.id", ondelete="RESTRICT"),
+        index=True,
+    )
     lightcurve_type_id: Mapped[int] = mapped_column(
         sa.ForeignKey("lightcurvetypes.id", ondelete="RESTRICT"),
         index=True,

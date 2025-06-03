@@ -25,12 +25,14 @@ def get_barycentric_julian_dates(h5_fd):
     return lightcurve["BJD"][()]
 
 
-def get_best_detrending_type(h5_fd, default_key=None):
+def get_best_detrending_type(h5_fd, default_key="KSPMagnitude"):
     photometry = h5_fd["LightCurve"]["AperturePhotometry"]
-    try:
+    if "bestdmagkey" in photometry.attrs:
         return photometry.attrs["bestdmagkey"]
-    except KeyError:
-        return "KSPMagnitude" if default_key is None else default_key
+    elif "primarydetrending" in photometry.attrs:
+        return photometry.attrs["primarydetrending"]
+    else:
+        return default_key
 
 
 def iterate_for_raw_data(h5_fd):
@@ -43,7 +45,9 @@ def iterate_for_raw_data(h5_fd):
     barycentric_julian_dates = get_barycentric_julian_dates(h5_fd)
 
     skip_these_tokens = {"error", "x", "y"}
-    for aperture, photometry in lightcurve["AperturePhotometry"].items():
+    for aperture_name, photometry in lightcurve["AperturePhotometry"].items():
+        if "name" in photometry.attrs:
+            aperture_name = photometry.attrs["name"]
         flux_weighted_x_centroid = photometry["X"][()]
         flux_weighted_y_centroid = photometry["Y"][()]
         for type_name, timeseries in photometry.items():
@@ -65,10 +69,10 @@ def iterate_for_raw_data(h5_fd):
                 "x_centroid": flux_weighted_x_centroid,
                 "y_centroid": flux_weighted_y_centroid,
             }
-            yield aperture, type_name, raw_data
+            yield aperture_name, type_name, raw_data
 
     # Yield Expected Background Time Series
-    aperture = "BackgroundAperture"
+    aperture_name = "BackgroundAperture"
     type_name = "Background"
     x_centroids = lightcurve["X"][()]
     y_centroids = lightcurve["Y"][()]
@@ -81,4 +85,4 @@ def iterate_for_raw_data(h5_fd):
         "y_centroid": y_centroids,
     }
 
-    yield aperture, type_name, raw_background_data
+    yield aperture_name, type_name, raw_background_data
