@@ -30,7 +30,7 @@ def get_best_detrending_type(h5_fd, default_key="KSPMagnitude"):
     if "bestdmagkey" in photometry.attrs:
         return photometry.attrs["bestdmagkey"]
     elif "primarydetrending" in photometry.attrs:
-        return photometry.attrs["primarydetrending"]
+        return photometry.attrs["primarydetrending"] + "Magnitude"
     else:
         return default_key
 
