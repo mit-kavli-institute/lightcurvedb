@@ -1,3 +1,5 @@
+from typing import Union
+
 from sqlalchemy import Numeric, SmallInteger
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -43,9 +45,15 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     id: Mapped[int] = mapped_column(
         SmallInteger, primary_key=True, unique=True
     )
-    star_radius: Mapped[float] = mapped_column(Numeric)
-    inner_radius: Mapped[float] = mapped_column(Numeric)
-    outer_radius: Mapped[float] = mapped_column(Numeric)
+    star_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
+    inner_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
+    outer_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
 
     # Relationships
     lightcurves = relationship(
@@ -83,9 +91,11 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         string: str
             An aperture string formatted such as 1.2:1.4:4.5
             This corresponds to the format of
-            [star radius]:[inner radius]:[outer radius]
-
+            `[star radius]:[inner radius]:[outer radius]`.
+            If empty, returns `(None, None, None)`.
         """
+        if len(string) == 0:
+            return None, None, None
         vals = tuple(string.split(":"))
         if len(vals) != 3:
             raise ValueError(

@@ -8,7 +8,7 @@ from lightcurvedb.models import Aperture
 @lcdbcli.command()
 @click.pass_context
 @click.argument("name", type=str)
-@click.argument("aperture-string", type=str)
+@click.argument("aperture-string", type=str, default="")
 def add_aperture(ctx, name, aperture_string):
     """
     Add an aperture definition to the database
