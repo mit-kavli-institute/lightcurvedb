@@ -191,12 +191,16 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
         structs = []
         stellar_param_info = {}
         for lc in self.execute(select_q).scalars():
-            try:
-                tmag = stellar_param_info[lc.tic_id]
-            except KeyError:
-                tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
-                stellar_param_info[lc.tic_id] = tmag
-            structs.append(lc.to_numpy(normalize=True, offset=tmag))
+            if "TGLC" not in lc.aperture.name:
+                try:
+                    tmag = stellar_param_info[lc.tic_id]
+                except KeyError:
+                    tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
+                    stellar_param_info[lc.tic_id] = tmag
+                structs.append(lc.to_numpy(normalize=True, offset=tmag))
+            else:
+                # TGLC light curves should not be re-normalized
+                structs.append(lc.to_numpy())
 
         if len(structs) == 0:
             raise exceptions.EmptyLightcurve(q=select_q)
