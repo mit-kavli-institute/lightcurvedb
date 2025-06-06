@@ -46,6 +46,8 @@ class BestOrbitLightcurve(QLPModel, CreatedOnMixin):
     )
 
     aperture = relationship("Aperture", foreign_keys=[aperture_id])
+    small_aperture = relationship("Aperture", foreign_keys=[small_aperture_id])
+    large_aperture = relationship("Aperture", foreign_keys=[large_aperture_id])
     lightcurve_type = relationship("LightcurveType")
     orbit = relationship("Orbit")
 
