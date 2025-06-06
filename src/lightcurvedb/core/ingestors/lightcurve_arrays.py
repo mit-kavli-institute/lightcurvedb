@@ -159,9 +159,10 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
 
             cadences = em2.get_cadences(h5)
             bjd = em2.get_barycentric_julian_dates(h5)
+            lc_quality_flags = em2.get_quality_flags(h5)
 
             with self.record_elapsed("quality-flag-assignment"):
-                quality_flags = self.corrector.get_quality_flags(
+                ccd_quality_flags = self.corrector.get_quality_flags(
                     em2_h5_job.camera, em2_h5_job.ccd, cadences
                 )
             with self.record_elapsed("best-lightcurve-construction"):
@@ -195,7 +196,9 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
                         continue
 
                     raw_data["barycentric_julian_date"] = bjd
-                    raw_data["quality_flag"] = quality_flags
+                    raw_data["quality_flag"] = (
+                        lc_quality_flags | ccd_quality_flags
+                    )
 
                     aperture_id = self.get_aperture_id(ap_name)
                     lightcurve_type_id = self.get_lightcurve_type_id(type_name)

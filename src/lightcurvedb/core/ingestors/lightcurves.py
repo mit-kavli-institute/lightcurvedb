@@ -25,6 +25,14 @@ def get_barycentric_julian_dates(h5_fd):
     return lightcurve["BJD"][()]
 
 
+def get_quality_flags(h5_fd):
+    lightcurve = h5_fd["LightCurve"]
+    if "QualityFlag" in lightcurve:
+        return lightcurve["QualityFlag"][()]
+    else:
+        return np.zeros_like(lightcurve["BJD"], dtype=int)
+
+
 def get_best_detrending_type(h5_fd, default_key="KSPMagnitude"):
     photometry = h5_fd["LightCurve"]["AperturePhotometry"]
     if "bestdmagkey" in photometry.attrs:
