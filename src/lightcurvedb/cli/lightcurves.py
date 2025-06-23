@@ -55,6 +55,7 @@ def ingest_dir(
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
+        logger.debug(f"Using local cache path: {cache_path}")
         contexts.make_shared_context(cache_path)
         directories = [pathlib.Path(path) for path in paths]
         for directory in directories:
