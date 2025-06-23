@@ -1,7 +1,9 @@
+from typing import Union
+
 from sqlalchemy import Numeric, SmallInteger
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+from sqlalchemy.schema import CheckConstraint
 
 from lightcurvedb.core.base_model import (
     CreatedOnMixin,
@@ -19,11 +21,11 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     name : str
         The name of the Aperture. This serves as the primary key of the Model
         so this is both unique and indexed. This name is case-sensitive.
-    star_radius : float
+    star_radius : float | None
         The star radius to be used in the fiphot/fistar processing.
-    inner_radius : float
+    inner_radius : float | None
         The inner radius to be used in the fiphot/fistar processing.
-    outer_radius : float
+    outer_radius : float | None
         The outer radius to be used in the fiphot/fistar processing.
 
     lightcurves : list of Lightcurves
@@ -35,7 +37,6 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
 
     # Constraints
     __table_args__ = (
-        UniqueConstraint("star_radius", "inner_radius", "outer_radius"),
         CheckConstraint("char_length(name) >= 1", name="minimum_name_length"),
     )
 
@@ -43,9 +44,15 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
     id: Mapped[int] = mapped_column(
         SmallInteger, primary_key=True, unique=True
     )
-    star_radius: Mapped[float] = mapped_column(Numeric)
-    inner_radius: Mapped[float] = mapped_column(Numeric)
-    outer_radius: Mapped[float] = mapped_column(Numeric)
+    star_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
+    inner_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
+    outer_radius: Mapped[Union[float, None]] = mapped_column(
+        Numeric, nullable=True
+    )
 
     # Relationships
     lightcurves = relationship(
@@ -83,9 +90,11 @@ class Aperture(QLPModel, CreatedOnMixin, NameAndDescriptionMixin):
         string: str
             An aperture string formatted such as 1.2:1.4:4.5
             This corresponds to the format of
-            [star radius]:[inner radius]:[outer radius]
-
+            `[star radius]:[inner radius]:[outer radius]`.
+            If empty, returns `(None, None, None)`.
         """
+        if len(string) == 0:
+            return None, None, None
         vals = tuple(string.split(":"))
         if len(vals) != 3:
             raise ValueError(

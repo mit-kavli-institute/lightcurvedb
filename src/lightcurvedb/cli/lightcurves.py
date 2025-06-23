@@ -40,6 +40,7 @@ def lightcurve(ctx):
     default=DirectoryPlan.DEFAULT_QUALITY_FLAG_TEMPLATE,
     show_default=True,
 )
+@click.option("--update", "-u", is_flag=True, default=False)
 @click.option("--scratch", type=click.Path(file_okay=False, exists=True))
 def ingest_dir(
     ctx,
@@ -47,19 +48,21 @@ def ingest_dir(
     n_processes,
     recursive,
     quality_flag_template,
+    update,
     scratch,
 ):
     ctx.obj["n_processes"] = n_processes
     with tempfile.TemporaryDirectory(dir=scratch) as tempdir:
         tempdir_path = pathlib.Path(tempdir)
         cache_path = tempdir_path / "db.sqlite3"
+        logger.debug(f"Using local cache path: {cache_path}")
         contexts.make_shared_context(cache_path)
         directories = [pathlib.Path(path) for path in paths]
         for directory in directories:
             logger.info(f"Considering {directory}")
 
         plan = DirectoryPlan(
-            directories, ctx.obj["dbconf"], recursive=recursive
+            directories, ctx.obj["dbconf"], recursive=recursive, update=update
         )
 
         jobs = plan.get_jobs()

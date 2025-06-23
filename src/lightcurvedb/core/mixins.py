@@ -44,13 +44,14 @@ class FrameAPIMixin(APIMixin):
     def get_mid_tjd_mapping(self, frame_type: typing.Union[str, None] = None):
         cameras = sa.select(m.Frame.camera.distinct())
 
-        tjd_q = (
-            sa.select(m.Frame.cadence, m.Frame.mid_tjd)
-            .order_by(m.Frame.cadence)
+        tjd_q = sa.select(m.Frame.cadence, m.Frame.mid_tjd).order_by(
+            m.Frame.cadence
         )
 
         if frame_type is not None:
-            tjd_q = tjd_q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+            tjd_q = tjd_q.join(m.Frame.frame_type).where(
+                m.FrameType.name == frame_type
+            )
 
         mapping = {}
         for (camera,) in self.execute(cameras):
@@ -116,7 +117,9 @@ class OrbitAPIMixin(APIMixin):
             )
         )
         if frame_type is not None:
-            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+            q = q.join(m.Frame.frame_type).where(
+                m.FrameType.name == frame_type
+            )
         if ccd is not None:
             q = q.where(m.Frame.ccd == ccd)
         return self.execute(q).fetchone()
@@ -165,7 +168,9 @@ class OrbitAPIMixin(APIMixin):
             )
         )
         if frame_type is not None:
-            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+            q = q.join(m.Frame.frame_type).where(
+                m.FrameType.name == frame_type
+            )
         if ccd is not None:
             q = q.where(m.Frame.ccd == ccd)
         return self.execute(q).fetchone()
@@ -186,12 +191,16 @@ class ArrayOrbitLightcurveAPIMixin(APIMixin):
         structs = []
         stellar_param_info = {}
         for lc in self.execute(select_q).scalars():
-            try:
-                tmag = stellar_param_info[lc.tic_id]
-            except KeyError:
-                tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
-                stellar_param_info[lc.tic_id] = tmag
-            structs.append(lc.to_numpy(normalize=True, offset=tmag))
+            if "TGLC" not in lc.aperture.name:
+                try:
+                    tmag = stellar_param_info[lc.tic_id]
+                except KeyError:
+                    tmag = pyticdb.query_by_id(lc.tic_id, "tmag")[0]
+                    stellar_param_info[lc.tic_id] = tmag
+                structs.append(lc.to_numpy(normalize=True, offset=tmag))
+            else:
+                # TGLC light curves should not be re-normalized
+                structs.append(lc.to_numpy())
 
         if len(structs) == 0:
             raise exceptions.EmptyLightcurve(q=select_q)
@@ -341,8 +350,12 @@ class BestOrbitLightcurveAPIMixin(APIMixin):
         join_conditions = []
         filter_conditions = [LC.tic_id == tic_id]
 
-        if aperture is None:
+        if aperture is None or aperture == "primary":
             join_conditions.append(BEST_LC.aperture_id == LC.aperture_id)
+        elif aperture == "small":
+            join_conditions.append(BEST_LC.small_aperture_id == LC.aperture_id)
+        elif aperture == "large":
+            join_conditions.append(BEST_LC.large_aperture_id == LC.aperture_id)
         else:
             q = q.join(LC.aperture)
             filter_conditions.append(m.Aperture.name == aperture)
@@ -535,7 +548,9 @@ class LegacyAPIMixin(APIMixin):
             .order_by(m.Frame.cadence.asc())
         )
         if frame_type is not None:
-            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+            q = q.join(m.Frame.frame_type).where(
+                m.FrameType.name == frame_type
+            )
         return self.execute(q).scalars().fetchall()
 
     def get_cadences_in_sectors(self, sectors, frame_type=None):
@@ -548,5 +563,7 @@ class LegacyAPIMixin(APIMixin):
             .order_by(m.Frame.cadence.asc())
         )
         if frame_type is not None:
-            q = q.join(m.Frame.frame_type).where(m.FrameType.name == frame_type)
+            q = q.join(m.Frame.frame_type).where(
+                m.FrameType.name == frame_type
+            )
         return self.execute(q).scalars().fetchall()
