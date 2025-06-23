@@ -22,6 +22,7 @@ class H5_Job:
     ccd: int
     orbit_number: int
     ttl: int = 3
+    update: bool = False
 
     @classmethod
     def from_path_context(cls, context):
@@ -35,7 +36,9 @@ class H5_Job:
         return job
 
 
-def look_for_relevant_files(config, lc_path, tic_mask=None):
+def look_for_relevant_files(
+    config, lc_path, tic_mask=None, update: bool = False
+):
     h5_files = lc_path.glob("*.h5")
     contexts = []
     n_accepted = 0
@@ -61,24 +64,28 @@ def look_for_relevant_files(config, lc_path, tic_mask=None):
             f"{lc_path}: {path_context}"
         )
         return []
-
-    with db_from_config(config) as db:
-        logger.debug(f"Querying for existing observations for {lc_path}")
-        observation_counts = {
-            tic_id: lc_count for tic_id, lc_count in db.execute(lc_histogram_q)
-        }
-        if len(observation_counts) > 0:
-            counter = Counter(observation_counts.values())
-            count_cutoff, _ = counter.most_common(1)[0]
-            logger.debug(
-                f"Will ignore files that have >= {count_cutoff} "
-                "observations for orbit "
-                "{orbit_number} camera {camera} ccd {ccd}".format(
-                    **path_context
+    if update:
+        count_cutoff = 0
+        observation_counts = {}
+    else:
+        with db_from_config(config) as db:
+            logger.debug(f"Querying for existing observations for {lc_path}")
+            observation_counts = {
+                tic_id: lc_count
+                for tic_id, lc_count in db.execute(lc_histogram_q)
+            }
+            if len(observation_counts) > 0:
+                counter = Counter(observation_counts.values())
+                count_cutoff, _ = counter.most_common(1)[0]
+                logger.debug(
+                    f"Will ignore files that have >= {count_cutoff} "
+                    "observations for orbit "
+                    "{orbit_number} camera {camera} ccd {ccd}".format(
+                        **path_context
+                    )
                 )
-            )
-        else:
-            count_cutoff = None
+            else:
+                count_cutoff = None
 
     for path in h5_files:
         context = extract_pdo_path_context(path)
@@ -114,7 +121,6 @@ def look_for_relevant_files(config, lc_path, tic_mask=None):
 
 class DirectoryPlan:
     files = None
-    jobs = None
 
     DEFAULT_TIC_CATALOG_TEMPLATE = (
         "/pdo/qlp-data/"
@@ -135,8 +141,10 @@ class DirectoryPlan:
         directories: list[pathlib.Path],
         db_config,
         recursive=False,
+        update: bool = False,
     ):
         self.source_dirs = directories
+        self.update = update
         self.recursive = recursive
         self.db_config = db_config
         self._look_for_files()

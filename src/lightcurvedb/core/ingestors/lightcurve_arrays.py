@@ -16,6 +16,7 @@ from lightcurvedb.core.connection import DB
 from lightcurvedb.core.ingestors import lightcurves as em2
 from lightcurvedb.core.ingestors.consumer import BufferedDatabaseIngestor
 from lightcurvedb.core.ingestors.correction import LightcurveCorrector
+from lightcurvedb.core.ingestors.jobs import H5_Job
 from lightcurvedb.models.lightcurve import ArrayOrbitLightcurve
 
 INGESTION_TELEMETRY_SLUG = "lightpoint-ingestion"
@@ -150,8 +151,11 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
         name = em2.get_best_detrending_type(h5_file)
         return self.get_lightcurve_type_id(name)
 
-    def process_job(self, em2_h5_job):
-        observed_mask = self.get_observed(em2_h5_job.tic_id)
+    def process_job(self, em2_h5_job: H5_Job):
+        if not em2_h5_job.update:
+            observed_mask = self.get_observed(em2_h5_job.tic_id)
+        else:
+            observed_mask = set()
 
         read_t0 = time()
         with h5py.File(em2_h5_job.file_path, "r") as h5:
@@ -248,12 +252,16 @@ class BaseEM2ArrayIngestor(BufferedDatabaseIngestor):
             f"{len(best_lcs)} entries"
         )
         start = datetime.now()
-        q = (
-            psql_insert(models.BestOrbitLightcurve)
-            .values(best_lcs)
-            .on_conflict_do_nothing()
+        insert = psql_insert(models.BestOrbitLightcurve).values(best_lcs)
+        upsert = insert.on_conflict_do_update(
+            constraint="unique_best_orbit_lightcurve",
+            set_=dict(
+                aperture_id=insert.excluded.aperture_id,
+                small_aperture_id=insert.excluded.small_aperture_id,
+                large_aperture_id=insert.excluded.large_aperture_id,
+            ),
         )
-        db.execute(q)
+        db.execute(upsert)
         end = datetime.now()
 
         metric = models.QLPOperation(
