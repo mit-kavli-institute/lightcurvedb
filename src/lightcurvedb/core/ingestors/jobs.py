@@ -161,7 +161,9 @@ class DirectoryPlan:
 
     def _look_for_files(self):
         n_workers = min((len(self.source_dirs), cpu_count()))
-        func = partial(look_for_relevant_files, self.db_config)
+        func = partial(
+            look_for_relevant_files, self.db_config, update=self.update
+        )
         with Pool(n_workers) as pool:
             results = pool.imap(func, list(self.source_dirs))
             contexts = list(chain.from_iterable(results))
@@ -245,7 +247,10 @@ class TICListPlan(DirectoryPlan):
 
         with Pool() as pool:
             func = partial(
-                look_for_relevant_files, self.db_config, tic_mask=self.tic_ids
+                look_for_relevant_files,
+                self.db_config,
+                tic_mask=self.tic_ids,
+                update=self.update,
             )
             contexts = list(
                 chain.from_iterable(pool.imap_unordered(func, paths))
