@@ -40,10 +40,10 @@ def psql_small_integers(**overrides):
     return st.integers(min_value=-32768, max_value=32767, **overrides)
 
 
-def orbits():
+def orbits(orbit_number=tess_st.orbits()):
     return st.builds(
         models.Orbit,
-        orbit_number=tess_st.orbits(),
+        orbit_number=orbit_number,
         sector=tess_st.sectors(),
         right_ascension=st.floats(),
         declination=st.floats(),

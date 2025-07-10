@@ -7,7 +7,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
-from lightcurvedb.core.base_model import QLPModel
+from lightcurvedb.core.base_model import LCDBModel, QLPModel
 from lightcurvedb.core.connection import DB, LCDB_Session
 from tests.util import mk_db_config
 
@@ -36,6 +36,29 @@ def db_session():
         yield sess
     finally:
         sess.close()
+
+
+@pytest.fixture
+def v2_db():
+    url = sa.URL.create(
+        "postgresql+psycopg",
+        database="postgres",
+        username="postgres",
+        password="postgres",
+        host="db",
+        port=5432,
+    )
+
+    engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
+
+    LCDBModel.metadata.create_all(bind=engine, checkfirst=True)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+
+    try:
+        yield Session()
+    finally:
+        LCDBModel.metadata.drop_all(bind=engine)
 
 
 @pytest.fixture
