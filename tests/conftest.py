@@ -5,10 +5,11 @@ from tempfile import TemporaryDirectory
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import orm
 from sqlalchemy.orm import sessionmaker
 
-from lightcurvedb.core.base_model import LCDBModel, QLPModel
-from lightcurvedb.core.connection import DB, LCDB_Session
+from lightcurvedb.core.base_model import LCDBModel
+from lightcurvedb.core.connection import LCDB_Session
 from tests.util import mk_db_config
 
 
@@ -25,11 +26,9 @@ def db_session():
 
     engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
 
-    QLPModel.metadata.create_all(bind=engine, checkfirst=True)
-    Session = sessionmaker(class_=DB)
-
+    LCDBModel.metadata.create_all(bind=engine, checkfirst=True)
+    Session = sessionmaker()
     Session.configure(bind=engine)
-
     sess = Session()
 
     try:
@@ -73,7 +72,7 @@ def ensure_directory(path: pathlib.Path):
 
 
 @pytest.fixture
-def isolated_database() -> typing.Generator[DB, None, None]:
+def isolated_database() -> typing.Generator[orm.Session, None, None]:
     admin_url = sa.URL.create(
         "postgresql+psycopg",
         database="postgres",
@@ -103,7 +102,7 @@ def isolated_database() -> typing.Generator[DB, None, None]:
     LCDB_Session.configure(bind=engine)
 
     try:
-        QLPModel.metadata.create_all(bind=engine)
+        LCDBModel.metadata.create_all(bind=engine)
         with LCDB_Session() as temp_session, TemporaryDirectory() as _tempdir:
             config = mk_db_config(
                 pathlib.Path(_tempdir),
@@ -115,7 +114,7 @@ def isolated_database() -> typing.Generator[DB, None, None]:
             )
             temp_session.config = config
             yield temp_session
-            QLPModel.metadata.drop_all(bind=engine)
+            LCDBModel.metadata.drop_all(bind=engine)
     finally:
         with admin_engine.connect().execution_options(
             isolation_level="AUTOCOMMIT"

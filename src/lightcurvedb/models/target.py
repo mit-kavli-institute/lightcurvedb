@@ -2,6 +2,7 @@ import decimal
 import typing
 import uuid
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from astropy import time
@@ -9,6 +10,10 @@ from astropy import units as u
 from sqlalchemy import orm
 
 from lightcurvedb.core.base_model import LCDBModel
+
+if TYPE_CHECKING:
+    from lightcurvedb.models.interpretation import Interpretation
+    from lightcurvedb.models.observation import TargetSpecificTime
 
 
 class Mission(LCDBModel):
@@ -34,6 +39,11 @@ class Mission(LCDBModel):
 
         return MissionTime
 
+    # Relationships
+    catalogs: orm.Mapped[list["MissionCatalog"]] = orm.relationship(
+        back_populates="host_mission"
+    )
+
 
 class MissionCatalog(LCDBModel):
     __tablename__ = "mission_catalog"
@@ -45,6 +55,14 @@ class MissionCatalog(LCDBModel):
     name: orm.Mapped[str] = orm.mapped_column(unique=True)
     description: orm.Mapped[typing.Optional[str]]
 
+    # Relationships
+    host_mission: orm.Mapped["Mission"] = orm.relationship(
+        back_populates="catalogs"
+    )
+    targets: orm.Mapped[list["Target"]] = orm.relationship(
+        back_populates="catalog"
+    )
+
 
 class Target(LCDBModel):
     __tablename__ = "target"
@@ -55,3 +73,14 @@ class Target(LCDBModel):
         sa.ForeignKey(MissionCatalog.id)
     )
     name: orm.Mapped[int] = orm.mapped_column(sa.BigInteger)
+
+    # Relationships
+    catalog: orm.Mapped["MissionCatalog"] = orm.relationship(
+        back_populates="targets"
+    )
+    interpretations: orm.Mapped[list["Interpretation"]] = orm.relationship(
+        back_populates="target"
+    )
+    target_specific_times: orm.Mapped[
+        list["TargetSpecificTime"]
+    ] = orm.relationship(back_populates="target")

@@ -8,8 +8,8 @@ from typing import Generator
 import sqlalchemy as sa
 from sqlalchemy import pool
 
-from lightcurvedb.core.base_model import QLPModel
-from lightcurvedb.core.connection import DB, LCDB_Session
+from lightcurvedb.core.base_model import LCDBModel
+from lightcurvedb.core.connection import LCDB_Session
 
 
 def import_lc_prereqs(db, lightcurves):
@@ -28,7 +28,7 @@ def mk_db_config(path: pathlib.Path, **data) -> pathlib.Path:
 
 
 @contextmanager
-def isolated_database() -> Generator[DB, None, None]:
+def isolated_database() -> Generator[sa.orm.Session, None, None]:
     admin_url = sa.URL.create(
         "postgresql+psycopg",
         database="postgres",
@@ -58,7 +58,7 @@ def isolated_database() -> Generator[DB, None, None]:
     LCDB_Session.configure(bind=engine)
 
     try:
-        QLPModel.metadata.create_all(bind=engine)
+        LCDBModel.metadata.create_all(bind=engine)
         with LCDB_Session() as temp_session, TemporaryDirectory() as _tempdir:
             config = mk_db_config(
                 pathlib.Path(_tempdir),
@@ -70,7 +70,7 @@ def isolated_database() -> Generator[DB, None, None]:
             )
             temp_session.config = config
             yield temp_session
-            QLPModel.metadata.drop_all(bind=engine)
+            LCDBModel.metadata.drop_all(bind=engine)
     finally:
         with admin_engine.connect().execution_options(
             isolation_level="AUTOCOMMIT"

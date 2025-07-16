@@ -17,19 +17,18 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
     __table_args__ = (
         sa.UniqueConstraint(
             "type",
-            "observation_id",
             "cadence",
-            name="distinct_frame_observation_idx",
+            name="distinct_frame_type_cadence_idx",
         ),
     )
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    type: orm.Mapped[str]
-    observation_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("observation.id")
-    )
+    type: orm.Mapped[str] = orm.mapped_column(index=True)
+    cadence: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, index=True)
 
-    cadence: orm.Mapped[int] = orm.mapped_column(sa.BigInteger)
+    observation_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("observation.id", ondelete="CASCADE"), index=True
+    )
 
     # Define primary keywords
     simple: orm.Mapped[bool]
@@ -40,7 +39,7 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
         sa.ARRAY(sa.Integer),
         comment="Representation of the required NAXIS[n] keywords",
     )
-    extend: orm.Mapped[bool]
+    extended: orm.Mapped[bool]
     bscale: orm.Mapped[float] = orm.mapped_column(
         default=1.0, comment="Physical Value = BZERO + BSCALE * stored_value"
     )

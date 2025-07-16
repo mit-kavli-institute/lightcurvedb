@@ -1,10 +1,14 @@
 import typing
 import uuid
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy import orm
 
 from lightcurvedb.core.base_model import LCDBModel
+
+if TYPE_CHECKING:
+    from lightcurvedb.models.observation import Observation
 
 
 class Instrument(LCDBModel):
@@ -16,20 +20,27 @@ class Instrument(LCDBModel):
 
     __tablename__ = "instrument"
 
-    id: orm.Mapped[uuid.UUID] = orm.mapped_column(primary_key=True)
+    id: orm.Mapped[uuid.UUID] = orm.mapped_column(
+        primary_key=True, default=uuid.uuid4
+    )
     name: orm.Mapped[str]
     properties: orm.Mapped[dict[str, typing.Any]]
 
     parent_id: orm.Mapped[uuid.UUID] = orm.mapped_column(
-        sa.ForeignKey("instrument.id", ondelete="RESTRICT"),
+        sa.ForeignKey("instrument.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
     parent: orm.Mapped["Instrument"] = orm.relationship(
-        "Instrument", back_populates="children"
+        "Instrument", back_populates="children", remote_side=[id]
     )
     children: orm.Mapped[list["Instrument"]] = orm.relationship(
         "Instrument", back_populates="parent"
+    )
+
+    # Related observations
+    observations: orm.Mapped[list["Observation"]] = orm.relationship(
+        back_populates="instrument",
     )
 
     @classmethod
