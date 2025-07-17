@@ -70,3 +70,20 @@ html_theme = "furo"
 # html_static_path = ["_static"]  # Commented out - no custom static files
 
 autodoc_member_order = "bysource"
+
+# Mock imports for documentation build
+autodoc_mock_imports = [
+    "psycopg",
+    "psycopg.adapters",
+    "h5py",
+    "pandas",
+    "scipy",
+    "pyquaternion",
+    "configurables",
+    "pyticdb",
+    "pytest",
+    "hypothesis",
+    "tqdm",
+    "cachetools",
+    "tabulate",
+]

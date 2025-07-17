@@ -23,14 +23,17 @@ Interpretation Models
 .. autoclass:: lightcurvedb.models.PhotometricSource
    :members:
    :show-inheritance:
+   :exclude-members: name
 
 .. autoclass:: lightcurvedb.models.DetrendingMethod
    :members:
    :show-inheritance:
+   :exclude-members: name
 
 .. autoclass:: lightcurvedb.models.ProcessingGroup
    :members:
    :show-inheritance:
+   :exclude-members: name
 
 .. autoclass:: lightcurvedb.models.Interpretation
    :members:
