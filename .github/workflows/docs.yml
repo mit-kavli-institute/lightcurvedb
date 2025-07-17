@@ -26,7 +26,7 @@ jobs:
 
     - name: Build documentation
       run: |
-        sphinx-build -M html docs/source/ docs/build/
+        sphinx-build -b html docs/source/ docs/build/html
 
     - name: Upload documentation artifacts
       uses: actions/upload-artifact@v4
@@ -37,4 +37,4 @@ jobs:
 
     - name: Check for documentation warnings
       run: |
-        sphinx-build -W -M html docs/source/ docs/build/
+        sphinx-build -W -b html docs/source/ docs/build/html
