@@ -136,14 +136,17 @@ Mission Models
 .. autoclass:: lightcurvedb.models.Mission
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.MissionCatalog
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.Target
    :members:
    :show-inheritance:
+   :no-index:
 
 Instrument Model
 ~~~~~~~~~~~~~~~~
@@ -151,6 +154,7 @@ Instrument Model
 .. autoclass:: lightcurvedb.models.Instrument
    :members:
    :show-inheritance:
+   :no-index:
 
 Observation Models
 ~~~~~~~~~~~~~~~~~~
@@ -158,10 +162,12 @@ Observation Models
 .. autoclass:: lightcurvedb.models.Observation
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.TargetSpecificTime
    :members:
    :show-inheritance:
+   :no-index:
 
 Frame Models
 ~~~~~~~~~~~~
@@ -169,6 +175,7 @@ Frame Models
 .. autoclass:: lightcurvedb.models.FITSFrame
    :members:
    :show-inheritance:
+   :no-index:
 
 Processing Models
 ~~~~~~~~~~~~~~~~~
@@ -176,18 +183,22 @@ Processing Models
 .. autoclass:: lightcurvedb.models.PhotometricSource
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.DetrendingMethod
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.ProcessingGroup
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.Interpretation
    :members:
    :show-inheritance:
+   :no-index:
 
 
 Polymorphic Models

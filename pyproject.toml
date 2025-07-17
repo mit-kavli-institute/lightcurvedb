@@ -62,6 +62,7 @@ dev = [
 docs = [
     "sphinx",
     "sphinxcontrib-mermaid",
+    "furo",
 ]
 
 [tool.mypy]
