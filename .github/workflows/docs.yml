@@ -6,12 +6,25 @@ on:
   pull_request:
     branches: [ main, master, staging ]
 
-jobs:
-  build-docs:
-    runs-on: ubuntu-latest
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Build job
+  build:
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
     - name: Set up Python 3.9
       uses: actions/setup-python@v5
@@ -28,13 +41,26 @@ jobs:
       run: |
         sphinx-build -b html docs/source/ docs/build/html
 
-    - name: Upload documentation artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: documentation
-        path: docs/build/html/
-        retention-days: 7
-
     - name: Check for documentation warnings
       run: |
-        sphinx-build -W -b html docs/source/ docs/build/html
+        sphinx-build -W -b html docs/source/ docs/build/html_test
+
+    - name: Upload artifact
+      # Upload entire repository to ensure GitHub Pages can serve the site
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./docs/build/html
+
+  # Deployment job
+  deploy:
+    # Only deploy on push to main branches, not on PRs
+    if: github.event_name == 'push'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

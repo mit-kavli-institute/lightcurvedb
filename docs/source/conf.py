@@ -12,9 +12,8 @@
 #
 import os
 import sys
-from datetime import datetime
 
-sys.path.insert(0, os.path.abspath("../../"))
+sys.path.insert(0, os.path.abspath("../../src"))
 
 
 # -- Project information -----------------------------------------------------
@@ -23,8 +22,15 @@ project = "LightcurveDB"
 copyright = "2021, William Fong"
 author = "William Fong"
 
-# The full version, including alpha/beta/rc tags
-release = datetime.now().strftime("%B %-d, %Y")
+# Import version from package
+try:
+    from lightcurvedb import __version__
+
+    version = __version__
+    release = __version__
+except ImportError:
+    version = "0.0.0"
+    release = "0.0.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -57,6 +63,6 @@ html_theme = "alabaster"
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+# html_static_path = ["_static"]  # Commented out - no custom static files
 
 autodoc_member_order = "bysource"
