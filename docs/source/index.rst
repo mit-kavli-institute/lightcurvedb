@@ -39,11 +39,8 @@ Submodule Documentation
 
     installation
     connecting
-    cli/main
+    models
     db/db
-    lightcurves/lightcurves
-    managers/managers
-    metrics/metrics
     util/utils
 
 
