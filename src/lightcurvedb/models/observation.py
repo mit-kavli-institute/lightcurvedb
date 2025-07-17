@@ -1,3 +1,4 @@
+import uuid
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -33,7 +34,7 @@ class Observation(LCDBModel):
         Polymorphic discriminator for subclass type
     cadence_reference : ndarray[int64]
         Array of cadence numbers for time ordering
-    instrument_id : int
+    instrument_id : uuid.UUID
         Foreign key to the instrument used
     instrument : Instrument
         The instrument that made this observation
@@ -70,7 +71,7 @@ class Observation(LCDBModel):
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     type: orm.Mapped[str] = orm.mapped_column(index=True)
     cadence_reference: orm.Mapped[npt.NDArray[np.int64]]
-    instrument_id: orm.Mapped[int] = orm.mapped_column(
+    instrument_id: orm.Mapped[uuid.UUID] = orm.mapped_column(
         sa.ForeignKey("instrument.id", ondelete="CASCADE")
     )
 

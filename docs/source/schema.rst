@@ -72,7 +72,7 @@ Entity Relationship Diagram
            int id PK
            string type
            array cadence_reference
-           int instrument_id FK
+           UUID instrument_id FK
        }
 
        FITSFrame {
