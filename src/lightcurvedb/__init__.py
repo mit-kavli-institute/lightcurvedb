@@ -1,4 +1,4 @@
-__version__ = "0.16.8"
+__version__ = "0.0.0"  # Managed by python-semantic-release
 
 from lightcurvedb.core.connection import db, db_from_config
 
