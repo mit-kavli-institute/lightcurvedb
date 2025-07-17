@@ -61,6 +61,7 @@ dev = [
 
 docs = [
     "sphinx",
+    "sphinxcontrib-mermaid",
 ]
 
 [tool.mypy]

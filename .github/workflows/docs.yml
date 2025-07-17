@@ -35,7 +35,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e .
-        pip install sphinx
+        pip install sphinx sphinxcontrib-mermaid
 
     - name: Build documentation
       run: |

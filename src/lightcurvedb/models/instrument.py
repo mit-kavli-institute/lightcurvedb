@@ -13,9 +13,39 @@ if TYPE_CHECKING:
 
 class Instrument(LCDBModel):
     """
-    A class to represent hardware on scientific instrument/assembly.
-    Instruments can be literal observation equipment (such as a CCD) or be
-    an assembly of other instruments (i.e a camera housing multiple CCDs).
+    Represents a scientific instrument or assembly used for observations.
+
+    Instruments form a hierarchical structure where an instrument can be
+    either a physical device (e.g., a CCD) or an assembly containing other
+    instruments (e.g., a camera with multiple CCDs). This allows modeling
+    complex instrument configurations.
+
+    Attributes
+    ----------
+    id : UUID
+        Unique identifier for the instrument
+    name : str
+        Name of the instrument (e.g., "Camera 1", "CCD 2")
+    properties : dict
+        JSON dictionary of instrument-specific properties and metadata
+    parent_id : UUID, optional
+        Foreign key to parent instrument (None for top-level instruments)
+    parent : Instrument, optional
+        Parent instrument in the hierarchy
+    children : list[Instrument]
+        Child instruments if this is an assembly
+    observations : list[Observation]
+        Observations made using this instrument
+
+    Examples
+    --------
+    >>> camera = Instrument(name="TESS Camera 1")
+    >>> ccd = Instrument(name="CCD 1", parent=camera)
+
+    Notes
+    -----
+    The self-referential relationship allows building instrument trees
+    of arbitrary depth, useful for complex telescope configurations.
     """
 
     __tablename__ = "instrument"

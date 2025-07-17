@@ -8,6 +8,48 @@ from lightcurvedb.core.base_model import CreatedOnMixin, LCDBModel
 
 
 class FITSFrame(LCDBModel, CreatedOnMixin):
+    """
+    Represents a FITS (Flexible Image Transport System) frame.
+
+    FITSFrame stores metadata about individual FITS files used in
+    astronomical observations. It uses polymorphic inheritance to
+    support different frame types while maintaining FITS standard
+    compliance.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier
+    type : str
+        Polymorphic discriminator for frame type
+    cadence : int
+        Time-ordered frame number
+    observation_id : int
+        Foreign key to parent observation
+    simple : bool
+        FITS primary keyword - file conforms to FITS standard
+    bitpix : int
+        FITS primary keyword - bits per pixel
+    naxis : int
+        FITS primary keyword - number of axes
+    naxis_values : list[int]
+        Array representation of NAXIS1, NAXIS2, etc.
+    extended : bool
+        FITS primary keyword - file may contain extensions
+    bscale : float
+        Linear scaling factor (physical = bzero + bscale * stored)
+    bzero : float
+        Zero point offset for scaling
+    file_path : Path, optional
+        File system path to the FITS file
+
+    Notes
+    -----
+    The type-cadence combination must be unique, enforced by
+    database constraint. Polymorphic on 'type' field allows
+    for specialized frame subclasses.
+    """
+
     __tablename__ = "fits_frame"
     __mapper_args__ = {
         "polymorphic_identity": "basefits",

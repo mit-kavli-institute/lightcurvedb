@@ -17,6 +17,40 @@ if TYPE_CHECKING:
 
 
 class Mission(LCDBModel):
+    """
+    Represents a space mission or survey program.
+
+    A Mission defines the top-level context for astronomical observations,
+    including time system definitions and associated catalogs. Examples
+    include TESS (Transiting Exoplanet Survey Satellite).
+
+    Attributes
+    ----------
+    id : UUID
+        Unique identifier for the mission
+    name : str
+        Unique name of the mission (e.g., "TESS")
+    description : str
+        Detailed description of the mission
+    time_unit : str
+        Unit of time measurement (e.g., "day")
+    time_epoch : Decimal
+        Reference epoch for time calculations
+    time_epoch_scale : str
+        Time scale for the epoch (e.g., "tdb")
+    time_epoch_format : str
+        Format of the epoch specification
+    time_format_name : str
+        Unique name for the mission's time format
+    catalogs : list[MissionCatalog]
+        Associated catalogs for this mission
+
+    Examples
+    --------
+    >>> mission = Mission(name="TESS",
+    ...                   description="Transiting Exoplanet Survey Satellite")
+    """
+
     __tablename__ = "mission"
     id: orm.Mapped[uuid.UUID] = orm.mapped_column(primary_key=True)
     name: orm.Mapped[str] = orm.mapped_column(unique=True)
@@ -46,6 +80,29 @@ class Mission(LCDBModel):
 
 
 class MissionCatalog(LCDBModel):
+    """
+    A catalog of astronomical targets associated with a mission.
+
+    MissionCatalog represents a specific catalog within a mission context,
+    such as the TESS Input Catalog (TIC). It serves as a container for
+    organizing targets observed by the mission.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier
+    host_mission_id : UUID
+        Foreign key to the parent Mission
+    name : str
+        Unique catalog name (e.g., "TIC" for TESS Input Catalog)
+    description : str, optional
+        Detailed description of the catalog
+    host_mission : Mission
+        Parent mission this catalog belongs to
+    targets : list[Target]
+        Collection of targets in this catalog
+    """
+
     __tablename__ = "mission_catalog"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
@@ -65,6 +122,34 @@ class MissionCatalog(LCDBModel):
 
 
 class Target(LCDBModel):
+    """
+    An astronomical target (star, planet, etc.) in a mission catalog.
+
+    Target represents an individual astronomical object that is observed
+    during a mission. Each target is uniquely identified within its catalog
+    by a numeric identifier (e.g., TIC ID for TESS targets).
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier
+    catalog_id : int
+        Foreign key to the MissionCatalog
+    name : int
+        Catalog-specific identifier (e.g., TIC ID)
+    catalog : MissionCatalog
+        The catalog this target belongs to
+    interpretations : list[Interpretation]
+        Processed lightcurve interpretations for this target
+    target_specific_times : list[TargetSpecificTime]
+        Time series specific to this target
+
+    Notes
+    -----
+    The combination of catalog_id and name must be unique,
+    ensuring no duplicate targets within a catalog.
+    """
+
     __tablename__ = "target"
     __table_args__ = (sa.UniqueConstraint("catalog_id", "name"),)
 
