@@ -1,92 +1,9 @@
 import configurables as conf
 from sqlalchemy import NullPool, pool
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
-from lightcurvedb import models
-from lightcurvedb.core import mixins
 from lightcurvedb.core.engines import thread_safe_engine
 from lightcurvedb.util.constants import DEFAULT_CONFIG_PATH
-
-
-class DB(
-    Session,
-    mixins.ApertureAPIMixin,
-    mixins.LightcurveTypeAPIMixin,
-    mixins.BestOrbitLightcurveAPIMixin,
-    mixins.BLSAPIMixin,
-    mixins.FrameAPIMixin,
-    mixins.OrbitAPIMixin,
-    mixins.ArrayOrbitLightcurveAPIMixin,
-    mixins.PGCatalogMixin,
-    mixins.QLPMetricAPIMixin,
-    mixins.LegacyAPIMixin,
-):
-    """Wrapper for SQLAlchemy sessions. This is the primary way to interface
-    with the lightcurve database.
-
-    It is advised not to instantiate this class directly. The preferred
-    methods are through
-
-    ::
-
-        from lightcurvedb import db
-        with db as opendb:
-            foo
-
-        # or
-        from lightcurvedb import db_from_config
-        db = db_from_config('path_to_config')
-
-    """
-
-    def __init__(self, *args, **kwargs):
-        config = kwargs.pop("config", None)
-        super().__init__(*args, **kwargs)
-        self.config = config
-
-    @property
-    def orbits(self):
-        """
-        A quick property that aliases ``db.query(Orbit)``.
-
-        Returns
-        -------
-        sqlalchemy.Query
-        """
-        return self.query(models.Orbit)
-
-    @property
-    def apertures(self):
-        """
-        A quick property that aliases ``db.query(Aperture)``.
-
-        Returns
-        -------
-        sqlalchemy.Query
-        """
-        return self.query(models.Aperture)
-
-    @property
-    def lightcurves(self):
-        """
-        A quick property that aliases ``db.query(Lightcurve)``.
-
-        Returns
-        -------
-        sqlalchemy.Query
-        """
-        return self.query(models.Lightcurve)
-
-    @property
-    def lightcurve_types(self):
-        """
-        A quick property that aliases ``db.query(LightcurveType)``.
-
-        Returns
-        -------
-        sqlalchemy.Query
-        """
-        return self.query(models.LightcurveType)
 
 
 @conf.configurable("Credentials")
@@ -127,7 +44,7 @@ def db_from_config(
         poolclass=pool.NullPool,
         **engine_kwargs
     )
-    session = sessionmaker(bind=engine, class_=DB)()
+    session = sessionmaker(bind=engine)()
     return session
 
 
@@ -152,7 +69,7 @@ def configure_engine(
     return engine
 
 
-LCDB_Session = sessionmaker(expire_on_commit=False, class_=DB)
+LCDB_Session = sessionmaker(expire_on_commit=False)
 
 # Try and instantiate "global" lcdb
 if not DEFAULT_CONFIG_PATH.exists():

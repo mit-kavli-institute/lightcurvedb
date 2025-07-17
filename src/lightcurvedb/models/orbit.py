@@ -4,15 +4,17 @@ from decimal import Decimal
 
 import click
 import numpy as np
-from sqlalchemy import Sequence, SmallInteger, String, func, inspect, select
+from sqlalchemy import Sequence, SmallInteger, String
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from lightcurvedb.core.base_model import CreatedOnMixin, QLPModel
+from lightcurvedb.core.base_model import CreatedOnMixin, LCDBModel
 from lightcurvedb.core.constants import POC_ORBITS, QLP_ORBITS, QLP_SECTORS
 from lightcurvedb.core.sql import psql_safe_str
-from lightcurvedb.models.camera_quaternion import CameraQuaternion
-from lightcurvedb.models.frame import Frame
+
+# TODO: Frame and CameraQuaternion models need to be defined
+# from lightcurvedb.models.camera_quaternion import CameraQuaternion
+# from lightcurvedb.models.frame import Frame
 
 ORBIT_DTYPE = [
     ("orbit_number", np.int32),
@@ -27,7 +29,7 @@ ORBIT_DTYPE = [
 ]
 
 
-class Orbit(QLPModel, CreatedOnMixin):
+class Orbit(LCDBModel, CreatedOnMixin):
     """
     Provides ORM implementation of an orbit completed by TESS
     """
@@ -59,7 +61,8 @@ class Orbit(QLPModel, CreatedOnMixin):
     _basename: Mapped[str] = mapped_column("basename", String(256))
 
     # Relationships
-    frames = relationship("Frame", back_populates="orbit")
+    # TODO: Uncomment when Frame model is defined
+    # frames = relationship("Frame", back_populates="orbit")
     # Click Parameters
     click_parameters = click.Choice(
         ["orbit_number", "sector", "ra", "dec", "roll", "basename"],
@@ -98,23 +101,24 @@ class Orbit(QLPModel, CreatedOnMixin):
         self.crm = other_orbit.crm
         self.basename = other_orbit.basename
 
-    @hybrid_property
-    def max_cadence(self):
-        cadences = {f.cadence for f in self.frames}
-        return max(cadences)
+    # TODO: Uncomment when Frame model is defined
+    # @hybrid_property
+    # def max_cadence(self):
+    #     cadences = {f.cadence for f in self.frames}
+    #     return max(cadences)
 
-    @hybrid_property
-    def min_cadence(self):
-        cadences = {f.cadence for f in self.frames}
-        return min(cadences)
+    # @hybrid_property
+    # def min_cadence(self):
+    #     cadences = {f.cadence for f in self.frames}
+    #     return min(cadences)
 
-    @hybrid_property
-    def min_gps_time(self):
-        return min(f.gps_time for f in self.frames)
+    # @hybrid_property
+    # def min_gps_time(self):
+    #     return min(f.gps_time for f in self.frames)
 
-    @hybrid_property
-    def max_gps_time(self):
-        return max(f.gps_time for f in self.frames)
+    # @hybrid_property
+    # def max_gps_time(self):
+    #     return max(f.gps_time for f in self.frames)
 
     @hybrid_property
     def ra(self):
@@ -124,45 +128,46 @@ class Orbit(QLPModel, CreatedOnMixin):
     def dec(self):
         return self.declination
 
-    @hybrid_property
-    def cadences(self):
-        return [f.cadence for f in self.frames]
+    # TODO: Uncomment when Frame model is defined
+    # @hybrid_property
+    # def cadences(self):
+    #     return [f.cadence for f in self.frames]
 
-    @cadences.expression
-    def cadences(cls):
-        return Frame.cadence
+    # @cadences.expression
+    # def cadences(cls):
+    #     return Frame.cadence
 
-    @max_cadence.expression
-    def max_cadence(cls):
-        return func.max(Frame.cadence).label("max_cadence")
+    # @max_cadence.expression
+    # def max_cadence(cls):
+    #     return func.max(Frame.cadence).label("max_cadence")
 
-    @min_cadence.expression
-    def min_cadence(cls):
-        return func.min(Frame.cadence).label("min_cadence")
+    # @min_cadence.expression
+    # def min_cadence(cls):
+    #     return func.min(Frame.cadence).label("min_cadence")
 
-    @min_gps_time.expression
-    def min_gps_time(cls):
-        q = (
-            select([Frame.gps_time])
-            .where(Frame.orbit_id == cls.id)
-            .order_by(Frame.cadence.asc())
-            .limit(1)
-            .label("min_gps_time")
-        )
+    # @min_gps_time.expression
+    # def min_gps_time(cls):
+    #     q = (
+    #         select([Frame.gps_time])
+    #         .where(Frame.orbit_id == cls.id)
+    #         .order_by(Frame.cadence.asc())
+    #         .limit(1)
+    #         .label("min_gps_time")
+    #     )
+    #
+    #     return q
 
-        return q
-
-    @max_gps_time.expression
-    def max_gps_time(cls):
-        q = (
-            select([Frame.gps_time])
-            .where(Frame.orbit_id == cls.id)
-            .order_by(Frame.cadence.desc())
-            .limit(1)
-            .label("max_gps_time")
-        )
-
-        return q
+    # @max_gps_time.expression
+    # def max_gps_time(cls):
+    #     q = (
+    #         select([Frame.gps_time])
+    #         .where(Frame.orbit_id == cls.id)
+    #         .order_by(Frame.cadence.desc())
+    #         .limit(1)
+    #         .label("max_gps_time")
+    #     )
+    #
+    #     return q
 
     @ra.expression
     def ra(cls):
@@ -211,31 +216,32 @@ class Orbit(QLPModel, CreatedOnMixin):
         run_dir = os.path.join(base_dir, "ffi", "run")
         return run_dir
 
-    def get_camera_quaternions(self, *cameras):
-        """
-        Build a query that returns the camera quaternions that were recorded
-        for this orbit's gps time limits.
-
-        Parameters
-        ----------
-        *cameras : int, variable
-            Camera discriminators to pass. If left empty (default) then no
-            cameras will be filtered for and all quaternions in this orbit
-            will be returned.
-        """
-        session = inspect(self).session
-        max_gps_time = self.max_gps_time
-        min_gps_time = self.min_gps_time
-
-        q = session.query(CameraQuaternion).filter(
-            CameraQuaternion.gps_time.between(min_gps_time, max_gps_time)
-        )
-
-        if len(cameras) == 1:
-            q = q.filter(CameraQuaternion.camera == cameras[0])
-        elif len(cameras) > 1:
-            q = q.filter(CameraQuaternion.camera.in_(cameras))
-        return q
+    # TODO: Uncomment when CameraQuaternion and Frame models are defined
+    # def get_camera_quaternions(self, *cameras):
+    #     """
+    #     Build a query that returns the camera quaternions that were recorded
+    #     for this orbit's gps time limits.
+    #
+    #     Parameters
+    #     ----------
+    #     *cameras : int, variable
+    #         Camera discriminators to pass. If left empty (default) then no
+    #         cameras will be filtered for and all quaternions in this orbit
+    #         will be returned.
+    #     """
+    #     session = inspect(self).session
+    #     max_gps_time = self.max_gps_time
+    #     min_gps_time = self.min_gps_time
+    #
+    #     q = session.query(CameraQuaternion).filter(
+    #         CameraQuaternion.gps_time.between(min_gps_time, max_gps_time)
+    #     )
+    #
+    #     if len(cameras) == 1:
+    #         q = q.filter(CameraQuaternion.camera == cameras[0])
+    #     elif len(cameras) > 1:
+    #         q = q.filter(CameraQuaternion.camera.in_(cameras))
+    #     return q
 
     @classmethod
     def from_fits_header(cls, header: dict[str, typing.Any]):
