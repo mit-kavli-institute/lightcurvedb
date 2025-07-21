@@ -56,6 +56,7 @@ Quality Flag Models
 .. autoclass:: lightcurvedb.models.QualityFlagArray
    :members:
    :show-inheritance:
+   :exclude-members: created_on
 
 Target Models
 -------------
