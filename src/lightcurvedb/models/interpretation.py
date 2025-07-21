@@ -187,8 +187,8 @@ class Interpretation(LCDBModel):
         sa.ForeignKey("observation.id", ondelete="CASCADE"), index=True
     )
 
-    values = orm.Mapped[npt.NDArray[np.float64]]
-    errors = orm.Mapped[typing.Optional[npt.NDArray[np.float64]]]
+    values: orm.Mapped[npt.NDArray[np.float64]]
+    errors: orm.Mapped[typing.Optional[npt.NDArray[np.float64]]]
 
     # Relationships
     processing_group: orm.Mapped["ProcessingGroup"] = orm.relationship(
