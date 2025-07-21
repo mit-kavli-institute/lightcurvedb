@@ -12,7 +12,7 @@ The database schema consists of several interconnected model groups:
 2. **Instrument Hierarchy**: Self-referential instrument tree
 3. **Observation System**: Polymorphic observation models with FITS frame support
 4. **Processing Pipeline**: PhotometricSource + DetrendingMethod → ProcessingGroup
-5. **Data Products**: Interpretation (lightcurves) and TargetSpecificTime
+5. **Data Products**: DataSet (lightcurves) and TargetSpecificTime
 
 Entity Relationship Diagram
 ---------------------------
@@ -28,14 +28,14 @@ Entity Relationship Diagram
 
        Observation ||--o{ FITSFrame : "polymorphic"
        Observation ||--o{ TargetSpecificTime : "has times"
-       Observation ||--o{ Interpretation : "has interpretations"
+       Observation ||--o{ DataSet : "has datasets"
 
        Target ||--o{ TargetSpecificTime : "has times"
-       Target ||--o{ Interpretation : "has lightcurves"
+       Target ||--o{ DataSet : "has lightcurves"
 
        PhotometricSource ||--o{ ProcessingGroup : "used in"
        DetrendingMethod ||--o{ ProcessingGroup : "used in"
-       ProcessingGroup ||--o{ Interpretation : "produces"
+       ProcessingGroup ||--o{ DataSet : "produces"
 
        Mission {
            UUID id PK
@@ -110,7 +110,7 @@ Entity Relationship Diagram
            int detrending_method_id FK
        }
 
-       Interpretation {
+       DataSet {
            int id PK
            int processing_group_id FK
            int target_id FK
@@ -195,7 +195,7 @@ Processing Models
    :show-inheritance:
    :no-index:
 
-.. autoclass:: lightcurvedb.models.Interpretation
+.. autoclass:: lightcurvedb.models.DataSet
    :members:
    :show-inheritance:
    :no-index:
@@ -302,7 +302,7 @@ Key Relationships
 
 - Mission → MissionCatalog → Target (hierarchical)
 - Instrument → Observation
-- ProcessingGroup → Interpretation
+- ProcessingGroup → DataSet
 
 **Many-to-Many** (via junction tables):
 
@@ -315,7 +315,7 @@ Key Relationships
 
 **Central Hub**:
 
-- Interpretation connects Target + Observation + ProcessingGroup
+- DataSet connects Target + Observation + ProcessingGroup
 - This is where the actual lightcurve data resides
 
 Usage Examples
@@ -325,11 +325,11 @@ Querying for a target's lightcurves:
 
 .. code-block:: python
 
-   from lightcurvedb.models import Target, Interpretation
+   from lightcurvedb.models import Target, DataSet
 
    # Get all lightcurves for a specific TIC ID
    target = session.query(Target).filter_by(name=12345678).first()
-   lightcurves = target.interpretations
+   lightcurves = target.datasets
 
    # Get lightcurves with specific processing
    for lc in lightcurves:
@@ -364,9 +364,9 @@ The schema enforces several important constraints:
 
 2. **Cascade Deletes**:
 
-   - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, and Interpretation
-   - Deleting a ProcessingGroup cascades to Interpretation
-   - Deleting a Target cascades to Interpretation
+   - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, and DataSet
+   - Deleting a ProcessingGroup cascades to DataSet
+   - Deleting a Target cascades to DataSet
 
 3. **Referential Integrity**:
 
