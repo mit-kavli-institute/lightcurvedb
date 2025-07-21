@@ -88,7 +88,12 @@ class Observation(LCDBModel):
     ] = orm.relationship(back_populates="observation")
     quality_flag_arrays: orm.Mapped[
         list["QualityFlagArray"]
-    ] = orm.relationship("QualityFlagArray", back_populates="observation")
+    ] = orm.relationship(
+        "QualityFlagArray",
+        back_populates="observation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class TargetSpecificTime(LCDBModel):

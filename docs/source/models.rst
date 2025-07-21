@@ -50,6 +50,13 @@ Observation Models
    :members:
    :show-inheritance:
 
+Quality Flag Models
+-------------------
+
+.. autoclass:: lightcurvedb.models.QualityFlagArray
+   :members:
+   :show-inheritance:
+
 Target Models
 -------------
 
