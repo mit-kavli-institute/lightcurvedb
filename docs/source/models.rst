@@ -17,8 +17,8 @@ Instrument Models
    :members:
    :show-inheritance:
 
-Interpretation Models
----------------------
+Processing Models
+-----------------
 
 .. autoclass:: lightcurvedb.models.PhotometricSource
    :members:
@@ -35,7 +35,7 @@ Interpretation Models
    :show-inheritance:
    :exclude-members: name
 
-.. autoclass:: lightcurvedb.models.Interpretation
+.. autoclass:: lightcurvedb.models.DataSet
    :members:
    :show-inheritance:
 

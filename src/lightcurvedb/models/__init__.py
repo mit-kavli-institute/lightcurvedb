@@ -1,11 +1,11 @@
-from .frame import FITSFrame
-from .instrument import Instrument
-from .interpretation import (
+from .dataset import (
+    DataSet,
     DetrendingMethod,
-    Interpretation,
     PhotometricSource,
     ProcessingGroup,
 )
+from .frame import FITSFrame
+from .instrument import Instrument
 from .observation import Observation, TargetSpecificTime
 from .target import Mission, MissionCatalog, Target
 
@@ -20,7 +20,7 @@ __all__ = [
     "MissionCatalog",
     "Target",
     "TargetSpecificTime",
-    "Interpretation",
+    "DataSet",
 ]
 
 DEFINED_MODELS = __all__

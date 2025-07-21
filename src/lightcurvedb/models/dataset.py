@@ -104,8 +104,8 @@ class ProcessingGroup(LCDBModel, NameAndDescriptionMixin):
         The photometric extraction method
     detrending_method : DetrendingMethod
         The detrending algorithm
-    interpretations : list[Interpretation]
-        Lightcurve interpretations using this processing
+    datasets : list[DataSet]
+        Lightcurve datasets using this processing
 
     Notes
     -----
@@ -121,14 +121,14 @@ class ProcessingGroup(LCDBModel, NameAndDescriptionMixin):
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
 
     photometric_source_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(PhotometricSource.id)
+        sa.ForeignKey(PhotometricSource.id), nullable=True
     )
     detrending_method_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(DetrendingMethod.id)
+        sa.ForeignKey(DetrendingMethod.id), nullable=True
     )
 
-    interpretations: orm.Mapped[list["Interpretation"]] = orm.relationship(
-        "Interpretation", back_populates="processing_group"
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        "DataSet", back_populates="processing_group"
     )
     photometric_source: orm.Mapped[PhotometricSource] = orm.relationship(
         PhotometricSource, back_populates="processing_groups"
@@ -138,11 +138,11 @@ class ProcessingGroup(LCDBModel, NameAndDescriptionMixin):
     )
 
 
-class Interpretation(LCDBModel):
+class DataSet(LCDBModel):
     """
     A processed lightcurve for a specific target and observation.
 
-    Interpretation is the central model that connects a target, an
+    DataSet is the central model that connects a target, an
     observation, and a processing method to produce a final lightcurve.
     It stores the actual photometric measurements and uncertainties.
 
@@ -174,7 +174,7 @@ class Interpretation(LCDBModel):
     with a specific method.
     """
 
-    __tablename__ = "interpretation"
+    __tablename__ = "dataset"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     processing_group_id: orm.Mapped[int] = orm.mapped_column(
@@ -192,11 +192,9 @@ class Interpretation(LCDBModel):
 
     # Relationships
     processing_group: orm.Mapped["ProcessingGroup"] = orm.relationship(
-        back_populates="interpretations"
+        back_populates="datasets"
     )
-    target: orm.Mapped["Target"] = orm.relationship(
-        back_populates="interpretations"
-    )
+    target: orm.Mapped["Target"] = orm.relationship(back_populates="datasets")
     observation: orm.Mapped["Observation"] = orm.relationship(
-        back_populates="interpretations"
+        back_populates="datasets"
     )

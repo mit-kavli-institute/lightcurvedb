@@ -9,8 +9,8 @@ from sqlalchemy import orm
 from lightcurvedb.core.base_model import LCDBModel
 
 if TYPE_CHECKING:
+    from lightcurvedb.models.dataset import DataSet
     from lightcurvedb.models.instrument import Instrument
-    from lightcurvedb.models.interpretation import Interpretation
     from lightcurvedb.models.target import Target
 
 
@@ -38,7 +38,7 @@ class Observation(LCDBModel):
         Foreign key to the instrument used
     instrument : Instrument
         The instrument that made this observation
-    interpretations : list[Interpretation]
+    datasets : list[DataSet]
         Processed versions of this observation
     target_specific_times : list[TargetSpecificTime]
         Target-specific time corrections
@@ -79,8 +79,8 @@ class Observation(LCDBModel):
         "Instrument", back_populates="observations"
     )
 
-    interpretations: orm.Mapped[list["Interpretation"]] = orm.relationship(
-        "Interpretation", back_populates="observation"
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        "DataSet", back_populates="observation"
     )
     target_specific_times: orm.Mapped[
         list["TargetSpecificTime"]

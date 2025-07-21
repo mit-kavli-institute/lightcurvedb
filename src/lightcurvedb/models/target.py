@@ -12,7 +12,7 @@ from sqlalchemy import orm
 from lightcurvedb.core.base_model import LCDBModel
 
 if TYPE_CHECKING:
-    from lightcurvedb.models.interpretation import Interpretation
+    from lightcurvedb.models.dataset import DataSet
     from lightcurvedb.models.observation import TargetSpecificTime
 
 
@@ -139,8 +139,8 @@ class Target(LCDBModel):
         Catalog-specific identifier (e.g., TIC ID)
     catalog : MissionCatalog
         The catalog this target belongs to
-    interpretations : list[Interpretation]
-        Processed lightcurve interpretations for this target
+    datasets : list[DataSet]
+        Processed lightcurve datasets for this target
     target_specific_times : list[TargetSpecificTime]
         Time series specific to this target
 
@@ -163,7 +163,7 @@ class Target(LCDBModel):
     catalog: orm.Mapped["MissionCatalog"] = orm.relationship(
         back_populates="targets"
     )
-    interpretations: orm.Mapped[list["Interpretation"]] = orm.relationship(
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         back_populates="target"
     )
     target_specific_times: orm.Mapped[
