@@ -121,10 +121,10 @@ class ProcessingGroup(LCDBModel, NameAndDescriptionMixin):
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
 
     photometric_source_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(PhotometricSource.id)
+        sa.ForeignKey(PhotometricSource.id), nullable=True
     )
     detrending_method_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(DetrendingMethod.id)
+        sa.ForeignKey(DetrendingMethod.id), nullable=True
     )
 
     interpretations: orm.Mapped[list["Interpretation"]] = orm.relationship(
