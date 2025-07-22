@@ -85,7 +85,11 @@ class Observation(LCDBModel):
     )
     target_specific_times: orm.Mapped[
         list["TargetSpecificTime"]
-    ] = orm.relationship(back_populates="observation")
+    ] = orm.relationship(
+        back_populates="observation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     quality_flag_arrays: orm.Mapped[
         list["QualityFlagArray"]
     ] = orm.relationship(
@@ -145,3 +149,13 @@ class TargetSpecificTime(LCDBModel):
     observation: orm.Mapped["Observation"] = orm.relationship(
         back_populates="target_specific_times"
     )
+
+
+# Create unique constraint on (target_id, observation_id)
+# This ensures only one TargetSpecificTime per target-observation pair
+sa.Index(
+    "unique_target_observation_time",
+    TargetSpecificTime.target_id,
+    TargetSpecificTime.observation_id,
+    unique=True,
+)

@@ -177,7 +177,11 @@ class Target(LCDBModel):
     )
     target_specific_times: orm.Mapped[
         list["TargetSpecificTime"]
-    ] = orm.relationship(back_populates="target")
+    ] = orm.relationship(
+        back_populates="target",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     quality_flag_arrays: orm.Mapped[
         list["QualityFlagArray"]
     ] = orm.relationship(back_populates="target")
