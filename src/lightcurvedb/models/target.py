@@ -1,5 +1,4 @@
 import decimal
-import typing
 import uuid
 from functools import lru_cache
 from typing import TYPE_CHECKING
@@ -9,7 +8,11 @@ from astropy import time
 from astropy import units as u
 from sqlalchemy import orm
 
-from lightcurvedb.core.base_model import LCDBModel
+from lightcurvedb.core.base_model import (
+    CreatedOnMixin,
+    LCDBModel,
+    NameAndDescriptionMixin,
+)
 
 if TYPE_CHECKING:
     from lightcurvedb.models.dataset import DataSet
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
     from lightcurvedb.models.quality_flag import QualityFlagArray
 
 
-class Mission(LCDBModel):
+class Mission(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     """
     Represents a space mission or survey program.
 
@@ -53,9 +56,11 @@ class Mission(LCDBModel):
     """
 
     __tablename__ = "mission"
-    id: orm.Mapped[uuid.UUID] = orm.mapped_column(primary_key=True)
-    name: orm.Mapped[str] = orm.mapped_column(unique=True)
-    description: orm.Mapped[str]
+    __table_args__ = (sa.UniqueConstraint("name"),)
+
+    id: orm.Mapped[uuid.UUID] = orm.mapped_column(
+        primary_key=True, default=uuid.uuid4
+    )
 
     time_unit = orm.Mapped[str]
     time_epoch: orm.Mapped[decimal.Decimal] = orm.mapped_column()
@@ -80,7 +85,7 @@ class Mission(LCDBModel):
     )
 
 
-class MissionCatalog(LCDBModel):
+class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     """
     A catalog of astronomical targets associated with a mission.
 
@@ -105,13 +110,12 @@ class MissionCatalog(LCDBModel):
     """
 
     __tablename__ = "mission_catalog"
+    __table_args__ = (sa.UniqueConstraint("host_mission_id", "name"),)
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     host_mission_id: orm.Mapped[uuid.UUID] = orm.mapped_column(
-        sa.ForeignKey(Mission.id)
+        sa.ForeignKey(Mission.id, ondelete="CASCADE")
     )
-    name: orm.Mapped[str] = orm.mapped_column(unique=True)
-    description: orm.Mapped[typing.Optional[str]]
 
     # Relationships
     host_mission: orm.Mapped["Mission"] = orm.relationship(
@@ -158,7 +162,9 @@ class Target(LCDBModel):
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
     catalog_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(MissionCatalog.id)
+        sa.ForeignKey(
+            MissionCatalog.id, ondelete="CASCADE", onupdate="CASCADE"
+        )
     )
     name: orm.Mapped[int] = orm.mapped_column(sa.BigInteger)
 

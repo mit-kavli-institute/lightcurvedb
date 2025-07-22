@@ -130,7 +130,7 @@ class TargetSpecificTime(LCDBModel):
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
     target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("target.id"), index=True
+        sa.ForeignKey("target.id", ondelete="CASCADE"), index=True
     )
     observation_id: orm.Mapped[int] = orm.mapped_column(
         sa.ForeignKey(Observation.id, ondelete="CASCADE"), index=True
