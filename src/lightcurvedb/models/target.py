@@ -14,6 +14,7 @@ from lightcurvedb.core.base_model import LCDBModel
 if TYPE_CHECKING:
     from lightcurvedb.models.dataset import DataSet
     from lightcurvedb.models.observation import TargetSpecificTime
+    from lightcurvedb.models.quality_flag import QualityFlagArray
 
 
 class Mission(LCDBModel):
@@ -143,6 +144,8 @@ class Target(LCDBModel):
         Processed lightcurve datasets for this target
     target_specific_times : list[TargetSpecificTime]
         Time series specific to this target
+    quality_flag_arrays : list[QualityFlagArray]
+        Target-specific quality flags
 
     Notes
     -----
@@ -168,4 +171,7 @@ class Target(LCDBModel):
     )
     target_specific_times: orm.Mapped[
         list["TargetSpecificTime"]
+    ] = orm.relationship(back_populates="target")
+    quality_flag_arrays: orm.Mapped[
+        list["QualityFlagArray"]
     ] = orm.relationship(back_populates="target")

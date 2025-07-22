@@ -11,6 +11,7 @@ from lightcurvedb.core.base_model import LCDBModel
 if TYPE_CHECKING:
     from lightcurvedb.models.dataset import DataSet
     from lightcurvedb.models.instrument import Instrument
+    from lightcurvedb.models.quality_flag import QualityFlagArray
     from lightcurvedb.models.target import Target
 
 
@@ -85,6 +86,14 @@ class Observation(LCDBModel):
     target_specific_times: orm.Mapped[
         list["TargetSpecificTime"]
     ] = orm.relationship(back_populates="observation")
+    quality_flag_arrays: orm.Mapped[
+        list["QualityFlagArray"]
+    ] = orm.relationship(
+        "QualityFlagArray",
+        back_populates="observation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class TargetSpecificTime(LCDBModel):

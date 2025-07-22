@@ -20,6 +20,7 @@ class LCDBModel(orm.DeclarativeBase):
         dict[str, Any]: JSONB,
         Decimal: sa.DOUBLE_PRECISION,
         npt.NDArray[np.int64]: sa.ARRAY(sa.BigInteger),
+        npt.NDArray[np.int32]: sa.ARRAY(sa.Integer),
         npt.NDArray[np.float64]: sa.ARRAY(sa.Float),
         pathlib.Path: sa.String,
     }

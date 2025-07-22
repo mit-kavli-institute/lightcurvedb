@@ -7,6 +7,7 @@ from .dataset import (
 from .frame import FITSFrame
 from .instrument import Instrument
 from .observation import Observation, TargetSpecificTime
+from .quality_flag import QualityFlagArray
 from .target import Mission, MissionCatalog, Target
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "Target",
     "TargetSpecificTime",
     "DataSet",
+    "QualityFlagArray",
 ]
 
 DEFINED_MODELS = __all__
