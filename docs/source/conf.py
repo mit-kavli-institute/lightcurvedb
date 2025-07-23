@@ -87,3 +87,100 @@ autodoc_mock_imports = [
     "cachetools",
     "tabulate",
 ]
+
+# -- Mermaid configuration ---------------------------------------------------
+
+# Initialize Mermaid with custom theme and settings
+mermaid_init_js = """
+mermaid.initialize({
+  theme: 'neutral',
+  themeVariables: {
+    fontFamily: 'var(--font-stack)',
+    fontSize: '16px',
+    primaryColor: '#0066cc',
+    primaryTextColor: '#fff',
+    primaryBorderColor: '#004499',
+    lineColor: '#5c6670',
+    secondaryColor: '#e1e4e8',
+    tertiaryColor: '#f6f8fa'
+  },
+  er: {
+    entityPadding: 15,
+    fontSize: 12
+  },
+  flowchart: {
+    nodeSpacing: 50,
+    rankSpacing: 50
+  }
+});
+"""
+
+# Enable zoom functionality for all Mermaid diagrams
+mermaid_d3_zoom = True
+
+# Alternative theme configurations (uncomment to use):
+
+# Forest theme - High contrast with green tones
+# mermaid_init_js = """
+# mermaid.initialize({
+#   theme: 'forest',
+#   er: {
+#     entityPadding: 15,
+#     fontSize: 12
+#   }
+# });
+# """
+
+# Dark theme - For dark mode documentation
+# mermaid_init_js = """
+# mermaid.initialize({
+#   theme: 'dark',
+#   themeVariables: {
+#     fontFamily: 'var(--font-stack)',
+#     fontSize: '16px',
+#     primaryColor: '#1e90ff',
+#     primaryTextColor: '#fff',
+#     primaryBorderColor: '#1873cc',
+#     lineColor: '#4a5568',
+#     secondaryColor: '#2d3748',
+#     tertiaryColor: '#1a202c',
+#     background: '#0d1117',
+#     mainBkg: '#161b22',
+#     secondBkg: '#21262d'
+#   },
+#   er: {
+#     entityPadding: 15,
+#     fontSize: 12
+#   }
+# });
+# """
+
+# Custom base theme - Matching Furo's exact colors
+# mermaid_init_js = """
+# mermaid.initialize({
+#   theme: 'base',
+#   themeVariables: {
+#     fontFamily: 'var(--font-stack)',
+#     fontSize: '16px',
+#     primaryColor: '#007acc',
+#     primaryTextColor: '#fff',
+#     primaryBorderColor: '#005a9e',
+#     lineColor: '#6c757d',
+#     secondaryColor: '#f8f9fa',
+#     tertiaryColor: '#e9ecef',
+#     background: '#ffffff',
+#     mainBkg: '#ffffff',
+#     secondBkg: '#f8f9fa',
+#     nodeBorder: '#dee2e6',
+#     clusterBkg: '#f8f9fa',
+#     clusterBorder: '#dee2e6',
+#     defaultLinkColor: '#6c757d',
+#     titleColor: '#212529',
+#     edgeLabelBackground: '#ffffff'
+#   },
+#   er: {
+#     entityPadding: 20,
+#     fontSize: 12
+#   }
+# });
+# """

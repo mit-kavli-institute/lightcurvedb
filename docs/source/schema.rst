@@ -12,13 +12,24 @@ The database schema consists of several interconnected model groups:
 2. **Instrument Hierarchy**: Self-referential instrument tree
 3. **Observation System**: Polymorphic observation models with FITS frame support
 4. **Processing Pipeline**: PhotometricSource + DetrendingMethod → ProcessingGroup
-5. **Data Products**: DataSet (lightcurves) and TargetSpecificTime
+5. **Data Products**: DataSet (lightcurves), TargetSpecificTime, and QualityFlagArray
 
 Entity Relationship Diagram
 ---------------------------
 
 .. mermaid::
+   :caption: LightcurveDB Entity Relationship Diagram
+   :alt: ER diagram showing relationships between Mission, Target, Observation, and data processing models
+   :align: center
 
+   ---
+   config:
+     theme: neutral
+     layout: elk
+     elk:
+       mergeEdges: true
+       nodePlacementStrategy: LINEAR_SEGMENTS
+   ---
    erDiagram
        Mission ||--o{ MissionCatalog : "has catalogs"
        MissionCatalog ||--o{ Target : "contains targets"
@@ -29,9 +40,11 @@ Entity Relationship Diagram
        Observation ||--o{ FITSFrame : "polymorphic"
        Observation ||--o{ TargetSpecificTime : "has times"
        Observation ||--o{ DataSet : "has datasets"
+       Observation ||--o{ QualityFlagArray : "has quality flags"
 
        Target ||--o{ TargetSpecificTime : "has times"
        Target ||--o{ DataSet : "has lightcurves"
+       Target ||--o{ QualityFlagArray : "has quality flags"
 
        PhotometricSource ||--o{ ProcessingGroup : "used in"
        DetrendingMethod ||--o{ ProcessingGroup : "used in"
@@ -126,6 +139,15 @@ Entity Relationship Diagram
            array barycentric_julian_dates
        }
 
+       QualityFlagArray {
+           bigint id PK
+           string type
+           int observation_id FK
+           int target_id FK
+           array quality_flags
+           datetime created_on
+       }
+
 
 Model Descriptions
 ------------------
@@ -200,6 +222,14 @@ Processing Models
    :show-inheritance:
    :no-index:
 
+Quality Flag Model
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: lightcurvedb.models.QualityFlagArray
+   :members:
+   :show-inheritance:
+   :no-index:
+
 
 Polymorphic Models
 ------------------
@@ -215,6 +245,12 @@ The schema uses SQLAlchemy's polymorphic inheritance for flexibility:
 
    - Supports different FITS frame types (e.g., science frames, calibration frames)
    - Identity "basefits" serves as the default type
+
+3. **QualityFlagArray**: Base class with polymorphic_on="type"
+
+   - Enables mission-specific quality flag implementations
+   - Identity "base_quality_flag" serves as the default type
+   - Can be extended to add mission-specific bit interpretations
 
 Mission-Specific Extensions
 ---------------------------
@@ -303,6 +339,8 @@ Key Relationships
 - Mission → MissionCatalog → Target (hierarchical)
 - Instrument → Observation
 - ProcessingGroup → DataSet
+- Observation → QualityFlagArray
+- Target → QualityFlagArray (optional relationship)
 
 **Many-to-Many** (via junction tables):
 
@@ -349,6 +387,34 @@ Creating instrument hierarchy:
 
    session.add_all([camera, ccd1, ccd2])
 
+Working with quality flags:
+
+.. code-block:: python
+
+   from lightcurvedb.models import QualityFlagArray, Target, Observation
+   import numpy as np
+
+   # Get quality flags for a specific target observation
+   target = session.query(Target).filter_by(name=12345678).first()
+   observation = target.observations[0]
+
+   # Get quality flags for this target in this observation
+   quality_flags = session.query(QualityFlagArray).filter_by(
+       observation=observation,
+       target=target,
+       type="base_quality_flag"
+   ).first()
+
+   if quality_flags:
+       # Check for cosmic ray events (bit 0)
+       cosmic_ray_mask = (quality_flags.quality_flags & 1) != 0
+       num_cosmic_rays = np.sum(cosmic_ray_mask)
+       print(f"Found {num_cosmic_rays} cadences with cosmic ray events")
+
+       # Check for saturated pixels (bit 1)
+       saturation_mask = (quality_flags.quality_flags & 2) != 0
+       print(f"Saturated in {np.sum(saturation_mask)} cadences")
+
 Database Constraints
 --------------------
 
@@ -361,10 +427,11 @@ The schema enforces several important constraints:
    - Target: (catalog_id, name) combination must be unique
    - ProcessingGroup: (photometric_source_id, detrending_method_id) must be unique
    - FITSFrame: (type, cadence) combination must be unique
+   - QualityFlagArray: (type, observation_id, target_id) must be unique (with NULL handling)
 
 2. **Cascade Deletes**:
 
-   - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, and DataSet
+   - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, DataSet, and QualityFlagArray
    - Deleting a ProcessingGroup cascades to DataSet
    - Deleting a Target cascades to DataSet
 
