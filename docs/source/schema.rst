@@ -17,6 +17,8 @@ The database schema consists of several interconnected model groups:
 Entity Relationship Diagram
 ---------------------------
 
+The following diagram shows the relationships between all database models. This diagram is manually maintained for clarity and documentation purposes.
+
 .. mermaid::
 
    erDiagram
@@ -29,9 +31,11 @@ Entity Relationship Diagram
        Observation ||--o{ FITSFrame : "polymorphic"
        Observation ||--o{ TargetSpecificTime : "has times"
        Observation ||--o{ DataSet : "has datasets"
+       Observation ||--o{ QualityFlagArray : "has quality flags"
 
        Target ||--o{ TargetSpecificTime : "has times"
        Target ||--o{ DataSet : "has lightcurves"
+       Target ||--o{ QualityFlagArray : "has quality flags"
 
        PhotometricSource ||--o{ ProcessingGroup : "used in"
        DetrendingMethod ||--o{ ProcessingGroup : "used in"
@@ -126,6 +130,15 @@ Entity Relationship Diagram
            array barycentric_julian_dates
        }
 
+       QualityFlagArray {
+           bigint id PK
+           string type
+           int observation_id FK
+           int target_id FK
+           array quality_flags
+           datetime created_on
+       }
+
 
 Model Descriptions
 ------------------
@@ -165,6 +178,11 @@ Observation Models
    :no-index:
 
 .. autoclass:: lightcurvedb.models.TargetSpecificTime
+   :members:
+   :show-inheritance:
+   :no-index:
+
+.. autoclass:: lightcurvedb.models.QualityFlagArray
    :members:
    :show-inheritance:
    :no-index:
@@ -372,3 +390,22 @@ The schema enforces several important constraints:
 
    - All foreign keys are enforced at the database level
    - Orphaned records are prevented through proper relationships
+
+Automated Schema Generation
+---------------------------
+
+For automated schema diagram generation from the SQLAlchemy models, this project includes Paracelsus integration. To generate an up-to-date schema diagram:
+
+.. code-block:: bash
+
+   # Generate schema diagram using nox
+   nox -s generate_schema
+
+This creates a Mermaid diagram at ``docs/source/_static/schema_auto_generated.mmd`` that reflects the current state of all SQLAlchemy models. The automated diagram includes:
+
+- All models inheriting from ``LCDBModel``
+- All relationships between models
+- Column types and constraints
+- Primary and foreign keys
+
+The manually maintained diagram above provides a curated view optimized for documentation, while the automated diagram ensures completeness and accuracy.
