@@ -64,10 +64,12 @@ Target Models
 .. autoclass:: lightcurvedb.models.Mission
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.MissionCatalog
    :members:
    :show-inheritance:
+   :no-index:
 
 .. autoclass:: lightcurvedb.models.Target
    :members:
