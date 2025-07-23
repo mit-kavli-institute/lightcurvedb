@@ -232,7 +232,9 @@ class QualityFlagArray(LCDBModel, CreatedOnMixin):
 
     # Optional foreign key to specific target - null for observation-wide flags
     target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("target.id"), index=True, nullable=True
+        sa.ForeignKey("target.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
     )
 
     # Array of 32-bit integers where each bit represents a quality condition
