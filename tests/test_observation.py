@@ -127,6 +127,8 @@ class TestObservationBasics:
         v2_db.add(observation)
         v2_db.commit()
 
+        # With NumpyArrayType, arrays are automatically converted
+        assert isinstance(observation.cadence_reference, np.ndarray)
         assert observation.cadence_reference.dtype == np.int64
 
 

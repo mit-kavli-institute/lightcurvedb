@@ -207,6 +207,8 @@ class TestTargetSpecificTimeBasics:
         v2_db.refresh(tst)
 
         # Verify precision is maintained (within float64 limits)
+        # With NumpyArrayType, arrays are automatically converted
+        assert isinstance(tst.barycentric_julian_dates, np.ndarray)
         assert tst.barycentric_julian_dates.dtype == np.float64
         np.testing.assert_allclose(
             tst.barycentric_julian_dates, bjd_array, rtol=1e-15
@@ -819,26 +821,26 @@ class TestTargetSpecificTimeQueries:
         from sqlalchemy import func
 
         # TSTs containing BJDs > 2458050
+        # Use array[1] to get first element (PostgreSQL arrays are 1-indexed)
         late_tsts = (
             v2_db.query(TargetSpecificTime)
-            .filter(
-                func.array_min(TargetSpecificTime.barycentric_julian_dates)
-                > 2458050
-            )
+            .filter(TargetSpecificTime.barycentric_julian_dates[1] > 2458050)
             .all()
         )
         assert len(late_tsts) == 1
         assert late_tst in late_tsts
 
         # TSTs with any BJD between 2458000 and 2458010
+        # Check if first element <= 2458010 and last element >= 2458000
         range_tsts = (
             v2_db.query(TargetSpecificTime)
+            .filter(TargetSpecificTime.barycentric_julian_dates[1] <= 2458010)
             .filter(
-                func.array_min(TargetSpecificTime.barycentric_julian_dates)
-                <= 2458010
-            )
-            .filter(
-                func.array_max(TargetSpecificTime.barycentric_julian_dates)
+                TargetSpecificTime.barycentric_julian_dates[
+                    func.array_length(
+                        TargetSpecificTime.barycentric_julian_dates, 1
+                    )
+                ]
                 >= 2458000
             )
             .all()
