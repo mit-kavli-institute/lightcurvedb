@@ -100,43 +100,6 @@ Existing the ``with`` block will always free the resource. Whether that reason
 is reaching the end of the block, or an exception being raised somewhere
 within the block, or even a ``return`` statement.
 
-Runtime Checks
-==============
-What happens if you open a connection multiple times?
-
-Repeatedly opening and closing a connection like this:
-
-.. code-block:: python
-    :linenos:
-
-    for _ in range(20):
-        db.open()
-        db.close()
-
-This is *fine*, but an irresonsible use case that might interfere with
-database operation. But there is nothing logically wrong with this block.
-
-Problems arise when attempting to open an already established connection
-or closing one that has already been closed.
-
-.. code-block:: python
-    :linenos:
-
-    db.open()  # DB object is in an open state
-    with db:
-        # Entering the with block calls 'db.open()'.
-        # A warning will be raised but the program will continue
-        # execution
-        db.foo()  # <- Will proceed normally
-
-    # DB is in a closed state
-    db.close()  # <- Will result in another warning
-
-Generally speaking ``lightcurvedb`` handles these cases without causing an
-exception. But it is considered a code smell and will raise warnings which
-could be quite verbose.
-
-
 Functional Wrappers
 ###################
 ``with`` blocks are fine until you notice your code starting to have major
@@ -194,7 +157,7 @@ database connection. But could still result in errors if called
 without an active connection.
 
 So ``lightcurvedb`` defines a decorator which always gives the wrapped
-function an open database instance.
+function an open database session.
 
 .. code-block:: python
     :linenos:
@@ -202,12 +165,12 @@ function an open database instance.
     from lightcurvedb.io.pipeline import db_scope
 
     @db_scope()
-    def operation(db):
+    def operation(session):
         if something:
             for x in array:
-                db.add(x)
+                session.add(x)
         models = (
-            db
+            session
             .query(Model)
             .filter_by(foo=bar)
             .limit(20)
@@ -216,21 +179,41 @@ function an open database instance.
         for model in models:
             print(model)
             model.foo = "not bar"
-        db.commit()
+        session.commit()
 
     # ...
     operation()
 
-The ``db_scope()`` decorator automatically provides an open database object as
-the first positional argument to the wrapped function. Upon return of the
-function the connection is freed and the database object is transitioned into
-a closed state.
+The ``db_scope()`` decorator automatically provides an open database session as
+the first positional argument to the wrapped function. The session is properly
+closed when the function returns, with automatic rollback of any uncommitted
+changes.
 
-This decorator also inspects the wrapped function and provides the connection
-with the ``application_name`` parameter with the wrapped function name. This
-provides database administrators to quickly determine which python function
-is performing operations.
+By default, ``db_scope`` uses the global ``LCDB_Session`` sessionmaker, but you
+can provide your own:
 
-This can be overridden by ``db_scope(application_name="foo")`` in special
-cases. But generally your python function should provide enough context
-of its purpose within its name.
+.. code-block:: python
+    :linenos:
+
+    from sqlalchemy.orm import sessionmaker
+    from lightcurvedb.io.pipeline import db_scope
+
+    # Create a custom sessionmaker
+    custom_session = sessionmaker(bind=my_engine)
+
+    @db_scope(session_factory=custom_session)
+    def custom_operation(session):
+        return session.query(Model).all()
+
+You can also pass additional arguments to the session factory:
+
+.. code-block:: python
+    :linenos:
+
+    @db_scope(info={"task": "data_export"})
+    def export_operation(session):
+        # session.info contains {"task": "data_export"}
+        return session.query(Model).all()
+
+The decorator logs the function name for tracking purposes. You can override
+this with ``db_scope(application_name="custom_name")`` for special cases.

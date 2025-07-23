@@ -134,6 +134,11 @@ def v2_db(worker_database):
     Session = sessionmaker()
     Session.configure(bind=engine)
 
+    # Configure global lightcurvedb sessionmaker
+    from lightcurvedb.core.connection import LCDB_Session
+
+    LCDB_Session.configure(bind=engine)
+
     try:
         session = Session()
         yield session

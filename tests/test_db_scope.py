@@ -13,7 +13,7 @@ def test_db_scope_import():
     assert db_scope is not None
 
 
-def test_db_scope_basic_connection():
+def test_db_scope_basic_connection(v2_db):
     """Test basic database connection through db_scope."""
 
     @db_scope(application_name="test_db_scope")
@@ -25,7 +25,7 @@ def test_db_scope_basic_connection():
     assert result == 1
 
 
-def test_db_scope_default_session_factory():
+def test_db_scope_default_session_factory(v2_db):
     """Test that db_scope uses LCDB_Session by default."""
 
     @db_scope()
@@ -37,7 +37,7 @@ def test_db_scope_default_session_factory():
     assert result is not None  # Should return the database name
 
 
-def test_db_scope_model_query():
+def test_db_scope_model_query(v2_db):
     """Test querying models through db_scope."""
 
     @db_scope()
@@ -49,7 +49,7 @@ def test_db_scope_model_query():
     assert count >= 0
 
 
-def test_db_scope_rollback():
+def test_db_scope_rollback(v2_db):
     """Test that uncommitted changes are rolled back."""
 
     @db_scope()
@@ -82,7 +82,7 @@ def test_db_scope_rollback():
     assert final_count == initial_count  # Count should be unchanged
 
 
-def test_db_scope_custom_session_factory():
+def test_db_scope_custom_session_factory(v2_db):
     """Test using a custom session factory."""
     # Note: This test assumes you have a test database available
     # In a real test suite, you'd use a test-specific database
@@ -99,7 +99,7 @@ def test_db_scope_custom_session_factory():
     assert result == 1
 
 
-def test_db_scope_session_kwargs():
+def test_db_scope_session_kwargs(v2_db):
     """Test passing kwargs to the session factory."""
 
     @db_scope(info={"test_key": "test_value"})
