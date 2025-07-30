@@ -7,10 +7,10 @@ where = ["src"]
 
 [project]
 name = "lightcurvedb"
+version = "1.0.0-beta.4"  # Managed by python-semantic-release
 description = "SQLAlchemy models and APIs for storing lightcurve timeseries."
 authors = [{name="William Fong", email="willfong@mit.edu"}]
 readme = "README.rst"
-dynamic = ["version"]
 
 dependencies = [
     "sqlalchemy>=2.0",
@@ -28,13 +28,10 @@ dependencies = [
     "cachetools>=5.3.2",
     "packaging>=23.2",
     "tabulate>=0.9.0",
-    "configurables @ git+https://github.com/mit-kavli-institute/configurables.git",
-    "pyticdb @ git+https://github.com/mit-kavli-institute/pyticdb.git",
+    "kavli-configurables",
 ]
 
 
-[tool.setuptools.dynamic]
-version = {attr = "lightcurvedb.__version__"}
 
 
 [project.urls]
@@ -63,7 +60,8 @@ dev = [
 
 docs = [
     "sphinx",
-    "sphinx_click",
+    "sphinxcontrib-mermaid",
+    "furo",
 ]
 
 [tool.mypy]
@@ -79,3 +77,35 @@ line-length = 79
 
 [tool.isort]
 profile = "black"
+line_length = 79
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+version_variable = ["src/lightcurvedb/__init__.py:__version__"]
+branch = "main"
+upload_to_pypi = false
+upload_to_release = true
+build_command = "pip install build && python -m build"
+commit_parser = "angular"
+major_on_zero = false
+tag_format = "v{version}"
+
+[tool.semantic_release.changelog]
+template_dir = "templates"
+changelog_file = "CHANGELOG.md"
+exclude_commit_patterns = []
+
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease_token = "rc"
+prerelease = false
+
+[tool.semantic_release.branches.staging]
+match = "staging"
+prerelease_token = "beta"
+prerelease = true
+
+[tool.semantic_release.commit_parser_options]
+allowed_types = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "style", "refactor", "test"]
+minor_types = ["feat"]
+patch_types = ["fix", "perf", "refactor", "build", "chore", "ci", "docs", "style", "test"]

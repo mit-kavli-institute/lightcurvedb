@@ -1,35 +1,87 @@
 Welcome to LightcurveDB's documentation!
 ========================================
 
+LightcurveDB is a PostgreSQL-backed system for storing and retrieving astronomical time-series data from the TESS (Transiting Exoplanet Survey Satellite) mission.
+
 Installation
 ############
-To install from git lab run
+To install the latest version from GitHub:
 
 .. code-block:: console
 
-    pip install git+https://tessgit.mit.edu/wcfong/lightcurve-database.git
+    pip install git+https://github.com/mit-kavli-institute/lightcurvedb.git
 
 See other :doc:`installation <installation>` steps for specific computer contexts.
 
 Development
 ###########
-Clone the repository into the desired location. Grab pipenv from ``PyPi``
-using ``pip install pipenv``. Although it is most desirable to install this
-package from your machine's package manager.
+Clone the repository and set up the development environment:
 
-Create and enter a virtual environment for development by executing
-``pipenv shell``. All the dependencies will be installed.
+.. code-block:: console
 
-To add a dependency run ``pipenv install [PACKAGE]``.
-To add a development dependency run ``pipenv install --development [PACKAGE]``
+    git clone https://github.com/mit-kavli-institute/lightcurvedb.git
+    cd lightcurvedb
+    pip install -e ".[dev]"
+
+The project uses ``pyproject.toml`` for dependency management. Development dependencies include testing, linting, and documentation tools.
+
+Docker Development
+~~~~~~~~~~~~~~~~~~
+A Docker environment is provided for consistent development:
+
+.. code-block:: console
+
+    docker-compose up -d
+    docker-compose exec tester bash
 
 Testing
 #######
-First ensure that your user can instantiate a PostgreSQL database instance.
-A new database is needed per test run. This new database is torn down after
-the tests are finished or encounter some python side error.
+The project uses ``nox`` for test automation across Python versions (3.9-3.12). Tests require a PostgreSQL database.
 
-Ensure you're within a ``pipenv`` environemtn and run ``tox``.
+**Local testing:**
+
+.. code-block:: console
+
+    nox  # Run all test sessions
+    pytest  # Run tests directly
+
+**Docker testing:**
+
+.. code-block:: console
+
+    docker-compose exec tester nox
+
+Tests use pytest-xdist for parallel execution with per-worker database isolation.
+
+Continuous Integration
+######################
+The project uses GitHub Actions for automated testing and deployment:
+
+* **Tests**: Run automatically on all pushes and pull requests across Python 3.9-3.12
+* **Documentation**: Built and deployed to GitHub Pages on pushes to main branches
+* **Semantic Release**: Automated versioning based on commit messages
+
+Contributing
+############
+This project follows the Angular commit convention for automatic semantic versioning:
+
+* ``feat:``: New features (minor version bump)
+* ``fix:``: Bug fixes (patch version bump)
+* ``feat!:`` or ``BREAKING CHANGE:``: Breaking changes (major version bump)
+* ``docs:``, ``style:``, ``refactor:``, ``test:``, ``chore:``: No version bump
+
+Documentation
+#############
+**Build locally:**
+
+.. code-block:: console
+
+    nox -s docs
+    # or
+    sphinx-build -b html docs/source/ docs/build/html
+
+**View online:**
+Documentation is automatically published to `GitHub Pages <https://mit-kavli-institute.github.io/lightcurvedb/>`_.
 
 
 Submodule Documentation
@@ -39,11 +91,9 @@ Submodule Documentation
 
     installation
     connecting
-    cli/main
+    schema
+    models
     db/db
-    lightcurves/lightcurves
-    managers/managers
-    metrics/metrics
     util/utils
 
 

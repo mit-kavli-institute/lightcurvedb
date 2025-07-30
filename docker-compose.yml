@@ -17,6 +17,9 @@ services:
       - .:/testing
     working_dir: /testing
     command: tail -f /dev/null
+    environment:
+      - DOCKER_CONTAINER=1
+    env_file: .env
     depends_on:
       db:
         condition: service_healthy

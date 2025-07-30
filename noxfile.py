@@ -4,7 +4,11 @@ from nox.sessions import Session
 
 @nox.session(python=["3.9", "3.10", "3.11", "3.12"])
 def property_tests(session):
-    session.install(".[dev]")
+    session.install(
+        ".[dev]",
+        "--extra-index-url",
+        "https://mit-kavli-institute.github.io/MIT-Kavli-PyPi/",
+    )
     flags = session.posargs if session.posargs else []
     session.run("pytest", *flags)
 
@@ -12,9 +16,15 @@ def property_tests(session):
 @nox.session(python=["3.9"])
 def docs(session: Session):
     spec = nox.project.load_toml("pyproject.toml")
-    project_requirements = spec["project"]["dependencies"]
     requirements = spec["project"]["optional-dependencies"]["docs"]
-    session.install(*project_requirements)
+    # Install the package in editable mode with all dependencies
+    session.install(
+        ".[dev]",
+        "--extra-index-url",
+        "https://mit-kavli-institute.github.io/MIT-Kavli-PyPi/",
+    )
     session.install(*requirements)
 
-    session.run("sphinx-build", "-M", "html", "docs/source/", "docs/build/")
+    session.run(
+        "sphinx-build", "-b", "html", "docs/source/", "docs/build/html"
+    )

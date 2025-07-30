@@ -1,5 +1,6 @@
 import sys
 
+import numpy as np
 from hypothesis.strategies import (
     booleans,
     builds,
@@ -405,4 +406,52 @@ def bls(make_lc=True):
             sr=floats(),
             period_inv_transit=floats(),
         )
+    )
+
+
+@define_strategy
+@composite
+def quality_flag_array(draw, observation=None, target=None, array_length=None):
+    """Strategy for generating QualityFlagArray instances.
+
+    Parameters
+    ----------
+    observation : Observation, optional
+        If provided, use this observation. Otherwise, generate one.
+    target : Target, optional
+        If provided, use this target for target-specific flags.
+    array_length : int, optional
+        Length of the quality flag array. If None, uses a random length.
+    """
+    # Define quality flag types
+    flag_types = [
+        "pixel_quality",
+        "cosmic_ray",
+        "aperture_quality",
+        "data_quality",
+    ]
+
+    # Generate array length if not provided
+    if array_length is None:
+        array_length = draw(integers(min_value=1, max_value=1000))
+
+    # Generate quality flags as 32-bit integers
+    # Each bit can represent a different quality condition
+    quality_flags = draw(
+        lists(
+            integers(
+                min_value=0, max_value=2**31 - 1
+            ),  # Max signed 32-bit int
+            min_size=array_length,
+            max_size=array_length,
+        ).map(lambda x: np.array(x, dtype=np.int32))
+    )
+
+    # Build the QualityFlagArray
+    return builds(
+        models.QualityFlagArray,
+        type=sampled_from(flag_types),
+        observation=just(observation) if observation else none(),
+        target=just(target) if target else none(),
+        quality_flags=just(quality_flags),
     )
