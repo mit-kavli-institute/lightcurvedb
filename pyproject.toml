@@ -28,8 +28,8 @@ dependencies = [
     "cachetools>=5.3.2",
     "packaging>=23.2",
     "tabulate>=0.9.0",
-    "configurables @ git+https://github.com/mit-kavli-institute/configurables.git",
-    "pyticdb @ git+https://github.com/mit-kavli-institute/pyticdb.git",
+    "kavli-configurables",
+    "pyticdb"
 ]
 
 
