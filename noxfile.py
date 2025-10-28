@@ -2,7 +2,7 @@ import nox
 from nox.sessions import Session
 
 
-@nox.session(python=["3.9", "3.10", "3.11", "3.12"])
+@nox.session(python=["3.11", "3.12"])
 def property_tests(session):
     session.install(
         "-e",
@@ -19,7 +19,7 @@ def property_tests(session):
     )
 
 
-@nox.session(python=["3.9"])
+@nox.session(python=["3.11"])
 def docs(session: Session):
     spec = nox.project.load_toml("pyproject.toml")
     requirements = spec["project"]["optional-dependencies"]["docs"]
