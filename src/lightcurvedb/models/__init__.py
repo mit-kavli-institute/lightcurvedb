@@ -1,4 +1,9 @@
-from .dataset import DataSet, PhotometricSource, ProcessingMethod
+from .dataset import (
+    DataSet,
+    DataSetHierarchy,
+    PhotometricSource,
+    ProcessingMethod,
+)
 from .frame import FITSFrame
 from .instrument import Instrument
 from .observation import Observation, TargetSpecificTime
@@ -17,6 +22,7 @@ __all__ = [
     "TargetSpecificTime",
     "DataSet",
     "QualityFlagArray",
+    "DataSetHierarchy",
 ]
 
 DEFINED_MODELS = __all__
