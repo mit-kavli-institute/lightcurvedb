@@ -29,8 +29,8 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
         Name of the photometric method (inherited from mixin)
     description : str
         Detailed description (inherited from mixin)
-    processing_groups : list[ProcessingGroup]
-        Processing groups using this photometric source
+    datasets : list[DataSet]
+        Datasets using this photometric source
 
     Examples
     --------
@@ -122,12 +122,16 @@ class DataSet(LCDBModel):
     ----------
     id : int
         Primary key identifier
-    processing_group_id : int
-        Foreign key to processing group
     target_id : int
         Foreign key to target
     observation_id : int
         Foreign key to observation
+    photometric_method_id : int, optional
+        Foreign key to photometric source. Nullable to allow datasets
+        without explicit photometry method (e.g., derived products).
+    processing_method_id : int, optional
+        Foreign key to processing method. Nullable to allow raw photometry
+        datasets without processing applied.
     values : ndarray[float64]
         Array of photometric measurements (flux or magnitude)
     errors : ndarray[float64], optional
@@ -136,6 +140,10 @@ class DataSet(LCDBModel):
         The astronomical target
     observation : Observation
         The source observation
+    photometry_source : PhotometricSource
+        The photometric extraction method used
+    processing_method : ProcessingMethod
+        The processing operation applied
     source_datasets : list[DataSet]
         Parent datasets that this dataset was derived from. Enables tracking
         of data lineage and processing provenance.

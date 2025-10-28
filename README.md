@@ -23,48 +23,63 @@ database_port=port
 Ask your system administrators for credentials and other configuration parameters if you are not hosting the database yourself.
 
 ### Quick use
-As a demonstration of `lightcurvedb`, let's get the full lightcurve for `97700520`.
+As a demonstration of `lightcurvedb`, let's query lightcurves using the
+SQLAlchemy ORM.
 ```python
-from lightcurvedb import BestLightcurveManager
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from lightcurvedb.models import Target, DataSet
 
-lm = BestLightcurveManager
+# Create database session
+engine = create_engine("postgresql://...")
+session = Session(engine)
 
-lc = lm[97700520]  # Queries are created and executed automatically by keying LightcurveManager instances
-lc  # A structured numpy array
+# Query a target and its datasets
+target = session.query(Target).filter_by(name=97700520).first()
+datasets = target.datasets
 
-# Access the named properties of the returned array
-lc["data"]  # Magnitude/Flux values
-lc["cadences"]  # Ordered cadence values
-lc["barycentric_julian_dates"]  # Time corrected BJD values.
+# Access dataset properties
+for ds in datasets:
+    print(f"Photometry: {ds.photometry_source.name}")
+    print(f"Processing: {ds.processing_method.name if ds.processing_method else 'Raw'}")
+    print(f"Values: {ds.values}")
+    print(f"Errors: {ds.errors}")
 ```
 
-### Lightcurve Structure
-Lightcurves are stored as inline-arrays per orbit, primarily identified by their TIC ids. For each star and orbit, multiple timeseries are produced. One for each Aperture in `qlp` and
-for every detrending algorithm used, including the raw photometric lightcurve without any detrending. Each timeseries (orbit lightcurve) has these fields defined:
+### DataSet Structure
+Lightcurves are stored as `DataSet` objects, primarily identified by their
+TIC IDs and associated with specific observations. Each dataset represents a
+processed lightcurve with optional photometric source and processing method.
+Multiple datasets can be produced for each target and observation, with
+different combinations of photometry and processing.
 
-| Lightcurve Field      | Description |
-| ----------- | ----------- |
-| tic_id      | The host star's TIC identifier       |
-| camera   | Which camera produced this timeseries        |
-| ccd | Which CCD produced this timeseries |
-| orbit_id | A foreign key to the Orbit row which this lightcurve was recorded in |
-| aperture_id | A foreign key to the Aperture row which was used |
-| lightcurve_type_id | A foreign key to the detrending method used (or the raw photometric lightcurve) |
-| cadences | The TESS cadences used in the lightcurve |
-| barycentric_julian_dates | The barycenter corrected times for each exposure |
-| data | The actual magnitude / flux values |
-| errors | The error for the data field |
-| x_centroids | The _flux_ weighted aperture centroid (x axis)* |
-| y_centroids | The _flux_ weighted aperture centroid (y axis)* |
-| quality_flags | The quality flag field |
+| DataSet Field | Description |
+| ------------- | ----------- |
+| id | Primary key identifier |
+| target_id | Foreign key to the Target (TIC ID) |
+| observation_id | Foreign key to the Observation |
+| photometric_method_id | Foreign key to PhotometricSource (nullable) |
+| processing_method_id | Foreign key to ProcessingMethod (nullable) |
+| values | Array of photometric measurements (flux or magnitude) |
+| errors | Array of measurement uncertainties |
+| source_datasets | Parent datasets this was derived from (for lineage) |
+| derived_datasets | Child datasets derived from this one |
 
-* For centroid values without any flux-weights, use the `Background` lightcurve type.
+#### Dataset Hierarchy
+DataSets support hierarchical relationships for tracking data lineage and
+processing provenance. A raw photometry dataset can have multiple derived
+datasets (e.g., different detrending methods), and a processed dataset can
+reference its source datasets. This enables full traceability of data
+processing pipelines.
 
-All array fields (barycentric times, magnitude/flux values and errors, centroids and quality flags) are ordered by the cadences field.
+```python
+# Example: Track processing lineage
+raw_dataset = session.query(DataSet).filter_by(
+    target=target,
+    processing_method=None
+).first()
 
-#### Best Lightcurve Model
-When using the `BestLightcurveManager` lightcurves are returned by their "best types". Meaning that for all the detrending methods produced, only 1 is used
-for further planet candidate processing (such as the BLS search). This is done by joining a lightcurve table, with all lightcurve definitions, against a best-lightcurve table
-which specifies which detrending is the "best". For the ease of most use cases within QLP, this has been abstracted away using the `BestLightcurveManager`.
-
-For further control on reading lightcurves or constructing your own queries, consult the wiki for instructions.
+# View all derived products
+for derived in raw_dataset.derived_datasets:
+    print(f"Derived: {derived.processing_method.name}")
+```
