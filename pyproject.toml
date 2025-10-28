@@ -109,3 +109,26 @@ prerelease = true
 allowed_types = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "style", "refactor", "test"]
 minor_types = ["feat"]
 patch_types = ["fix", "perf", "refactor", "build", "chore", "ci", "docs", "style", "test"]
+
+[tool.coverage.run]
+source = ["src"]
+parallel = true
+concurrency = ["multiprocessing"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+]
+
+[tool.coverage.paths]
+source = [
+    "src/lightcurvedb",
+    "*/site-packages/lightcurvedb",
+]

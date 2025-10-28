@@ -9,8 +9,13 @@ def property_tests(session):
         "--extra-index-url",
         "https://mit-kavli-institute.github.io/MIT-Kavli-PyPi/",
     )
-    flags = session.posargs if session.posargs else []
-    session.run("pytest", *flags)
+    flags = session.posargs if session.posargs else ["-n", "auto"]
+    session.run(
+        "pytest",
+        "--cov=lightcurvedb",
+        "--cov-report=term-missing",
+        *flags,
+    )
 
 
 @nox.session(python=["3.9"])
