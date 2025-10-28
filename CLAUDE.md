@@ -43,9 +43,13 @@ docker-compose run test
 ### Core Components
 
 1. **SQLAlchemy Models** (`src/lightcurvedb/models/`)
-   - Database entities: Frame, Instrument, Observation, Orbit, Target, Lightcurve
+   - Database entities: Frame, Instrument, Observation, Target, DataSet,
+     PhotometricSource, ProcessingMethod
+   - DataSetHierarchy: Self-referential model for tracking data lineage
+     and processing provenance
    - Uses SQLAlchemy 2.0+ with PostgreSQL backend
-   - Models define relationships between astronomical observations and their metadata
+   - Models define relationships between astronomical observations and
+     their metadata
 
 2. **Database Connection** (`src/lightcurvedb/core/`)
    - Configuration via `~/.config/lightcurvedb/db.conf`
@@ -75,7 +79,16 @@ Recent refactoring has removed:
 - Manager classes (`src/lightcurvedb/managers/`)
 - Ingestor functionality
 
-The project uses property-based testing with Hypothesis and includes extensive TESS test data including FITS files and ephemeris data from 2018-2023.
+Recent feature additions (feature/dataset-hierarchy branch):
+- Dataset hierarchy system for tracking data lineage
+- Refactored processing model: replaced ProcessingGroup with direct
+  relationships
+- Renamed DetrendingMethod to ProcessingMethod for broader scope
+- DataSet now supports source_datasets and derived_datasets relationships
+
+The project uses property-based testing with Hypothesis and includes
+extensive TESS test data including FITS files and ephemeris data from
+2018-2023.
 
 ## Database Configuration
 

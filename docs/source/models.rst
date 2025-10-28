@@ -25,17 +25,19 @@ Processing Models
    :show-inheritance:
    :exclude-members: name
 
-.. autoclass:: lightcurvedb.models.DetrendingMethod
+.. autoclass:: lightcurvedb.models.ProcessingMethod
    :members:
    :show-inheritance:
    :exclude-members: name
 
-.. autoclass:: lightcurvedb.models.ProcessingGroup
-   :members:
-   :show-inheritance:
-   :exclude-members: name
+Data Product Models
+-------------------
 
 .. autoclass:: lightcurvedb.models.DataSet
+   :members:
+   :show-inheritance:
+
+.. autoclass:: lightcurvedb.models.DataSetHierarchy
    :members:
    :show-inheritance:
 

@@ -1,8 +1,8 @@
 from .dataset import (
     DataSet,
-    DetrendingMethod,
+    DataSetHierarchy,
     PhotometricSource,
-    ProcessingGroup,
+    ProcessingMethod,
 )
 from .frame import FITSFrame
 from .instrument import Instrument
@@ -14,8 +14,7 @@ __all__ = [
     "FITSFrame",
     "Instrument",
     "PhotometricSource",
-    "DetrendingMethod",
-    "ProcessingGroup",
+    "ProcessingMethod",
     "Observation",
     "Mission",
     "MissionCatalog",
@@ -23,6 +22,7 @@ __all__ = [
     "TargetSpecificTime",
     "DataSet",
     "QualityFlagArray",
+    "DataSetHierarchy",
 ]
 
 DEFINED_MODELS = __all__

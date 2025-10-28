@@ -11,8 +11,9 @@ The database schema consists of several interconnected model groups:
 1. **Mission Hierarchy**: Mission → MissionCatalog → Target
 2. **Instrument Hierarchy**: Self-referential instrument tree
 3. **Observation System**: Polymorphic observation models with FITS frame support
-4. **Processing Pipeline**: PhotometricSource + DetrendingMethod → ProcessingGroup
+4. **Processing Pipeline**: PhotometricSource and ProcessingMethod
 5. **Data Products**: DataSet (lightcurves), TargetSpecificTime, and QualityFlagArray
+6. **Data Lineage**: DataSetHierarchy for tracking processing provenance
 
 Entity Relationship Diagram
 ---------------------------
@@ -46,9 +47,10 @@ Entity Relationship Diagram
        Target ||--o{ DataSet : "has lightcurves"
        Target ||--o{ QualityFlagArray : "has quality flags"
 
-       PhotometricSource ||--o{ ProcessingGroup : "used in"
-       DetrendingMethod ||--o{ ProcessingGroup : "used in"
-       ProcessingGroup ||--o{ DataSet : "produces"
+       PhotometricSource ||--o{ DataSet : "extracts data for"
+       ProcessingMethod ||--o{ DataSet : "processes data for"
+       DataSet ||--o{ DataSetHierarchy : "source"
+       DataSet ||--o{ DataSetHierarchy : "derived"
 
        Mission {
            UUID id PK
@@ -109,27 +111,26 @@ Entity Relationship Diagram
            string description
        }
 
-       DetrendingMethod {
+       ProcessingMethod {
            int id PK
            string name UK
            string description
        }
 
-       ProcessingGroup {
-           int id PK
-           string name
-           string description
-           int photometric_source_id FK
-           int detrending_method_id FK
-       }
-
        DataSet {
            int id PK
-           int processing_group_id FK
            int target_id FK
            int observation_id FK
+           int photometric_method_id FK "nullable"
+           int processing_method_id FK "nullable"
            array values
            array errors
+       }
+
+       DataSetHierarchy {
+           int id PK
+           int source_dataset_id FK
+           int child_dataset_id FK
        }
 
        TargetSpecificTime {
@@ -207,17 +208,20 @@ Processing Models
    :show-inheritance:
    :no-index:
 
-.. autoclass:: lightcurvedb.models.DetrendingMethod
+.. autoclass:: lightcurvedb.models.ProcessingMethod
    :members:
    :show-inheritance:
    :no-index:
 
-.. autoclass:: lightcurvedb.models.ProcessingGroup
-   :members:
-   :show-inheritance:
-   :no-index:
+Data Product Models
+~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: lightcurvedb.models.DataSet
+   :members:
+   :show-inheritance:
+   :no-index:
+
+.. autoclass:: lightcurvedb.models.DataSetHierarchy
    :members:
    :show-inheritance:
    :no-index:
@@ -338,23 +342,26 @@ Key Relationships
 
 - Mission → MissionCatalog → Target (hierarchical)
 - Instrument → Observation
-- ProcessingGroup → DataSet
+- PhotometricSource → DataSet
+- ProcessingMethod → DataSet
 - Observation → QualityFlagArray
 - Target → QualityFlagArray (optional relationship)
 
 **Many-to-Many** (via junction tables):
 
 - Target ↔ Observation (via TargetSpecificTime)
-- PhotometricSource + DetrendingMethod → ProcessingGroup
+- DataSet ↔ DataSet (via DataSetHierarchy for lineage tracking)
 
 **Self-Referential**:
 
 - Instrument parent/child hierarchy for complex instrument configurations
+- DataSet hierarchy via DataSetHierarchy (source_datasets ↔ derived_datasets)
 
 **Central Hub**:
 
-- DataSet connects Target + Observation + ProcessingGroup
+- DataSet connects Target + Observation + PhotometricSource + ProcessingMethod
 - This is where the actual lightcurve data resides
+- Supports hierarchical relationships for tracking data provenance
 
 Usage Examples
 --------------
@@ -371,7 +378,9 @@ Querying for a target's lightcurves:
 
    # Get lightcurves with specific processing
    for lc in lightcurves:
-       print(f"Processing: {lc.processing_group.name}")
+       photometry = lc.photometry_source.name if lc.photometry_source else "N/A"
+       processing = lc.processing_method.name if lc.processing_method else "Raw"
+       print(f"Photometry: {photometry}, Processing: {processing}")
        print(f"Values: {lc.values}")
 
 Creating instrument hierarchy:
@@ -415,6 +424,44 @@ Working with quality flags:
        saturation_mask = (quality_flags.quality_flags & 2) != 0
        print(f"Saturated in {np.sum(saturation_mask)} cadences")
 
+Tracking data lineage with dataset hierarchy:
+
+.. code-block:: python
+
+   from lightcurvedb.models import DataSet
+   import numpy as np
+
+   # Create raw photometry dataset
+   raw_flux = np.random.normal(1.0, 0.01, 1000)
+   raw_dataset = DataSet(
+       target=target,
+       observation=observation,
+       photometry_source=aperture_source,
+       processing_method=None,  # Raw data, no processing
+       values=raw_flux
+   )
+   session.add(raw_dataset)
+   session.flush()
+
+   # Create detrended dataset derived from raw
+   detrended_flux = raw_flux - np.polyval([0.001, 0], range(1000))
+   detrended_dataset = DataSet(
+       target=target,
+       observation=observation,
+       photometry_source=aperture_source,
+       processing_method=detrending_method,
+       values=detrended_flux
+   )
+
+   # Establish hierarchical relationship
+   detrended_dataset.source_datasets.append(raw_dataset)
+   session.add(detrended_dataset)
+   session.commit()
+
+   # Query the hierarchy
+   print(f"Raw dataset has {len(raw_dataset.derived_datasets)} derived products")
+   print(f"Detrended dataset has {len(detrended_dataset.source_datasets)} sources")
+
 Database Constraints
 --------------------
 
@@ -425,17 +472,20 @@ The schema enforces several important constraints:
    - Mission.name must be unique
    - MissionCatalog.name must be unique
    - Target: (catalog_id, name) combination must be unique
-   - ProcessingGroup: (photometric_source_id, detrending_method_id) must be unique
+   - PhotometricSource.name must be unique
+   - ProcessingMethod.name must be unique
    - FITSFrame: (type, cadence) combination must be unique
    - QualityFlagArray: (type, observation_id, target_id) must be unique (with NULL handling)
 
 2. **Cascade Deletes**:
 
    - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, DataSet, and QualityFlagArray
-   - Deleting a ProcessingGroup cascades to DataSet
+   - Deleting a PhotometricSource or ProcessingMethod cascades to DataSet
    - Deleting a Target cascades to DataSet
+   - Deleting a DataSet cascades to DataSetHierarchy entries
 
 3. **Referential Integrity**:
 
    - All foreign keys are enforced at the database level
    - Orphaned records are prevented through proper relationships
+   - DataSetHierarchy maintains referential integrity for lineage tracking
