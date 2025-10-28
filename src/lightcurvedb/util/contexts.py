@@ -1,5 +1,4 @@
 import re
-from pathlib import Path
 
 CONTEXTS = []
 
@@ -30,7 +29,3 @@ REGISTER(r"sector-(?P<sector>[0-9]+)")
 REGISTER(r"cam(?P<camera>[1-4])")
 REGISTER(r"ccd(?P<ccd>[1-4])")
 REGISTER(r"[^0-9]?(?P<tic_id>\d+)\.h5$")
-
-
-def get_parent_dir(path):
-    return Path(path).parts[-1]

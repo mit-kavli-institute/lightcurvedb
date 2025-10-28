@@ -107,4 +107,4 @@ database_port=port
 - Property-based testing with Hypothesis
 - Test data includes real TESS observations
 - Tests cover database operations, model relationships, and data integrity
-- Automated testing across Python 3.9-3.12 via nox
+- Automated testing across Python 3.11-3.12 via nox

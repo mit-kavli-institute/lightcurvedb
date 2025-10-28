@@ -36,7 +36,7 @@ A Docker environment is provided for consistent development:
 
 Testing
 #######
-The project uses ``nox`` for test automation across Python versions (3.9-3.12). Tests require a PostgreSQL database.
+The project uses ``nox`` for test automation across Python versions (3.11-3.12). Tests require a PostgreSQL database.
 
 **Local testing:**
 
@@ -57,7 +57,7 @@ Continuous Integration
 ######################
 The project uses GitHub Actions for automated testing and deployment:
 
-* **Tests**: Run automatically on all pushes and pull requests across Python 3.9-3.12
+* **Tests**: Run automatically on all pushes and pull requests across Python 3.11-3.12
 * **Documentation**: Built and deployed to GitHub Pages on pushes to main branches
 * **Semantic Release**: Automated versioning based on commit messages
 
