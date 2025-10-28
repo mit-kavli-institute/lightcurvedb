@@ -7,7 +7,7 @@ where = ["src"]
 
 [project]
 name = "lightcurvedb"
-version = "1.0.0"  # Managed by python-semantic-release
+version = "1.0.1-beta.1"  # Managed by python-semantic-release
 description = "SQLAlchemy models and APIs for storing lightcurve timeseries."
 authors = [{name="William Fong", email="willfong@mit.edu"}]
 readme = "README.rst"
