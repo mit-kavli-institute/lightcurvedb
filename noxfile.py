@@ -5,6 +5,7 @@ from nox.sessions import Session
 @nox.session(python=["3.9", "3.10", "3.11", "3.12"])
 def property_tests(session):
     session.install(
+        "-e",
         ".[dev]",
         "--extra-index-url",
         "https://mit-kavli-institute.github.io/MIT-Kavli-PyPi/",

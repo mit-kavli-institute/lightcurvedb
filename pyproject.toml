@@ -111,7 +111,7 @@ minor_types = ["feat"]
 patch_types = ["fix", "perf", "refactor", "build", "chore", "ci", "docs", "style", "test"]
 
 [tool.coverage.run]
-source = ["src/lightcurvedb/"]
+source = ["lightcurvedb"]
 parallel = true
 concurrency = ["multiprocessing"]
 
