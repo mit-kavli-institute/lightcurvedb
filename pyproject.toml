@@ -111,7 +111,7 @@ minor_types = ["feat"]
 patch_types = ["fix", "perf", "refactor", "build", "chore", "ci", "docs", "style", "test"]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["src/lightcurvedb/"]
 parallel = true
 concurrency = ["multiprocessing"]
 
@@ -125,10 +125,4 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
     "if typing.TYPE_CHECKING:",
-]
-
-[tool.coverage.paths]
-source = [
-    "src/lightcurvedb",
-    "*/site-packages/lightcurvedb",
 ]
