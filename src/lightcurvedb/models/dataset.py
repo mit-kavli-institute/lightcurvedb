@@ -42,18 +42,16 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
 
-    processing_groups: orm.Mapped[list["ProcessingGroup"]] = orm.relationship(
-        "ProcessingGroup", back_populates="photometric_source"
-    )
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(lazy=True)
 
 
-class DetrendingMethod(LCDBModel, NameAndDescriptionMixin):
+class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
     """
-    Represents a method for removing systematic trends from lightcurves.
+    Represents a method for performing some non-pure, one-to-one
+    function on a dataset.
 
-    DetrendingMethod defines algorithms used to remove instrumental or
-    systematic effects from photometric time series, such as PDC-SAP
-    (Pre-search Data Conditioning Simple Aperture Photometry).
+    These modules should describe some complete unit of work/operation
+    performed on a dataset such detrending or 'original' sources of data.
 
     Attributes
     ----------
@@ -63,78 +61,52 @@ class DetrendingMethod(LCDBModel, NameAndDescriptionMixin):
         Name of the detrending method (inherited from mixin)
     description : str
         Detailed description (inherited from mixin)
-    processing_groups : list[ProcessingGroup]
-        Processing groups using this detrending method
-
     Examples
     --------
-    >>> pdc = DetrendingMethod(name="PDC-SAP",
+    >>> pdc = ProcessingMethod(name="PDC-SAP",
     ...                        description="Pre-search Data Conditioning")
     """
 
-    __tablename__ = "detrending_method"
+    __tablename__ = "processing_method"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    processing_groups: orm.Mapped[list["ProcessingGroup"]] = orm.relationship(
-        "ProcessingGroup", back_populates="detrending_method"
-    )
+
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(lazy=True)
 
 
-class ProcessingGroup(LCDBModel, NameAndDescriptionMixin):
+class DataSetHierarchy(LCDBModel):
     """
-    Combines a photometric source with a detrending method.
+    Association table for creating hierarchical relationships between
+    DataSets.
 
-    ProcessingGroup represents a unique combination of how photometry
-    was extracted and how it was detrended. This allows tracking
-    different processing pipelines applied to the same observations.
+    This table enables a tree structure where datasets can be derived from
+    other datasets, allowing tracking of data processing lineage and
+    provenance. For example, a detrended lightcurve dataset might be
+    derived from a raw photometry dataset.
 
     Attributes
     ----------
-    id : int
-        Primary key identifier
-    name : str
-        Name of the processing group (inherited from mixin)
-    description : str
-        Detailed description (inherited from mixin)
-    photometric_source_id : int
-        Foreign key to photometric source
-    detrending_method_id : int
-        Foreign key to detrending method
-    photometric_source : PhotometricSource
-        The photometric extraction method
-    detrending_method : DetrendingMethod
-        The detrending algorithm
-    datasets : list[DataSet]
-        Lightcurve datasets using this processing
+    source_dataset_id : int
+        Foreign key to the parent/source dataset
+    child_dataset_id : int
+        Foreign key to the child/derived dataset
 
     Notes
     -----
-    The combination of photometric_source_id and detrending_method_id
-    must be unique, ensuring no duplicate processing groups.
+    This is an association table for a many-to-many self-referential
+    relationship. A dataset can have multiple parents (e.g., combining
+    data from multiple sources) and multiple children (e.g., different
+    processing methods applied to the same source).
     """
 
-    __tablename__ = "processing_group"
-    __table_args__ = (
-        sa.UniqueConstraint("photometric_source_id", "detrending_method_id"),
-    )
+    __tablename__ = "datasethierarchy"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-
-    photometric_source_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(PhotometricSource.id), nullable=True
+    source_dataset_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("dataset.id", ondelete="CASCADE"), index=True
     )
-    detrending_method_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(DetrendingMethod.id), nullable=True
-    )
-
-    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
-        "DataSet", back_populates="processing_group"
-    )
-    photometric_source: orm.Mapped[PhotometricSource] = orm.relationship(
-        PhotometricSource, back_populates="processing_groups"
-    )
-    detrending_method: orm.Mapped[DetrendingMethod] = orm.relationship(
-        DetrendingMethod, back_populates="processing_groups"
+    child_dataset_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("dataset.id", ondelete="CASCADE"), index=True
     )
 
 
@@ -160,41 +132,87 @@ class DataSet(LCDBModel):
         Array of photometric measurements (flux or magnitude)
     errors : ndarray[float64], optional
         Array of measurement uncertainties
-    processing_group : ProcessingGroup
-        The processing method used
     target : Target
         The astronomical target
     observation : Observation
         The source observation
+    source_datasets : list[DataSet]
+        Parent datasets that this dataset was derived from. Enables tracking
+        of data lineage and processing provenance.
+    derived_datasets : list[DataSet]
+        Child datasets that were derived from this dataset. Allows viewing
+        all downstream processing results.
 
     Notes
     -----
     This is the main table for storing lightcurve data. Each row
     represents one complete lightcurve for a target processed
     with a specific method.
+
+    The hierarchical relationships (source_datasets, derived_datasets) enable
+    tracking data processing lineage. For example, a detrended lightcurve
+    would list the raw photometry dataset in source_datasets, while the raw
+    dataset would list all derived products in derived_datasets.
+
+    Examples
+    --------
+    >>> # Create a hierarchical relationship
+    >>> raw_dataset = DataSet(target=target, observation=obs, values=raw_flux)
+    >>> detrended_dataset = DataSet(target=target, observation=obs,
+    ...                             values=detrended_flux)
+    >>> detrended_dataset.source_datasets.append(raw_dataset)
+    >>> session.add_all([raw_dataset, detrended_dataset])
+    >>> session.commit()
     """
 
     __tablename__ = "dataset"
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    processing_group_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(ProcessingGroup.id, ondelete="CASCADE"), index=True
-    )
     target_id: orm.Mapped[int] = orm.mapped_column(
         sa.ForeignKey("target.id", ondelete="CASCADE"), index=True
     )
     observation_id: orm.Mapped[int] = orm.mapped_column(
         sa.ForeignKey("observation.id", ondelete="CASCADE"), index=True
     )
+    photometric_method_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("photometric_source.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    processing_method_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("processing_method.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
 
     values: orm.Mapped[npt.NDArray[np.float64]]
     errors: orm.Mapped[typing.Optional[npt.NDArray[np.float64]]]
 
     # Relationships
-    processing_group: orm.Mapped["ProcessingGroup"] = orm.relationship(
-        back_populates="datasets"
-    )
     target: orm.Mapped["Target"] = orm.relationship(back_populates="datasets")
     observation: orm.Mapped["Observation"] = orm.relationship(
         back_populates="datasets"
+    )
+    photometry_source: orm.Mapped["PhotometricSource"] = orm.relationship(
+        back_populates="datasets"
+    )
+    processing_method: orm.Mapped["ProcessingMethod"] = orm.relationship(
+        back_populates="datasets"
+    )
+
+    # Self-referential hierarchical relationships
+    source_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        "DataSet",
+        secondary="datasethierarchy",
+        primaryjoin="DataSet.id == DataSetHierarchy.child_dataset_id",
+        secondaryjoin="DataSet.id == DataSetHierarchy.source_dataset_id",
+        back_populates="derived_datasets",
+    )
+
+    derived_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        "DataSet",
+        secondary="datasethierarchy",
+        primaryjoin="DataSet.id == DataSetHierarchy.source_dataset_id",
+        secondaryjoin="DataSet.id == DataSetHierarchy.child_dataset_id",
+        back_populates="source_datasets",
     )

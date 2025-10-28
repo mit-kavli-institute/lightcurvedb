@@ -1,9 +1,4 @@
-from .dataset import (
-    DataSet,
-    DetrendingMethod,
-    PhotometricSource,
-    ProcessingGroup,
-)
+from .dataset import DataSet, PhotometricSource, ProcessingMethod
 from .frame import FITSFrame
 from .instrument import Instrument
 from .observation import Observation, TargetSpecificTime
@@ -14,8 +9,7 @@ __all__ = [
     "FITSFrame",
     "Instrument",
     "PhotometricSource",
-    "DetrendingMethod",
-    "ProcessingGroup",
+    "ProcessingMethod",
     "Observation",
     "Mission",
     "MissionCatalog",

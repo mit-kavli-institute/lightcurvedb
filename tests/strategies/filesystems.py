@@ -1,7 +1,5 @@
 from hypothesis import strategies as st
 
-from . import tess as tess_st
-
 
 @st.composite
 def _unix_safe_str(draw, **text_params):
