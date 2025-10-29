@@ -50,7 +50,6 @@ def ffi_header_to_orbit_kwargs(header):
         except KeyError:
             continue
 
-    kwargs["sector"] = sector_from_orbit_number(kwargs["orbit_number"])
     return kwargs
 
 

@@ -7,11 +7,34 @@ from astropy.time import Time
 
 
 def sector_from_orbit_number(orbit_number: int) -> int:
-    return ((orbit_number + 1) // 2) - 4
+    sector: int | None = None
+    while sector is None:
+        sector_spec = input(f"Enter Sector # for Orbit {orbit_number}: ")
+        try:
+            sector = int(sector_spec)
+        except ValueError:
+            print(
+                f"Could not interpret '{sector_spec}' "
+                "as an integer, try again..."
+            )
+
+    return sector
 
 
-def orbit_numbers_from_sector(sector: int) -> int:
-    return (2 * sector) + 7, (2 * sector) + 8
+def orbit_numbers_from_sector(sector: int) -> tuple[int, ...]:
+    import sqlalchemy as sa
+
+    from lightcurvedb import db
+    from lightcurvedb import models as m
+
+    with db:
+        q = (
+            sa.select(m.Orbit.orbit_number)
+            .order_by(m.Orbit.orbit_number.asc())
+            .where(m.Orbit.sector == sector)
+        )
+        orbits = list(db.scalars(q))
+    return tuple(orbits)
 
 
 def gps_time_to_datetime(gps_time: float) -> datetime:
