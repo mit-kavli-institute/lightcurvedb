@@ -6,6 +6,9 @@ from sqlalchemy import orm
 
 from lightcurvedb.core.base_model import CreatedOnMixin, LCDBModel
 
+if typing.TYPE_CHECKING:
+    from lightcurvedb.models import Observation
+
 
 class FITSFrame(LCDBModel, CreatedOnMixin):
     """
@@ -79,3 +82,7 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
     )
     extended: orm.Mapped[bool]
     file_path: orm.Mapped[typing.Optional[pathlib.Path]]
+
+    observation: orm.Mapped["Observation"] = orm.relationship(
+        "Observation", back_populates="fits_images"
+    )
