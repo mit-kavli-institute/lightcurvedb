@@ -6,6 +6,9 @@ from sqlalchemy import orm
 
 from lightcurvedb.core.base_model import CreatedOnMixin, LCDBModel
 
+if typing.TYPE_CHECKING:
+    from lightcurvedb.models import Observation
+
 
 class FITSFrame(LCDBModel, CreatedOnMixin):
     """
@@ -36,10 +39,6 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
         Array representation of NAXIS1, NAXIS2, etc.
     extended : bool
         FITS primary keyword - file may contain extensions
-    bscale : float
-        Linear scaling factor (physical = bzero + bscale * stored)
-    bzero : float
-        Zero point offset for scaling
     file_path : Path, optional
         File system path to the FITS file
 
@@ -82,10 +81,8 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
         comment="Representation of the required NAXIS[n] keywords",
     )
     extended: orm.Mapped[bool]
-    bscale: orm.Mapped[float] = orm.mapped_column(
-        default=1.0, comment="Physical Value = BZERO + BSCALE * stored_value"
-    )
-    bzero: orm.Mapped[float] = orm.mapped_column(
-        default=0.0, comment="Physical Value = BZERO + BSCALE * stored_value"
-    )
     file_path: orm.Mapped[typing.Optional[pathlib.Path]]
+
+    observation: orm.Mapped["Observation"] = orm.relationship(
+        "Observation", back_populates="fits_images"
+    )
