@@ -74,6 +74,8 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
     # Define primary keywords
     simple: orm.Mapped[bool]
     bitpix: orm.Mapped[int]
+    bscale: orm.Mapped[float]
+    bzero: orm.Mapped[float]
     naxis: orm.Mapped[int]
 
     naxis_values: orm.Mapped[list[int]] = orm.mapped_column(

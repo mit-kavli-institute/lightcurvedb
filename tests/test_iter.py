@@ -27,6 +27,26 @@ def test_chunkify(iterable, chunksize):
         assert elements == seen
 
 
+@given(
+    st.lists(st.integers(), max_size=100),
+    st.integers(min_value=1, max_value=50),
+)
+def test_chunkify_with_fillvalue(iterable, chunksize):
+    """
+    Test that when fillvalue is provided, the last chunk is padded to
+    chunksize.
+    """
+    fillvalue = -999
+
+    chunks = list(chunkify(iterable, chunksize, fillvalue=fillvalue))
+
+    if not chunks:
+        assert not iterable
+    else:
+        # All chunks including the last one should be exactly chunksize
+        assert all(len(chunk) == chunksize for chunk in chunks)
+
+
 @given(st.iterables(st.integers()), st.integers(min_value=1, max_value=100))
 def test_partition_eq_splitting(iterable, n_partitions):
     """
