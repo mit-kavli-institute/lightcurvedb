@@ -10,6 +10,7 @@ from lightcurvedb.core.base_model import LCDBModel
 
 if TYPE_CHECKING:
     from lightcurvedb.models.dataset import DataSet
+    from lightcurvedb.models.frame import FITSFrame
     from lightcurvedb.models.instrument import Instrument
     from lightcurvedb.models.quality_flag import QualityFlagArray
     from lightcurvedb.models.target import Target
@@ -97,6 +98,10 @@ class Observation(LCDBModel):
         back_populates="observation",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+
+    fits_images: orm.Mapped[list["FITSFrame"]] = orm.relationship(
+        "FITSFrame", back_populates="observation"
     )
 
 
