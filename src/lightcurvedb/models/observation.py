@@ -104,6 +104,58 @@ class Observation(LCDBModel):
         "FITSFrame", back_populates="observation"
     )
 
+    def align_to_reference(
+        self,
+        observed: npt.NDArray[np.integer],
+        values: npt.NDArray,
+        fill_value=np.nan,
+        verify_subset: bool = False,
+    ) -> npt.NDArray:
+        """
+        Align observed values to a reference sample grid.
+
+        Parameters
+        ----------
+        observed : ndarray of int
+            Monotonically increasing sample indices where values were observed.
+            Must be a proper subset of the observation's cadence reference.
+        values : ndarray
+            Values corresponding 1-to-1 with observed.
+        fill_value : scalar, optional
+            Value for missing samples (default: np.nan).
+        verify_subset : bool, optional
+            If True, verify observed ⊂ reference (default: False).
+
+        Returns
+        -------
+        aligned : ndarray
+            Values aligned to reference grid, shape (len(reference),).
+        """
+        reference = self.cadence_reference
+        indices = np.searchsorted(reference, observed)
+
+        # Check which indices are within bounds
+        in_bounds = indices < len(reference)
+
+        if verify_subset:
+            # All indices must be in bounds and match reference values
+            valid = in_bounds.copy()
+            valid[in_bounds] &= (
+                reference[indices[in_bounds]] == observed[in_bounds]
+            )
+            if not valid.all():
+                raise ValueError("observed contains values not in reference")
+
+        result = np.full(
+            len(reference),
+            fill_value,
+            dtype=np.result_type(values, fill_value),
+        )
+        # Only assign values for in-bounds indices
+        result[indices[in_bounds]] = values[in_bounds]
+
+        return result
+
 
 class TargetSpecificTime(LCDBModel):
     """
