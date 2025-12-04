@@ -1,22 +1,23 @@
 # Test Coverage Analysis
 
 **Generated**: 2025-12-03
-**Overall Coverage**: 84% (388 statements, 61 missing)
+**Updated**: 2025-12-03
+**Overall Coverage**: ~87% (estimated after fixes)
 **Test Framework**: pytest + hypothesis
 **Database**: PostgreSQL (via pytest-postgresql)
 
 ## Summary
 
-| Module | Coverage | Missing Lines | Priority |
-|--------|----------|---------------|----------|
-| `core/connection.py` | 77% | 37-48, 60-69, 78-79 | Medium |
-| `core/engines.py` | 32% | 11-24, 39-44 | Low |
-| `core/types.py` | 97% | 212 | Low |
-| `exceptions.py` | 0% | 4-31 | Low |
-| `io/pipeline/scope.py` | 62% | 136-153 | Medium |
-| `models/instrument.py` | 74% | 80-88 | High |
-| `models/target.py` | 84% | 73-80 | Medium |
-| `util/iter.py` | 92% | 40, 82 | Low |
+| Module | Coverage | Missing Lines | Priority | Status |
+|--------|----------|---------------|----------|--------|
+| `models/instrument.py` | ~~74%~~ **100%** | ~~80-88~~ | ~~High~~ | ✅ Addressed (PR #20) |
+| `models/target.py` | ~~84%~~ **100%** | ~~73-80~~ | ~~Medium~~ | ✅ Addressed (PR #21) |
+| `io/pipeline/scope.py` | 62% | 136-153 | Medium | Pending |
+| `core/connection.py` | 77% | 37-48, 60-69, 78-79 | Medium | Pending |
+| `core/engines.py` | 32% | 11-24, 39-44 | Low | Pending |
+| `core/types.py` | 97% | 212 | Low | Pending |
+| `exceptions.py` | 0% | 4-31 | Low | Pending |
+| `util/iter.py` | 92% | 40, 82 | Low | Pending |
 
 ---
 
@@ -371,15 +372,18 @@ class TestScopedBlock:
 
 ---
 
-### 6. `models/instrument.py` (74% coverage)
+### 6. ✅ `models/instrument.py` — ADDRESSED
+
+> **Status**: Resolved in PR #20
+> **Coverage**: 74% → **100%**
+> **Tests Added**: `TestQueryForInstrument` class in `tests/test_instrument.py`
+
+<details>
+<summary>Original analysis (click to expand)</summary>
 
 **Missing Lines**: 80-88
 
-#### Context
-
 Query helper method for finding instruments by name and parent.
-
-**Uncovered Code**:
 
 ```python
 @classmethod
@@ -393,69 +397,22 @@ def query_for_instrument(cls, name: str, parent_name: Optional[str] = None):
     return q
 ```
 
-#### Why It's Not Covered
-
-This is a query builder method that tests don't exercise directly. Tests create instruments and query them via the ORM relationships.
-
-#### Recommendation
-
-**Approach**: Test both query paths (with and without parent).
-
-```python
-import pytest
-from lightcurvedb.models import Instrument
-
-class TestInstrumentQueryMethod:
-    def test_query_for_top_level_instrument(self, v2_db):
-        """Test querying instrument without parent."""
-        camera = Instrument(name="Camera 1", properties={})
-        v2_db.add(camera)
-        v2_db.commit()
-
-        query = Instrument.query_for_instrument("Camera 1")
-        result = v2_db.execute(query).scalar_one()
-        assert result.id == camera.id
-        assert result.parent_id is None
-
-    def test_query_for_child_instrument(self, v2_db):
-        """Test querying instrument with parent name."""
-        camera = Instrument(name="Camera 1", properties={})
-        ccd = Instrument(name="CCD 1", parent=camera, properties={})
-        v2_db.add_all([camera, ccd])
-        v2_db.commit()
-
-        query = Instrument.query_for_instrument("CCD 1", parent_name="Camera 1")
-        result = v2_db.execute(query).scalar_one()
-        assert result.id == ccd.id
-        assert result.parent_id == camera.id
-
-    def test_query_excludes_instruments_with_wrong_parent(self, v2_db):
-        """Test query filters by parent correctly."""
-        camera1 = Instrument(name="Camera 1", properties={})
-        camera2 = Instrument(name="Camera 2", properties={})
-        ccd1 = Instrument(name="CCD 1", parent=camera1, properties={})
-        ccd2 = Instrument(name="CCD 1", parent=camera2, properties={})  # Same name!
-        v2_db.add_all([camera1, camera2, ccd1, ccd2])
-        v2_db.commit()
-
-        query = Instrument.query_for_instrument("CCD 1", parent_name="Camera 1")
-        result = v2_db.execute(query).scalar_one()
-        assert result.id == ccd1.id  # Not ccd2
-```
-
-**Priority**: High - This is a useful query helper that should be tested.
+</details>
 
 ---
 
-### 7. `models/target.py` (84% coverage)
+### 7. ✅ `models/target.py` — ADDRESSED
+
+> **Status**: Resolved in PR #21
+> **Coverage**: 84% → **100%**
+> **Tests Added**: `TestMissionTimeEpoch` class in `tests/test_mission.py`
+
+<details>
+<summary>Original analysis (click to expand)</summary>
 
 **Missing Lines**: 73-80
 
-#### Context
-
 Method to register a custom Astropy time format for mission-specific epochs.
-
-**Uncovered Code**:
 
 ```python
 @lru_cache
@@ -470,83 +427,7 @@ def register_mission_time_epoch(self):
     return MissionTime
 ```
 
-#### Why It's Not Covered
-
-This method integrates with Astropy's time system to create mission-specific time formats (like BTJD for TESS). It's not exercised because tests don't perform time conversions.
-
-#### Recommendation
-
-**Approach**: Test Astropy time format registration and usage.
-
-```python
-import pytest
-import numpy as np
-from decimal import Decimal
-from astropy import time
-from lightcurvedb.models import Mission
-
-class TestMissionTimeEpoch:
-    def test_register_mission_time_epoch_creates_class(self, v2_db):
-        """Test that register creates a valid time class."""
-        mission = Mission(
-            name="TEST_MISSION",
-            description="Test mission",
-            time_unit="day",
-            time_epoch=Decimal("2457000.0"),
-            time_epoch_scale="tdb",
-            time_epoch_format="jd",
-            time_format_name="test_time",
-        )
-        v2_db.add(mission)
-        v2_db.commit()
-
-        TimeClass = mission.register_mission_time_epoch()
-        assert TimeClass.name == "test_time"
-        assert TimeClass.epoch_scale == "tdb"
-
-    def test_mission_time_conversion(self, v2_db):
-        """Test time conversion using registered epoch."""
-        mission = Mission(
-            name="TESS_TEST",
-            description="TESS-like mission",
-            time_unit="day",
-            time_epoch=Decimal("2457000.0"),  # BTJD epoch
-            time_epoch_scale="tdb",
-            time_epoch_format="jd",
-            time_format_name="btjd_test",
-        )
-        v2_db.add(mission)
-        v2_db.commit()
-
-        TimeClass = mission.register_mission_time_epoch()
-
-        # Convert JD to mission time
-        jd_time = time.Time(2458000.0, format='jd', scale='tdb')
-        mission_time = jd_time.to_value('btjd_test')
-
-        expected = 2458000.0 - 2457000.0  # = 1000 days from epoch
-        assert np.isclose(mission_time, expected, rtol=1e-6)
-
-    def test_lru_cache_returns_same_class(self, v2_db):
-        """Test @lru_cache returns same class instance."""
-        mission = Mission(
-            name="CACHED_TEST",
-            description="Test",
-            time_unit="day",
-            time_epoch=Decimal("0"),
-            time_epoch_scale="tdb",
-            time_epoch_format="jd",
-            time_format_name="cached_test",
-        )
-        v2_db.add(mission)
-        v2_db.commit()
-
-        class1 = mission.register_mission_time_epoch()
-        class2 = mission.register_mission_time_epoch()
-        assert class1 is class2  # Same object due to lru_cache
-```
-
-**Priority**: Medium - Important for TESS-specific time handling.
+</details>
 
 ---
 
