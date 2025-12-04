@@ -82,7 +82,7 @@ line_length = 79
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-version_variable = ["src/lightcurvedb/__init__.py:__version__"]
+version_variables = ["src/lightcurvedb/__init__.py:__version__"]
 branch = "main"
 upload_to_pypi = false
 upload_to_release = true
@@ -93,8 +93,10 @@ tag_format = "v{version}"
 
 [tool.semantic_release.changelog]
 template_dir = "templates"
-changelog_file = "CHANGELOG.md"
 exclude_commit_patterns = []
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"
 
 [tool.semantic_release.branches.main]
 match = "(main|master)"
