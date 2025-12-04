@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DisconnectionError
 from sqlalchemy.pool import NullPool
 
 
@@ -135,13 +134,12 @@ class TestProcessGuards:
         engine.dispose()
 
     def test_checkout_guard_detects_pid_mismatch(self, worker_database):
-        """Test checkout listener detects PID mismatch and raises error.
+        """Test checkout listener detects PID mismatch and recycles connection.
 
-        Note: The checkout listener attempts to invalidate the connection
-        when a PID mismatch is detected. This test verifies the detection
-        logic is triggered, though the exact error type may vary depending
-        on SQLAlchemy version (AttributeError in SQLAlchemy 2.x due to
-        read-only connection property, DisconnectionError in older versions).
+        The checkout listener invalidates connections that were created in a
+        different process (detected via PID mismatch). When this happens,
+        SQLAlchemy's pool catches the DisconnectionError and creates a fresh
+        connection. This prevents issues with multiprocessing/forking.
         """
         from lightcurvedb.core.engines import thread_safe_engine
 
@@ -170,12 +168,15 @@ class TestProcessGuards:
         with patch(
             "lightcurvedb.core.engines.os.getpid", return_value=fake_pid
         ):
-            # The checkout listener should detect PID mismatch and fail.
-            # In SQLAlchemy 2.x, this raises AttributeError because the
-            # connection property is read-only. The important thing is that
-            # the mismatch is detected and the connection is rejected.
-            with pytest.raises((DisconnectionError, AttributeError)):
-                conn = engine.connect()
+            # The checkout listener detects PID mismatch and raises
+            # DisconnectionError. The pool catches this and creates a new
+            # connection, so connect() succeeds with a fresh connection.
+            # The key behavior is that the stale connection is invalidated.
+            conn = engine.connect()
+            # Connection should work - it's a fresh one after recycling
+            result = conn.execute(text("SELECT 1"))
+            assert result.scalar() == 1
+            conn.close()
 
         engine.dispose()
 
