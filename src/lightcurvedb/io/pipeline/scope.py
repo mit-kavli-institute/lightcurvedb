@@ -5,25 +5,24 @@ by automatically managing connection lifecycles, reducing boilerplate code
 and encouraging clean separation of business logic from database operations.
 """
 
-from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Any, Callable, Concatenate, Optional, ParamSpec, TypeVar
 
 from loguru import logger
-from sqlalchemy.exc import InternalError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.session import sessionmaker as SessionMaker
 
 from lightcurvedb.core.connection import LCDB_Session
 
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def db_scope(
-    session_factory: Optional[SessionMaker] = None,
+    session_factory: Optional[SessionMaker[Session]] = None,
     application_name: Optional[str] = None,
     **session_kwargs: Any,
-) -> Callable[[F], F]:
+) -> Callable[[Callable[Concatenate[Session, P], R]], Callable[P, R]]:
     """Decorator that provides automatic database session management.
 
     Wraps a function to automatically handle database session lifecycle.
@@ -96,9 +95,11 @@ def db_scope(
     lightcurvedb.core.connection.db_from_config : Create sessions from config
     """
 
-    def _internal(func):
+    def _internal(
+        func: Callable[Concatenate[Session, P], R],
+    ) -> Callable[P, R]:
         # Use provided session factory or default to LCDB_Session
-        _session_factory = (
+        _session_factory: SessionMaker[Session] = (
             session_factory if session_factory is not None else LCDB_Session
         )
 
@@ -109,45 +110,17 @@ def db_scope(
         session_creation_kwargs = session_kwargs.copy()
 
         @wraps(func)
-        def wrapper(*args, **kwargs):
-            func_results = None
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Create a new session using the factory with provided kwargs
             logger.trace(
                 f"Entering db context for {app_name} ({func}) "
                 f"with {args} and {kwargs}"
             )
             with _session_factory(**session_creation_kwargs) as session:
-                func_results = func(session, *args, **kwargs)
+                result = func(session, *args, **kwargs)
             logger.trace(f"Exited db context for {app_name} ({func})")
-            return func_results
+            return result
 
         return wrapper
 
     return _internal
-
-
-@contextmanager
-def scoped_block(
-    db: Session,
-    resource: Any,
-    acquire_actions: Optional[List[Any]] = None,
-    release_actions: Optional[List[Any]] = None,
-) -> Any:
-    if acquire_actions is None:
-        acquire_actions = []
-    if release_actions is None:
-        release_actions = []
-
-    try:
-        for action in acquire_actions:
-            logger.trace(action)
-            db.execute(action)
-        db.commit()
-        yield resource
-    except InternalError:
-        db.rollback()
-    finally:
-        for action in release_actions:
-            logger.trace(action)
-            db.execute(action)
-        db.commit()
