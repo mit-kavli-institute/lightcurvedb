@@ -53,13 +53,27 @@ jobs:
         pytest -v --cov=lightcurvedb --cov-report=term-missing
 
     - name: Generate coverage report
-      if: matrix.python-version == '3.11'
+      if: matrix.python-version == '3.12'
       run: |
         pytest --cov=lightcurvedb --cov-report=xml
 
-    - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.11'
-      uses: codecov/codecov-action@v3
+    - name: Extract coverage percentage
+      if: matrix.python-version == '3.12'
+      id: coverage
+      run: |
+        COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); print(f\"{float(tree.getroot().attrib['line-rate']) * 100:.0f}\")")
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage: $COVERAGE%"
+
+    - name: Update coverage badge
+      if: matrix.python-version == '3.12' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/master')
+      uses: schneegans/dynamic-badges-action@v1.7.0
       with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+        auth: ${{ secrets.GIST_TOKEN }}
+        gistID: ${{ vars.COVERAGE_GIST_ID }}
+        filename: coverage-badge.json
+        label: coverage
+        message: ${{ steps.coverage.outputs.percentage }}%
+        valColorRange: ${{ steps.coverage.outputs.percentage }}
+        maxColorRange: 100
+        minColorRange: 0
