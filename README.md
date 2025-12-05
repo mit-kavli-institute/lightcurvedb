@@ -1,7 +1,7 @@
 # Welcome to the readme
 
 ![Tests](https://github.com/mit-kavli-institute/lightcurvedb/actions/workflows/test.yml/badge.svg?branch=staging)
-![Coverage](https://img.shields.io/endpoint?url=https://gist.github.com/WilliamCFong/370ef4b4b1e8b673957a122a4d7f27bc)
+![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/WilliamCFong/370ef4b4b1e8b673957a122a4d7f27bc/raw/coverage-badge.json)
 
 ## Installation
 There are a couple of ways of installing `lightcurvedb`.
