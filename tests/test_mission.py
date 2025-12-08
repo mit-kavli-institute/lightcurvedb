@@ -412,3 +412,144 @@ class TestMissionQueries:
                 assert count == 3
             elif mission.name == "MISSION_NO_CATALOGS":
                 assert count == 0
+
+
+class TestMissionTimeEpoch:
+    """Test Mission.register_mission_time_epoch method."""
+
+    def test_register_creates_time_class(self, v2_db: orm.Session):
+        """Test that register_mission_time_epoch creates a valid time class."""
+        from decimal import Decimal
+
+        mission = Mission(
+            id=uuid.uuid4(),
+            name="TIME_TEST_MISSION",
+            description="Mission for time epoch testing",
+            time_unit="day",
+            time_epoch=Decimal("2457000.0"),
+            time_epoch_scale="tdb",
+            time_epoch_format="jd",
+            time_format_name="test_btjd",
+        )
+        v2_db.add(mission)
+        v2_db.commit()
+
+        # Call the method to register the time class
+        TimeClass = mission.register_mission_time_epoch()
+
+        # Verify class attributes are set correctly
+        assert TimeClass.name == "test_btjd"
+        assert TimeClass.epoch_val == Decimal("2457000.0")
+        assert TimeClass.epoch_scale == "tdb"
+        assert TimeClass.epoch_format == "jd"
+
+    def test_register_time_class_inherits_correctly(self, v2_db: orm.Session):
+        """Test that the created class inherits from TimeEpochDate."""
+        from decimal import Decimal
+
+        from astropy import time
+
+        mission = Mission(
+            id=uuid.uuid4(),
+            name="INHERIT_TEST_MISSION",
+            description="Test inheritance",
+            time_unit="day",
+            time_epoch=Decimal("2450000.0"),
+            time_epoch_scale="utc",
+            time_epoch_format="jd",
+            time_format_name="inherit_test",
+        )
+        v2_db.add(mission)
+        v2_db.commit()
+
+        TimeClass = mission.register_mission_time_epoch()
+
+        # Verify inheritance
+        assert issubclass(TimeClass, time.TimeEpochDate)
+
+    def test_register_lru_cache_returns_same_class(self, v2_db: orm.Session):
+        """Test that @lru_cache returns the same class instance."""
+        from decimal import Decimal
+
+        mission = Mission(
+            id=uuid.uuid4(),
+            name="CACHE_TEST_MISSION",
+            description="Test LRU cache behavior",
+            time_unit="day",
+            time_epoch=Decimal("2457000.0"),
+            time_epoch_scale="tdb",
+            time_epoch_format="jd",
+            time_format_name="cache_test",
+        )
+        v2_db.add(mission)
+        v2_db.commit()
+
+        # Call multiple times
+        TimeClass1 = mission.register_mission_time_epoch()
+        TimeClass2 = mission.register_mission_time_epoch()
+        TimeClass3 = mission.register_mission_time_epoch()
+
+        # All should be the exact same object due to lru_cache
+        assert TimeClass1 is TimeClass2
+        assert TimeClass2 is TimeClass3
+
+    def test_register_different_missions_different_classes(
+        self, v2_db: orm.Session
+    ):
+        """Test that different missions create different time classes."""
+        from decimal import Decimal
+
+        mission1 = Mission(
+            id=uuid.uuid4(),
+            name="MISSION_A",
+            description="First mission",
+            time_unit="day",
+            time_epoch=Decimal("2457000.0"),
+            time_epoch_scale="tdb",
+            time_epoch_format="jd",
+            time_format_name="time_a",
+        )
+        mission2 = Mission(
+            id=uuid.uuid4(),
+            name="MISSION_B",
+            description="Second mission",
+            time_unit="second",
+            time_epoch=Decimal("2450000.0"),
+            time_epoch_scale="utc",
+            time_epoch_format="mjd",
+            time_format_name="time_b",
+        )
+        v2_db.add_all([mission1, mission2])
+        v2_db.commit()
+
+        TimeClass1 = mission1.register_mission_time_epoch()
+        TimeClass2 = mission2.register_mission_time_epoch()
+
+        # Different missions should create different classes
+        assert TimeClass1 is not TimeClass2
+        assert TimeClass1.name == "time_a"
+        assert TimeClass2.name == "time_b"
+
+    def test_register_time_unit_attribute(self, v2_db: orm.Session):
+        """Test that time unit is correctly converted to astropy unit."""
+        from decimal import Decimal
+
+        from astropy import units as u
+
+        mission = Mission(
+            id=uuid.uuid4(),
+            name="UNIT_TEST_MISSION",
+            description="Test time unit conversion",
+            time_unit="day",
+            time_epoch=Decimal("2457000.0"),
+            time_epoch_scale="tdb",
+            time_epoch_format="jd",
+            time_format_name="unit_test",
+        )
+        v2_db.add(mission)
+        v2_db.commit()
+
+        TimeClass = mission.register_mission_time_epoch()
+
+        # Verify unit is 1 day
+        assert TimeClass.unit == 1 * u.day

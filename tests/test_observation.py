@@ -4,6 +4,9 @@ import uuid
 
 import numpy as np
 import pytest
+from hypothesis import assume, given
+from hypothesis import strategies as st
+from hypothesis.extra import numpy as np_st
 from sqlalchemy import delete, exc, orm
 
 from lightcurvedb.models import (
@@ -15,6 +18,70 @@ from lightcurvedb.models import (
     Target,
     TargetSpecificTime,
 )
+
+
+# Hypothesis strategies for align_to_reference tests
+@st.composite
+def monotonic_int64_array(draw, min_size=0, max_size=100):
+    """Generate sorted unique int64 arrays (like cadence_reference)."""
+    size = draw(st.integers(min_value=min_size, max_value=max_size))
+    if size == 0:
+        return np.array([], dtype=np.int64)
+    elements = draw(
+        st.lists(
+            st.integers(min_value=0, max_value=10000),
+            min_size=size,
+            max_size=size,
+            unique=True,
+        )
+    )
+    return np.array(sorted(elements), dtype=np.int64)
+
+
+@st.composite
+def reference_and_valid_subset(draw, min_ref_size=1, max_ref_size=50):
+    """Generate (reference, observed, values) where observed ⊆ reference."""
+    reference = draw(
+        monotonic_int64_array(min_size=min_ref_size, max_size=max_ref_size)
+    )
+    # Select random subset of indices
+    n_observed = draw(st.integers(min_value=0, max_value=len(reference)))
+    indices = draw(
+        st.lists(
+            st.sampled_from(range(len(reference))),
+            min_size=n_observed,
+            max_size=n_observed,
+            unique=True,
+        ).map(sorted)
+    )
+    observed = reference[indices] if indices else np.array([], dtype=np.int64)
+    # Generate values matching observed length
+    values = draw(
+        np_st.arrays(
+            dtype=np.float64,
+            shape=len(observed),
+            elements=st.floats(
+                allow_nan=False,
+                allow_infinity=False,
+                min_value=-1e6,
+                max_value=1e6,
+            ),
+        )
+    )
+    return reference, observed, values
+
+
+@st.composite
+def reference_and_invalid_subset(draw):
+    """Generate (reference, observed) where observed ⊄ reference."""
+    reference = draw(monotonic_int64_array(min_size=1, max_size=50))
+    # Create observed with at least one value not in reference
+    max_val = reference.max() if len(reference) > 0 else 100
+    invalid_val = draw(
+        st.integers(min_value=int(max_val) + 1, max_value=int(max_val) + 1000)
+    )
+    observed = np.array([invalid_val], dtype=np.int64)
+    return reference, observed
 
 
 class TestObservationBasics:
@@ -713,3 +780,140 @@ class TestObservationQueries:
         assert len(obs_with_qf) == 1
         assert obs_with_flags in obs_with_qf
         assert obs_without_flags not in obs_with_qf
+
+
+class TestAlignToReferenceProperties:
+    """Property-based tests for Observation.align_to_reference."""
+
+    @given(data=reference_and_valid_subset())
+    def test_output_length_equals_reference(self, data):
+        """Result length always equals reference length."""
+        reference, observed, values = data
+        obs = Observation(cadence_reference=reference)
+        result = obs.align_to_reference(observed, values)
+        assert len(result) == len(reference)
+
+    @given(data=reference_and_valid_subset())
+    def test_values_preserved_at_observed_positions(self, data):
+        """Values appear at correct positions in result."""
+        reference, observed, values = data
+        obs = Observation(cadence_reference=reference)
+        result = obs.align_to_reference(observed, values)
+        # Find where observed values should be in result
+        indices = np.searchsorted(reference, observed)
+        np.testing.assert_array_equal(result[indices], values)
+
+    @given(data=reference_and_valid_subset(), fill=st.floats(allow_nan=True))
+    def test_fill_value_at_gaps(self, data, fill):
+        """Non-observed positions contain fill_value."""
+        reference, observed, values = data
+        assume(len(reference) > len(observed))  # Need gaps
+        obs = Observation(cadence_reference=reference)
+        result = obs.align_to_reference(observed, values, fill_value=fill)
+        # Create mask for gap positions
+        observed_set = set(observed)
+        gap_mask = np.array([r not in observed_set for r in reference])
+        if np.isnan(fill):
+            assert np.all(np.isnan(result[gap_mask]))
+        else:
+            assert np.all(result[gap_mask] == fill)
+
+    @given(data=reference_and_valid_subset())
+    def test_dtype_correctness(self, data):
+        """Result dtype matches np.result_type(values, fill_value)."""
+        reference, observed, values = data
+        fill_value = np.nan
+        obs = Observation(cadence_reference=reference)
+        result = obs.align_to_reference(
+            observed, values, fill_value=fill_value
+        )
+        expected_dtype = np.result_type(values, fill_value)
+        assert result.dtype == expected_dtype
+
+    @given(data=reference_and_invalid_subset())
+    def test_verify_subset_raises_on_invalid(self, data):
+        """verify_subset=True raises ValueError for invalid observed."""
+        reference, observed = data
+        values = np.ones(len(observed), dtype=np.float64)
+        obs = Observation(cadence_reference=reference)
+        with pytest.raises(
+            ValueError, match="observed contains values not in reference"
+        ):
+            obs.align_to_reference(observed, values, verify_subset=True)
+
+    @given(reference=monotonic_int64_array(min_size=1, max_size=50))
+    def test_empty_observed_returns_all_fill(self, reference):
+        """Empty observed array returns all fill_value."""
+        obs = Observation(cadence_reference=reference)
+        fill = -999.0
+        result = obs.align_to_reference(
+            np.array([], dtype=np.int64),
+            np.array([], dtype=np.float64),
+            fill_value=fill,
+        )
+        assert np.all(result == fill)
+
+    @given(reference=monotonic_int64_array(min_size=1, max_size=50))
+    def test_full_coverage_equals_values(self, reference):
+        """When observed == reference, result equals values."""
+        obs = Observation(cadence_reference=reference)
+        values = np.arange(len(reference), dtype=np.float64)
+        result = obs.align_to_reference(reference, values)
+        np.testing.assert_array_equal(result, values)
+
+    @given(data=reference_and_valid_subset())
+    def test_roundtrip_recovery(self, data):
+        """Can recover original values at observed positions."""
+        reference, observed, values = data
+        obs = Observation(cadence_reference=reference)
+        result = obs.align_to_reference(observed, values, fill_value=np.nan)
+        indices = np.searchsorted(reference, observed)
+        recovered = result[indices]
+        np.testing.assert_array_equal(recovered, values)
+
+
+class TestAlignToReferenceEdgeCases:
+    """Edge case tests for align_to_reference."""
+
+    def test_empty_reference_empty_observed(self):
+        """Empty reference with empty observed returns empty array."""
+        obs = Observation(cadence_reference=np.array([], dtype=np.int64))
+        result = obs.align_to_reference(
+            np.array([], dtype=np.int64),
+            np.array([], dtype=np.float64),
+        )
+        assert len(result) == 0
+
+    def test_single_element_match(self):
+        """Single element reference with matching observed."""
+        obs = Observation(cadence_reference=np.array([42], dtype=np.int64))
+        result = obs.align_to_reference(
+            np.array([42], dtype=np.int64),
+            np.array([3.14], dtype=np.float64),
+        )
+        assert result[0] == 3.14
+
+    def test_integer_fill_value(self):
+        """Test with integer fill_value."""
+        obs = Observation(
+            cadence_reference=np.array([1, 2, 3], dtype=np.int64)
+        )
+        result = obs.align_to_reference(
+            np.array([2], dtype=np.int64),
+            np.array([100], dtype=np.int64),
+            fill_value=0,
+        )
+        np.testing.assert_array_equal(result, [0, 100, 0])
+
+    def test_verify_subset_false_no_error(self):
+        """verify_subset=False doesn't raise even with invalid observed."""
+        obs = Observation(
+            cadence_reference=np.array([1, 2, 3], dtype=np.int64)
+        )
+        # This won't raise, but result may be incorrect
+        result = obs.align_to_reference(
+            np.array([99], dtype=np.int64),
+            np.array([1.0], dtype=np.float64),
+            verify_subset=False,
+        )
+        assert len(result) == 3  # No error, just potentially wrong result

@@ -369,3 +369,151 @@ class TestInstrumentQueries:
         assert len(children) == 4
         for camera in cameras:
             assert camera in children
+
+
+class TestQueryForInstrument:
+    """Test Instrument.query_for_instrument class method."""
+
+    def test_query_top_level_instrument(self, v2_db: orm.Session):
+        """Test querying instrument without parent (top-level)."""
+        # Create a top-level instrument
+        camera = Instrument(
+            name="Camera 1",
+            properties={"type": "camera"},
+        )
+        v2_db.add(camera)
+        v2_db.commit()
+
+        # Query using the class method
+        query = Instrument.query_for_instrument("Camera 1")
+        result = v2_db.execute(query).scalar_one()
+
+        assert result.id == camera.id
+        assert result.name == "Camera 1"
+        assert result.parent_id is None
+
+    def test_query_child_instrument_by_parent_name(self, v2_db: orm.Session):
+        """Test querying instrument with parent name specified."""
+        # Create parent and child
+        spacecraft = Instrument(
+            name="TESS",
+            properties={"type": "spacecraft"},
+        )
+        camera = Instrument(
+            name="Camera 1",
+            parent=spacecraft,
+            properties={"type": "camera"},
+        )
+        v2_db.add_all([spacecraft, camera])
+        v2_db.commit()
+
+        # Query child by name and parent name
+        query = Instrument.query_for_instrument("Camera 1", parent_name="TESS")
+        result = v2_db.execute(query).scalar_one()
+
+        assert result.id == camera.id
+        assert result.parent_id == spacecraft.id
+
+    def test_query_distinguishes_same_name_different_parents(
+        self, v2_db: orm.Session
+    ):
+        """Test query finds correct instrument when names are duplicated."""
+        # Create two parent instruments
+        spacecraft1 = Instrument(
+            name="TESS",
+            properties={"type": "spacecraft"},
+        )
+        spacecraft2 = Instrument(
+            name="Kepler",
+            properties={"type": "spacecraft"},
+        )
+        v2_db.add_all([spacecraft1, spacecraft2])
+        v2_db.flush()
+
+        # Create children with the SAME name under different parents
+        ccd_tess = Instrument(
+            name="CCD 1",
+            parent=spacecraft1,
+            properties={"mission": "TESS"},
+        )
+        ccd_kepler = Instrument(
+            name="CCD 1",
+            parent=spacecraft2,
+            properties={"mission": "Kepler"},
+        )
+        v2_db.add_all([ccd_tess, ccd_kepler])
+        v2_db.commit()
+
+        # Query for CCD 1 under TESS
+        query_tess = Instrument.query_for_instrument(
+            "CCD 1", parent_name="TESS"
+        )
+        result_tess = v2_db.execute(query_tess).scalar_one()
+        assert result_tess.id == ccd_tess.id
+        assert result_tess.properties["mission"] == "TESS"
+
+        # Query for CCD 1 under Kepler
+        query_kepler = Instrument.query_for_instrument(
+            "CCD 1", parent_name="Kepler"
+        )
+        result_kepler = v2_db.execute(query_kepler).scalar_one()
+        assert result_kepler.id == ccd_kepler.id
+        assert result_kepler.properties["mission"] == "Kepler"
+
+    def test_query_excludes_child_instruments_when_no_parent(
+        self, v2_db: orm.Session
+    ):
+        """Test that query without parent_name excludes child instruments."""
+        # Create a top-level instrument
+        top_level = Instrument(
+            name="Shared Name",
+            properties={"level": "top"},
+        )
+        v2_db.add(top_level)
+        v2_db.flush()
+
+        # Create a child with the same name
+        child = Instrument(
+            name="Shared Name",
+            parent=top_level,
+            properties={"level": "child"},
+        )
+        v2_db.add(child)
+        v2_db.commit()
+
+        # Query without parent_name should only find top-level
+        query = Instrument.query_for_instrument("Shared Name")
+        result = v2_db.execute(query).scalar_one()
+
+        assert result.id == top_level.id
+        assert result.properties["level"] == "top"
+
+    def test_query_nonexistent_instrument_returns_empty(
+        self, v2_db: orm.Session
+    ):
+        """Test querying for non-existent instrument returns no results."""
+        from sqlalchemy.exc import NoResultFound
+
+        query = Instrument.query_for_instrument("Nonexistent")
+
+        with pytest.raises(NoResultFound):
+            v2_db.execute(query).scalar_one()
+
+    def test_query_nonexistent_parent_returns_empty(self, v2_db: orm.Session):
+        """Test querying with non-existent parent returns no results."""
+        from sqlalchemy.exc import NoResultFound
+
+        # Create an instrument but query with wrong parent
+        camera = Instrument(
+            name="Camera 1",
+            properties={},
+        )
+        v2_db.add(camera)
+        v2_db.commit()
+
+        query = Instrument.query_for_instrument(
+            "Camera 1", parent_name="NonexistentParent"
+        )
+
+        with pytest.raises(NoResultFound):
+            v2_db.execute(query).scalar_one()

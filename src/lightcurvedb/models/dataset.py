@@ -224,3 +224,95 @@ class DataSet(LCDBModel):
         secondaryjoin="DataSet.id == DataSetHierarchy.child_dataset_id",
         back_populates="source_datasets",
     )
+
+    def align_to_observation(
+        self,
+        dataset_cadences: npt.NDArray[np.integer],
+        fill_value: float = np.nan,
+    ) -> None:
+        """
+        Align dataset values and errors to the observation's cadence reference.
+
+        Reindexes the dataset's ``values`` and ``errors`` arrays to match the
+        observation's ``cadence_reference`` grid. Positions in the reference
+        grid that have no corresponding data in ``dataset_cadences`` are filled
+        with ``fill_value``.
+
+        This method modifies the dataset in place.
+
+        Parameters
+        ----------
+        dataset_cadences : ndarray of int
+            Monotonically increasing cadence indices corresponding to the
+            current ``values`` and ``errors`` arrays. Must be a subset of
+            the observation's ``cadence_reference``.
+        fill_value : float, optional
+            Value to use for cadences in the reference grid that are not
+            present in ``dataset_cadences``. Default is ``np.nan``.
+
+        Raises
+        ------
+        ValueError
+            If the dataset has no associated observation (``observation`` is
+            None) or if ``values`` is None.
+
+        See Also
+        --------
+        Observation.align_to_reference : The underlying alignment method.
+
+        Notes
+        -----
+        This is useful when dataset values were extracted from a subset of
+        frames in an observation and need to be expanded to match the full
+        observation cadence grid for consistent array indexing across multiple
+        datasets.
+
+        The alignment preserves the original values at their correct positions
+        and inserts ``fill_value`` at gaps. Both ``values`` and ``errors``
+        (if present) are aligned using the same cadence mapping.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from lightcurvedb.models import DataSet, Observation
+
+        Create an observation with a reference cadence grid:
+
+        >>> obs = Observation(cadence_reference=np.array([1, 2, 3, 4, 5]))
+
+        Create a dataset with values at only some cadences:
+
+        >>> dataset = DataSet(
+        ...     values=np.array([100.0, 200.0]),
+        ...     errors=np.array([0.1, 0.2]),
+        ...     observation=obs,
+        ... )
+
+        Align the dataset to the full observation grid:
+
+        >>> dataset.align_to_observation(
+        ...     dataset_cadences=np.array([2, 4]),
+        ...     fill_value=-999.0,
+        ... )
+        >>> dataset.values
+        array([-999.,  100., -999.,  200., -999.])
+        >>> dataset.errors
+        array([-999. ,    0.1, -999. ,    0.2, -999. ])
+        """
+        if self.observation is None:
+            raise ValueError("Cannot align dataset: no observation associated")
+        if self.values is None:
+            raise ValueError("Cannot align dataset: values array is None")
+
+        self.values = self.observation.align_to_reference(
+            dataset_cadences,
+            self.values,
+            fill_value=fill_value,
+        )
+
+        if self.errors is not None:
+            self.errors = self.observation.align_to_reference(
+                dataset_cadences,
+                self.errors,
+                fill_value=fill_value,
+            )

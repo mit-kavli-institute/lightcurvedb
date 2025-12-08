@@ -13,10 +13,12 @@ def __register_process_guards__(engine):
         connection_record.info["pid"] = os.getpid()
 
     @listens_for(engine, "checkout")
-    def checkout(dbabi_connection, connection_record, connection_proxy):
+    def checkout(dbapi_connection, connection_record, connection_proxy):
         pid = os.getpid()
         if connection_record.info["pid"] != pid:
-            connection_record.connection = connection_proxy.connection = None
+            # Invalidate the connection - use dbapi_connection (SQLAlchemy 2.x)
+            connection_record.dbapi_connection = None
+            connection_proxy.dbapi_connection = None
             raise DisconnectionError(
                 "Attempting to disassociate database connection"
             )
