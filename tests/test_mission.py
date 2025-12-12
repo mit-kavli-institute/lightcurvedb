@@ -281,6 +281,10 @@ class TestMissionConstraints:
             is None
         )
 
+    @pytest.mark.filterwarnings(
+        "ignore:New instance .* conflicts with persistent "
+        "instance:sqlalchemy.exc.SAWarning"
+    )
     def test_mission_uuid_primary_key(self, v2_db: orm.Session):
         """Test UUID primary key behavior."""
         # Create mission without specifying ID

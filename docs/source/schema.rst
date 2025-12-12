@@ -11,9 +11,25 @@ The database schema consists of several interconnected model groups:
 1. **Mission Hierarchy**: Mission → MissionCatalog → Target
 2. **Instrument Hierarchy**: Self-referential instrument tree
 3. **Observation System**: Polymorphic observation models with FITS frame support
-4. **Processing Pipeline**: PhotometricSource and ProcessingMethod
+4. **Processing Pipeline**: PhotometricSource and ProcessingMethod (with sentinel values for "unspecified")
 5. **Data Products**: DataSet (lightcurves), TargetSpecificTime, and QualityFlagArray
-6. **Data Lineage**: DataSetHierarchy for tracking processing provenance
+6. **Data Lineage**: DataSetHierarchy for tracking processing provenance (composite foreign keys)
+
+**Key Design Features**:
+
+- **DataSet Partitioning**: The DataSet table uses PostgreSQL LIST partitioning by
+  ``observation_id`` for efficient query performance at scale (billions of rows,
+  terabytes of array data). Each observation becomes its own partition containing
+  millions of rows.
+
+- **Composite Primary Key**: DataSet uses a composite primary key
+  ``(observation_id, target_id, photometric_method_id, processing_method_id)``
+  instead of an auto-increment ID, aligning with the partition key for optimal
+  performance.
+
+- **Sentinel Values**: PhotometricSource and ProcessingMethod use ``id=0`` as a
+  sentinel value for "unspecified", allowing non-nullable foreign keys in the
+  composite primary key while preserving semantic meaning.
 
 Entity Relationship Diagram
 ---------------------------
@@ -106,31 +122,35 @@ Entity Relationship Diagram
        }
 
        PhotometricSource {
-           int id PK
+           int id PK "0=unspecified sentinel"
            string name UK
            string description
        }
 
        ProcessingMethod {
-           int id PK
+           int id PK "0=unspecified sentinel"
            string name UK
            string description
        }
 
        DataSet {
-           int id PK
-           int target_id FK
-           int observation_id FK
-           int photometric_method_id FK "nullable"
-           int processing_method_id FK "nullable"
+           int observation_id PK-FK "partition key"
+           int target_id PK-FK
+           int photometric_method_id PK-FK "0=unspecified"
+           int processing_method_id PK-FK "0=unspecified"
            array values
            array errors
        }
 
        DataSetHierarchy {
-           int id PK
-           int source_dataset_id FK
-           int child_dataset_id FK
+           int source_observation_id PK-FK
+           int source_target_id PK-FK
+           int source_photometric_method_id PK-FK
+           int source_processing_method_id PK-FK
+           int child_observation_id PK-FK
+           int child_target_id PK-FK
+           int child_photometric_method_id PK-FK
+           int child_processing_method_id PK-FK
        }
 
        TargetSpecificTime {
@@ -370,7 +390,7 @@ Querying for a target's lightcurves:
 
 .. code-block:: python
 
-   from lightcurvedb.models import Target, DataSet
+   from lightcurvedb.models import Target, DataSet, ProcessingMethod
 
    # Get all lightcurves for a specific TIC ID
    target = session.query(Target).filter_by(name=12345678).first()
@@ -378,10 +398,16 @@ Querying for a target's lightcurves:
 
    # Get lightcurves with specific processing
    for lc in lightcurves:
-       photometry = lc.photometry_source.name if lc.photometry_source else "N/A"
-       processing = lc.processing_method.name if lc.processing_method else "Raw"
+       photometry = lc.photometry_source.name if lc.has_photometric_source else "N/A"
+       processing = lc.processing_method.name if lc.has_processing_method else "Raw"
        print(f"Photometry: {photometry}, Processing: {processing}")
        print(f"Values: {lc.values}")
+
+   # Query raw datasets (no processing method specified)
+   raw_lightcurves = session.query(DataSet).filter(
+       DataSet.target_id == target.id,
+       DataSet.has_processing_method == False
+   ).all()
 
 Creating instrument hierarchy:
 
@@ -428,16 +454,16 @@ Tracking data lineage with dataset hierarchy:
 
 .. code-block:: python
 
-   from lightcurvedb.models import DataSet
+   from lightcurvedb.models import DataSet, ProcessingMethod
    import numpy as np
 
-   # Create raw photometry dataset
+   # Create raw photometry dataset (using sentinel for unspecified processing)
    raw_flux = np.random.normal(1.0, 0.01, 1000)
    raw_dataset = DataSet(
        target=target,
        observation=observation,
        photometry_source=aperture_source,
-       processing_method=None,  # Raw data, no processing
+       processing_method_id=ProcessingMethod.UNSPECIFIED_ID,  # Sentinel value
        values=raw_flux
    )
    session.add(raw_dataset)
@@ -452,22 +478,35 @@ Tracking data lineage with dataset hierarchy:
        processing_method=detrending_method,
        values=detrended_flux
    )
-
-   # Establish hierarchical relationship
-   detrended_dataset.source_datasets.append(raw_dataset)
    session.add(detrended_dataset)
+   session.flush()
+
+   # Establish hierarchical relationship using helper method
+   raw_dataset.add_derived_dataset(detrended_dataset, session)
    session.commit()
 
    # Query the hierarchy
    print(f"Raw dataset has {len(raw_dataset.derived_datasets)} derived products")
    print(f"Detrended dataset has {len(detrended_dataset.source_datasets)} sources")
 
+   # Filter using hybrid properties
+   raw_datasets = session.query(DataSet).filter(
+       DataSet.has_processing_method == False
+   ).all()
+
 Database Constraints
 --------------------
 
 The schema enforces several important constraints:
 
-1. **Unique Constraints**:
+1. **Primary Keys**:
+
+   - Most tables use auto-increment integer or UUID primary keys
+   - **DataSet**: Composite primary key ``(observation_id, target_id, photometric_method_id, processing_method_id)``
+   - **DataSetHierarchy**: Composite primary key of all 8 foreign key columns
+   - **PhotometricSource/ProcessingMethod**: Non-autoincrement ID (explicit IDs required; id=0 reserved for sentinel)
+
+2. **Unique Constraints**:
 
    - Mission.name must be unique
    - MissionCatalog.name must be unique
@@ -477,15 +516,22 @@ The schema enforces several important constraints:
    - FITSFrame: (type, cadence) combination must be unique
    - QualityFlagArray: (type, observation_id, target_id) must be unique (with NULL handling)
 
-2. **Cascade Deletes**:
+3. **Cascade Deletes**:
 
    - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, DataSet, and QualityFlagArray
-   - Deleting a PhotometricSource or ProcessingMethod cascades to DataSet
    - Deleting a Target cascades to DataSet
    - Deleting a DataSet cascades to DataSetHierarchy entries
+   - PhotometricSource/ProcessingMethod use RESTRICT (cannot delete if DataSets reference them)
 
-3. **Referential Integrity**:
+4. **Referential Integrity**:
 
    - All foreign keys are enforced at the database level
    - Orphaned records are prevented through proper relationships
-   - DataSetHierarchy maintains referential integrity for lineage tracking
+   - DataSetHierarchy maintains referential integrity via composite foreign keys
+   - Sentinel records (id=0) must exist before creating DataSets
+
+5. **Partitioning**:
+
+   - DataSet table is partitioned by LIST on ``observation_id``
+   - Partitions must be created by DBA before inserting data for new observations
+   - A default partition handles unexpected observation IDs

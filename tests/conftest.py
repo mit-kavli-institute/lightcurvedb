@@ -131,6 +131,18 @@ def v2_db(worker_database):
 
     # Create tables for this test
     LCDBModel.metadata.create_all(bind=engine, checkfirst=True)
+
+    # Create default partition for the partitioned dataset table
+    # This is required because the dataset table uses LIST partitioning
+    with engine.connect() as conn:
+        conn.execute(
+            sa.text(
+                "CREATE TABLE IF NOT EXISTS dataset_default "
+                "PARTITION OF dataset DEFAULT"
+            )
+        )
+        conn.commit()
+
     Session = sessionmaker()
     Session.configure(bind=engine)
 
@@ -141,6 +153,14 @@ def v2_db(worker_database):
 
     try:
         session = Session()
+
+        # Create sentinel records for composite key support
+        from lightcurvedb.models import PhotometricSource, ProcessingMethod
+
+        PhotometricSource.get_or_create_unspecified(session)
+        ProcessingMethod.get_or_create_unspecified(session)
+        session.commit()
+
         yield session
         session.close()
     finally:
