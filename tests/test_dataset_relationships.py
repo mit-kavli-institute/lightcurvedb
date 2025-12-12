@@ -886,16 +886,23 @@ class TestHybridPropertyFiltering:
         sample_observation: Observation,
     ):
         """Test combining hybrid property filters."""
-        # Create sources and methods
+        # Create all sources and methods first, then flush once
         source = PhotometricSource(
             id=320, name="CombSrc", description="Comb Source"
+        )
+        source2 = PhotometricSource(
+            id=321, name="CombSrc2", description="Src2"
         )
         method = ProcessingMethod(
             id=320, name="CombMeth", description="Comb Method"
         )
-        v2_db.add_all([source, method])
+        method2 = ProcessingMethod(
+            id=321, name="CombMeth2", description="Meth2"
+        )
+        v2_db.add_all([source, source2, method, method2])
         v2_db.flush()
 
+        # Now create all datasets (after sources/methods are in session)
         # Dataset with both (has source AND has method)
         both = DataSet(
             values=np.random.normal(0, 1, 100),
@@ -906,12 +913,6 @@ class TestHybridPropertyFiltering:
         )
 
         # Dataset with source only (has source, no method)
-        source2 = PhotometricSource(
-            id=321, name="CombSrc2", description="Src2"
-        )
-        v2_db.add(source2)
-        v2_db.flush()
-
         source_only = DataSet(
             values=np.random.normal(0, 1, 100),
             target=sample_target,
@@ -921,12 +922,6 @@ class TestHybridPropertyFiltering:
         )
 
         # Dataset with method only (no source, has method)
-        method2 = ProcessingMethod(
-            id=321, name="CombMeth2", description="Meth2"
-        )
-        v2_db.add(method2)
-        v2_db.flush()
-
         method_only = DataSet(
             values=np.random.normal(0, 1, 100),
             target=sample_target,
@@ -1317,6 +1312,10 @@ class TestCompositeKeyQueries:
 
         assert len(results) == 3
 
+    @pytest.mark.filterwarnings(
+        "ignore:New instance .* conflicts with persistent "
+        "instance:sqlalchemy.exc.SAWarning"
+    )
     def test_unique_constraint_composite_key(
         self,
         v2_db: orm.Session,
