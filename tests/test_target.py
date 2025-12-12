@@ -15,7 +15,6 @@ from lightcurvedb.models import (
     Target,
     TargetSpecificTime,
 )
-from lightcurvedb.models.dataset import DataSet
 
 
 class TestTargetBasics:
@@ -521,7 +520,11 @@ class TestTargetConstraints:
         # Verify target is deleted
         assert v2_db.query(Target).filter_by(id=target_id).first() is None
 
-        assert v2_db.query(DataSet).filter_by(id=tst_id).first() is None
+        # Verify TargetSpecificTime is deleted via cascade
+        assert (
+            v2_db.query(TargetSpecificTime).filter_by(id=tst_id).first()
+            is None
+        )
 
 
 class TestTargetQueries:

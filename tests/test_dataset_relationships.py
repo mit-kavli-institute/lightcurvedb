@@ -73,9 +73,10 @@ class TestQLPLightcurveHierarchies:
         v2_db.add(ccd_1)
         v2_db.flush()
 
-        # Add all apertures
+        # Add all apertures (explicit IDs since autoincrement=False)
         legacy_apertures = [
             PhotometricSource(
+                id=i + 1,  # Start from 1, 0 is reserved for sentinel
                 name=f"Aperture_{i:03d}",  # noqa: E231
                 description="Older FiPhot based SAP",
             )
@@ -83,27 +84,31 @@ class TestQLPLightcurveHierarchies:
         ]
         legacy_apertures.append(
             PhotometricSource(
+                id=6,
                 name="Background Aperture",
                 description="A ringed aperture for extracting background flux",
             )
         )
         v2_db.add_all(legacy_apertures)
-        # Add TGLC apertures
+        # Add TGLC apertures (explicit IDs since autoincrement=False)
         tglc_apertures: list[PhotometricSource] = []
         tglc_apertures.append(
             PhotometricSource(
+                id=7,
                 name="TGLC Small Aperture",
                 description="A 1x1 Single Pixel Aperture from TGLC",
             )
         )
         tglc_apertures.append(
             PhotometricSource(
+                id=8,
                 name="TGLC Primary Aperture",
                 description="A 3x3 Pixel Aperture from TGLC",
             )
         )
         tglc_apertures.append(
             PhotometricSource(
+                id=9,
                 name="TGLC Large Aperture",
                 description="A 5x5 Aperture from TGLC",
             )
@@ -111,30 +116,38 @@ class TestQLPLightcurveHierarchies:
 
         v2_db.add_all(tglc_apertures)
 
-        # Add Detrending Types
+        # Add Detrending Types (explicit IDs since autoincrement=False)
         processing_methods = [
             ProcessingMethod(
+                id=1,
                 name="QSPIntermediateMagnitude",
                 description="Systematic Corrected Lightcurves",
             ),
             ProcessingMethod(
+                id=2,
                 name="QSPMagnitude",
                 description="Stellar and Quaternion based detrending",
             ),
             ProcessingMethod(
-                name="KSPMagnitude", description="Kepler Spline detrending"
+                id=3,
+                name="KSPMagnitude",
+                description="Kepler Spline detrending",
             ),
         ]
         v2_db.add_all(processing_methods)
         v2_db.flush()
 
-        # Add spatial types
+        # Add spatial types (explicit IDs since autoincrement=False)
         spatial_methods = [
             ProcessingMethod(
-                name="FFI X Position", description="X Centroid Information"
+                id=4,
+                name="FFI X Position",
+                description="X Centroid Information",
             ),
             ProcessingMethod(
-                name="FFI Y Position", description="Y Centroid Information"
+                id=5,
+                name="FFI Y Position",
+                description="Y Centroid Information",
             ),
         ]
         v2_db.add_all(spatial_methods)
@@ -172,7 +185,7 @@ class TestQLPLightcurveHierarchies:
                 target=t,
                 observation=observation,
                 photometry_source=source,
-                processing_method=None,  # No processing has been done...
+                processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
             )
             # Add XY positions
             x_coordinates = DataSet(
@@ -223,8 +236,11 @@ class TestQLPLightcurveHierarchies:
                 processing_method=processing_methods[1],
             )
             v2_db.add_all([ksp, sys_removed, detrended])
-            raw_photometry.derived_datasets.append(ksp)
-            raw_photometry.derived_datasets.append(sys_removed)
-            sys_removed.derived_datasets.append(detrended)
+            v2_db.flush()
+
+            # Create hierarchy using helper methods (viewonly relationships)
+            raw_photometry.add_derived_dataset(ksp, v2_db)
+            raw_photometry.add_derived_dataset(sys_removed, v2_db)
+            sys_removed.add_derived_dataset(detrended, v2_db)
 
             v2_db.commit()

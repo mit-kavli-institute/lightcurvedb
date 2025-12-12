@@ -46,10 +46,16 @@ docker-compose run test
    - Database entities: Frame, Instrument, Observation, Target, DataSet,
      PhotometricSource, ProcessingMethod
    - DataSetHierarchy: Self-referential model for tracking data lineage
-     and processing provenance
+     and processing provenance (uses composite foreign keys)
    - Uses SQLAlchemy 2.0+ with PostgreSQL backend
    - Models define relationships between astronomical observations and
      their metadata
+   - **DataSet Partitioning**: Uses PostgreSQL LIST partitioning by
+     `observation_id` for scale (billions of rows)
+   - **Composite Primary Key**: DataSet uses composite PK
+     `(observation_id, target_id, photometric_method_id, processing_method_id)`
+   - **Sentinel Values**: PhotometricSource and ProcessingMethod use id=0
+     for "unspecified" (no NULLs in composite key)
 
 2. **Database Connection** (`src/lightcurvedb/core/`)
    - Configuration via `~/.config/lightcurvedb/db.conf`
@@ -79,12 +85,17 @@ Recent refactoring has removed:
 - Manager classes (`src/lightcurvedb/managers/`)
 - Ingestor functionality
 
-Recent feature additions (feature/dataset-hierarchy branch):
+Recent feature additions (feature/dataset-partitioning branch):
 - Dataset hierarchy system for tracking data lineage
 - Refactored processing model: replaced ProcessingGroup with direct
   relationships
 - Renamed DetrendingMethod to ProcessingMethod for broader scope
 - DataSet now supports source_datasets and derived_datasets relationships
+- **PostgreSQL LIST partitioning** by observation_id for scale
+- **Composite primary key** replacing auto-increment id
+- **Sentinel values** (id=0) for unspecified photometric/processing methods
+- Helper methods for managing dataset hierarchy (add_derived_dataset,
+  add_source_dataset)
 
 The project uses property-based testing with Hypothesis and includes
 extensive TESS test data including FITS files and ephemeris data from
