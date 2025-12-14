@@ -56,7 +56,8 @@ dev = [
     "pytest>=8.2",
     "pytest_postgresql",
     "pytest-timeout",
-    "nox"
+    "nox",
+    "commitizen>=3.0.0",
 ]
 
 docs = [
@@ -129,3 +130,8 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if typing.TYPE_CHECKING:",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+allowed_types = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "style", "test"]
