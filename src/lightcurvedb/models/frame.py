@@ -55,14 +55,6 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
         "polymorphic_on": "type",
     }
 
-    __table_args__ = (
-        sa.UniqueConstraint(
-            "type",
-            "cadence",
-            name="distinct_frame_type_cadence_idx",
-        ),
-    )
-
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     type: orm.Mapped[str] = orm.mapped_column(index=True)
     cadence: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, index=True)
