@@ -156,6 +156,12 @@ class Observation(LCDBModel):
 
         return result
 
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, "
+            f"instrument={self.instrument_id!s})>"
+        )
+
 
 class TargetSpecificTime(LCDBModel):
     """
@@ -206,6 +212,12 @@ class TargetSpecificTime(LCDBModel):
     observation: orm.Mapped["Observation"] = orm.relationship(
         back_populates="target_specific_times"
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TargetSpecificTime(id={self.id!r}, target={self.target_id!r}, "
+            f"obs={self.observation_id!r})>"
+        )
 
 
 # Create unique constraint on (target_id, observation_id)
