@@ -86,3 +86,7 @@ class Instrument(LCDBModel):
         else:
             q = q.where(cls.parent_id.is_(None))
         return q
+
+    def __repr__(self) -> str:
+        parent_str = f", parent={self.parent_id!s}" if self.parent_id else ""
+        return f"<Instrument(id={self.id!s}, name={self.name!r}{parent_str})>"

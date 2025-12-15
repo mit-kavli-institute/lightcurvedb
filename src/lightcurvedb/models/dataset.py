@@ -84,6 +84,9 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
             session.flush()
         return sentinel
 
+    def __repr__(self) -> str:
+        return f"<PhotometricSource(id={self.id!r}, name={self.name!r})>"
+
 
 class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
     """
@@ -152,6 +155,9 @@ class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
             session.add(sentinel)
             session.flush()
         return sentinel
+
+    def __repr__(self) -> str:
+        return f"<ProcessingMethod(id={self.id!r}, name={self.name!r})>"
 
 
 class DataSetHierarchy(LCDBModel):
@@ -275,6 +281,15 @@ class DataSetHierarchy(LCDBModel):
     child_processing_method_id: orm.Mapped[int] = orm.mapped_column(
         nullable=False
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DataSetHierarchy("
+            f"source=(obs={self.source_observation_id}, "
+            f"target={self.source_target_id}) -> "
+            f"child=(obs={self.child_observation_id}, "
+            f"target={self.child_target_id}))>"
+        )
 
 
 class DataSet(LCDBModel):
@@ -636,3 +651,10 @@ class DataSet(LCDBModel):
                 self.errors,
                 fill_value=fill_value,
             )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DataSet(obs={self.observation_id}, target={self.target_id}, "
+            f"phot={self.photometric_method_id}, "
+            f"proc={self.processing_method_id})>"
+        )

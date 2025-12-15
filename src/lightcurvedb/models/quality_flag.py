@@ -248,6 +248,13 @@ class QualityFlagArray(LCDBModel, CreatedOnMixin):
         "Target", back_populates="quality_flag_arrays"
     )
 
+    def __repr__(self) -> str:
+        target_str = f", target={self.target_id!r}" if self.target_id else ""
+        return (
+            f"<{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, "
+            f"obs={self.observation_id!r}{target_str})>"
+        )
+
 
 # Create unique index that treats NULL target_id values as equal
 # This ensures only one quality flag array per (type, observation_id,

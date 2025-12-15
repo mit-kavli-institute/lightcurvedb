@@ -80,3 +80,9 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
     observation: orm.Mapped["Observation"] = orm.relationship(
         "Observation", back_populates="fits_images"
     )
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, "
+            f"cadence={self.cadence!r}, obs={self.observation_id!r})>"
+        )

@@ -33,6 +33,15 @@ class LCDBModel(orm.DeclarativeBase):
         pathlib.Path: sa.String,
     }
 
+    def __repr__(self) -> str:
+        """Default repr for LCDB models. Shows class name and primary keys."""
+        mapper = sa.inspect(self.__class__)
+        pk_cols = [col.name for col in mapper.primary_key]
+        pk_values = ", ".join(
+            f"{col}={getattr(self, col, '?')!r}" for col in pk_cols
+        )
+        return f"<{self.__class__.__name__}({pk_values})>"
+
 
 @orm.declarative_mixin
 class CreatedOnMixin:
