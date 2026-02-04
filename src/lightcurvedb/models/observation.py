@@ -76,11 +76,11 @@ class Observation(LCDBModel):
         ),
         sa.Index(
             "ix_observation_cadence_min",
-            sa.column("cadence_reference")[1],
+            sa.column("cadence_reference", type_=sa.ARRAY(sa.BIGINT))[1],
         ),
         sa.Index(
             "ix_observation_cadence_max",
-            sa.column("cadence_reference")[
+            sa.column("cadence_reference", type_=sa.ARRAY(sa.BIGINT))[
                 sa.func.cardinality(sa.column("cadence_reference"))
             ],
         ),
