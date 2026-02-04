@@ -87,6 +87,10 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
     def __repr__(self) -> str:
         return f"<PhotometricSource(id={self.id!r}, name={self.name!r})>"
 
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+
 
 class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
     """
@@ -158,6 +162,10 @@ class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
 
     def __repr__(self) -> str:
         return f"<ProcessingMethod(id={self.id!r}, name={self.name!r})>"
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
 
 
 class DataSetHierarchy(LCDBModel):
@@ -291,6 +299,12 @@ class DataSetHierarchy(LCDBModel):
             f"child=(obs={self.child_observation_id}, "
             f"target={self.child_target_id}))>"
         )
+
+    def __rich_repr__(self):
+        yield "source_obs", self.source_observation_id
+        yield "source_target", self.source_target_id
+        yield "child_obs", self.child_observation_id
+        yield "child_target", self.child_target_id
 
 
 class DataSet(LCDBModel):
@@ -659,3 +673,9 @@ class DataSet(LCDBModel):
             f"phot={self.photometric_method_id}, "
             f"proc={self.processing_method_id})>"
         )
+
+    def __rich_repr__(self):
+        yield "obs", self.observation_id
+        yield "target", self.target_id
+        yield "phot", self.photometric_method_id
+        yield "proc", self.processing_method_id

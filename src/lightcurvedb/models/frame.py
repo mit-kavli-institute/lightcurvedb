@@ -86,3 +86,9 @@ class FITSFrame(LCDBModel, CreatedOnMixin):
             f"<{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, "
             f"cadence={self.cadence!r}, obs={self.observation_id!r})>"
         )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "type", self.type
+        yield "cadence", self.cadence
+        yield "obs", self.observation_id
