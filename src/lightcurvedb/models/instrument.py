@@ -90,3 +90,9 @@ class Instrument(LCDBModel):
     def __repr__(self) -> str:
         parent_str = f", parent={self.parent_id!s}" if self.parent_id else ""
         return f"<Instrument(id={self.id!s}, name={self.name!r}{parent_str})>"
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+        if self.parent_id:
+            yield "parent", self.parent_id

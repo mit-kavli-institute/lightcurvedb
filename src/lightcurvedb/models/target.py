@@ -87,6 +87,10 @@ class Mission(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     def __repr__(self) -> str:
         return f"<Mission(id={self.id!s}, name={self.name!r})>"
 
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+
 
 class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     """
@@ -133,6 +137,11 @@ class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
             f"<MissionCatalog(id={self.id!r}, name={self.name!r}, "
             f"mission={self.host_mission_id!s})>"
         )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+        yield "mission", self.host_mission_id
 
 
 class Target(LCDBModel):
@@ -200,3 +209,8 @@ class Target(LCDBModel):
             f"<Target(id={self.id!r}, catalog={self.catalog_id!r}, "
             f"name={self.name!r})>"
         )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "catalog", self.catalog_id
+        yield "name", self.name

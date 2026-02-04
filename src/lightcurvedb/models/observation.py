@@ -178,6 +178,11 @@ class Observation(LCDBModel):
             f"instrument={self.instrument_id!s})>"
         )
 
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "type", self.type
+        yield "instrument", self.instrument_id
+
 
 class TargetSpecificTime(LCDBModel):
     """
@@ -244,3 +249,7 @@ class TargetSpecificTime(LCDBModel):
             f"<TargetSpecificTime(obs={self.observation_id!r}, "
             f"target={self.target_id!r})>"
         )
+
+    def __rich_repr__(self):
+        yield "observation_id", self.observation_id
+        yield "target_id", self.target_id
