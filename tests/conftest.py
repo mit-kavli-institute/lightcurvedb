@@ -141,6 +141,18 @@ def v2_db(worker_database):
                 "PARTITION OF dataset DEFAULT"
             )
         )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE IF NOT EXISTS target_specific_time_default "
+                "PARTITION OF target_specific_time DEFAULT"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "CREATE TABLE IF NOT EXISTS datasethierarchy_default "
+                "PARTITION OF datasethierarchy DEFAULT"
+            )
+        )
         conn.commit()
 
     Session = sessionmaker()
