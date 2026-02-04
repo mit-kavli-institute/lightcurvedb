@@ -260,6 +260,7 @@ class DataSetHierarchy(LCDBModel):
             "child_photometric_method_id",
             "child_processing_method_id",
         ),
+        {"postgresql_partition_by": "LIST (source_observation_id)"},
     )
 
     # Source dataset composite key columns

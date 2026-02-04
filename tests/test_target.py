@@ -511,7 +511,7 @@ class TestTargetConstraints:
         v2_db.commit()
 
         target_id = target.id
-        tst_id = tst.id
+        tst_obs_id = tst.observation_id
 
         # Delete target - related objects should handle this appropriately
         v2_db.execute(delete(Target).where(Target.id == target.id))
@@ -522,7 +522,9 @@ class TestTargetConstraints:
 
         # Verify TargetSpecificTime is deleted via cascade
         assert (
-            v2_db.query(TargetSpecificTime).filter_by(id=tst_id).first()
+            v2_db.query(TargetSpecificTime)
+            .filter_by(observation_id=tst_obs_id, target_id=target_id)
+            .first()
             is None
         )
 

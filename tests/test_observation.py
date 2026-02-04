@@ -479,7 +479,7 @@ class TestObservationConstraints:
 
         obs_id = observation.id
         qf_id = quality_flags.id
-        tst_id = tst.id
+        tst_obs_id, tst_target_id = tst.observation_id, tst.target_id
 
         # Delete observation
         v2_db.execute(delete(Observation).where(Observation.id == obs_id))
@@ -493,7 +493,9 @@ class TestObservationConstraints:
             v2_db.query(QualityFlagArray).filter_by(id=qf_id).first() is None
         )
         assert (
-            v2_db.query(TargetSpecificTime).filter_by(id=tst_id).first()
+            v2_db.query(TargetSpecificTime)
+            .filter_by(observation_id=tst_obs_id, target_id=tst_target_id)
+            .first()
             is None
         )
 
