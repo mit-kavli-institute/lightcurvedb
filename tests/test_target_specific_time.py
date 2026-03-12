@@ -62,7 +62,7 @@ class TestTargetSpecificTimeBasics:
         v2_db.commit()
 
         # Verify creation
-        assert tst.id is not None
+        assert tst.observation_id == observation.id
         assert tst.target_id == target.id
         assert tst.observation_id == observation.id
         assert np.array_equal(tst.barycentric_julian_dates, bjd_array)
@@ -618,8 +618,7 @@ class TestTargetSpecificTimeConstraints:
         v2_db.add(tst)
         v2_db.commit()
 
-        tst_id = tst.id
-        target_id = target.id
+        obs_id, target_id = tst.observation_id, tst.target_id
 
         # Delete target
         v2_db.delete(target)
@@ -630,7 +629,9 @@ class TestTargetSpecificTimeConstraints:
 
         # Verify TST is also deleted (cascade)
         assert (
-            v2_db.query(TargetSpecificTime).filter_by(id=tst_id).first()
+            v2_db.query(TargetSpecificTime)
+            .filter_by(observation_id=obs_id, target_id=target_id)
+            .first()
             is None
         )
 
@@ -672,7 +673,7 @@ class TestTargetSpecificTimeConstraints:
         v2_db.add(tst)
         v2_db.commit()
 
-        tst_id = tst.id
+        target_id = tst.target_id
         obs_id = observation.id
 
         # Delete observation
@@ -684,7 +685,9 @@ class TestTargetSpecificTimeConstraints:
 
         # Verify TST is also deleted (cascade)
         assert (
-            v2_db.query(TargetSpecificTime).filter_by(id=tst_id).first()
+            v2_db.query(TargetSpecificTime)
+            .filter_by(observation_id=obs_id, target_id=target_id)
+            .first()
             is None
         )
 

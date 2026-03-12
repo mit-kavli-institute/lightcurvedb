@@ -69,6 +69,22 @@ class Observation(LCDBModel):
         "polymorphic_identity": "observation",
         "polymorphic_on": "type",
     }
+    __table_args__ = (
+        sa.Index(
+            "ix_observation_cadence_length",
+            sa.func.cardinality(sa.column("cadence_reference")),
+        ),
+        sa.Index(
+            "ix_observation_cadence_min",
+            sa.column("cadence_reference", type_=sa.ARRAY(sa.BIGINT))[1],
+        ),
+        sa.Index(
+            "ix_observation_cadence_max",
+            sa.column("cadence_reference", type_=sa.ARRAY(sa.BIGINT))[
+                sa.func.cardinality(sa.column("cadence_reference"))
+            ],
+        ),
+    )
 
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     type: orm.Mapped[str] = orm.mapped_column(index=True)
@@ -156,6 +172,17 @@ class Observation(LCDBModel):
 
         return result
 
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, "
+            f"instrument={self.instrument_id!s})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "type", self.type
+        yield "instrument", self.instrument_id
+
 
 class TargetSpecificTime(LCDBModel):
     """
@@ -165,14 +192,15 @@ class TargetSpecificTime(LCDBModel):
     for the specific position of a target. It serves as a junction
     between Target and Observation with additional time data.
 
+    Uses a composite primary key (observation_id, target_id) and is
+    partitioned by observation_id using PostgreSQL LIST partitioning.
+
     Attributes
     ----------
-    id : int
-        Primary key identifier
-    target_id : int
-        Foreign key to the target
     observation_id : int
-        Foreign key to the observation
+        Foreign key to the observation (part of composite PK, partition key)
+    target_id : int
+        Foreign key to the target (part of composite PK)
     barycentric_julian_dates : ndarray[float64]
         Array of barycentric Julian dates corrected for target position
     target : Target
@@ -189,12 +217,21 @@ class TargetSpecificTime(LCDBModel):
 
     __tablename__ = "target_specific_time"
 
-    id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
-    target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("target.id", ondelete="CASCADE"), index=True
+    __table_args__ = (
+        sa.PrimaryKeyConstraint(
+            "observation_id", "target_id", name="pk_target_specific_time"
+        ),
+        {"postgresql_partition_by": "LIST (observation_id)"},
     )
+
     observation_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(Observation.id, ondelete="CASCADE"), index=True
+        sa.ForeignKey("observation.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("target.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
 
     barycentric_julian_dates: orm.Mapped[npt.NDArray[np.float64]]
@@ -207,12 +244,12 @@ class TargetSpecificTime(LCDBModel):
         back_populates="target_specific_times"
     )
 
+    def __repr__(self) -> str:
+        return (
+            f"<TargetSpecificTime(obs={self.observation_id!r}, "
+            f"target={self.target_id!r})>"
+        )
 
-# Create unique constraint on (target_id, observation_id)
-# This ensures only one TargetSpecificTime per target-observation pair
-sa.Index(
-    "unique_target_observation_time",
-    TargetSpecificTime.target_id,
-    TargetSpecificTime.observation_id,
-    unique=True,
-)
+    def __rich_repr__(self):
+        yield "observation_id", self.observation_id
+        yield "target_id", self.target_id

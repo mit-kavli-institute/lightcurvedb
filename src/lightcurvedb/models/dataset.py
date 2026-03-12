@@ -1,10 +1,11 @@
 import typing
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import sqlalchemy as sa
 from numpy import typing as npt
 from sqlalchemy import orm
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from lightcurvedb.core.base_model import LCDBModel, NameAndDescriptionMixin
 
@@ -21,10 +22,13 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
     data from observations, such as aperture photometry with different
     aperture sizes or PSF photometry.
 
+    The sentinel record with id=0 represents "unspecified" photometric source
+    for datasets where the source is not applicable or unknown.
+
     Attributes
     ----------
     id : int
-        Primary key identifier
+        Primary key identifier (0 = unspecified sentinel)
     name : str
         Name of the photometric method (inherited from mixin)
     description : str
@@ -40,9 +44,52 @@ class PhotometricSource(LCDBModel, NameAndDescriptionMixin):
 
     __tablename__ = "photometric_source"
 
-    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
+    UNSPECIFIED_ID: ClassVar[int] = 0
 
-    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(lazy=True)
+    id: orm.Mapped[int] = orm.mapped_column(
+        primary_key=True,
+        autoincrement=False,
+    )
+
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        lazy=True,
+        back_populates="photometry_source",
+    )
+
+    @classmethod
+    def get_or_create_unspecified(
+        cls, session: orm.Session
+    ) -> "PhotometricSource":
+        """
+        Get or create the unspecified sentinel record.
+
+        Parameters
+        ----------
+        session : orm.Session
+            Active database session.
+
+        Returns
+        -------
+        PhotometricSource
+            The sentinel record with id=0.
+        """
+        sentinel = session.get(cls, cls.UNSPECIFIED_ID)
+        if sentinel is None:
+            sentinel = cls(
+                id=cls.UNSPECIFIED_ID,
+                name="Unspecified",
+                description="No photometric source specified",
+            )
+            session.add(sentinel)
+            session.flush()
+        return sentinel
+
+    def __repr__(self) -> str:
+        return f"<PhotometricSource(id={self.id!r}, name={self.name!r})>"
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
 
 
 class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
@@ -53,14 +100,18 @@ class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
     These modules should describe some complete unit of work/operation
     performed on a dataset such detrending or 'original' sources of data.
 
+    The sentinel record with id=0 represents "unspecified" processing method
+    for raw datasets where no processing has been applied.
+
     Attributes
     ----------
     id : int
-        Primary key identifier
+        Primary key identifier (0 = unspecified sentinel)
     name : str
         Name of the detrending method (inherited from mixin)
     description : str
         Detailed description (inherited from mixin)
+
     Examples
     --------
     >>> pdc = ProcessingMethod(name="PDC-SAP",
@@ -69,15 +120,58 @@ class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
 
     __tablename__ = "processing_method"
 
-    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
+    UNSPECIFIED_ID: ClassVar[int] = 0
 
-    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(lazy=True)
+    id: orm.Mapped[int] = orm.mapped_column(
+        primary_key=True,
+        autoincrement=False,
+    )
+
+    datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
+        lazy=True,
+        back_populates="processing_method",
+    )
+
+    @classmethod
+    def get_or_create_unspecified(
+        cls, session: orm.Session
+    ) -> "ProcessingMethod":
+        """
+        Get or create the unspecified sentinel record.
+
+        Parameters
+        ----------
+        session : orm.Session
+            Active database session.
+
+        Returns
+        -------
+        ProcessingMethod
+            The sentinel record with id=0.
+        """
+        sentinel = session.get(cls, cls.UNSPECIFIED_ID)
+        if sentinel is None:
+            sentinel = cls(
+                id=cls.UNSPECIFIED_ID,
+                name="Unspecified",
+                description="No processing method applied (raw data)",
+            )
+            session.add(sentinel)
+            session.flush()
+        return sentinel
+
+    def __repr__(self) -> str:
+        return f"<ProcessingMethod(id={self.id!r}, name={self.name!r})>"
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
 
 
 class DataSetHierarchy(LCDBModel):
     """
     Association table for creating hierarchical relationships between
-    DataSets.
+    DataSets using composite foreign keys.
 
     This table enables a tree structure where datasets can be derived from
     other datasets, allowing tracking of data processing lineage and
@@ -86,52 +180,159 @@ class DataSetHierarchy(LCDBModel):
 
     Attributes
     ----------
-    source_dataset_id : int
-        Foreign key to the parent/source dataset
-    child_dataset_id : int
-        Foreign key to the child/derived dataset
+    source_observation_id : int
+        Observation ID of the parent/source dataset
+    source_target_id : int
+        Target ID of the parent/source dataset
+    source_photometric_method_id : int
+        Photometric method ID of the parent/source dataset
+    source_processing_method_id : int
+        Processing method ID of the parent/source dataset
+    child_observation_id : int
+        Observation ID of the child/derived dataset
+    child_target_id : int
+        Target ID of the child/derived dataset
+    child_photometric_method_id : int
+        Photometric method ID of the child/derived dataset
+    child_processing_method_id : int
+        Processing method ID of the child/derived dataset
 
     Notes
     -----
     This is an association table for a many-to-many self-referential
-    relationship. A dataset can have multiple parents (e.g., combining
-    data from multiple sources) and multiple children (e.g., different
-    processing methods applied to the same source).
+    relationship using composite keys. A dataset can have multiple parents
+    (e.g., combining data from multiple sources) and multiple children
+    (e.g., different processing methods applied to the same source).
+
+    The composite primary key consists of all 8 columns to ensure unique
+    source-child relationships.
     """
 
     __tablename__ = "datasethierarchy"
 
-    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    source_dataset_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("dataset.id", ondelete="CASCADE"), index=True
+    __table_args__ = (
+        sa.PrimaryKeyConstraint(
+            "source_observation_id",
+            "source_target_id",
+            "source_photometric_method_id",
+            "source_processing_method_id",
+            "child_observation_id",
+            "child_target_id",
+            "child_photometric_method_id",
+            "child_processing_method_id",
+            name="pk_datasethierarchy",
+        ),
+        sa.ForeignKeyConstraint(
+            [
+                "source_observation_id",
+                "source_target_id",
+                "source_photometric_method_id",
+                "source_processing_method_id",
+            ],
+            [
+                "dataset.observation_id",
+                "dataset.target_id",
+                "dataset.photometric_method_id",
+                "dataset.processing_method_id",
+            ],
+            name="fk_datasethierarchy_source",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            [
+                "child_observation_id",
+                "child_target_id",
+                "child_photometric_method_id",
+                "child_processing_method_id",
+            ],
+            [
+                "dataset.observation_id",
+                "dataset.target_id",
+                "dataset.photometric_method_id",
+                "dataset.processing_method_id",
+            ],
+            name="fk_datasethierarchy_child",
+            ondelete="CASCADE",
+        ),
+        sa.Index(
+            "ix_datasethierarchy_source",
+            "source_observation_id",
+            "source_target_id",
+            "source_photometric_method_id",
+            "source_processing_method_id",
+        ),
+        sa.Index(
+            "ix_datasethierarchy_child",
+            "child_observation_id",
+            "child_target_id",
+            "child_photometric_method_id",
+            "child_processing_method_id",
+        ),
+        {"postgresql_partition_by": "LIST (source_observation_id)"},
     )
-    child_dataset_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("dataset.id", ondelete="CASCADE"), index=True
+
+    # Source dataset composite key columns
+    source_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    source_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    source_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
+        nullable=False
     )
+    source_processing_method_id: orm.Mapped[int] = orm.mapped_column(
+        nullable=False
+    )
+
+    # Child dataset composite key columns
+    child_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    child_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    child_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
+        nullable=False
+    )
+    child_processing_method_id: orm.Mapped[int] = orm.mapped_column(
+        nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DataSetHierarchy("
+            f"source=(obs={self.source_observation_id}, "
+            f"target={self.source_target_id}) -> "
+            f"child=(obs={self.child_observation_id}, "
+            f"target={self.child_target_id}))>"
+        )
+
+    def __rich_repr__(self):
+        yield "source_obs", self.source_observation_id
+        yield "source_target", self.source_target_id
+        yield "child_obs", self.child_observation_id
+        yield "child_target", self.child_target_id
 
 
 class DataSet(LCDBModel):
     """
     A processed lightcurve for a specific target and observation.
 
-    DataSet is the central model that connects a target, an
-    observation, and a processing method to produce a final lightcurve.
-    It stores the actual photometric measurements and uncertainties.
+    DataSet is the central model that connects a target, an observation,
+    and a processing method to produce a final lightcurve. It stores the
+    actual photometric measurements and uncertainties.
+
+    The composite primary key (observation_id, target_id,
+    photometric_method_id, processing_method_id) uniquely identifies each
+    dataset. The table is
+    partitioned by observation_id using PostgreSQL LIST partitioning for
+    efficient query performance at scale.
 
     Attributes
     ----------
-    id : int
-        Primary key identifier
-    target_id : int
-        Foreign key to target
     observation_id : int
-        Foreign key to observation
-    photometric_method_id : int, optional
-        Foreign key to photometric source. Nullable to allow datasets
-        without explicit photometry method (e.g., derived products).
-    processing_method_id : int, optional
-        Foreign key to processing method. Nullable to allow raw photometry
-        datasets without processing applied.
+        Foreign key to observation (part of composite PK, partition key)
+    target_id : int
+        Foreign key to target (part of composite PK)
+    photometric_method_id : int
+        Foreign key to photometric source (part of composite PK).
+        Use PhotometricSource.UNSPECIFIED_ID (0) for unspecified.
+    processing_method_id : int
+        Foreign key to processing method (part of composite PK).
+        Use ProcessingMethod.UNSPECIFIED_ID (0) for unspecified.
     values : ndarray[float64]
         Array of photometric measurements (flux or magnitude)
     errors : ndarray[float64], optional
@@ -153,46 +354,76 @@ class DataSet(LCDBModel):
 
     Notes
     -----
-    This is the main table for storing lightcurve data. Each row
-    represents one complete lightcurve for a target processed
-    with a specific method.
+    This is the main table for storing lightcurve data. Each row represents
+    one complete lightcurve for a target processed with a specific method.
+
+    The table uses PostgreSQL LIST partitioning by observation_id, with each
+    observation containing millions of rows as a natural partition boundary.
+    Partitions are managed by database administrators.
 
     The hierarchical relationships (source_datasets, derived_datasets) enable
-    tracking data processing lineage. For example, a detrended lightcurve
-    would list the raw photometry dataset in source_datasets, while the raw
-    dataset would list all derived products in derived_datasets.
+    tracking data processing lineage. These relationships are read-only; use
+    the add_derived_dataset() and add_source_dataset() helper methods to
+    create hierarchy links.
 
     Examples
     --------
     >>> # Create a hierarchical relationship
-    >>> raw_dataset = DataSet(target=target, observation=obs, values=raw_flux)
-    >>> detrended_dataset = DataSet(target=target, observation=obs,
-    ...                             values=detrended_flux)
-    >>> detrended_dataset.source_datasets.append(raw_dataset)
+    >>> raw_dataset = DataSet(
+    ...     target=target,
+    ...     observation=obs,
+    ...     values=raw_flux,
+    ...     photometric_method_id=source.id,
+    ...     processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+    ... )
+    >>> detrended_dataset = DataSet(
+    ...     target=target,
+    ...     observation=obs,
+    ...     values=detrended_flux,
+    ...     photometric_method_id=source.id,
+    ...     processing_method_id=detrend_method.id,
+    ... )
     >>> session.add_all([raw_dataset, detrended_dataset])
+    >>> session.flush()
+    >>> raw_dataset.add_derived_dataset(detrended_dataset, session)
     >>> session.commit()
     """
 
     __tablename__ = "dataset"
 
-    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("target.id", ondelete="CASCADE"), index=True
-    )
-    observation_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("observation.id", ondelete="CASCADE"), index=True
-    )
-    photometric_method_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("photometric_source.id", ondelete="CASCADE"),
-        index=True,
-        nullable=True,
-    )
-    processing_method_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey("processing_method.id", ondelete="CASCADE"),
-        index=True,
-        nullable=True,
+    __table_args__ = (
+        sa.PrimaryKeyConstraint(
+            "observation_id",
+            "target_id",
+            "photometric_method_id",
+            "processing_method_id",
+            name="pk_dataset",
+        ),
+        {"postgresql_partition_by": "LIST (observation_id)"},
     )
 
+    # Composite PK columns (observation_id first for partitioning)
+    observation_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("observation.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("target.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    photometric_method_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("photometric_source.id", ondelete="RESTRICT"),
+        nullable=False,
+        default=0,
+    )
+    processing_method_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey("processing_method.id", ondelete="RESTRICT"),
+        nullable=False,
+        default=0,
+    )
+
+    # Data columns
     values: orm.Mapped[npt.NDArray[np.float64]]
     errors: orm.Mapped[typing.Optional[npt.NDArray[np.float64]]]
 
@@ -202,28 +433,147 @@ class DataSet(LCDBModel):
         back_populates="datasets"
     )
     photometry_source: orm.Mapped["PhotometricSource"] = orm.relationship(
-        back_populates="datasets"
+        back_populates="datasets",
+        foreign_keys=[photometric_method_id],
     )
     processing_method: orm.Mapped["ProcessingMethod"] = orm.relationship(
-        back_populates="datasets"
+        back_populates="datasets",
+        foreign_keys=[processing_method_id],
     )
 
-    # Self-referential hierarchical relationships
+    # Self-referential hierarchical relationships (viewonly due to composite)
     source_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         "DataSet",
         secondary="datasethierarchy",
-        primaryjoin="DataSet.id == DataSetHierarchy.child_dataset_id",
-        secondaryjoin="DataSet.id == DataSetHierarchy.source_dataset_id",
+        primaryjoin=(
+            "and_("
+            "DataSet.observation_id == "
+            "DataSetHierarchy.child_observation_id, "
+            "DataSet.target_id == DataSetHierarchy.child_target_id, "
+            "DataSet.photometric_method_id == "
+            "DataSetHierarchy.child_photometric_method_id, "
+            "DataSet.processing_method_id == "
+            "DataSetHierarchy.child_processing_method_id"
+            ")"
+        ),
+        secondaryjoin=(
+            "and_("
+            "DataSet.observation_id == "
+            "DataSetHierarchy.source_observation_id, "
+            "DataSet.target_id == DataSetHierarchy.source_target_id, "
+            "DataSet.photometric_method_id == "
+            "DataSetHierarchy.source_photometric_method_id, "
+            "DataSet.processing_method_id == "
+            "DataSetHierarchy.source_processing_method_id"
+            ")"
+        ),
         back_populates="derived_datasets",
+        viewonly=True,
     )
 
     derived_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         "DataSet",
         secondary="datasethierarchy",
-        primaryjoin="DataSet.id == DataSetHierarchy.source_dataset_id",
-        secondaryjoin="DataSet.id == DataSetHierarchy.child_dataset_id",
+        primaryjoin=(
+            "and_("
+            "DataSet.observation_id == "
+            "DataSetHierarchy.source_observation_id, "
+            "DataSet.target_id == DataSetHierarchy.source_target_id, "
+            "DataSet.photometric_method_id == "
+            "DataSetHierarchy.source_photometric_method_id, "
+            "DataSet.processing_method_id == "
+            "DataSetHierarchy.source_processing_method_id"
+            ")"
+        ),
+        secondaryjoin=(
+            "and_("
+            "DataSet.observation_id == "
+            "DataSetHierarchy.child_observation_id, "
+            "DataSet.target_id == DataSetHierarchy.child_target_id, "
+            "DataSet.photometric_method_id == "
+            "DataSetHierarchy.child_photometric_method_id, "
+            "DataSet.processing_method_id == "
+            "DataSetHierarchy.child_processing_method_id"
+            ")"
+        ),
         back_populates="source_datasets",
+        viewonly=True,
     )
+
+    @hybrid_property
+    def has_photometric_source(self) -> bool:
+        """Return True if a specific photometric source is set."""
+        return self.photometric_method_id != PhotometricSource.UNSPECIFIED_ID
+
+    @has_photometric_source.expression
+    def has_photometric_source(cls):
+        """SQL expression for filtering datasets with photometric source."""
+        return cls.photometric_method_id != PhotometricSource.UNSPECIFIED_ID
+
+    @hybrid_property
+    def has_processing_method(self) -> bool:
+        """Return True if a specific processing method is set."""
+        return self.processing_method_id != ProcessingMethod.UNSPECIFIED_ID
+
+    @has_processing_method.expression
+    def has_processing_method(cls):
+        """SQL expression for filtering datasets with processing method."""
+        return cls.processing_method_id != ProcessingMethod.UNSPECIFIED_ID
+
+    def add_derived_dataset(
+        self,
+        derived: "DataSet",
+        session: orm.Session,
+    ) -> DataSetHierarchy:
+        """
+        Create a hierarchy link from this dataset to a derived dataset.
+
+        Parameters
+        ----------
+        derived : DataSet
+            The child dataset derived from this one.
+        session : orm.Session
+            Active database session.
+
+        Returns
+        -------
+        DataSetHierarchy
+            The created hierarchy record.
+        """
+        hierarchy = DataSetHierarchy(
+            source_observation_id=self.observation_id,
+            source_target_id=self.target_id,
+            source_photometric_method_id=self.photometric_method_id,
+            source_processing_method_id=self.processing_method_id,
+            child_observation_id=derived.observation_id,
+            child_target_id=derived.target_id,
+            child_photometric_method_id=derived.photometric_method_id,
+            child_processing_method_id=derived.processing_method_id,
+        )
+        session.add(hierarchy)
+        return hierarchy
+
+    def add_source_dataset(
+        self,
+        source: "DataSet",
+        session: orm.Session,
+    ) -> DataSetHierarchy:
+        """
+        Create a hierarchy link from a source dataset to this dataset.
+
+        Parameters
+        ----------
+        source : DataSet
+            The parent dataset this one is derived from.
+        session : orm.Session
+            Active database session.
+
+        Returns
+        -------
+        DataSetHierarchy
+            The created hierarchy record.
+        """
+        return source.add_derived_dataset(self, session)
 
     def align_to_observation(
         self,
@@ -316,3 +666,16 @@ class DataSet(LCDBModel):
                 self.errors,
                 fill_value=fill_value,
             )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DataSet(obs={self.observation_id}, target={self.target_id}, "
+            f"phot={self.photometric_method_id}, "
+            f"proc={self.processing_method_id})>"
+        )
+
+    def __rich_repr__(self):
+        yield "obs", self.observation_id
+        yield "target", self.target_id
+        yield "phot", self.photometric_method_id
+        yield "proc", self.processing_method_id

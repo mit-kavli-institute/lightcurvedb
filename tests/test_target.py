@@ -15,7 +15,6 @@ from lightcurvedb.models import (
     Target,
     TargetSpecificTime,
 )
-from lightcurvedb.models.dataset import DataSet
 
 
 class TestTargetBasics:
@@ -512,7 +511,7 @@ class TestTargetConstraints:
         v2_db.commit()
 
         target_id = target.id
-        tst_id = tst.id
+        tst_obs_id = tst.observation_id
 
         # Delete target - related objects should handle this appropriately
         v2_db.execute(delete(Target).where(Target.id == target.id))
@@ -521,7 +520,13 @@ class TestTargetConstraints:
         # Verify target is deleted
         assert v2_db.query(Target).filter_by(id=target_id).first() is None
 
-        assert v2_db.query(DataSet).filter_by(id=tst_id).first() is None
+        # Verify TargetSpecificTime is deleted via cascade
+        assert (
+            v2_db.query(TargetSpecificTime)
+            .filter_by(observation_id=tst_obs_id, target_id=target_id)
+            .first()
+            is None
+        )
 
 
 class TestTargetQueries:
