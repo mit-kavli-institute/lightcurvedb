@@ -134,23 +134,23 @@ Entity Relationship Diagram
        }
 
        DataSet {
-           int observation_id PK-FK "partition key"
-           int target_id PK-FK
-           int photometric_method_id PK-FK "0=unspecified"
-           int processing_method_id PK-FK "0=unspecified"
+           int observation_id PK "partition key, FK"
+           int target_id PK "FK"
+           int photometric_method_id PK "FK, 0=unspecified"
+           int processing_method_id PK "FK, 0=unspecified"
            array values
            array errors
        }
 
        DataSetHierarchy {
-           int source_observation_id PK-FK
-           int source_target_id PK-FK
-           int source_photometric_method_id PK-FK
-           int source_processing_method_id PK-FK
-           int child_observation_id PK-FK
-           int child_target_id PK-FK
-           int child_photometric_method_id PK-FK
-           int child_processing_method_id PK-FK
+           int source_observation_id PK "FK"
+           int source_target_id PK "FK"
+           int source_photometric_method_id PK "FK"
+           int source_processing_method_id PK "FK"
+           int child_observation_id PK "FK"
+           int child_target_id PK "FK"
+           int child_photometric_method_id PK "FK"
+           int child_processing_method_id PK "FK"
        }
 
        TargetSpecificTime {
