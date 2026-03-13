@@ -93,6 +93,7 @@ Submodule Documentation
     connecting
     schema
     models
+    api
     db/db
     util/utils
 
