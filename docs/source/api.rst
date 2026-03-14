@@ -5,10 +5,6 @@ This page lists all public classes, functions, and constants available to
 developers using LightcurveDB. Internal (underscore-prefixed) members are
 omitted.
 
-.. contents:: Sections
-   :local:
-   :depth: 1
-
 Top-Level Exports
 -----------------
 
