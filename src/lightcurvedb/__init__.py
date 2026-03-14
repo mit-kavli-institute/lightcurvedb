@@ -1,4 +1,4 @@
-__version__ = "3.0.0-beta.10"  # Managed by python-semantic-release
+__version__ = "3.0.0-beta.11"  # Managed by python-semantic-release
 
 from lightcurvedb.core.connection import LCDB_Session, db, db_from_config
 
