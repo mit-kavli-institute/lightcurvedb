@@ -1,5 +1,10 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+
+# The pinned black/flake8 releases predate Python 3.14 and crash under it, so
+# run the Python-based hooks on 3.12 (a supported target, see noxfile.py).
+default_language_version:
+    python: python3.12
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0
