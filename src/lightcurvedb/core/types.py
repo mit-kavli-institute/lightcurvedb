@@ -63,7 +63,7 @@ class NumpyArrayType(TypeDecorator):
     - BigInteger -> np.int64 (64-bit signed integer)
     - REAL -> np.float32 (32-bit float, single precision)
     - Float -> np.float64 (64-bit float, double precision)
-    - Boolean -> np.bool_ (boolean type)
+    - Boolean -> ``np.bool_`` (boolean type)
 
     Special cases:
     - np.int8 maps to SmallInteger (PostgreSQL has no TINYINT)
@@ -177,7 +177,7 @@ class NumpyArrayType(TypeDecorator):
           → np.int64
         - REAL: 6 decimal digits precision → np.float32
         - Float (DOUBLE PRECISION): 15 decimal digits precision → np.float64
-        - Boolean: true/false → np.bool_
+        - Boolean: true/false → ``np.bool_``
 
         Types not supported:
         - int8: PostgreSQL has no TINYINT, using SmallInteger
