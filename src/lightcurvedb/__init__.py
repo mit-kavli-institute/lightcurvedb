@@ -1,4 +1,4 @@
-__version__ = "3.0.0-beta.12"
+__version__ = "3.1.0-beta.1"
 
 from lightcurvedb.core.connection import LCDB_Session, db, db_from_config
 
