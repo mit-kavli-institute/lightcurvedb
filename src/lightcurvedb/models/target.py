@@ -190,6 +190,38 @@ class Target(LCDBModel):
     catalog: orm.Mapped["MissionCatalog"] = orm.relationship(
         back_populates="targets"
     )
+    # An alias pairing is symmetric and the two columns carry no order, so a
+    # given target may occupy either one. These collections cover both
+    # positions; use the ``aliases`` / ``aliased_targets`` properties below for
+    # a position-agnostic view.
+    _alias_links_as_target: orm.Mapped[list["Alias"]] = orm.relationship(
+        foreign_keys="Alias.target_id",
+        back_populates="target",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    _alias_links_as_counterpart: orm.Mapped[list["Alias"]] = orm.relationship(
+        foreign_keys="Alias.counterpart_id",
+        back_populates="counterpart",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    @property
+    def aliases(self) -> list["Alias"]:
+        """Every Alias row this target participates in, either position."""
+        return [
+            *self._alias_links_as_target,
+            *self._alias_links_as_counterpart,
+        ]
+
+    @property
+    def aliased_targets(self) -> list["Target"]:
+        """The other target in each of this target's alias pairings."""
+        return [link.counterpart for link in self._alias_links_as_target] + [
+            link.target for link in self._alias_links_as_counterpart
+        ]
+
     datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         back_populates="target"
     )
@@ -214,3 +246,105 @@ class Target(LCDBModel):
         yield "id", self.id
         yield "catalog", self.catalog_id
         yield "name", self.name
+
+
+class Alias(LCDBModel):
+    """
+    A symmetric cross-identification between two targets.
+
+    Alias records that two catalog entries are believed to refer to the same
+    astronomical object. Aliasing is most often a one-to-one match across
+    catalogs (the same star with two catalog IDs), but it also captures the
+    ambiguous cases: a single older entry that a modern catalog resolves into
+    several distinct objects, or several entries later found to be one object.
+
+    The relation is **symmetric** -- "A aliases B" is identical to "B aliases
+    A" -- so each pairing is stored exactly once and the two columns carry no
+    direction or ordering. It is deliberately **not transitive**: each row
+    asserts only the single correspondence it names. In a split, target X may
+    alias both Y and Z without implying Y aliases Z.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier
+    target_id : int
+        Foreign key to one member of the pairing
+    counterpart_id : int
+        Foreign key to the other member of the pairing
+    target : Target
+        The target referenced by ``target_id``
+    counterpart : Target
+        The target referenced by ``counterpart_id``
+
+    Notes
+    -----
+    The two columns are interchangeable; neither is privileged and their values
+    must not be assumed to follow any catalog ordering. A self-reference
+    ``CheckConstraint`` forbids a target aliasing itself, and a unique index
+    over ``least(target_id, counterpart_id), greatest(...)`` collapses the two
+    storable orderings of a pair to a single row -- least/greatest is only a
+    deterministic dedup key, not a meaningful order.
+
+    To enumerate a target's aliases regardless of column, prefer
+    :attr:`Target.aliases` / :attr:`Target.aliased_targets`.
+    """
+
+    __tablename__ = "alias"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "target_id <> counterpart_id", name="alias_no_self_reference"
+        ),
+        # Treat (a, b) and (b, a) as the same alias by deduplicating on the
+        # unordered pair. least()/greatest() canonicalize purely for the index
+        # key and imply no ordering of the targets themselves. Expressed as
+        # text() so the index can live inline without resolved Column objects.
+        sa.Index(
+            "uq_alias_unordered_pair",
+            sa.text("least(target_id, counterpart_id)"),
+            sa.text("greatest(target_id, counterpart_id)"),
+            unique=True,
+        ),
+    )
+
+    id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
+    target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(Target.id, ondelete="CASCADE", onupdate="CASCADE")
+    )
+    counterpart_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(Target.id, ondelete="CASCADE", onupdate="CASCADE")
+    )
+
+    # Relationships
+    target: orm.Mapped["Target"] = orm.relationship(
+        foreign_keys=[target_id],
+        back_populates="_alias_links_as_target",
+    )
+    counterpart: orm.Mapped["Target"] = orm.relationship(
+        foreign_keys=[counterpart_id],
+        back_populates="_alias_links_as_counterpart",
+    )
+
+    @classmethod
+    def between(cls, a: "Target", b: "Target") -> "Alias":
+        """
+        Build an alias pairing two targets, in either argument order.
+
+        The pair is stored as given; the unique index treats ``(a, b)`` and
+        ``(b, a)`` as the same row. Raises ``ValueError`` if the same target is
+        passed twice, since a target cannot alias itself.
+        """
+        if a.id == b.id:
+            raise ValueError("a target cannot be aliased to itself")
+        return cls(target=a, counterpart=b)
+
+    def __repr__(self) -> str:
+        return (
+            f"<Alias(id={self.id!r}, target={self.target_id!r}, "
+            f"counterpart={self.counterpart_id!r})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "target", self.target_id
+        yield "counterpart", self.counterpart_id
