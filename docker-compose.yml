@@ -15,6 +15,13 @@ services:
       dockerfile: ./Dockerfile
     volumes:
       - .:/testing
+      # Keep generated build artifacts off the macOS bind mount: writing
+      # egg-info / wheel build trees over Docker Desktop's file share raises
+      # EDEADLK ([Errno 35] Resource deadlock avoided). Anonymous volumes give
+      # them native Linux-backed paths instead.
+      - /testing/src/lightcurvedb.egg-info
+      - /testing/build
+      - /testing/docs/build
     working_dir: /testing
     command: tail -f /dev/null
     environment:
