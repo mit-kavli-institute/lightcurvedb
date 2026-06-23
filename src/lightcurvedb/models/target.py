@@ -351,6 +351,44 @@ class Alias(LCDBModel):
 
 
 class AstroUnit(LCDBModel):
+    """
+    A physical unit, stored as its astropy string representation.
+
+    AstroUnit persists an :class:`astropy.units.UnitBase` by its generic
+    string form (``unit_str``) and rebuilds the live unit on demand via
+    :meth:`as_unit`. Storing the string keeps arbitrary named and composite
+    units (``m``, ``mag``, ``erg / (cm2 s)``) representable without a fixed
+    enumeration, while round-tripping exactly for the physically meaningful
+    units used in practice.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier.
+    name : str
+        Human-readable label for the unit (e.g., "effective temperature").
+    unit_str : str
+        The unit's astropy generic string form, e.g. ``"K"`` or ``"m / s"``.
+    description : str
+        Optional free-text description; defaults to an empty string.
+
+    Notes
+    -----
+    The reconstructed unit follows :class:`astropy.units.UnitBase` equality,
+    which compares physical decomposition and scale. Extreme-magnitude
+    composites can exceed float64 range during astropy's own decomposition;
+    such units fall outside the intended scope.
+
+    Examples
+    --------
+    >>> from astropy import units as u
+    >>> unit = AstroUnit.reflect_astropy_unit(u.m / u.s, name="velocity")
+    >>> unit.unit_str
+    'm / s'
+    >>> unit.as_unit() == u.m / u.s
+    True
+    """
+
     __tablename__ = "astro_unit"
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     name: orm.Mapped[str]
@@ -358,15 +396,59 @@ class AstroUnit(LCDBModel):
     description: orm.Mapped[str] = orm.mapped_column(sa.TEXT, default="")
 
     def as_unit(self):
+        """
+        Reconstruct the live astropy unit from ``unit_str``.
+
+        Returns
+        -------
+        astropy.units.UnitBase
+            The unit parsed from :attr:`unit_str` via
+            :func:`astropy.units.Unit`.
+        """
         return u.Unit(self.unit_str)
 
     @classmethod
     def reflect_astropy_unit(
         cls, astropy_unit_or_quantity: u.UnitBase | u.Quantity, **kwargs
     ) -> "AstroUnit":
-        # Match on UnitBase, not u.Unit: irreducible units (u.m) and composite
-        # units (u.m / u.s) are UnitBase subclasses but NOT u.Unit instances,
-        # so ``case u.Unit()`` would reject everything except prefixed units.
+        """
+        Build an :class:`AstroUnit` from an astropy unit or quantity.
+
+        The unit is serialized with ``str()``. For a quantity only its unit
+        is stored; the scalar magnitude is discarded.
+
+        Parameters
+        ----------
+        astropy_unit_or_quantity : UnitBase or Quantity
+            An :class:`astropy.units.UnitBase` to reflect, or an
+            :class:`astropy.units.Quantity` whose unit is reflected.
+        **kwargs
+            Extra column values forwarded to the constructor, e.g. ``name``
+            (required; ``NOT NULL``) and ``description``.
+
+        Returns
+        -------
+        AstroUnit
+            An unsaved instance with ``unit_str`` set from the input.
+
+        Raises
+        ------
+        NotImplementedError
+            If the argument is neither a unit nor a quantity.
+
+        Notes
+        -----
+        Matching is on :class:`astropy.units.UnitBase`, not
+        :class:`astropy.units.Unit`: irreducible units (``u.m``) and composite
+        units (``u.m / u.s``) are ``UnitBase`` subclasses but not ``Unit``
+        instances, so matching ``Unit`` would reject all but prefixed units.
+
+        Examples
+        --------
+        >>> from astropy import units as u
+        >>> AstroUnit.reflect_astropy_unit(u.K, name="temp").unit_str
+        'K'
+        """
         match astropy_unit_or_quantity:
             case u.UnitBase():
                 return cls(unit_str=str(astropy_unit_or_quantity), **kwargs)
@@ -378,6 +460,39 @@ class AstroUnit(LCDBModel):
 
 
 class AstroParameter(LCDBModel):
+    """
+    A measured astrophysical quantity for a target, with asymmetric errors.
+
+    AstroParameter stores a scalar ``value`` alongside independent upper and
+    lower uncertainties and a reference to the :class:`AstroUnit` the value is
+    expressed in. The split errors capture the common ``value (+upper,
+    -lower)`` reporting convention used in the literature.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier.
+    value : float
+        The parameter value, expressed in the linked unit.
+    upper_error : float
+        Upper (positive-direction) uncertainty on ``value``.
+    lower_error : float
+        Lower (negative-direction) uncertainty on ``value``.
+    target_id : int
+        Foreign key to the :class:`Target` this parameter describes.
+    unit_id : int
+        Foreign key to the :class:`AstroUnit` giving the value's unit.
+
+    Notes
+    -----
+    Keeping ``value`` consistent with its unit is the caller's
+    responsibility: the model stores and returns both verbatim and performs
+    no unit conversion or scale normalization.
+
+    The unique constraint on ``(target_id, unit_id)`` permits at most one
+    parameter per unit on a given target.
+    """
+
     __tablename__ = "astro_parameter"
     __table_args__ = (
         sa.UniqueConstraint(
