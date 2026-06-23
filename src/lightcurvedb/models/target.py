@@ -225,16 +225,16 @@ class Target(LCDBModel):
     datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         back_populates="target"
     )
-    target_specific_times: orm.Mapped[
-        list["TargetSpecificTime"]
-    ] = orm.relationship(
-        back_populates="target",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
+    target_specific_times: orm.Mapped[list["TargetSpecificTime"]] = (
+        orm.relationship(
+            back_populates="target",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        )
     )
-    quality_flag_arrays: orm.Mapped[
-        list["QualityFlagArray"]
-    ] = orm.relationship(back_populates="target")
+    quality_flag_arrays: orm.Mapped[list["QualityFlagArray"]] = (
+        orm.relationship(back_populates="target")
+    )
 
     def __repr__(self) -> str:
         return (
@@ -348,3 +348,51 @@ class Alias(LCDBModel):
         yield "id", self.id
         yield "target", self.target_id
         yield "counterpart", self.counterpart_id
+
+
+class AstroUnit(LCDBModel):
+    __tablename__ = "astro_unit"
+    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
+    name: orm.Mapped[str]
+    unit_str: orm.Mapped[str]
+    description: orm.Mapped[str] = orm.mapped_column(sa.TEXT, default="")
+
+    def as_unit(self):
+        return u.Unit(self.unit_str)
+
+    @classmethod
+    def reflect_astropy_unit(
+        cls, astropy_unit_or_quantity: u.UnitBase | u.Quantity, **kwargs
+    ) -> "AstroUnit":
+        # Match on UnitBase, not u.Unit: irreducible units (u.m) and composite
+        # units (u.m / u.s) are UnitBase subclasses but NOT u.Unit instances,
+        # so ``case u.Unit()`` would reject everything except prefixed units.
+        match astropy_unit_or_quantity:
+            case u.UnitBase():
+                return cls(unit_str=str(astropy_unit_or_quantity), **kwargs)
+            case u.Quantity():
+                unit = astropy_unit_or_quantity.unit
+                return cls(unit_str=str(unit), **kwargs)
+            case _:
+                raise NotImplementedError
+
+
+class AstroParameter(LCDBModel):
+    __tablename__ = "astro_parameter"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "target_id",
+            "unit_id",
+        ),
+    )
+
+    id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
+    value: orm.Mapped[float]
+    upper_error: orm.Mapped[float]
+    lower_error: orm.Mapped[float]
+    target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(Target.id), index=True
+    )
+    unit_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(AstroUnit.id), index=True
+    )

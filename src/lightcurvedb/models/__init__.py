@@ -8,7 +8,14 @@ from .frame import FITSFrame
 from .instrument import Instrument
 from .observation import Observation, TargetSpecificTime
 from .quality_flag import QualityFlagArray
-from .target import Alias, Mission, MissionCatalog, Target
+from .target import (
+    Alias,
+    AstroParameter,
+    AstroUnit,
+    Mission,
+    MissionCatalog,
+    Target,
+)
 
 __all__ = [
     "FITSFrame",
@@ -17,6 +24,8 @@ __all__ = [
     "ProcessingMethod",
     "Observation",
     "Alias",
+    "AstroUnit",
+    "AstroParameter",
     "Mission",
     "MissionCatalog",
     "Target",
