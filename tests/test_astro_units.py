@@ -13,11 +13,54 @@ therefore the wrong assertion here).
 import astropy.units as u
 import pytest
 from hypothesis import HealthCheck, given, settings
-from sqlalchemy import orm, select
+from sqlalchemy import delete, exc, orm, select
 
-from lightcurvedb.models import AstroUnit
+from lightcurvedb.models import (
+    AstroParameter,
+    AstroUnit,
+    Mission,
+    MissionCatalog,
+    Target,
+)
 
 from .strategies import astro as astro_st
+
+
+def _make_catalog(session: orm.Session, mission_name: str) -> MissionCatalog:
+    """Persist a mission + catalog and return the catalog."""
+    mission = Mission(
+        name=mission_name,
+        description="astro-parameter test mission",
+        time_unit="day",
+        time_epoch=0.0,
+        time_epoch_scale="tdb",
+        time_epoch_format="jd",
+        time_format_name=mission_name,
+    )
+    catalog = MissionCatalog(
+        host_mission=mission, name="CAT", description="astro-param catalog"
+    )
+    session.add_all([mission, catalog])
+    session.flush()
+    return catalog
+
+
+def _make_target(
+    session: orm.Session, catalog: MissionCatalog, name: int
+) -> Target:
+    """Persist and return a target in the given catalog."""
+    target = Target(catalog=catalog, name=name)
+    session.add(target)
+    session.flush()
+    return target
+
+
+def _make_unit(session: orm.Session, astropy_unit, name: str) -> AstroUnit:
+    """Persist and return an AstroUnit reflected from an astropy unit."""
+    unit = AstroUnit.reflect_astropy_unit(astropy_unit, name=name)
+    session.add(unit)
+    session.flush()
+    return unit
 
 
 class TestAstroUnit:
@@ -85,42 +128,185 @@ class TestAstroUnit:
 
 
 class TestAstroParameter:
-    """Scaffold for the next round.
+    """Persistence and relationships for AstroParameter.
 
-    Design decision (resolved): scale/unit *correctness* is a developer
-    contract. The persistence layer does NOT convert or normalize -- it stores
-    ``value`` together with the associated unit and returns them unchanged.
-    Whatever scale a developer puts in is what they get back; keeping ``value``
-    consistent with its ``AstroUnit`` is on them. So the tests below assert
-    faithful round-trip, never normalization.
+    Scale/unit *correctness* is a developer contract: the layer stores
+    ``value`` together with its unit and returns both verbatim, performing no
+    conversion or normalization. Single-parameter round-trips and the
+    ``target`` / ``unit`` relationships are covered here.
 
-    Still open (blocks meaningful tests): how a parameter is identified. There
-    is no name/type field, yet ``unique(target_id, unit_id)`` forbids two
-    same-unit parameters on one target (e.g. a period and a timescale both in
-    ``day``). Likely needs a ``name``/``parameter_type`` column, making the
-    constraint ``(target_id, name)`` or ``(target_id, name, unit_id)``.
+    Still open: how a parameter is identified. There is no name/type field,
+    and ``unique(target_id, unit_id)`` forbids two same-unit parameters on one
+    target (e.g. a period and a timescale both in ``day``), so storing
+    multiple same-unit parameters on a target remains future work.
     """
 
-    @pytest.mark.skip(
-        reason="AstroParameter identity field undecided -- see class docstring"
-    )
     def test_quantity_roundtrip_value_and_unit(self, v2_db: orm.Session):
-        # Persist a parameter (value + AstroUnit); read it back and assert
-        # fetched.value * fetched.unit.as_unit() == the stored value*unit,
-        # exactly -- faithful persistence, no scale normalization.
-        raise NotImplementedError
+        catalog = _make_catalog(v2_db, "PARAM_QTY")
+        target = _make_target(v2_db, catalog, 1001)
+        unit = _make_unit(v2_db, u.K, "effective temperature")
+        param = AstroParameter(
+            target=target,
+            unit=unit,
+            value=5772.0,
+            upper_error=50.0,
+            lower_error=40.0,
+        )
+        v2_db.add(param)
+        v2_db.commit()
 
-    @pytest.mark.skip(
-        reason="AstroParameter identity field undecided -- see class docstring"
-    )
+        fetched = v2_db.execute(
+            select(AstroParameter).where(AstroParameter.id == param.id)
+        ).scalar_one()
+        assert fetched.value == 5772.0
+        assert fetched.unit.as_unit() == u.K
+        assert fetched.as_quantity() == 5772.0 * u.K
+
     def test_asymmetric_errors_preserved(self, v2_db: orm.Session):
-        # upper_error and lower_error survive independently (value -lo +hi).
-        raise NotImplementedError
+        catalog = _make_catalog(v2_db, "PARAM_ERR")
+        target = _make_target(v2_db, catalog, 2001)
+        unit = _make_unit(v2_db, u.day, "period")
+        param = AstroParameter(
+            target=target,
+            unit=unit,
+            value=3.5,
+            upper_error=0.2,
+            lower_error=0.1,
+        )
+        v2_db.add(param)
+        v2_db.commit()
 
-    @pytest.mark.skip(
-        reason="AstroParameter identity field undecided -- see class docstring"
-    )
+        fetched = v2_db.execute(
+            select(AstroParameter).where(AstroParameter.id == param.id)
+        ).scalar_one()
+        # The two errors survive independently (not collapsed or swapped).
+        assert fetched.upper_error == 0.2
+        assert fetched.lower_error == 0.1
+
     def test_value_and_unit_stored_verbatim(self, v2_db: orm.Session):
-        # Developer-contract scale: a value paired with a scaled/log unit is
-        # returned exactly as written; the layer performs no conversion.
-        raise NotImplementedError
+        catalog = _make_catalog(v2_db, "PARAM_VERBATIM")
+        target = _make_target(v2_db, catalog, 3001)
+        # km deliberately NOT normalized to m: the layer stores it as-is.
+        unit = _make_unit(v2_db, u.km, "distance")
+        param = AstroParameter(
+            target=target,
+            unit=unit,
+            value=149.6e6,
+            upper_error=0.1e6,
+            lower_error=0.1e6,
+        )
+        v2_db.add(param)
+        v2_db.commit()
+
+        fetched = v2_db.execute(
+            select(AstroParameter).where(AstroParameter.id == param.id)
+        ).scalar_one()
+        assert fetched.value == 149.6e6  # not 1.496e11
+        assert fetched.unit.unit_str == "km"
+        assert fetched.as_quantity() == 149.6e6 * u.km
+
+    def test_target_astro_parameters_navigation(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "NAV_PARAMS")
+        target = _make_target(v2_db, catalog, 4001)
+        # Two params on one target need DIFFERENT units
+        # (unique(target_id, unit_id)).
+        temp = _make_unit(v2_db, u.K, "temperature")
+        period = _make_unit(v2_db, u.day, "period")
+        v2_db.add_all(
+            [
+                AstroParameter(
+                    target=target,
+                    unit=temp,
+                    value=5772.0,
+                    upper_error=1.0,
+                    lower_error=1.0,
+                ),
+                AstroParameter(
+                    target=target,
+                    unit=period,
+                    value=3.5,
+                    upper_error=0.1,
+                    lower_error=0.1,
+                ),
+            ]
+        )
+        v2_db.commit()
+        v2_db.refresh(target)
+
+        assert len(target.astro_parameters) == 2
+        units = [p.unit.as_unit() for p in target.astro_parameters]
+        assert u.K in units
+        assert u.day in units
+
+    def test_unit_parameters_back_reference(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "BACKREF")
+        t1 = _make_target(v2_db, catalog, 5001)
+        t2 = _make_target(v2_db, catalog, 5002)
+        shared = _make_unit(v2_db, u.K, "temperature")
+        v2_db.add_all(
+            [
+                AstroParameter(
+                    target=t1,
+                    unit=shared,
+                    value=5772.0,
+                    upper_error=1.0,
+                    lower_error=1.0,
+                ),
+                AstroParameter(
+                    target=t2,
+                    unit=shared,
+                    value=4000.0,
+                    upper_error=1.0,
+                    lower_error=1.0,
+                ),
+            ]
+        )
+        v2_db.commit()
+        v2_db.refresh(shared)
+
+        assert len(shared.parameters) == 2
+        assert {p.target_id for p in shared.parameters} == {t1.id, t2.id}
+
+    def test_cascade_on_target_delete(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "CASCADE")
+        target = _make_target(v2_db, catalog, 6001)
+        unit = _make_unit(v2_db, u.K, "temperature")
+        v2_db.add(
+            AstroParameter(
+                target=target,
+                unit=unit,
+                value=5772.0,
+                upper_error=1.0,
+                lower_error=1.0,
+            )
+        )
+        v2_db.commit()
+
+        # SQL-level delete exercises the DB FK cascade, not ORM cascade.
+        v2_db.execute(delete(Target).where(Target.id == target.id))
+        v2_db.commit()
+
+        assert v2_db.execute(select(AstroParameter)).scalars().all() == []
+        # The shared unit is a lookup; it must survive the target delete.
+        assert v2_db.get(AstroUnit, unit.id) is not None
+
+    def test_restrict_on_unit_delete(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "RESTRICT")
+        target = _make_target(v2_db, catalog, 7001)
+        unit = _make_unit(v2_db, u.K, "temperature")
+        v2_db.add(
+            AstroParameter(
+                target=target,
+                unit=unit,
+                value=5772.0,
+                upper_error=1.0,
+                lower_error=1.0,
+            )
+        )
+        v2_db.commit()
+
+        # Deleting a unit still referenced by a parameter is blocked.
+        with pytest.raises(exc.IntegrityError):
+            v2_db.execute(delete(AstroUnit).where(AstroUnit.id == unit.id))
+            v2_db.commit()
+        v2_db.rollback()

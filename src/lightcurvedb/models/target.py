@@ -168,6 +168,8 @@ class Target(LCDBModel):
         Time series specific to this target
     quality_flag_arrays : list[QualityFlagArray]
         Target-specific quality flags
+    astro_parameters : list[AstroParameter]
+        Astrophysical parameters measured for this target
 
     Notes
     -----
@@ -234,6 +236,11 @@ class Target(LCDBModel):
     )
     quality_flag_arrays: orm.Mapped[list["QualityFlagArray"]] = (
         orm.relationship(back_populates="target")
+    )
+    astro_parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
+        back_populates="target",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self) -> str:
@@ -371,6 +378,8 @@ class AstroUnit(LCDBModel):
         The unit's astropy generic string form, e.g. ``"K"`` or ``"m / s"``.
     description : str
         Optional free-text description; defaults to an empty string.
+    parameters : list[AstroParameter]
+        Parameters expressed in this unit (shared lookup; not owned).
 
     Notes
     -----
@@ -394,6 +403,12 @@ class AstroUnit(LCDBModel):
     name: orm.Mapped[str]
     unit_str: orm.Mapped[str]
     description: orm.Mapped[str] = orm.mapped_column(sa.TEXT, default="")
+
+    # Relationships
+    parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
+        lazy=True,
+        back_populates="unit",
+    )
 
     def as_unit(self):
         """
@@ -458,6 +473,17 @@ class AstroUnit(LCDBModel):
             case _:
                 raise NotImplementedError
 
+    def __repr__(self) -> str:
+        return (
+            f"<AstroUnit(id={self.id!r}, name={self.name!r}, "
+            f"unit_str={self.unit_str!r})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+        yield "unit_str", self.unit_str
+
 
 class AstroParameter(LCDBModel):
     """
@@ -482,6 +508,10 @@ class AstroParameter(LCDBModel):
         Foreign key to the :class:`Target` this parameter describes.
     unit_id : int
         Foreign key to the :class:`AstroUnit` giving the value's unit.
+    target : Target
+        The target this parameter describes.
+    unit : AstroUnit
+        The unit the value is expressed in.
 
     Notes
     -----
@@ -506,8 +536,47 @@ class AstroParameter(LCDBModel):
     upper_error: orm.Mapped[float]
     lower_error: orm.Mapped[float]
     target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(Target.id), index=True
+        sa.ForeignKey(Target.id, ondelete="CASCADE", onupdate="CASCADE"),
+        index=True,
     )
     unit_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(AstroUnit.id), index=True
+        sa.ForeignKey(AstroUnit.id, ondelete="RESTRICT"),
+        index=True,
     )
+
+    # Relationships
+    target: orm.Mapped["Target"] = orm.relationship(
+        back_populates="astro_parameters",
+    )
+    unit: orm.Mapped["AstroUnit"] = orm.relationship(
+        back_populates="parameters",
+    )
+
+    def as_quantity(self) -> u.Quantity:
+        """
+        Combine ``value`` with its unit into an astropy quantity.
+
+        Returns
+        -------
+        astropy.units.Quantity
+            ``self.value * self.unit.as_unit()``, using ``value`` verbatim
+            with no scale conversion.
+
+        Notes
+        -----
+        Requires the :attr:`unit` relationship; an attached instance
+        lazy-loads it. Raises ``AttributeError`` if :attr:`unit` is ``None``.
+        """
+        return self.value * self.unit.as_unit()
+
+    def __repr__(self) -> str:
+        return (
+            f"<AstroParameter(id={self.id!r}, value={self.value!r}, "
+            f"target={self.target_id!r}, unit={self.unit_id!r})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "value", self.value
+        yield "target", self.target_id
+        yield "unit", self.unit_id
