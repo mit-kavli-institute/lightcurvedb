@@ -128,23 +128,22 @@ class TestAstroUnit:
 
 
 class TestAstroParameter:
-    """Persistence and relationships for AstroParameter.
+    """Persistence, relationships, and name-keyed access for AstroParameter.
 
     Scale/unit *correctness* is a developer contract: the layer stores
     ``value`` together with its unit and returns both verbatim, performing no
-    conversion or normalization. Single-parameter round-trips and the
-    ``target`` / ``unit`` relationships are covered here.
-
-    Still open: how a parameter is identified. There is no name/type field,
-    and ``unique(target_id, unit_id)`` forbids two same-unit parameters on one
-    target (e.g. a period and a timescale both in ``day``), so storing
-    multiple same-unit parameters on a target remains future work.
+    conversion or normalization. A parameter's ``name`` is read-only, mirrored
+    from its unit's name, so the kind is set on the :class:`AstroUnit`; with
+    ``unique(target_id, unit_id)`` a target holds one parameter per kind,
+    reachable by keyword through ``target.parameters_by_name`` (or
+    ``target[name]``).
     """
 
     def test_quantity_roundtrip_value_and_unit(self, v2_db: orm.Session):
         catalog = _make_catalog(v2_db, "PARAM_QTY")
         target = _make_target(v2_db, catalog, 1001)
-        unit = _make_unit(v2_db, u.K, "effective temperature")
+        # The unit carries the parameter kind as its (unique) name.
+        unit = _make_unit(v2_db, u.K, "effective_temperature")
         param = AstroParameter(
             target=target,
             unit=unit,
@@ -159,6 +158,7 @@ class TestAstroParameter:
             select(AstroParameter).where(AstroParameter.id == param.id)
         ).scalar_one()
         assert fetched.value == 5772.0
+        assert fetched.name == "effective_temperature"  # mirrored unit.name
         assert fetched.unit.as_unit() == u.K
         assert fetched.as_quantity() == 5772.0 * u.K
 
@@ -205,12 +205,10 @@ class TestAstroParameter:
         assert fetched.unit.unit_str == "km"
         assert fetched.as_quantity() == 149.6e6 * u.km
 
-    def test_target_astro_parameters_navigation(self, v2_db: orm.Session):
+    def test_target_parameters_navigation(self, v2_db: orm.Session):
         catalog = _make_catalog(v2_db, "NAV_PARAMS")
         target = _make_target(v2_db, catalog, 4001)
-        # Two params on one target need DIFFERENT units
-        # (unique(target_id, unit_id)).
-        temp = _make_unit(v2_db, u.K, "temperature")
+        temp = _make_unit(v2_db, u.K, "effective_temperature")
         period = _make_unit(v2_db, u.day, "period")
         v2_db.add_all(
             [
@@ -233,16 +231,96 @@ class TestAstroParameter:
         v2_db.commit()
         v2_db.refresh(target)
 
-        assert len(target.astro_parameters) == 2
-        units = [p.unit.as_unit() for p in target.astro_parameters]
+        assert len(target.parameters) == 2
+        units = [p.unit.as_unit() for p in target.parameters]
         assert u.K in units
         assert u.day in units
+
+    def test_parameters_by_name_keyed_access(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "BY_NAME")
+        target = _make_target(v2_db, catalog, 8001)
+        temp = _make_unit(v2_db, u.K, "effective_temperature")
+        radius = _make_unit(v2_db, u.solRad, "radius")
+        v2_db.add_all(
+            [
+                AstroParameter(
+                    target=target,
+                    unit=temp,
+                    value=5772.0,
+                    upper_error=50.0,
+                    lower_error=40.0,
+                ),
+                AstroParameter(
+                    target=target,
+                    unit=radius,
+                    value=1.0,
+                    upper_error=0.1,
+                    lower_error=0.1,
+                ),
+            ]
+        )
+        v2_db.commit()
+        v2_db.refresh(target)
+
+        by_name = target.parameters_by_name
+        assert set(by_name) == {"effective_temperature", "radius"}
+        assert by_name["effective_temperature"].value == 5772.0
+        assert by_name["effective_temperature"].as_quantity() == 5772.0 * u.K
+        assert by_name["radius"].unit.as_unit() == u.solRad
+
+    def test_getitem_returns_quantity_by_name(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "GETITEM")
+        target = _make_target(v2_db, catalog, 11001)
+        temp = _make_unit(v2_db, u.K, "effective_temperature")
+        v2_db.add(
+            AstroParameter(
+                target=target,
+                unit=temp,
+                value=5772.0,
+                upper_error=50.0,
+                lower_error=40.0,
+            )
+        )
+        v2_db.commit()
+        v2_db.refresh(target)
+
+        assert target["effective_temperature"] == 5772.0 * u.K
+        with pytest.raises(KeyError):
+            target["radius"]
+
+    def test_duplicate_kind_rejected(self, v2_db: orm.Session):
+        catalog = _make_catalog(v2_db, "DUP_KIND")
+        target = _make_target(v2_db, catalog, 10001)
+        temp = _make_unit(v2_db, u.K, "effective_temperature")
+        # A target holds at most one parameter per unit/kind
+        # (unique(target_id, unit_id)).
+        v2_db.add_all(
+            [
+                AstroParameter(
+                    target=target,
+                    unit=temp,
+                    value=5772.0,
+                    upper_error=1.0,
+                    lower_error=1.0,
+                ),
+                AstroParameter(
+                    target=target,
+                    unit=temp,
+                    value=6000.0,
+                    upper_error=1.0,
+                    lower_error=1.0,
+                ),
+            ]
+        )
+        with pytest.raises(exc.IntegrityError):
+            v2_db.commit()
+        v2_db.rollback()
 
     def test_unit_parameters_back_reference(self, v2_db: orm.Session):
         catalog = _make_catalog(v2_db, "BACKREF")
         t1 = _make_target(v2_db, catalog, 5001)
         t2 = _make_target(v2_db, catalog, 5002)
-        shared = _make_unit(v2_db, u.K, "temperature")
+        shared = _make_unit(v2_db, u.K, "effective_temperature")
         v2_db.add_all(
             [
                 AstroParameter(
@@ -270,7 +348,7 @@ class TestAstroParameter:
     def test_cascade_on_target_delete(self, v2_db: orm.Session):
         catalog = _make_catalog(v2_db, "CASCADE")
         target = _make_target(v2_db, catalog, 6001)
-        unit = _make_unit(v2_db, u.K, "temperature")
+        unit = _make_unit(v2_db, u.K, "effective_temperature")
         v2_db.add(
             AstroParameter(
                 target=target,
@@ -293,7 +371,7 @@ class TestAstroParameter:
     def test_restrict_on_unit_delete(self, v2_db: orm.Session):
         catalog = _make_catalog(v2_db, "RESTRICT")
         target = _make_target(v2_db, catalog, 7001)
-        unit = _make_unit(v2_db, u.K, "temperature")
+        unit = _make_unit(v2_db, u.K, "effective_temperature")
         v2_db.add(
             AstroParameter(
                 target=target,

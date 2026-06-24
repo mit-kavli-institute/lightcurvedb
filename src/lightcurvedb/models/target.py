@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from sqlalchemy.ext import associationproxy as ap
 from astropy import time
 from astropy import units as u
 from sqlalchemy import orm
@@ -168,13 +169,19 @@ class Target(LCDBModel):
         Time series specific to this target
     quality_flag_arrays : list[QualityFlagArray]
         Target-specific quality flags
-    astro_parameters : list[AstroParameter]
+    parameters : list[AstroParameter]
         Astrophysical parameters measured for this target
+    parameters_by_name : dict[str, AstroParameter]
+        Read-only view of ``parameters`` keyed by parameter name
 
     Notes
     -----
     The combination of catalog_id and name must be unique,
     ensuring no duplicate targets within a catalog.
+
+    Indexing a target by parameter name -- ``target["effective_temperature"]``
+    -- returns that parameter as an astropy quantity (see
+    :meth:`__getitem__`).
     """
 
     __tablename__ = "target"
@@ -237,10 +244,20 @@ class Target(LCDBModel):
     quality_flag_arrays: orm.Mapped[list["QualityFlagArray"]] = (
         orm.relationship(back_populates="target")
     )
-    astro_parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
+    parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
         back_populates="target",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    # Read-only dict view of the same rows, keyed by AstroParameter.name
+    # (unique per target). viewonly so writes go through ``astro_parameters``;
+    # keys are read from loaded rows, sidestepping the keyed-collection
+    # transient-key pitfall.
+    parameters_by_name: orm.Mapped[dict[str, "AstroParameter"]] = (
+        orm.relationship(
+            collection_class=orm.attribute_keyed_dict("name"),
+            viewonly=True,
+        )
     )
 
     def __repr__(self) -> str:
@@ -253,6 +270,33 @@ class Target(LCDBModel):
         yield "id", self.id
         yield "catalog", self.catalog_id
         yield "name", self.name
+
+    def __getitem__(self, key: str) -> u.Quantity:
+        """
+        Return a measured parameter as an astropy quantity by name.
+
+        Enables ``target["effective_temperature"]``: looks the parameter up
+        in :attr:`parameters_by_name` and returns
+        :meth:`AstroParameter.as_quantity`.
+
+        Parameters
+        ----------
+        key : str
+            The parameter name (i.e. its unit's name).
+
+        Returns
+        -------
+        astropy.units.Quantity
+            ``value * unit`` for the named parameter.
+
+        Raises
+        ------
+        KeyError
+            If the target has no parameter with that name.
+        """
+        if key not in self.parameters_by_name:
+            raise KeyError(f"{key!r} is not a parameter of {self!r}")
+        return self.parameters_by_name[key].as_quantity()
 
 
 class Alias(LCDBModel):
@@ -373,7 +417,9 @@ class AstroUnit(LCDBModel):
     id : int
         Primary key identifier.
     name : str
-        Human-readable label for the unit (e.g., "effective temperature").
+        Unique label identifying the quantity (e.g.
+        ``"effective_temperature"``). Serves as the keyword for
+        :attr:`AstroParameter.name` and ``Target.parameters_by_name``.
     unit_str : str
         The unit's astropy generic string form, e.g. ``"K"`` or ``"m / s"``.
     description : str
@@ -388,6 +434,11 @@ class AstroUnit(LCDBModel):
     composites can exceed float64 range during astropy's own decomposition;
     such units fall outside the intended scope.
 
+    ``name`` is unique: each row defines one named quantity-kind (with
+    ``unit_str`` giving that quantity's unit), which is how parameters are
+    keyed on a target. Distinct kinds may share a ``unit_str`` (e.g. two
+    temperatures both in ``"K"``).
+
     Examples
     --------
     >>> from astropy import units as u
@@ -400,7 +451,7 @@ class AstroUnit(LCDBModel):
 
     __tablename__ = "astro_unit"
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
-    name: orm.Mapped[str]
+    name: orm.Mapped[str] = orm.mapped_column(index=True, unique=True)
     unit_str: orm.Mapped[str]
     description: orm.Mapped[str] = orm.mapped_column(sa.TEXT, default="")
 
@@ -498,6 +549,10 @@ class AstroParameter(LCDBModel):
     ----------
     id : int
         Primary key identifier.
+    name : str
+        Read-only. The parameter kind, mirrored from ``unit.name`` (e.g.
+        ``"effective_temperature"``). Assign the kind on the
+        :class:`AstroUnit`, not here.
     value : float
         The parameter value, expressed in the linked unit.
     upper_error : float
@@ -519,8 +574,10 @@ class AstroParameter(LCDBModel):
     responsibility: the model stores and returns both verbatim and performs
     no unit conversion or scale normalization.
 
-    The unique constraint on ``(target_id, unit_id)`` permits at most one
-    parameter per unit on a given target.
+    The unique constraint on ``(target_id, unit_id)`` permits one parameter
+    per unit on a given target. Because each :class:`AstroUnit` has a unique
+    ``name``, that is equivalently one parameter per name -- so ``name``
+    identifies a parameter within its target.
     """
 
     __tablename__ = "astro_parameter"
@@ -532,6 +589,9 @@ class AstroParameter(LCDBModel):
     )
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
+    # Read-only view of the parameter kind; mirrors unit.name. Assign the kind
+    # on the AstroUnit -- writing here would rename the shared unit.
+    name: ap.AssociationProxy[str] = ap.association_proxy("unit", "name")
     value: orm.Mapped[float]
     upper_error: orm.Mapped[float]
     lower_error: orm.Mapped[float]
@@ -546,7 +606,7 @@ class AstroParameter(LCDBModel):
 
     # Relationships
     target: orm.Mapped["Target"] = orm.relationship(
-        back_populates="astro_parameters",
+        back_populates="parameters",
     )
     unit: orm.Mapped["AstroUnit"] = orm.relationship(
         back_populates="parameters",
@@ -571,12 +631,14 @@ class AstroParameter(LCDBModel):
 
     def __repr__(self) -> str:
         return (
-            f"<AstroParameter(id={self.id!r}, value={self.value!r}, "
-            f"target={self.target_id!r}, unit={self.unit_id!r})>"
+            f"<AstroParameter(id={self.id!r}, name={self.name!r}, "
+            f"value={self.value!r}, target={self.target_id!r}, "
+            f"unit={self.unit_id!r})>"
         )
 
     def __rich_repr__(self):
         yield "id", self.id
+        yield "name", self.name
         yield "value", self.value
         yield "target", self.target_id
         yield "unit", self.unit_id
