@@ -11,9 +11,9 @@ from .quality_flag import QualityFlagArray
 from .target import (
     Alias,
     AstroParameter,
-    AstroUnit,
     Mission,
     MissionCatalog,
+    ParameterKind,
     Target,
 )
 
@@ -24,7 +24,7 @@ __all__ = [
     "ProcessingMethod",
     "Observation",
     "Alias",
-    "AstroUnit",
+    "ParameterKind",
     "AstroParameter",
     "Mission",
     "MissionCatalog",

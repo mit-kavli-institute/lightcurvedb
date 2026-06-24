@@ -401,11 +401,11 @@ class Alias(LCDBModel):
         yield "counterpart", self.counterpart_id
 
 
-class AstroUnit(LCDBModel):
+class ParameterKind(LCDBModel):
     """
     A physical unit, stored as its astropy string representation.
 
-    AstroUnit persists an :class:`astropy.units.UnitBase` by its generic
+    ParameterKind persists an :class:`astropy.units.UnitBase` by its generic
     string form (``unit_str``) and rebuilds the live unit on demand via
     :meth:`as_unit`. Storing the string keeps arbitrary named and composite
     units (``m``, ``mag``, ``erg / (cm2 s)``) representable without a fixed
@@ -442,14 +442,14 @@ class AstroUnit(LCDBModel):
     Examples
     --------
     >>> from astropy import units as u
-    >>> unit = AstroUnit.reflect_astropy_unit(u.m / u.s, name="velocity")
+    >>> unit = ParameterKind.reflect_astropy_unit(u.m / u.s, name="velocity")
     >>> unit.unit_str
     'm / s'
     >>> unit.as_unit() == u.m / u.s
     True
     """
 
-    __tablename__ = "astro_unit"
+    __tablename__ = "parameter_kind"
     id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
     name: orm.Mapped[str] = orm.mapped_column(index=True, unique=True)
     unit_str: orm.Mapped[str]
@@ -458,7 +458,7 @@ class AstroUnit(LCDBModel):
     # Relationships
     parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
         lazy=True,
-        back_populates="unit",
+        back_populates="kind",
     )
 
     def as_unit(self):
@@ -476,9 +476,9 @@ class AstroUnit(LCDBModel):
     @classmethod
     def reflect_astropy_unit(
         cls, astropy_unit_or_quantity: u.UnitBase | u.Quantity, **kwargs
-    ) -> "AstroUnit":
+    ) -> "ParameterKind":
         """
-        Build an :class:`AstroUnit` from an astropy unit or quantity.
+        Build an :class:`ParameterKind` from an astropy unit or quantity.
 
         The unit is serialized with ``str()``. For a quantity only its unit
         is stored; the scalar magnitude is discarded.
@@ -494,7 +494,7 @@ class AstroUnit(LCDBModel):
 
         Returns
         -------
-        AstroUnit
+        ParameterKind
             An unsaved instance with ``unit_str`` set from the input.
 
         Raises
@@ -512,7 +512,7 @@ class AstroUnit(LCDBModel):
         Examples
         --------
         >>> from astropy import units as u
-        >>> AstroUnit.reflect_astropy_unit(u.K, name="temp").unit_str
+        >>> ParameterKind.reflect_astropy_unit(u.K, name="temp").unit_str
         'K'
         """
         match astropy_unit_or_quantity:
@@ -526,7 +526,7 @@ class AstroUnit(LCDBModel):
 
     def __repr__(self) -> str:
         return (
-            f"<AstroUnit(id={self.id!r}, name={self.name!r}, "
+            f"<ParameterKind(id={self.id!r}, name={self.name!r}, "
             f"unit_str={self.unit_str!r})>"
         )
 
@@ -541,18 +541,18 @@ class AstroParameter(LCDBModel):
     A measured astrophysical quantity for a target, with asymmetric errors.
 
     AstroParameter stores a scalar ``value`` alongside independent upper and
-    lower uncertainties and a reference to the :class:`AstroUnit` the value is
-    expressed in. The split errors capture the common ``value (+upper,
-    -lower)`` reporting convention used in the literature.
+    lower uncertainties and a reference to the :class:`ParameterKind`
+    (named quantity) it measures. The split errors capture the common
+    ``value (+upper, -lower)`` reporting convention used in the literature.
 
     Attributes
     ----------
     id : int
         Primary key identifier.
     name : str
-        Read-only. The parameter kind, mirrored from ``unit.name`` (e.g.
-        ``"effective_temperature"``). Assign the kind on the
-        :class:`AstroUnit`, not here.
+        Read-only. The parameter kind, mirrored from ``kind.name`` (e.g.
+        ``"effective_temperature"``). Assign it on the
+        :class:`ParameterKind`, not here.
     value : float
         The parameter value, expressed in the linked unit.
     upper_error : float
@@ -561,12 +561,12 @@ class AstroParameter(LCDBModel):
         Lower (negative-direction) uncertainty on ``value``.
     target_id : int
         Foreign key to the :class:`Target` this parameter describes.
-    unit_id : int
-        Foreign key to the :class:`AstroUnit` giving the value's unit.
+    kind_id : int
+        Foreign key to the :class:`ParameterKind` (the named quantity).
     target : Target
         The target this parameter describes.
-    unit : AstroUnit
-        The unit the value is expressed in.
+    kind : ParameterKind
+        The named quantity this parameter measures (carries the unit).
 
     Notes
     -----
@@ -574,24 +574,24 @@ class AstroParameter(LCDBModel):
     responsibility: the model stores and returns both verbatim and performs
     no unit conversion or scale normalization.
 
-    The unique constraint on ``(target_id, unit_id)`` permits one parameter
-    per unit on a given target. Because each :class:`AstroUnit` has a unique
-    ``name``, that is equivalently one parameter per name -- so ``name``
-    identifies a parameter within its target.
+    The unique constraint on ``(target_id, kind_id)`` permits one parameter
+    per kind on a given target. Because each :class:`ParameterKind` has a
+    unique ``name``, that is equivalently one parameter per name -- so
+    ``name`` identifies a parameter within its target.
     """
 
     __tablename__ = "astro_parameter"
     __table_args__ = (
         sa.UniqueConstraint(
             "target_id",
-            "unit_id",
+            "kind_id",
         ),
     )
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
-    # Read-only view of the parameter kind; mirrors unit.name. Assign the kind
-    # on the AstroUnit -- writing here would rename the shared unit.
-    name: ap.AssociationProxy[str] = ap.association_proxy("unit", "name")
+    # Read-only view of the parameter kind; mirrors kind.name. Assign the kind
+    # on the ParameterKind -- writing here would rename the shared kind.
+    name: ap.AssociationProxy[str] = ap.association_proxy("kind", "name")
     value: orm.Mapped[float]
     upper_error: orm.Mapped[float]
     lower_error: orm.Mapped[float]
@@ -599,8 +599,8 @@ class AstroParameter(LCDBModel):
         sa.ForeignKey(Target.id, ondelete="CASCADE", onupdate="CASCADE"),
         index=True,
     )
-    unit_id: orm.Mapped[int] = orm.mapped_column(
-        sa.ForeignKey(AstroUnit.id, ondelete="RESTRICT"),
+    kind_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(ParameterKind.id, ondelete="RESTRICT"),
         index=True,
     )
 
@@ -608,7 +608,7 @@ class AstroParameter(LCDBModel):
     target: orm.Mapped["Target"] = orm.relationship(
         back_populates="parameters",
     )
-    unit: orm.Mapped["AstroUnit"] = orm.relationship(
+    kind: orm.Mapped["ParameterKind"] = orm.relationship(
         back_populates="parameters",
     )
 
@@ -619,21 +619,21 @@ class AstroParameter(LCDBModel):
         Returns
         -------
         astropy.units.Quantity
-            ``self.value * self.unit.as_unit()``, using ``value`` verbatim
+            ``self.value * self.kind.as_unit()``, using ``value`` verbatim
             with no scale conversion.
 
         Notes
         -----
-        Requires the :attr:`unit` relationship; an attached instance
-        lazy-loads it. Raises ``AttributeError`` if :attr:`unit` is ``None``.
+        Requires the :attr:`kind` relationship; an attached instance
+        lazy-loads it. Raises ``AttributeError`` if :attr:`kind` is ``None``.
         """
-        return self.value * self.unit.as_unit()
+        return self.value * self.kind.as_unit()
 
     def __repr__(self) -> str:
         return (
             f"<AstroParameter(id={self.id!r}, name={self.name!r}, "
             f"value={self.value!r}, target={self.target_id!r}, "
-            f"unit={self.unit_id!r})>"
+            f"kind={self.kind_id!r})>"
         )
 
     def __rich_repr__(self):
@@ -641,4 +641,4 @@ class AstroParameter(LCDBModel):
         yield "name", self.name
         yield "value", self.value
         yield "target", self.target_id
-        yield "unit", self.unit_id
+        yield "kind", self.kind_id

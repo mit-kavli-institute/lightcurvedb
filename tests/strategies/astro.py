@@ -1,9 +1,9 @@
-"""Hypothesis strategies for astropy units and :class:`AstroUnit` models.
+"""Hypothesis strategies for astropy units and :class:`ParameterKind` models.
 
 The strategies draw real units defined in :mod:`astropy.units` -- both named
 units (``m``, ``km``, ``mag`` ...) and composites built from them (``m / s``,
 ``kg m2`` ...) -- so tests can prove that the string serialization used by
-:class:`~lightcurvedb.models.AstroUnit` survives a round-trip through the
+:class:`~lightcurvedb.models.ParameterKind` survives a round-trip through the
 database.
 """
 
@@ -11,7 +11,7 @@ import astropy.units as u
 from astropy.units import UnitBase
 from hypothesis import strategies as st
 
-from lightcurvedb.models import AstroUnit
+from lightcurvedb.models import ParameterKind
 
 
 def is_roundtrippable(unit: UnitBase) -> bool:
@@ -68,7 +68,7 @@ def astropy_composite_units(max_leaves: int = 5):
     float64 ceiling (e.g. ``foe**6`` ~ 1e306), where astropy's own
     decomposition overflows or loses precision and the round-trip ``==`` stops
     holding. ``is_roundtrippable`` drops exactly those; that is an astropy
-    numeric limit, not an ``AstroUnit`` defect, and out of scope for the
+    numeric limit, not an ``ParameterKind`` defect, and out of scope for the
     developer-maintained units this models.
     """
     base = astropy_named_units()
@@ -92,11 +92,11 @@ def astropy_composite_units(max_leaves: int = 5):
     return tree.filter(lambda x: len(x.bases) > 0 and is_roundtrippable(x))
 
 
-def astro_units(units=None, name=None):
-    """Draw :class:`AstroUnit` instances reflected from astropy units.
+def parameter_kinds(units=None, name=None):
+    """Draw :class:`ParameterKind` instances reflected from astropy units.
 
-    ``AstroUnit.name`` is NOT NULL and ``reflect_astropy_unit`` won't set it,
-    so ``name`` defaults to the serialized unit string.
+    ``ParameterKind.name`` is NOT NULL and ``reflect_astropy_unit`` won't set
+    it, so ``name`` defaults to the serialized unit string.
     """
     units = (
         units
@@ -104,7 +104,7 @@ def astro_units(units=None, name=None):
         else st.one_of(astropy_named_units(), astropy_composite_units())
     )
     return units.map(
-        lambda unit: AstroUnit.reflect_astropy_unit(
+        lambda unit: ParameterKind.reflect_astropy_unit(
             unit, name=name if name is not None else str(unit)
         )
     )
