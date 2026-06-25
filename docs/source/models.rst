@@ -76,3 +76,14 @@ Target Models
 .. autoclass:: lightcurvedb.models.Target
    :members:
    :show-inheritance:
+
+Astrophysical Parameters
+------------------------
+
+.. autoclass:: lightcurvedb.models.ParameterKind
+   :members:
+   :show-inheritance:
+
+.. autoclass:: lightcurvedb.models.AstroParameter
+   :members:
+   :show-inheritance:

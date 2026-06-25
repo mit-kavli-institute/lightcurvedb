@@ -91,6 +91,7 @@ Submodule Documentation
 
     installation
     connecting
+    bulk_parameters
     schema
     models
     api

@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+from sqlalchemy.ext import associationproxy as ap
 from astropy import time
 from astropy import units as u
 from sqlalchemy import orm
@@ -168,11 +169,19 @@ class Target(LCDBModel):
         Time series specific to this target
     quality_flag_arrays : list[QualityFlagArray]
         Target-specific quality flags
+    parameters : list[AstroParameter]
+        Astrophysical parameters measured for this target
+    parameters_by_name : dict[str, AstroParameter]
+        Read-only view of ``parameters`` keyed by parameter name
 
     Notes
     -----
     The combination of catalog_id and name must be unique,
     ensuring no duplicate targets within a catalog.
+
+    Indexing a target by parameter name -- ``target["effective_temperature"]``
+    -- returns that parameter as an astropy quantity (see
+    :meth:`__getitem__`).
     """
 
     __tablename__ = "target"
@@ -225,16 +234,31 @@ class Target(LCDBModel):
     datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
         back_populates="target"
     )
-    target_specific_times: orm.Mapped[
-        list["TargetSpecificTime"]
-    ] = orm.relationship(
+    target_specific_times: orm.Mapped[list["TargetSpecificTime"]] = (
+        orm.relationship(
+            back_populates="target",
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        )
+    )
+    quality_flag_arrays: orm.Mapped[list["QualityFlagArray"]] = (
+        orm.relationship(back_populates="target")
+    )
+    parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
         back_populates="target",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    quality_flag_arrays: orm.Mapped[
-        list["QualityFlagArray"]
-    ] = orm.relationship(back_populates="target")
+    # Read-only dict view of the same rows, keyed by AstroParameter.name
+    # (unique per target). viewonly so writes go through ``astro_parameters``;
+    # keys are read from loaded rows, sidestepping the keyed-collection
+    # transient-key pitfall.
+    parameters_by_name: orm.Mapped[dict[str, "AstroParameter"]] = (
+        orm.relationship(
+            collection_class=orm.attribute_keyed_dict("name"),
+            viewonly=True,
+        )
+    )
 
     def __repr__(self) -> str:
         return (
@@ -246,6 +270,33 @@ class Target(LCDBModel):
         yield "id", self.id
         yield "catalog", self.catalog_id
         yield "name", self.name
+
+    def __getitem__(self, key: str) -> u.Quantity:
+        """
+        Return a measured parameter as an astropy quantity by name.
+
+        Enables ``target["effective_temperature"]``: looks the parameter up
+        in :attr:`parameters_by_name` and returns
+        :meth:`AstroParameter.as_quantity`.
+
+        Parameters
+        ----------
+        key : str
+            The parameter name (i.e. its unit's name).
+
+        Returns
+        -------
+        astropy.units.Quantity
+            ``value * unit`` for the named parameter.
+
+        Raises
+        ------
+        KeyError
+            If the target has no parameter with that name.
+        """
+        if key not in self.parameters_by_name:
+            raise KeyError(f"{key!r} is not a parameter of {self!r}")
+        return self.parameters_by_name[key].as_quantity()
 
 
 class Alias(LCDBModel):
@@ -348,3 +399,246 @@ class Alias(LCDBModel):
         yield "id", self.id
         yield "target", self.target_id
         yield "counterpart", self.counterpart_id
+
+
+class ParameterKind(LCDBModel):
+    """
+    A physical unit, stored as its astropy string representation.
+
+    ParameterKind persists an :class:`astropy.units.UnitBase` by its generic
+    string form (``unit_str``) and rebuilds the live unit on demand via
+    :meth:`as_unit`. Storing the string keeps arbitrary named and composite
+    units (``m``, ``mag``, ``erg / (cm2 s)``) representable without a fixed
+    enumeration, while round-tripping exactly for the physically meaningful
+    units used in practice.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier.
+    name : str
+        Unique label identifying the quantity (e.g.
+        ``"effective_temperature"``). Serves as the keyword for
+        :attr:`AstroParameter.name` and ``Target.parameters_by_name``.
+    unit_str : str
+        The unit's astropy generic string form, e.g. ``"K"`` or ``"m / s"``.
+    description : str
+        Optional free-text description; defaults to an empty string.
+    parameters : list[AstroParameter]
+        Parameters expressed in this unit (shared lookup; not owned).
+
+    Notes
+    -----
+    The reconstructed unit follows :class:`astropy.units.UnitBase` equality,
+    which compares physical decomposition and scale. Extreme-magnitude
+    composites can exceed float64 range during astropy's own decomposition;
+    such units fall outside the intended scope.
+
+    ``name`` is unique: each row defines one named quantity-kind (with
+    ``unit_str`` giving that quantity's unit), which is how parameters are
+    keyed on a target. Distinct kinds may share a ``unit_str`` (e.g. two
+    temperatures both in ``"K"``).
+
+    Examples
+    --------
+    >>> from astropy import units as u
+    >>> unit = ParameterKind.reflect_astropy_unit(u.m / u.s, name="velocity")
+    >>> unit.unit_str
+    'm / s'
+    >>> unit.as_unit() == u.m / u.s
+    True
+    """
+
+    __tablename__ = "parameter_kind"
+    id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
+    name: orm.Mapped[str] = orm.mapped_column(index=True, unique=True)
+    unit_str: orm.Mapped[str]
+    description: orm.Mapped[str] = orm.mapped_column(sa.TEXT, default="")
+
+    # Relationships
+    parameters: orm.Mapped[list["AstroParameter"]] = orm.relationship(
+        lazy=True,
+        back_populates="kind",
+    )
+
+    def as_unit(self):
+        """
+        Reconstruct the live astropy unit from ``unit_str``.
+
+        Returns
+        -------
+        astropy.units.UnitBase
+            The unit parsed from :attr:`unit_str` via
+            :func:`astropy.units.Unit`.
+        """
+        return u.Unit(self.unit_str)
+
+    @classmethod
+    def reflect_astropy_unit(
+        cls, astropy_unit_or_quantity: u.UnitBase | u.Quantity, **kwargs
+    ) -> "ParameterKind":
+        """
+        Build an :class:`ParameterKind` from an astropy unit or quantity.
+
+        The unit is serialized with ``str()``. For a quantity only its unit
+        is stored; the scalar magnitude is discarded.
+
+        Parameters
+        ----------
+        astropy_unit_or_quantity : UnitBase or Quantity
+            An :class:`astropy.units.UnitBase` to reflect, or an
+            :class:`astropy.units.Quantity` whose unit is reflected.
+        **kwargs
+            Extra column values forwarded to the constructor, e.g. ``name``
+            (required; ``NOT NULL``) and ``description``.
+
+        Returns
+        -------
+        ParameterKind
+            An unsaved instance with ``unit_str`` set from the input.
+
+        Raises
+        ------
+        NotImplementedError
+            If the argument is neither a unit nor a quantity.
+
+        Notes
+        -----
+        Matching is on :class:`astropy.units.UnitBase`, not
+        :class:`astropy.units.Unit`: irreducible units (``u.m``) and composite
+        units (``u.m / u.s``) are ``UnitBase`` subclasses but not ``Unit``
+        instances, so matching ``Unit`` would reject all but prefixed units.
+
+        Examples
+        --------
+        >>> from astropy import units as u
+        >>> ParameterKind.reflect_astropy_unit(u.K, name="temp").unit_str
+        'K'
+        """
+        match astropy_unit_or_quantity:
+            case u.UnitBase():
+                return cls(unit_str=str(astropy_unit_or_quantity), **kwargs)
+            case u.Quantity():
+                unit = astropy_unit_or_quantity.unit
+                return cls(unit_str=str(unit), **kwargs)
+            case _:
+                raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return (
+            f"<ParameterKind(id={self.id!r}, name={self.name!r}, "
+            f"unit_str={self.unit_str!r})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+        yield "unit_str", self.unit_str
+
+
+class AstroParameter(LCDBModel):
+    """
+    A measured astrophysical quantity for a target, with asymmetric errors.
+
+    AstroParameter stores a scalar ``value`` alongside independent upper and
+    lower uncertainties and a reference to the :class:`ParameterKind`
+    (named quantity) it measures. The split errors capture the common
+    ``value (+upper, -lower)`` reporting convention used in the literature.
+
+    Attributes
+    ----------
+    id : int
+        Primary key identifier.
+    name : str
+        Read-only. The parameter kind, mirrored from ``kind.name`` (e.g.
+        ``"effective_temperature"``). Assign it on the
+        :class:`ParameterKind`, not here.
+    value : float
+        The parameter value, expressed in the linked unit.
+    upper_error : float
+        Upper (positive-direction) uncertainty on ``value``.
+    lower_error : float
+        Lower (negative-direction) uncertainty on ``value``.
+    target_id : int
+        Foreign key to the :class:`Target` this parameter describes.
+    kind_id : int
+        Foreign key to the :class:`ParameterKind` (the named quantity).
+    target : Target
+        The target this parameter describes.
+    kind : ParameterKind
+        The named quantity this parameter measures (carries the unit).
+
+    Notes
+    -----
+    Keeping ``value`` consistent with its unit is the caller's
+    responsibility: the model stores and returns both verbatim and performs
+    no unit conversion or scale normalization.
+
+    The unique constraint on ``(target_id, kind_id)`` permits one parameter
+    per kind on a given target. Because each :class:`ParameterKind` has a
+    unique ``name``, that is equivalently one parameter per name -- so
+    ``name`` identifies a parameter within its target.
+    """
+
+    __tablename__ = "astro_parameter"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "target_id",
+            "kind_id",
+        ),
+    )
+
+    id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
+    # Read-only view of the parameter kind; mirrors kind.name. Assign the kind
+    # on the ParameterKind -- writing here would rename the shared kind.
+    name: ap.AssociationProxy[str] = ap.association_proxy("kind", "name")
+    value: orm.Mapped[float]
+    upper_error: orm.Mapped[float]
+    lower_error: orm.Mapped[float]
+    target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(Target.id, ondelete="CASCADE", onupdate="CASCADE"),
+        index=True,
+    )
+    kind_id: orm.Mapped[int] = orm.mapped_column(
+        sa.ForeignKey(ParameterKind.id, ondelete="RESTRICT"),
+        index=True,
+    )
+
+    # Relationships
+    target: orm.Mapped["Target"] = orm.relationship(
+        back_populates="parameters",
+    )
+    kind: orm.Mapped["ParameterKind"] = orm.relationship(
+        back_populates="parameters",
+    )
+
+    def as_quantity(self) -> u.Quantity:
+        """
+        Combine ``value`` with its unit into an astropy quantity.
+
+        Returns
+        -------
+        astropy.units.Quantity
+            ``self.value * self.kind.as_unit()``, using ``value`` verbatim
+            with no scale conversion.
+
+        Notes
+        -----
+        Requires the :attr:`kind` relationship; an attached instance
+        lazy-loads it. Raises ``AttributeError`` if :attr:`kind` is ``None``.
+        """
+        return self.value * self.kind.as_unit()
+
+    def __repr__(self) -> str:
+        return (
+            f"<AstroParameter(id={self.id!r}, name={self.name!r}, "
+            f"value={self.value!r}, target={self.target_id!r}, "
+            f"kind={self.kind_id!r})>"
+        )
+
+    def __rich_repr__(self):
+        yield "id", self.id
+        yield "name", self.name
+        yield "value", self.value
+        yield "target", self.target_id
+        yield "kind", self.kind_id

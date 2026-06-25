@@ -49,6 +49,21 @@ Mission & Catalog
    :show-inheritance:
    :no-index:
 
+Astrophysical Parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: lightcurvedb.models.ParameterKind
+   :members:
+   :exclude-members: metadata, registry
+   :show-inheritance:
+   :no-index:
+
+.. autoclass:: lightcurvedb.models.AstroParameter
+   :members:
+   :exclude-members: metadata, registry
+   :show-inheritance:
+   :no-index:
+
 Instrument
 ~~~~~~~~~~
 
