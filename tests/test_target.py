@@ -4,6 +4,8 @@ import uuid
 
 import numpy as np
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 from sqlalchemy import delete, exc, orm
 
 from lightcurvedb.models import (
@@ -15,6 +17,30 @@ from lightcurvedb.models import (
     Target,
     TargetSpecificTime,
 )
+
+
+def _coord_catalog(
+    session: orm.Session, suffix: str = "COORD"
+) -> MissionCatalog:
+    """Persist a mission + catalog for coordinate tests and return the catalog."""
+    mission = Mission(
+        id=uuid.uuid4(),
+        name=f"{suffix}_MISSION",
+        description="Coordinate test mission",
+        time_unit="day",
+        time_epoch=0.0,
+        time_epoch_scale="tdb",
+        time_epoch_format="jd",
+        time_format_name=f"{suffix}_fmt",  # unique per mission
+    )
+    catalog = MissionCatalog(
+        host_mission=mission,
+        name=f"{suffix}_CAT",
+        description="Coordinate catalog",
+    )
+    session.add_all([mission, catalog])
+    session.flush()
+    return catalog
 
 
 class TestTargetBasics:
@@ -679,3 +705,125 @@ class TestTargetQueries:
         assert len(targets_with_observations) == 1
         assert target_with_obs in targets_with_observations
         assert target_without_obs not in targets_with_observations
+
+
+class TestTargetCoordinates:
+    """Celestial-coordinate columns and their CHECK constraints.
+
+    ``right_ascension`` / ``declination`` must be co-present (both set or both
+    NULL) and, when set, finite and within valid celestial degrees -- RA in
+    [0, 360), Dec in [-90, 90]. Enforced at the database level by
+    ``ck_target_radec_co_null`` and ``ck_target_radec_range``.
+    """
+
+    @pytest.mark.parametrize(
+        "ra, dec",
+        [
+            (None, None),  # both absent -- the common case
+            (0.0, -90.0),  # inclusive lower boundaries
+            (359.999, 90.0),  # RA just below 360, Dec at upper boundary
+            (123.45, -67.8),  # interior
+            (0.0, 0.0),  # origin
+        ],
+    )
+    def test_valid_coordinates_accepted(self, v2_db: orm.Session, ra, dec):
+        """Co-present, in-range coordinates (and the all-NULL case) commit."""
+        catalog = _coord_catalog(v2_db)
+        target = Target(
+            catalog=catalog, name=1, right_ascension=ra, declination=dec
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        assert target.id is not None
+        assert target.right_ascension == ra
+        assert target.declination == dec
+
+    @pytest.mark.parametrize(
+        "ra, dec",
+        [
+            (10.0, None),  # ra set, dec missing
+            (None, 10.0),  # dec set, ra missing
+        ],
+    )
+    def test_half_coordinate_rejected(self, v2_db: orm.Session, ra, dec):
+        """Only one of ra/dec set violates co-nullability."""
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog, name=1, right_ascension=ra, declination=dec
+            )
+        )
+        with pytest.raises(exc.IntegrityError) as excinfo:
+            v2_db.commit()
+        v2_db.rollback()
+        assert "ck_target_radec_co_null" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "ra, dec",
+        [
+            (float("nan"), 0.0),  # NaN ra
+            (0.0, float("nan")),  # NaN dec
+            (float("inf"), 0.0),  # +Infinity ra
+            (float("-inf"), 0.0),  # -Infinity ra
+            (0.0, float("inf")),  # +Infinity dec
+            (-0.001, 0.0),  # ra below 0
+            (360.0, 0.0),  # ra == 360 (upper bound is exclusive)
+            (400.0, 0.0),  # ra above range
+            (0.0, 90.001),  # dec above range
+            (0.0, -90.001),  # dec below range
+        ],
+    )
+    def test_out_of_range_or_nonfinite_rejected(
+        self, v2_db: orm.Session, ra, dec
+    ):
+        """NaN, +/-Infinity, and out-of-range degrees violate the range check."""
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog, name=1, right_ascension=ra, declination=dec
+            )
+        )
+        with pytest.raises(exc.IntegrityError) as excinfo:
+            v2_db.commit()
+        v2_db.rollback()
+        assert "ck_target_radec_range" in str(excinfo.value)
+
+    @settings(
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+        deadline=None,
+        max_examples=50,
+    )
+    @given(
+        ra=st.floats(
+            min_value=0,
+            max_value=360,
+            exclude_max=True,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
+        dec=st.floats(
+            min_value=-90,
+            max_value=90,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
+    )
+    def test_any_valid_celestial_degrees_accepted(
+        self, v2_db: orm.Session, ra, dec
+    ):
+        """Property: any in-range (ra, dec) pair satisfies the constraints.
+
+        Each example is rolled back, so the function-scoped session stays clean
+        and target names never collide across examples.
+        """
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog, name=1, right_ascension=ra, declination=dec
+            )
+        )
+        try:
+            v2_db.flush()  # constraints evaluated here; must not raise
+        finally:
+            v2_db.rollback()

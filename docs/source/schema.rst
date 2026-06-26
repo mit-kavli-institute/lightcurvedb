@@ -84,12 +84,15 @@ Entity Relationship Diagram
            UUID host_mission_id FK
            string name UK
            string description
+           string coordinate_reference_frame
        }
 
        Target {
            bigint id PK
            int catalog_id FK
            bigint name
+           float right_ascension
+           float declination
        }
 
        Instrument {
