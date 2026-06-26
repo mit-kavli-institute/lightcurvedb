@@ -4,6 +4,7 @@ import uuid
 
 import numpy as np
 import pytest
+from astropy import units as u
 from astropy.coordinates import SkyCoord
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -878,6 +879,39 @@ class TestTargetCoordinateProperty:
         assert isinstance(coord, SkyCoord)
         assert coord.frame.name == "fk5"
 
+    def test_includes_proper_motion_when_present(self, v2_db: orm.Session):
+        """A target with proper motion yields a SkyCoord with PM differentials."""
+        catalog = _coord_catalog(v2_db)
+        target = Target(
+            catalog=catalog,
+            name=1,
+            right_ascension=10.0,
+            declination=20.0,
+            pm_ra_cosdec=5.5,
+            pm_dec=-3.2,
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        coord = target.coordinate
+        assert isinstance(coord, SkyCoord)
+        assert "s" in coord.data.differentials  # velocity present
+        assert coord.pm_ra_cosdec.to_value(u.mas / u.yr) == pytest.approx(5.5)
+        assert coord.pm_dec.to_value(u.mas / u.yr) == pytest.approx(-3.2)
+
+    def test_position_only_when_no_proper_motion(self, v2_db: orm.Session):
+        """Without proper motion the SkyCoord carries no velocity differentials."""
+        catalog = _coord_catalog(v2_db)
+        target = Target(
+            catalog=catalog, name=1, right_ascension=10.0, declination=20.0
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        coord = target.coordinate
+        assert isinstance(coord, SkyCoord)
+        assert coord.data.differentials == {}
+
     def test_usable_in_select_query(self, v2_db: orm.Session):
         """The SQL expression filters on the (ra, dec) pair via IN."""
         catalog = _coord_catalog(v2_db)
@@ -896,3 +930,114 @@ class TestTargetCoordinateProperty:
         ).scalars().all()
 
         assert found == [positioned]
+
+
+class TestTargetProperMotion:
+    """Proper-motion columns and their CHECK constraints.
+
+    ``pm_ra_cosdec`` / ``pm_dec`` (mas/yr) must be co-present (both set or both
+    NULL), finite when set, and require a position. Enforced by
+    ``ck_target_pm_co_null``, ``ck_target_pm_finite`` and
+    ``ck_target_pm_requires_position``.
+    """
+
+    @pytest.mark.parametrize(
+        "pm_ra, pm_dec",
+        [
+            (None, None),  # no proper motion
+            (5.5, -3.2),  # finite pair
+            (0.0, 0.0),  # zero motion is still a measurement
+            (-1234.5, 6789.0),  # large but finite (high-PM star)
+        ],
+    )
+    def test_valid_proper_motion_accepted(
+        self, v2_db: orm.Session, pm_ra, pm_dec
+    ):
+        """Co-present, finite proper motion (with a position) commits."""
+        catalog = _coord_catalog(v2_db)
+        target = Target(
+            catalog=catalog,
+            name=1,
+            right_ascension=10.0,
+            declination=20.0,
+            pm_ra_cosdec=pm_ra,
+            pm_dec=pm_dec,
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        assert target.id is not None
+        assert target.pm_ra_cosdec == pm_ra
+        assert target.pm_dec == pm_dec
+
+    @pytest.mark.parametrize(
+        "pm_ra, pm_dec",
+        [
+            (5.5, None),  # pm_ra set, pm_dec missing
+            (None, -3.2),  # pm_dec set, pm_ra missing
+        ],
+    )
+    def test_half_proper_motion_rejected(
+        self, v2_db: orm.Session, pm_ra, pm_dec
+    ):
+        """Only one proper-motion component set violates co-nullability."""
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog,
+                name=1,
+                right_ascension=10.0,
+                declination=20.0,
+                pm_ra_cosdec=pm_ra,
+                pm_dec=pm_dec,
+            )
+        )
+        with pytest.raises(exc.IntegrityError) as excinfo:
+            v2_db.commit()
+        v2_db.rollback()
+        assert "ck_target_pm_co_null" in str(excinfo.value)
+
+    @pytest.mark.parametrize(
+        "pm_ra, pm_dec",
+        [
+            (float("nan"), 1.0),  # NaN pm_ra
+            (1.0, float("nan")),  # NaN pm_dec
+            (float("inf"), 1.0),  # +Infinity
+            (1.0, float("-inf")),  # -Infinity
+        ],
+    )
+    def test_nonfinite_proper_motion_rejected(
+        self, v2_db: orm.Session, pm_ra, pm_dec
+    ):
+        """NaN / +/-Infinity in either component violates the finiteness check."""
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog,
+                name=1,
+                right_ascension=10.0,
+                declination=20.0,
+                pm_ra_cosdec=pm_ra,
+                pm_dec=pm_dec,
+            )
+        )
+        with pytest.raises(exc.IntegrityError) as excinfo:
+            v2_db.commit()
+        v2_db.rollback()
+        assert "ck_target_pm_finite" in str(excinfo.value)
+
+    def test_proper_motion_requires_position(self, v2_db: orm.Session):
+        """Proper motion without a position (ra/dec) is rejected."""
+        catalog = _coord_catalog(v2_db)
+        v2_db.add(
+            Target(
+                catalog=catalog,
+                name=1,
+                pm_ra_cosdec=5.5,
+                pm_dec=-3.2,
+            )
+        )
+        with pytest.raises(exc.IntegrityError) as excinfo:
+            v2_db.commit()
+        v2_db.rollback()
+        assert "ck_target_pm_requires_position" in str(excinfo.value)

@@ -177,6 +177,11 @@ class Target(LCDBModel):
     declination : float, optional
         Declination in degrees, [-90, 90]. Interpreted in the catalog's
         ``coordinate_reference_frame``. Null unless a position is known.
+    pm_ra_cosdec : float, optional
+        Proper motion in right ascension, cos(dec)-corrected
+        (mu_alpha* = mu_alpha * cos(dec)), in mas/yr. Null unless known.
+    pm_dec : float, optional
+        Proper motion in declination, in mas/yr. Null unless known.
     catalog : MissionCatalog
         The catalog this target belongs to
     datasets : list[DataSet]
@@ -202,10 +207,16 @@ class Target(LCDBModel):
     when present to lie within valid celestial degrees -- RA in [0, 360) and
     Dec in [-90, 90]. The range bounds also reject NaN and +/-Infinity.
 
+    ``pm_ra_cosdec`` and ``pm_dec`` are likewise co-present (both null or both
+    set), must be finite when set (no NaN/+/-Infinity), and require a position
+    to be present (proper motion without ra/dec is rejected).
+
     :attr:`coordinate` is a hybrid attribute: on a loaded instance it returns
-    an :class:`astropy.coordinates.SkyCoord` (or ``None`` if the target has no
-    position); in a SQL expression it resolves to the
-    ``(right_ascension, declination)`` degree pair.
+    an :class:`astropy.coordinates.SkyCoord` (carrying proper-motion
+    differentials when ``pm_ra_cosdec`` / ``pm_dec`` are set, else
+    position-only), or ``None`` if the target has no position; in a SQL
+    expression it resolves to the ``(right_ascension, declination)`` degree
+    pair.
 
     Indexing a target by parameter name -- ``target["effective_temperature"]``
     -- returns that parameter as an astropy quantity (see
@@ -232,6 +243,26 @@ class Target(LCDBModel):
             " AND declination >= -90 AND declination <= 90)",
             name="ck_target_radec_range",
         ),
+        # Proper motion is co-present: both components set or both NULL.
+        sa.CheckConstraint(
+            "(pm_ra_cosdec IS NULL) = (pm_dec IS NULL)",
+            name="ck_target_pm_co_null",
+        ),
+        # Proper motion has no bounded range, so finiteness is enforced
+        # directly: reject NaN and +/-Infinity in either component.
+        sa.CheckConstraint(
+            "pm_ra_cosdec IS NULL OR ("
+            " pm_ra_cosdec <> 'NaN' AND pm_ra_cosdec <> 'Infinity'"
+            " AND pm_ra_cosdec <> '-Infinity'"
+            " AND pm_dec <> 'NaN' AND pm_dec <> 'Infinity'"
+            " AND pm_dec <> '-Infinity')",
+            name="ck_target_pm_finite",
+        ),
+        # Proper motion is meaningless without a position to anchor it.
+        sa.CheckConstraint(
+            "pm_ra_cosdec IS NULL OR right_ascension IS NOT NULL",
+            name="ck_target_pm_requires_position",
+        ),
     )
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
@@ -243,6 +274,11 @@ class Target(LCDBModel):
     name: orm.Mapped[int] = orm.mapped_column(sa.BigInteger)
     right_ascension: orm.Mapped[float | None]
     declination: orm.Mapped[float | None]
+    # Proper motion in mas/yr. pm_ra_cosdec is the cos(dec)-corrected RA rate
+    # (mu_alpha* = mu_alpha * cos(dec)), the Gaia/TIC convention and astropy's
+    # SkyCoord(pm_ra_cosdec=...) kwarg -- so it maps to a SkyCoord directly.
+    pm_ra_cosdec: orm.Mapped[float | None]
+    pm_dec: orm.Mapped[float | None]
 
     # Relationships
     catalog: orm.Mapped["MissionCatalog"] = orm.relationship(
@@ -320,10 +356,15 @@ class Target(LCDBModel):
         ``ck_target_radec_co_null`` constraint guarantees the two columns are
         set together, so a partial coordinate never occurs.
 
+        When :attr:`pm_ra_cosdec` / :attr:`pm_dec` are present the SkyCoord
+        also carries proper-motion differentials (in mas/yr); otherwise it is
+        position-only.
+
         Returns
         -------
         astropy.coordinates.SkyCoord or None
-            The position, or ``None`` if ra/dec are unset.
+            The position (with proper motion when available), or ``None`` if
+            ra/dec are unset.
 
         Notes
         -----
@@ -337,10 +378,17 @@ class Target(LCDBModel):
         """
         if self.right_ascension is None or self.declination is None:
             return None
+        proper_motion = {}
+        if self.pm_ra_cosdec is not None and self.pm_dec is not None:
+            proper_motion = {
+                "pm_ra_cosdec": self.pm_ra_cosdec * (u.mas / u.yr),
+                "pm_dec": self.pm_dec * (u.mas / u.yr),
+            }
         return SkyCoord(
             ra=self.right_ascension * u.deg,
             dec=self.declination * u.deg,
             frame=self.catalog.coordinate_reference_frame.lower(),
+            **proper_motion,
         )
 
     @coordinate.expression
