@@ -111,6 +111,10 @@ class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
         Unique catalog name (e.g., "TIC" for TESS Input Catalog)
     description : str, optional
         Detailed description of the catalog
+    coordinate_reference_frame : str
+        Reference frame the catalog's target coordinates
+        (``Target.right_ascension`` / ``declination``) are expressed in.
+        Defaults to ``"J2000"``.
     host_mission : Mission
         Parent mission this catalog belongs to
     targets : list[Target]
@@ -124,6 +128,7 @@ class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     host_mission_id: orm.Mapped[uuid.UUID] = orm.mapped_column(
         sa.ForeignKey(Mission.id, ondelete="CASCADE")
     )
+    coordinate_reference_frame: orm.Mapped[str] = orm.mapped_column(default="J2000")
 
     # Relationships
     host_mission: orm.Mapped["Mission"] = orm.relationship(
@@ -161,6 +166,12 @@ class Target(LCDBModel):
         Foreign key to the MissionCatalog
     name : int
         Catalog-specific identifier (e.g., TIC ID)
+    right_ascension : float, optional
+        Right ascension in degrees, [0, 360). Interpreted in the catalog's
+        ``coordinate_reference_frame``. Null unless a position is known.
+    declination : float, optional
+        Declination in degrees, [-90, 90]. Interpreted in the catalog's
+        ``coordinate_reference_frame``. Null unless a position is known.
     catalog : MissionCatalog
         The catalog this target belongs to
     datasets : list[DataSet]
@@ -179,13 +190,37 @@ class Target(LCDBModel):
     The combination of catalog_id and name must be unique,
     ensuring no duplicate targets within a catalog.
 
+    ``right_ascension`` and ``declination`` are constrained at the database
+    level to be either both null or both present (no half-coordinates), and
+    when present to lie within valid celestial degrees -- RA in [0, 360) and
+    Dec in [-90, 90]. The range bounds also reject NaN and +/-Infinity.
+
     Indexing a target by parameter name -- ``target["effective_temperature"]``
     -- returns that parameter as an astropy quantity (see
     :meth:`__getitem__`).
     """
 
     __tablename__ = "target"
-    __table_args__ = (sa.UniqueConstraint("catalog_id", "name"),)
+    __table_args__ = (
+        sa.UniqueConstraint("catalog_id", "name"),
+        # ra and dec are co-present: both set or both NULL, never a
+        # half-coordinate. A CHECK is a per-row write-time test (no index, no
+        # read cost) -- spatial indexing is a separate, downstream concern.
+        sa.CheckConstraint(
+            "(right_ascension IS NULL) = (declination IS NULL)",
+            name="ck_target_radec_co_null",
+        ),
+        # When present: finite AND valid celestial degrees,
+        # RA in [0, 360) and Dec in [-90, 90]. The range bounds double as the
+        # finiteness guard -- PostgreSQL sorts NaN above Infinity, so NaN and
+        # +/-Infinity all fall outside the range and are rejected.
+        sa.CheckConstraint(
+            "right_ascension IS NULL OR ("
+            " right_ascension >= 0 AND right_ascension < 360"
+            " AND declination >= -90 AND declination <= 90)",
+            name="ck_target_radec_range",
+        ),
+    )
 
     id: orm.Mapped[int] = orm.mapped_column(sa.BigInteger, primary_key=True)
     catalog_id: orm.Mapped[int] = orm.mapped_column(
@@ -194,6 +229,8 @@ class Target(LCDBModel):
         )
     )
     name: orm.Mapped[int] = orm.mapped_column(sa.BigInteger)
+    right_ascension: orm.Mapped[float | None]
+    declination: orm.Mapped[float | None]
 
     # Relationships
     catalog: orm.Mapped["MissionCatalog"] = orm.relationship(
