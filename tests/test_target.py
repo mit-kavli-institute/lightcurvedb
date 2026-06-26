@@ -4,9 +4,10 @@ import uuid
 
 import numpy as np
 import pytest
+from astropy.coordinates import SkyCoord
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy import delete, exc, orm
+from sqlalchemy import delete, exc, orm, select
 
 from lightcurvedb.models import (
     Instrument,
@@ -827,3 +828,71 @@ class TestTargetCoordinates:
             v2_db.flush()  # constraints evaluated here; must not raise
         finally:
             v2_db.rollback()
+
+
+class TestTargetCoordinateProperty:
+    """The ``Target.coordinate`` hybrid: SkyCoord on instances, (ra, dec) in SQL.
+
+    On a loaded target the attribute builds an astropy SkyCoord from the ra/dec
+    columns in the catalog's reference frame; in a SQL expression it resolves
+    to the ``(right_ascension, declination)`` degree pair.
+    """
+
+    def test_returns_skycoord_with_default_frame(self, v2_db: orm.Session):
+        """A positioned target yields a SkyCoord in the default ICRS frame."""
+        catalog = _coord_catalog(v2_db)
+        assert catalog.coordinate_reference_frame == "ICRS"  # default applied
+        target = Target(
+            catalog=catalog, name=1, right_ascension=123.45, declination=-67.8
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        coord = target.coordinate
+        assert isinstance(coord, SkyCoord)
+        assert coord.frame.name == "icrs"
+        assert coord.ra.deg == pytest.approx(123.45)
+        assert coord.dec.deg == pytest.approx(-67.8)
+
+    def test_returns_none_without_position(self, v2_db: orm.Session):
+        """A target with no ra/dec has no coordinate."""
+        catalog = _coord_catalog(v2_db)
+        target = Target(catalog=catalog, name=1)
+        v2_db.add(target)
+        v2_db.commit()
+
+        assert target.coordinate is None
+
+    def test_honors_catalog_frame(self, v2_db: orm.Session):
+        """The SkyCoord frame comes from the catalog's reference frame."""
+        catalog = _coord_catalog(v2_db, suffix="FK5")
+        catalog.coordinate_reference_frame = "FK5"  # equatorial; accepts ra/dec
+        v2_db.flush()
+        target = Target(
+            catalog=catalog, name=1, right_ascension=10.0, declination=20.0
+        )
+        v2_db.add(target)
+        v2_db.commit()
+
+        coord = target.coordinate
+        assert isinstance(coord, SkyCoord)
+        assert coord.frame.name == "fk5"
+
+    def test_usable_in_select_query(self, v2_db: orm.Session):
+        """The SQL expression filters on the (ra, dec) pair via IN."""
+        catalog = _coord_catalog(v2_db)
+        positioned = Target(
+            catalog=catalog, name=1, right_ascension=10.0, declination=20.0
+        )
+        other = Target(
+            catalog=catalog, name=2, right_ascension=30.0, declination=40.0
+        )
+        no_position = Target(catalog=catalog, name=3)
+        v2_db.add_all([positioned, other, no_position])
+        v2_db.commit()
+
+        found = v2_db.execute(
+            select(Target).where(Target.coordinate.in_([(10.0, 20.0)]))
+        ).scalars().all()
+
+        assert found == [positioned]
