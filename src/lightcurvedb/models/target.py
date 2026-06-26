@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy.ext import associationproxy as ap
+from sqlalchemy.ext.hybrid import hybrid_property
 from astropy import time
 from astropy import units as u
+from astropy.coordinates import SkyCoord
 from sqlalchemy import orm
 
 from lightcurvedb.core.base_model import (
@@ -113,8 +115,9 @@ class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
         Detailed description of the catalog
     coordinate_reference_frame : str
         Reference frame the catalog's target coordinates
-        (``Target.right_ascension`` / ``declination``) are expressed in.
-        Defaults to ``"J2000"``.
+        (``Target.right_ascension`` / ``declination``) are expressed in,
+        as an astropy frame name (e.g. ``"ICRS"``, ``"FK5"``). Defaults to
+        ``"ICRS"`` and is consumed by :attr:`Target.coordinate`.
     host_mission : Mission
         Parent mission this catalog belongs to
     targets : list[Target]
@@ -128,7 +131,9 @@ class MissionCatalog(LCDBModel, NameAndDescriptionMixin, CreatedOnMixin):
     host_mission_id: orm.Mapped[uuid.UUID] = orm.mapped_column(
         sa.ForeignKey(Mission.id, ondelete="CASCADE")
     )
-    coordinate_reference_frame: orm.Mapped[str] = orm.mapped_column(default="J2000")
+    coordinate_reference_frame: orm.Mapped[str] = orm.mapped_column(
+        default="ICRS"
+    )
 
     # Relationships
     host_mission: orm.Mapped["Mission"] = orm.relationship(
@@ -184,6 +189,8 @@ class Target(LCDBModel):
         Astrophysical parameters measured for this target
     parameters_by_name : dict[str, AstroParameter]
         Read-only view of ``parameters`` keyed by parameter name
+    coordinate : astropy.coordinates.SkyCoord or None
+        The target's sky position as a SkyCoord (see :attr:`coordinate`).
 
     Notes
     -----
@@ -194,6 +201,11 @@ class Target(LCDBModel):
     level to be either both null or both present (no half-coordinates), and
     when present to lie within valid celestial degrees -- RA in [0, 360) and
     Dec in [-90, 90]. The range bounds also reject NaN and +/-Infinity.
+
+    :attr:`coordinate` is a hybrid attribute: on a loaded instance it returns
+    an :class:`astropy.coordinates.SkyCoord` (or ``None`` if the target has no
+    position); in a SQL expression it resolves to the
+    ``(right_ascension, declination)`` degree pair.
 
     Indexing a target by parameter name -- ``target["effective_temperature"]``
     -- returns that parameter as an astropy quantity (see
@@ -296,6 +308,53 @@ class Target(LCDBModel):
             viewonly=True,
         )
     )
+
+    @hybrid_property
+    def coordinate(self) -> SkyCoord | None:
+        """
+        The target's sky position as an astropy :class:`SkyCoord`.
+
+        Built from :attr:`right_ascension` / :attr:`declination` (degrees) in
+        the catalog's :attr:`MissionCatalog.coordinate_reference_frame`.
+        Returns ``None`` when the target has no recorded position; the
+        ``ck_target_radec_co_null`` constraint guarantees the two columns are
+        set together, so a partial coordinate never occurs.
+
+        Returns
+        -------
+        astropy.coordinates.SkyCoord or None
+            The position, or ``None`` if ra/dec are unset.
+
+        Notes
+        -----
+        Reading the frame touches the :attr:`catalog` relationship, which
+        lazy-loads it if not already present. Eager-load the catalog
+        (e.g. ``selectinload(Target.catalog)``) when building coordinates for
+        many targets to avoid per-row queries.
+
+        The reference frame must be an equatorial astropy frame (``icrs``,
+        ``fk5``, ...) since the stored values are ra/dec.
+        """
+        if self.right_ascension is None or self.declination is None:
+            return None
+        return SkyCoord(
+            ra=self.right_ascension * u.deg,
+            dec=self.declination * u.deg,
+            frame=self.catalog.coordinate_reference_frame.lower(),
+        )
+
+    @coordinate.expression
+    def coordinate(cls):
+        """
+        SQL form of :attr:`coordinate`: the ``(ra, dec)`` degree pair.
+
+        A SkyCoord has no SQL representation, so in a query
+        ``Target.coordinate`` resolves to a row of the two degree columns --
+        usable for equality and ``IN`` filters, e.g.
+        ``select(Target).where(Target.coordinate.in_([(ra, dec), ...]))``.
+        Spatial / cone search is intentionally left to downstream indexing.
+        """
+        return sa.tuple_(cls.right_ascension, cls.declination)
 
     def __repr__(self) -> str:
         return (
