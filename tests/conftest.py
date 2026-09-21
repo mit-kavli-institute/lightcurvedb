@@ -10,6 +10,18 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from lightcurvedb.core.base_model import LCDBModel
+from lightcurvedb.core.connection import LCDB_Session
+from lightcurvedb.models import (
+    Instrument,
+    Mission,
+    MissionCatalog,
+    Observation,
+    PhotometricSource,
+    ProcessingMethod,
+    Target,
+)
+
+from .util import drop_unmanaged_relations, partitioned_table_names
 
 
 def get_test_database_name(request):
@@ -90,43 +102,6 @@ def worker_database(request):
     admin_engine.dispose()
 
 
-PARTITIONED_TABLES = ("dataset", "target_specific_time", "datasethierarchy")
-
-
-def _drop_unmanaged_relations(engine):
-    """Drop public relations that ``metadata.drop_all`` will not.
-
-    ``drop_all`` only knows about mapped tables. Partitions attached to a
-    mapped parent are dropped with it, but a *detached* one -- a staging
-    or retired partition left behind by a partition-management test -- is
-    an ordinary standalone table and survives. Because partition names are
-    deterministic, the next test in the same worker database then fails on
-    "relation already exists"; worse, a leftover carrying a foreign key to
-    ``observation`` makes ``DROP TABLE observation`` fail and cascades into
-    unrelated failures.
-
-    The managed set is read at call time, not at import: some test modules
-    declare models against the shared metadata when they are imported, so
-    a snapshot taken earlier would sweep tables that are in fact managed.
-    """
-    managed = set(LCDBModel.metadata.tables)
-    with engine.connect() as conn:
-        leftovers = [
-            name
-            for name in conn.execute(
-                sa.text(
-                    "SELECT c.relname FROM pg_class c "
-                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
-                    "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')"
-                )
-            ).scalars()
-            if name not in managed
-        ]
-        for name in leftovers:
-            conn.execute(sa.text(f'DROP TABLE IF EXISTS "{name}" CASCADE'))
-        conn.commit()
-
-
 @pytest.fixture
 def database_engine(worker_database):
     """Engine bound to the worker database, with the schema created.
@@ -175,14 +150,14 @@ def database_engine(worker_database):
     try:
         yield engine
     finally:
-        _drop_unmanaged_relations(engine)
+        drop_unmanaged_relations(engine)
         LCDBModel.metadata.drop_all(bind=engine)
         engine.dispose()
 
 
 @pytest.fixture
 def default_partitions(database_engine):
-    """Catch-all DEFAULT partitions for the three partitioned tables.
+    """Catch-all DEFAULT partitions for every partitioned table.
 
     Lets a test insert into a partitioned table without provisioning a
     partition for the key first.
@@ -195,7 +170,7 @@ def default_partitions(database_engine):
        management tests should use :func:`partitioned_db` instead.
     """
     with database_engine.connect() as conn:
-        for table in PARTITIONED_TABLES:
+        for table in partitioned_table_names():
             conn.execute(
                 sa.text(
                     f"CREATE TABLE IF NOT EXISTS {table}_default "
@@ -216,15 +191,11 @@ def _bound_session(database_engine):
     Session.configure(bind=database_engine)
 
     # Configure global lightcurvedb sessionmaker
-    from lightcurvedb.core.connection import LCDB_Session
-
     LCDB_Session.configure(bind=database_engine)
 
     session = Session()
 
     # Create sentinel records for composite key support
-    from lightcurvedb.models import PhotometricSource, ProcessingMethod
-
     PhotometricSource.get_or_create_unspecified(session)
     ProcessingMethod.get_or_create_unspecified(session)
     session.commit()
@@ -239,21 +210,33 @@ def _bound_session(database_engine):
 def v2_db(_bound_session, default_partitions):
     """Schema, DEFAULT partitions and sentinels -- the general-purpose DB.
 
-    Argument order is load-bearing: pytest resolves fixtures left to
-    right, so ``_bound_session`` runs ``create_all`` before
-    ``default_partitions`` tries to create partitions of those tables.
+    Both arguments depend on ``database_engine``, which runs
+    ``create_all``, so the partitioned parents exist before
+    ``default_partitions`` runs regardless of argument order.
     """
     return _bound_session
 
 
 @pytest.fixture
-def partitioned_db(_bound_session):
+def partitioned_db(_bound_session, request):
     """Schema and sentinels, deliberately *without* DEFAULT partitions.
 
     For partition-management tests, where a DEFAULT partition would make
     ``ATTACH`` scan it -- or fail outright. Provision real partitions
     explicitly instead.
+
+    Refuses to be composed with ``default_partitions``, including
+    transitively. The realistic way that happens is a module requesting
+    ``partitioned_db`` without overriding ``orm_session``: the ``sample_*``
+    graph then resolves through ``v2_db`` and creates the defaults anyway,
+    silently defeating this fixture.
     """
+    if "default_partitions" in request.fixturenames:
+        pytest.fail(
+            "partitioned_db was requested alongside default_partitions "
+            "(directly, or via v2_db / the sample_* fixtures). Override "
+            "orm_session in this module to point at partitioned_db."
+        )
     return _bound_session
 
 
@@ -272,10 +255,8 @@ def orm_session(v2_db):
 
 
 @pytest.fixture
-def sample_mission(orm_session):
+def sample_mission(orm_session) -> Mission:
     """Create a sample mission for tests."""
-    from lightcurvedb.models import Mission
-
     mission = Mission(
         name="Test Mission",
         description="A test mission",
@@ -290,10 +271,8 @@ def sample_mission(orm_session):
 
 
 @pytest.fixture
-def sample_catalog(orm_session, sample_mission):
+def sample_catalog(orm_session, sample_mission) -> MissionCatalog:
     """Create a sample catalog for tests."""
-    from lightcurvedb.models import MissionCatalog
-
     catalog = MissionCatalog(
         name="Test Catalog",
         description="A test catalog",
@@ -305,10 +284,8 @@ def sample_catalog(orm_session, sample_mission):
 
 
 @pytest.fixture
-def sample_target(orm_session, sample_catalog):
+def sample_target(orm_session, sample_catalog) -> Target:
     """Create a sample target for tests."""
-    from lightcurvedb.models import Target
-
     target = Target(catalog=sample_catalog, name=123456789)
     orm_session.add(target)
     orm_session.flush()
@@ -316,10 +293,8 @@ def sample_target(orm_session, sample_catalog):
 
 
 @pytest.fixture
-def sample_instrument(orm_session):
+def sample_instrument(orm_session) -> Instrument:
     """Create a sample instrument for tests."""
-    from lightcurvedb.models import Instrument
-
     instrument = Instrument(
         name="Test Instrument", properties={"type": "test"}
     )
@@ -329,10 +304,8 @@ def sample_instrument(orm_session):
 
 
 @pytest.fixture
-def sample_observation(orm_session, sample_instrument):
+def sample_observation(orm_session, sample_instrument) -> Observation:
     """Create a sample observation for tests."""
-    from lightcurvedb.models import Observation
-
     observation = Observation(
         instrument=sample_instrument,
         cadence_reference=np.arange(100),
@@ -343,10 +316,8 @@ def sample_observation(orm_session, sample_instrument):
 
 
 @pytest.fixture
-def sample_photometric_source(orm_session):
+def sample_photometric_source(orm_session) -> PhotometricSource:
     """Create a named photometric source (not sentinel)."""
-    from lightcurvedb.models import PhotometricSource
-
     source = PhotometricSource(
         id=100, name="Test Aperture", description="Test aperture"
     )
@@ -356,10 +327,8 @@ def sample_photometric_source(orm_session):
 
 
 @pytest.fixture
-def sample_processing_method(orm_session):
+def sample_processing_method(orm_session) -> ProcessingMethod:
     """Create a named processing method (not sentinel)."""
-    from lightcurvedb.models import ProcessingMethod
-
     method = ProcessingMethod(
         id=100, name="Test Method", description="Test processing method"
     )
