@@ -183,7 +183,8 @@ class DataSetHierarchy(LCDBModel):
     source_observation_id : int
         Observation ID of the parent/source dataset
     source_target_id : int
-        Target ID of the parent/source dataset
+        Target ID of the parent/source dataset. Stored as BigInteger to
+        match :attr:`Target.id`.
     source_photometric_method_id : int
         Photometric method ID of the parent/source dataset
     source_processing_method_id : int
@@ -191,7 +192,8 @@ class DataSetHierarchy(LCDBModel):
     child_observation_id : int
         Observation ID of the child/derived dataset
     child_target_id : int
-        Target ID of the child/derived dataset
+        Target ID of the child/derived dataset. Stored as BigInteger to
+        match :attr:`Target.id`.
     child_photometric_method_id : int
         Photometric method ID of the child/derived dataset
     child_processing_method_id : int
@@ -206,6 +208,16 @@ class DataSetHierarchy(LCDBModel):
 
     The composite primary key consists of all 8 columns to ensure unique
     source-child relationships.
+
+    Lineage is constrained to a single observation: a
+    ``CheckConstraint`` enforces ``source_observation_id ==
+    child_observation_id``, so a dataset can never be derived from one in
+    a different observation. This is a modelling restriction, not only an
+    integrity nicety. The table is partitioned on ``source_observation_id``,
+    so the invariant keeps a hierarchy row in the same partition as every
+    dataset row it references, which is what allows ``dataset`` and
+    ``datasethierarchy`` to be detached and reattached as a single unit
+    when an observation's data is replaced.
     """
 
     __tablename__ = "datasethierarchy"
@@ -268,12 +280,28 @@ class DataSetHierarchy(LCDBModel):
             "child_photometric_method_id",
             "child_processing_method_id",
         ),
+        # Lineage never spans observations. Because the table is
+        # partitioned on source_observation_id, this makes the partition
+        # key functionally determine child_observation_id, so a hierarchy
+        # row and every dataset row it references always live in the same
+        # observation -- which is what lets dataset and datasethierarchy
+        # be detached and reattached as one unit.
+        sa.CheckConstraint(
+            "source_observation_id = child_observation_id",
+            name="ck_datasethierarchy_intra_orbit",
+        ),
         {"postgresql_partition_by": "LIST (source_observation_id)"},
     )
 
     # Source dataset composite key columns
     source_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    source_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    # BigInteger is explicit because the foreign key is declared at table
+    # level: SQLAlchemy only infers a column's type from its referent when
+    # the ForeignKey sits on the column itself, so a bare Mapped[int] here
+    # would render INTEGER and overflow on TIC-scale target ids.
+    source_target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.BigInteger, nullable=False
+    )
     source_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
         nullable=False
     )
@@ -283,7 +311,9 @@ class DataSetHierarchy(LCDBModel):
 
     # Child dataset composite key columns
     child_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    child_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    child_target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.BigInteger, nullable=False
+    )
     child_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
         nullable=False
     )

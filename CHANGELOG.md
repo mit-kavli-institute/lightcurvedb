@@ -34,6 +34,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProcessingMethod.get_or_create_unspecified()` class methods
 
 ### Changed
+- **BREAKING**: `DataSetHierarchy` now enforces intra-orbit lineage via
+  `ck_datasethierarchy_intra_orbit`
+  (`source_observation_id = child_observation_id`). A dataset can no
+  longer be derived from one in a different observation. The table is
+  partitioned on `source_observation_id`, so the invariant keeps a
+  hierarchy row in the same partition as every DataSet row it
+  references -- which is what allows `dataset` and `datasethierarchy` to
+  be detached and reattached as one unit when an observation's data is
+  replaced.
+- **BREAKING**: `DataSetHierarchy.source_target_id` and `child_target_id`
+  widened from `INTEGER` to `BIGINT` to match `target.id`. SQLAlchemy only
+  infers a column's type from its referent when the `ForeignKey` sits on
+  the column, so these table-level composite-key columns silently rendered
+  `INTEGER`; a target id above 2^31 could hold a lightcurve but raised
+  `integer out of range` when recording lineage. Requires a table rewrite
+  on provisioned databases -- see Database Administration Notes.
 - **BREAKING**: Refactored dataset processing model architecture
 - **BREAKING**: Replaced `ProcessingGroup` model with direct relationships
   in `DataSet`
@@ -77,8 +93,63 @@ For existing code:
   - Create sentinel records (id=0) in `photometric_source` and
     `processing_method` tables
   - Create PostgreSQL LIST partitions for each observation_id
+  - Widen `datasethierarchy.source_target_id` / `child_target_id` to
+    `BIGINT` (see Database Administration Notes for the procedure)
+  - Add `ck_datasethierarchy_intra_orbit` to `datasethierarchy` (see
+    Database Administration Notes; verify the invariant holds first)
 
 ### Database Administration Notes
+
+#### Widening `datasethierarchy` target ids
+
+Required on any provisioned database. Step 2 rewrites the table and its
+indexes under `ACCESS EXCLUSIVE`, cascading to every partition, so its cost
+is proportional to table size -- size it first and schedule off-peak.
+
+```sql
+-- 1. Size the rewrite.
+SELECT c.relname,
+       c.reltuples::bigint                           AS est_rows,
+       pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+  FROM pg_inherits i
+  JOIN pg_class c ON c.oid = i.inhrelid
+ WHERE i.inhparent = to_regclass('datasethierarchy')
+ ORDER BY pg_total_relation_size(c.oid) DESC;
+
+-- 2. Widen. Cascades to all partitions.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE datasethierarchy
+    ALTER COLUMN source_target_id TYPE bigint,
+    ALTER COLUMN child_target_id  TYPE bigint;
+COMMIT;
+```
+
+#### Enforcing intra-orbit lineage
+
+Step 0 is a stop condition, not a formality: a non-zero count means
+lineage does span observations, the invariant is wrong for this database,
+and the constraint must not be applied until that is resolved.
+
+```sql
+-- 0. PRE-FLIGHT. Must return 0.
+SELECT count(*) AS cross_orbit_rows
+  FROM datasethierarchy
+ WHERE source_observation_id <> child_observation_id;
+
+-- 1. Add the constraint. NOT VALID is a catalog-only change; VALIDATE
+--    scans but takes only SHARE UPDATE EXCLUSIVE, so it blocks neither
+--    reads nor writes.
+ALTER TABLE datasethierarchy
+    ADD CONSTRAINT ck_datasethierarchy_intra_orbit
+    CHECK (source_observation_id = child_observation_id) NOT VALID;
+
+ALTER TABLE datasethierarchy
+    VALIDATE CONSTRAINT ck_datasethierarchy_intra_orbit;
+```
+
+#### Partition management
+
 The DataSet table requires partition management:
 ```sql
 -- Create partitions for each observation
