@@ -3,9 +3,11 @@
 > **Status:** DRAFT REQUIREMENTS — input for a later implementation session, not
 > a plan to execute verbatim.
 >
-> **§8 is blocking.** Spikes Q1, Q2 and Q5 must be answered before any
-> production code is written. Q1 can invalidate the composite foreign keys
-> entirely; Q5 determines whether the swap window is milliseconds or minutes.
+> **Spikes are DONE** — all twelve ran against PostgreSQL 14.23; results and
+> measured timings are in §8. Four prior expectations were wrong, two
+> consequentially: FK catalog growth is linear (so the composite FKs stay), and
+> a detach of a referenced partition is *blocked*, not silently dangling.
+> §8.1 records the one finding that changed the design.
 
 ---
 
@@ -153,10 +155,16 @@ hierarchy columns are plain `orm.Mapped[int]` declared inside a composite
 propagate types through composite FK constraints**.
 
 PostgreSQL accepts an `int4 → int8` FK (there is an `int48eq` in the
-`integer_ops` btree family), so nothing has failed yet. But `target.id` is a
-surrogate `bigserial` and lineage becomes unrepresentable once it exceeds 2³¹.
+`integer_ops` btree family), so the schema builds cleanly. **But it is proven to
+bite** (§8.3): with `target_id = 10005000540`, the `dataset` insert succeeds and
+the matching `datasethierarchy` insert fails with `ERROR: integer out of range`.
+A TIC-scale target can hold a lightcurve but **no lineage at all**.
 
 - **FR-0a** Widen `source_target_id` and `child_target_id` to `BigInteger`.
+- Verified fix: `ALTER TABLE datasethierarchy ALTER COLUMN source_target_id TYPE
+  bigint, ALTER COLUMN child_target_id TYPE bigint;` succeeds on a partitioned
+  table with composite FKs, and the previously-failing insert then works. It
+  **rewrites every partition under `ACCESS EXCLUSIVE`**, so schedule it.
 - Until fixed, every validation anti-join must cast `h.source_target_id::bigint`.
 - Rewriting hierarchy partitions is exactly what this project does anyway;
   deferring means rewriting them twice.
@@ -175,9 +183,15 @@ unit. The user confirms lineage is always intra-orbit, so:
   the invariant that makes the `(dataset, datasethierarchy)` pair a closed
   atomic unit per observation.
 - Validate with `ADD CONSTRAINT ... NOT VALID` then `VALIDATE CONSTRAINT`
-  (`SHARE UPDATE EXCLUSIVE`, does not block reads or writes).
+  (`SHARE UPDATE EXCLUSIVE`, does not block reads or writes). Verified working:
+  a planted cross-orbit row was caught with `ERROR: check constraint
+  "ck_intra_orbit_lineage" of relation "datasethierarchy_obs_7" is violated by
+  some row`.
 - **If validation fails**, cross-orbit rows exist, the premise is wrong, and the
   scope decision must be revisited before continuing. Report the count and stop.
+- The hazard is **real but fail-safe**: §8 confirmed that with a cross-orbit row
+  present, the `dataset` detach is *blocked* by the child FK from the other
+  hierarchy partition. The swap fails loudly; it does not corrupt.
 
 ### 4.3 Noted, not fixed here
 
@@ -199,8 +213,12 @@ committed OpenSSH private key that should be rotated.**
    exactly one of {old, new} is attached; the other is a detached standalone
    table. *This is why "both versions visible to one ORM query" is unavailable
    without changing the primary key.*
-2. **`datasethierarchy` holds composite FKs into `dataset`.** Behaviour on
-   detach is spike-gated (§8, Q2).
+2. **`datasethierarchy` holds composite FKs into `dataset`, and PostgreSQL
+   *blocks* a detach that would orphan them** (§8, Q2). The referencing side
+   must therefore be detached first and attached last — a correctness
+   requirement, not an optimisation. A detached staging table's FK is still a
+   live dependency on the parent, so the staged hierarchy must carry **no** FK
+   before the swap (§8.1).
 3. **A DEFAULT partition makes `ATTACH` expensive and can make it fail.**
    PostgreSQL takes `ACCESS EXCLUSIVE` on the default and scans it to prove no
    row belongs to the incoming bound; if one does, the attach fails outright. A
@@ -322,68 +340,117 @@ pipeline); changing the `DataSet` primary key.
 
 ---
 
-## 8. Mandatory spikes — blocking
+## 8. Spike results — RESOLVED
 
-One `psql -f` against `docker compose up -d db`; under an hour. **Q1, Q2 and Q5
-must be answered before implementation starts.** Record all findings in the PR.
+All twelve questions were run against **PostgreSQL 14.23** (`docker compose up -d db`)
+on a schema reproducing the exact rendered DDL, including the `int4`/`int8`
+mismatch. **Four prior expectations were wrong, two of them consequentially.**
 
-| # | Question | Prior expectation | Gates |
+| # | Question | Prior | **Actual (PG 14.23)** |
 |---|---|---|---|
-| **Q1** | Is FK catalog growth O(N×M) in partition count? Create 10/20/40 partitions on both sides and count `pg_constraint` + internal `pg_trigger` rows; 4× per doubling means quadratic. | ~70% quadratic | **Whether to keep the composite FKs at all.** |
-| **Q2** | Does detaching a *referenced* `dataset` partition silently leave dangling hierarchy rows? | ~70% yes, silent, no error | Whether the integrity gate is advisory or mandatory. |
-| **Q3** | Does detaching a *referencing* `datasethierarchy` partition leave standalone **validated** FKs behind? | High yes | Whether the swap must strip FKs off the retired table. |
-| **Q4** | Does `CHECK (observation_id = N)` let `ATTACH` skip the validation scan? | High yes | §9.6. Measure on an FK-free clone, or FK cloning pollutes the result. |
-| **Q5** | Does `ATTACH` re-verify the referencing FK, and does a pre-created pre-validated FK get **adopted** (`conparentid` set) instead? | ~75% adopted | **Whether the swap window is ms or minutes.** |
-| **Q6** | Cost of `ATTACH` with a DEFAULT partition present. | High: full scan | The no-default-partition recommendation. |
-| **Q7** | Is `ADD FOREIGN KEY ... NOT VALID` allowed on a *partitioned* table in PG 14? | ~70% rejected (landed in PG 18) | Whether the NOT VALID strategy exists at all. |
-| **Q8** | `DETACH CONCURRENTLY`: rejected in a transaction block? rejected with a default partition present? | High / ~80% | Confirms atomic-but-blocking is the only option. |
-| **Q9** | What does plain `DETACH` leave on the detached table? | Medium | `drop_retired()` and rollback. |
-| **Q10** | Does `LIKE INCLUDING ALL` from a *partitioned* parent copy the PK and indexes, and confirm it copies **no** FKs? | High | §9.5. The no-FK half is load-bearing. |
-| **Q11** | Does unquoted `values` parse in `SELECT`/`COPY`? | High yes | Cosmetic; quote regardless. |
-| **Q12** | Timed end-to-end swap dry-run at realistic scale, no default partition. | — | Go/no-go. |
+| **Q1** | FK catalog growth vs partition count | ~70% quadratic | ❌ **LINEAR.** `fk_constraints = 8N + 6`, `internal_triggers = 16N + 8`. 10→20→40 orbit pairs gave 86→166→326 (≈2× per doubling, not 4×). 500 orbits ≈ 4 006 constraints. **The composite FKs are fine to keep — no need to drop them.** |
+| **Q2** | Detaching a *referenced* partition with referencing rows | ~70% silent dangling | ❌ **BLOCKED with a clear error.** `ERROR: removing partition "dataset_obs_5" violates foreign key constraint … Key (5,1,0,0) is still referenced from table "datasethierarchy"`. PostgreSQL enforces integrity; there is **no silent corruption path**. Detach ordering is therefore *mandatory*, not merely prudent. |
+| **Q3** | Do FKs survive on a detached *referencing* partition? | High yes, as standalone validated | ❌ **ZERO FK constraints survive.** The detached `datasethierarchy` partition has no FK rows at all. |
+| **Q4** | Does a matching `CHECK` skip the validation scan? | High yes | ✅ **Yes — 5.8×.** 300k rows: **2.92 ms** with CHECK vs **17.09 ms** without; `seq_tup_read` 357 915 vs 647 304. |
+| **Q5** | Is a pre-created validated FK adopted on attach? | ~75% adopted | ✅ **Yes — ~60×.** Hierarchy attach of 300k rows: **209.0 ms** (cloned) vs **3.5 ms** (adopted, `conparentid` set). **But see §8.1 — this is unusable for the hierarchy side.** |
+| **Q6** | Cost of a DEFAULT partition at attach | Full scan | ✅ 400k-row default present: **9.57 ms** vs 2.92 ms baseline. With a *conflicting* row it **fails outright**: `ERROR: updated partition constraint for default partition "plain_default" would be violated by some row`. |
+| **Q7** | `ADD FOREIGN KEY … NOT VALID` on a partitioned table | ~70% rejected | ✅ **Rejected.** `ERROR: cannot add NOT VALID foreign key on partitioned table … This feature is not yet supported on partitioned tables.` **The NOT VALID escape hatch does not exist on PG 14.** |
+| **Q8** | `DETACH CONCURRENTLY` restrictions | High | ✅ Both confirmed. In a transaction: `ERROR: … cannot run inside a transaction block`. With a default partition: `ERROR: cannot detach partitions concurrently when a default partition exists`. |
+| **Q9** | What plain `DETACH` leaves behind | Medium | Plain `DETACH`: keeps the four outbound FKs (validated) and the PK, `relispartition=f`, and **adds no CHECK**. `DETACH CONCURRENTLY`: **does** add `CHECK ((col IS NOT NULL) AND (col = N))`. |
+| **Q10** | `LIKE INCLUDING ALL` from a partitioned parent | High | ✅ Copies the PK **as a real constraint**, both indexes, and every `NOT NULL`; copies **0 FKs**; yields `relkind='r'` (plain heap — `PARTITION BY` is not copied). `EXCLUDING INDEXES` also drops the PK, so it must be re-added explicitly. |
+| **Q11** | Unquoted `values` column | High yes | ✅ Parses fine. Quote via `sql.Identifier` regardless. |
+| **Q12** | Timed end-to-end swap | — | ✅ **≈225–260 ms** for a 300k + 300k swap. See §8.2. |
 
-**Q2 detail** — the minimal reproduction:
+### 8.1 The finding that changes the design: pre-created hierarchy FKs break the swap
 
-```sql
-CREATE TABLE p (a int, b int, PRIMARY KEY (a, b)) PARTITION BY LIST (a);
-CREATE TABLE p1 PARTITION OF p FOR VALUES IN (1);
-CREATE TABLE c (a int, b int,
-    CONSTRAINT fk FOREIGN KEY (a, b) REFERENCES p (a, b) ON DELETE CASCADE
-) PARTITION BY LIST (a);
-CREATE TABLE c1 PARTITION OF c FOR VALUES IN (1);
-INSERT INTO p VALUES (1, 10);
-INSERT INTO c VALUES (1, 10);
+The Q5 optimisation is **only usable for `dataset`'s four outbound FKs** (which
+reference live non-partitioned tables). Pre-creating the composite FK on the
+*staged hierarchy* table succeeds — its keys `(60, t, 0, 0)` exist in the
+still-live `v0` partition — but that FK then **pins the old partition and blocks
+the swap**:
 
-BEGIN;
-  ALTER TABLE p DETACH PARTITION p1;          -- error, or silently allowed?
-  SELECT count(*) FROM c;                      -- row still there?
-  SELECT count(*) FROM c JOIN p USING (a, b);  -- join now empty?
-ROLLBACK;
+```
+ERROR:  removing partition "dataset_obs_60_v0" violates foreign key constraint
+        "datasethierarchy_obs_60_v1_source_observation_id_source__fkey42"
+DETAIL: Key (60,1,0,0) is still referenced from table "datasethierarchy_obs_60_v1".
 ```
 
-`DetachPartitionFinalize()` iterates `GetParentedForeignKeyRefs(partRel)` and,
-for each sub-constraint where the partition is the *referenced* relation, clears
-`conparentid` and `performDeletion()`s the constraint — i.e. it removes the FK
-machinery and checks nothing. The strongest corroborating evidence is the
-well-known sibling behaviour: `DROP TABLE` on a partition of an FK-referenced
-partitioned table neither blocks nor cascades. **If confirmed, the integrity
-burden is entirely on the application and the in-transaction gate in §9.7 is
-mandatory, not optional.**
+A detached staging table's FK is still a real dependency on the live parent.
+Combined with Q7 (no `NOT VALID` on partitioned tables), there is **no way to
+move the hierarchy FK validation outside the swap window on PG 14.** Budget for
+it: **~0.7–0.8 µs per hierarchy row** (215–251 ms / 300k). A 3M-row hierarchy
+partition is ≈2–2.5 s of `ACCESS EXCLUSIVE`; 10M rows ≈7–8 s.
 
-**Deliverable:** a version-pinned characterisation test
-(`test_detaching_dataset_partition_with_live_hierarchy_rows`) asserting whatever
-PG 14 actually does, so a PG 15/16/17 upgrade surfaces the change as a red test
-rather than production data loss.
+### 8.2 Measured swap cost (300k dataset + 300k hierarchy rows)
 
-**If Q1 confirms the quadratic explosion**, seriously evaluate **dropping the two
-composite FKs from the model**. Between catalog bloat (500 orbits → ~500k
-constraint rows and their triggers), the §4.1 type mismatch, and the
-silent-dangling behaviour of Q2, they buy little real integrity at high
-operational cost. Replacing them with a scheduled anti-join audit plus
-write-path enforcement makes every attach/detach pure catalog work. Present this
-to the team as a real option.
+| Step | Time |
+|---|---|
+| `LOCK TABLE` both parents | 0.29 ms |
+| 1. `DETACH` hierarchy v0 (referencing side first) | 0.83 ms |
+| 2. `DETACH` dataset v0 | 5.31 ms |
+| 3. `ATTACH` dataset v1 — pre-created FKs **adopted** | 0.92 ms |
+| 4. `ATTACH` hierarchy v1 — FK cloned + validated | **215–251 ms** |
+| `COMMIT` | 0.67 ms |
+| **Total critical section** | **≈225–260 ms** |
 
----
+Step 4 is **96–97% of the window** (two clean runs: 215.15 ms and 251.35 ms;
+everything else stays under 6 ms). Verified afterwards: new values live
+(`9.9`/`0.1`, 300 000 rows), both retired tables intact with `relispartition=f`,
+and all four `dataset` v1 FKs showing `conparentid ≠ 0`.
+
+**Rollback** (mirror swap) measured **≈220 ms**, same shape as the forward swap, and correctly restored the old
+data. Note the retired dataset re-attach cost **10.34 ms** rather than ~1 ms,
+because plain `DETACH` left no CHECK (Q9) — **add a
+`CHECK (observation_id = N)` to the retired table right after detaching it** to
+keep rollback cheap.
+
+### 8.3 Additional findings not in the original question list
+
+- **Loading through the partitioned parent is 18–75× slower than loading a
+  standalone staging table.** 300k rows: `dataset` **2 454 ms** via the parent
+  vs **133 ms** direct; `datasethierarchy` **7 206 ms** vs **96 ms**. Tuple
+  routing plus per-row composite-FK triggers dominate. This is an independent
+  argument for the staging design, beyond coexistence.
+- **Binary `COPY` round-trips `float8[]` exactly** — `NaN`, `±Inf`, empty array
+  (`{}`, distinct from NULL), NULL `errors`, and denormals (`5e-324`) all
+  verified, `dtype float64` preserved. `COPY` and `executemany` produce
+  byte-identical tables (`EXCEPT` both directions returns 0). `COPY` is
+  **~6× faster** on 20k × 1000-element arrays (1.97 s / 2.17 s vs 12.78 s /
+  12.68 s over two runs).
+- **`NaN` array equality matches NumPy.** `ARRAY['NaN',1.0] IS DISTINCT FROM
+  ARRAY['NaN',1.0]` → **false** (PostgreSQL treats `NaN = NaN` as true), which
+  is exactly `np.array_equal(..., equal_nan=True)`. **The two-pass diff design
+  in FR-13 is sound** — the SQL pass and the NumPy pass agree. Also
+  `cardinality('{}') = 0` while `array_length('{}',1)` is **NULL**.
+- **Per-partition FK constraint names are auto-generated, truncated and
+  numerically suffixed** (`datasethierarchy_source_observation_id_source_tar…_fkey27`),
+  not derived from the parent's name. **Never hardcode them** — always read from
+  `pg_constraint`.
+- **The §4.1 defect is proven to bite, hard.** `INSERT INTO dataset` with
+  `target_id = 10005000540` succeeds; the matching `datasethierarchy` insert
+  fails with `ERROR: integer out of range`. A TIC-scale target can have a
+  lightcurve but **no lineage at all**. `ALTER TABLE … ALTER COLUMN … TYPE
+  bigint` fixes it and the insert then succeeds (it rewrites every partition
+  under `ACCESS EXCLUSIVE`, so schedule it).
+- **The §4.2 invariant validates correctly.** `ADD CONSTRAINT … NOT VALID` +
+  `VALIDATE CONSTRAINT` caught a planted cross-orbit row with
+  `ERROR: check constraint "ck_intra_orbit_lineage" of relation
+  "datasethierarchy_obs_7" is violated by some row` — and with that row present,
+  the `dataset` detach is blocked by the *child* FK from hierarchy partition 7,
+  proving the cross-orbit hazard is real and **fails loudly rather than
+  corrupting**.
+
+Reproduction scripts: `docs/spikes/partition_swap/` (see §8.4).
+
+### 8.4 Reproducing
+
+```bash
+docker compose up -d db
+for f in docs/spikes/partition_swap/*.sql; do
+  docker compose exec -T db psql -U postgres -d postgres -f - < "$f"
+done
+python docs/spikes/partition_swap/copy_test.py
+```
 
 ## 9. Architecture
 
@@ -594,14 +661,18 @@ ALTER TABLE public.dataset          DETACH PARTITION public.dataset_obs_5_v3;
 ALTER TABLE public.dataset          ATTACH PARTITION public.dataset_obs_5_v4          FOR VALUES IN (5);
 ALTER TABLE public.datasethierarchy ATTACH PARTITION public.datasethierarchy_obs_5_v4 FOR VALUES IN (5);
 
--- Strip the now logically-violated FKs off the retired hierarchy table (Q3).
--- Detach converts inherited FKs into standalone VALIDATED constraints that now
--- reference rows no longer in the live dataset; pg_dump of that table would fail.
-ALTER TABLE public.datasethierarchy_obs_5_v3 DROP CONSTRAINT fk_datasethierarchy_source;
-ALTER TABLE public.datasethierarchy_obs_5_v3 DROP CONSTRAINT fk_datasethierarchy_child;
+-- NO FK cleanup is needed on the retired hierarchy table: Q3 showed detach
+-- leaves it with ZERO foreign keys.  (An earlier draft dropped them here; that
+-- would now raise "constraint does not exist".)
 
--- In-transaction integrity gate (mandatory if Q2 confirms silent dangling).
--- With the §4.2 invariant this is bounded to the swapped partition.
+-- Keep rollback cheap: plain DETACH adds no CHECK (Q9), so the retired dataset
+-- partition would be re-validated on re-attach (10.3 ms vs ~1 ms at 300k rows).
+ALTER TABLE public.dataset_obs_5_v3
+    ADD CONSTRAINT dataset_obs_5_v3_partcheck CHECK (observation_id = 5);
+
+-- No in-transaction integrity gate is required: Q2 showed PostgreSQL BLOCKS a
+-- detach that would orphan referencing rows, so the swap fails loudly on its
+-- own.  The §4.2 invariant keeps that failure scoped to this observation.
 
 UPDATE public.partition_revision SET swapped_on = now()
  WHERE observation_id = 5 AND revision = 4 AND base_table IN ('dataset','datasethierarchy');
@@ -614,27 +685,28 @@ absent dataset row, and the referencing attach sees the new keys already in
 place. Put the registry `UPDATE` **inside** the transaction — that removes an
 entire row from the crash-recovery matrix.
 
-**Making the referencing attach cheap.** `CloneFkReferencing()` looks for an
-already-suitable constraint on the partition being attached (matched
-structurally: same `confrelid`, key columns, update/delete/match actions, and
-`convalidated`) and adopts it via `ConstraintSetParentConstraint()`, skipping
-verification. This works cleanly for **`dataset`'s four outbound FKs** — they
-reference non-partitioned live tables, so pre-create and pre-validate them
-outside the lock window (names must match the parent's; read them from
-`pg_constraint`, don't hardcode). It **cannot** work for `datasethierarchy`,
-whose rows reference the not-yet-attached new dataset rows — chicken-and-egg.
-Q5 measures what that costs; if Q7 shows `NOT VALID` is rejected on partitioned
-tables, there is no alternative escape hatch.
+**FK adoption — do it for `dataset`, never for `datasethierarchy`.**
+PostgreSQL looks for a structurally-matching validated constraint on the
+partition being attached and adopts it instead of re-verifying (Q5: **209 ms →
+3.5 ms** at 300k rows). Pre-create and pre-validate `dataset`'s four outbound
+FKs outside the lock window — they reference live non-partitioned tables, so
+this works and is measured at **0.92 ms** for the dataset attach.
+
+**Do not do this for the staged hierarchy.** §8.1: its pre-created FK succeeds
+(the keys still exist in the live old partition) but then *pins that partition
+and blocks the detach*. Combined with Q7 (`NOT VALID` rejected on partitioned
+tables) there is **no way to move hierarchy FK validation out of the swap
+window on PG 14**. Budget **~0.7–0.8 µs per hierarchy row**; measured
+215–251 ms at 300k, which is 96–97% of the total window.
 
 **Rollback.** Before COMMIT: `ROLLBACK` — that is the entire undo, and it is the
 whole reason for atomic-over-concurrent. After COMMIT and before
 `drop_retired()`: the mirror swap, valid only while the retired relation exists
-(exactly the window the coexistence requirement asks for). **Ordering hazard:**
-re-adding the stripped FKs to the retired hierarchy table must happen *after*
-the `dataset` re-attach, or they validate against an empty obs-5 key space and
-fail. Alternatively add them `NOT VALID` and validate post-commit. Derive the
-exact order from the Q12 dry-run. After `drop_retired()`: no undo — restore from
-backup, which is why the drop is gated on `accepted_on IS NOT NULL`.
+(exactly the window the coexistence requirement asks for). Measured at
+**≈220 ms** and it correctly restored the old
+values. There are no stripped FKs to re-add (Q3), so the mirror swap is a plain
+reversal. After `drop_retired()`: no undo — restore from backup, which is why
+the drop is gated on `accepted_on IS NOT NULL`.
 
 **Retry policy.** `lock_timeout` only bounds the wait. Catch SQLSTATE `55P03`
 (`lock_not_available`), back off exponentially with jitter, and log
@@ -652,9 +724,14 @@ automatically. Convert with `ndarray.tolist()` (C-speed, native floats) rather
 than passing ndarrays element-wise. Name all six columns explicitly (§4.3).
 Validate `arr.ndim == 1`.
 
-Binary is typically 2–4× faster than text for wide `float8[]` and avoids
-17-digit float formatting; expose a `format="text"` flag for debugging.
-`executemany` is 5–20× slower and stays for the registry and small fixtures.
+Measured (§8.3): binary `COPY` is **~6× faster** than `executemany` on
+20k × 1000-element arrays and the two produce byte-identical tables. Expose a `format="text"` flag for debugging; keep `executemany` for the
+registry and small fixtures.
+
+**Load into the standalone staging table, never through the partitioned
+parent** — measured **18× faster for `dataset`** (133 ms vs 2 454 ms per 300k
+rows) and **75× for `datasethierarchy`** (96 ms vs 7 206 ms), because staging
+skips tuple routing and per-row composite-FK triggers.
 
 **Decide explicitly whether "no measurement" is a `NaN` element or a `NULL`
 element, and assert it in the loader.** `NaN` keeps array indices aligned with
@@ -826,24 +903,24 @@ Conventional commits enforced twice (pre-commit `commit-msg` hook +
 
 | # | Branch | Subject | Depends on |
 |---|---|---|---|
-| 0 | `spike/partition-fk-detach` | *(throwaway)* run Q1–Q12, record findings | — |
+| 0 | ~~`spike/partition-fk-detach`~~ | **DONE** — Q1–Q12 run against PG 14.23; results in §8, scripts in `docs/spikes/partition_swap/` | — |
 | 0b | `fix/datasethierarchy-target-id-width` | `fix(models): widen datasethierarchy target ids to BigInteger` | — |
 | 0c | `feat/intra-orbit-lineage-invariant` | `feat(models): enforce intra-orbit lineage on datasethierarchy` | 0b |
 | 1 | `feature/partition-test-fixtures` | `test: decompose v2_db into composable database fixtures` | — |
 | 2 | `feature/partition-naming` | `feat(core): add partition naming policy and error types` | 1 |
 | 3 | `feature/partition-catalog` | `feat(core): add PostgreSQL partition introspection` | 2 |
-| 4 | `feature/partition-ddl` | `feat(core): add partition DDL primitives` | 0, 3 |
+| 4 | `feature/partition-ddl` | `feat(core): add partition DDL primitives` | 3 |
 | 5 | `feature/partition-registry` | `feat(models): add partition revision provenance` | 1 |
 | 6 | `feature/staged-entity` | `feat(core): expose detached partitions as ORM entities` | 2 |
 | 7 | `feature/partition-bulk-load` | `feat(core): add binary COPY loaders for partition staging` | 4, 6 |
-| 8 | `feature/partition-swap` | `feat(core): add atomic multi-table partition swap` | 0, 4 |
+| 8 | `feature/partition-swap` | `feat(core): add atomic multi-table partition swap` | 4 |
 | 9 | `feature/partition-reconcile` | `feat(core): reconcile partition registry against pg_catalog` | 3, 5 |
 | 10 | `feature/dataset-comparison` | `feat(core): add staged-vs-live dataset comparison` | 6, 7 |
 | 11 | `feature/replacement-campaign` | `feat(core): add orbit replacement campaign workflow` | 5, 7, 8, 9, 10 |
 | 12 | `feature/partitioning-docs` | `docs: document partition management and lightcurve replacement` | 11 |
 
-**Rationale.** 0 first because Q1 can invalidate the composite FKs and Q2/Q5
-change the swap. 0b/0c are the prerequisite fixes and must precede any hierarchy
+**Rationale.** 0 is complete — Q1 cleared the composite FKs and Q2/Q5 fixed the
+swap shape, so 4 and 8 are unblocked. 0b/0c are the prerequisite fixes and must precede any hierarchy
 partition being written, or they get rewritten twice. 1 lands alone so a fixture
 regression is unambiguous, with ~250 existing tests as its regression suite.
 2→3→4 strict bottom-up. 5 and 6 are independent, parallelisable. 8 separate from
@@ -865,7 +942,8 @@ docker-compose up -d db          # postgres:14, matches CI
 pip install -e ".[dev]"
 ```
 
-1. **Spikes** — run Q1–Q12 against the scratch DB; record outputs in the PR.
+1. **Spikes** — already run against PG 14.23; see §8. Re-run with
+   `docs/spikes/partition_swap/` if the server major version changes.
 2. **Prerequisites** — after 0b/0c, confirm `VALIDATE CONSTRAINT` succeeds on
    production-shaped data. If the intra-orbit check fails, **stop** and revisit
    scope.
