@@ -16,16 +16,21 @@ for f in docs/spikes/partition_swap/*.sql; do
   echo "== $f"
   docker compose exec -T db psql -U postgres -d postgres -f - < "$f"
 done
-python docs/spikes/partition_swap/copy_test.py
+python docs/spikes/partition_swap/copy_roundtrip.py
 ```
 
 Run them **in numeric order** — each builds on the previous one's state. Several
 deliberately provoke errors and set `ON_ERROR_STOP 0`; the errors *are* the
-results. `copy_test.py` needs `psycopg[binary]` and `numpy`, and honours
+results. `copy_roundtrip.py` needs `psycopg[binary]` and `numpy`, and honours
 `LCDB_SPIKE_DSN` (or `POSTGRES_USER` / `POSTGRES_PASSWORD` /
 `POSTGRES_HOST_LOCAL` / `POSTGRES_PORT`).
 
 This schema is disposable: `DROP SCHEMA spike CASCADE;`
+
+> **Naming:** the Python script must not be named `*_test.py` or
+> `test_*.py`. The repo has no `testpaths` setting, so pytest collects from
+> the root and would import it as a test module. It is additionally guarded
+> behind `if __name__ == "__main__"`, so importing it is inert.
 
 ## What each file answers
 
@@ -43,4 +48,4 @@ This schema is disposable: `DROP SCHEMA spike CASCADE;`
 | `09_swap_correct.sql` | Q12 — the correct swap, timed per statement |
 | `10_rollback_and_arrays.sql` | Rollback swap; `float8[]` NaN/Inf/empty/NULL semantics |
 | `11_target_id_defect_and_invariant.sql` | Proves the `int4` `target_id` defect; validates the intra-orbit CHECK |
-| `copy_test.py` | Binary `COPY` round-trip fidelity, differential vs `executemany`, throughput |
+| `copy_roundtrip.py` | Binary `COPY` round-trip fidelity, differential vs `executemany`, throughput |

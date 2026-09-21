@@ -449,7 +449,7 @@ docker compose up -d db
 for f in docs/spikes/partition_swap/*.sql; do
   docker compose exec -T db psql -U postgres -d postgres -f - < "$f"
 done
-python docs/spikes/partition_swap/copy_test.py
+python docs/spikes/partition_swap/copy_roundtrip.py
 ```
 
 ## 9. Architecture
