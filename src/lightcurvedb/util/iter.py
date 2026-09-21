@@ -77,6 +77,11 @@ def eq_partitions(iterable: Iterable[T], n: int) -> tuple[list[T], ...]:
     ------
     ValueError
         Raised if ``n`` is less than 1.
+
+    Notes
+    -----
+    This is in-memory list splitting and is unrelated to the PostgreSQL
+    partition management in :mod:`lightcurvedb.core.partitions`.
     """
     if n < 1:
         raise ValueError("Number of partitions must be at least 1")
