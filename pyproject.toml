@@ -115,6 +115,16 @@ allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "style", 
 minor_tags = ["feat"]
 patch_tags = ["fix", "perf", "refactor", "build", "chore", "ci", "docs", "style", "test"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: takes seconds, e.g. lock contention or a large load",
+    "partitioning: exercises real PostgreSQL partition DDL",
+]
+# pytest-timeout is a dev dependency; without a default a deadlocked
+# lock-contention test would hang the run instead of failing it.
+timeout = 300
+
 [tool.coverage.run]
 source = ["lightcurvedb"]
 parallel = true
