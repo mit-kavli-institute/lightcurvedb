@@ -3,6 +3,7 @@ import pathlib
 import time
 from tempfile import TemporaryDirectory
 
+import numpy as np
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
@@ -89,10 +90,50 @@ def worker_database(request):
     admin_engine.dispose()
 
 
+PARTITIONED_TABLES = ("dataset", "target_specific_time", "datasethierarchy")
+
+
+def _drop_unmanaged_relations(engine):
+    """Drop public relations that ``metadata.drop_all`` will not.
+
+    ``drop_all`` only knows about mapped tables. Partitions attached to a
+    mapped parent are dropped with it, but a *detached* one -- a staging
+    or retired partition left behind by a partition-management test -- is
+    an ordinary standalone table and survives. Because partition names are
+    deterministic, the next test in the same worker database then fails on
+    "relation already exists"; worse, a leftover carrying a foreign key to
+    ``observation`` makes ``DROP TABLE observation`` fail and cascades into
+    unrelated failures.
+
+    The managed set is read at call time, not at import: some test modules
+    declare models against the shared metadata when they are imported, so
+    a snapshot taken earlier would sweep tables that are in fact managed.
+    """
+    managed = set(LCDBModel.metadata.tables)
+    with engine.connect() as conn:
+        leftovers = [
+            name
+            for name in conn.execute(
+                sa.text(
+                    "SELECT c.relname FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')"
+                )
+            ).scalars()
+            if name not in managed
+        ]
+        for name in leftovers:
+            conn.execute(sa.text(f'DROP TABLE IF EXISTS "{name}" CASCADE'))
+        conn.commit()
+
+
 @pytest.fixture
-def v2_db(worker_database):
-    """Database session fixture that uses the worker-specific database."""
-    # Connect to the worker-specific database
+def database_engine(worker_database):
+    """Engine bound to the worker database, with the schema created.
+
+    Tears down by sweeping unmanaged relations and then dropping the
+    mapped tables, so each test starts from a known-empty schema.
+    """
     url = sa.URL.create(
         "postgresql+psycopg",
         database=worker_database["name"],
@@ -129,56 +170,202 @@ def v2_db(worker_database):
                     f"after {max_retries} attempts"
                 ) from e
 
-    # Create tables for this test
     LCDBModel.metadata.create_all(bind=engine, checkfirst=True)
 
-    # Create default partition for the partitioned dataset table
-    # This is required because the dataset table uses LIST partitioning
-    with engine.connect() as conn:
-        conn.execute(
-            sa.text(
-                "CREATE TABLE IF NOT EXISTS dataset_default "
-                "PARTITION OF dataset DEFAULT"
+    try:
+        yield engine
+    finally:
+        _drop_unmanaged_relations(engine)
+        LCDBModel.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+@pytest.fixture
+def default_partitions(database_engine):
+    """Catch-all DEFAULT partitions for the three partitioned tables.
+
+    Lets a test insert into a partitioned table without provisioning a
+    partition for the key first.
+
+    .. warning::
+       A DEFAULT partition makes every subsequent ``ATTACH PARTITION``
+       scan it under ``ACCESS EXCLUSIVE`` to prove no row belongs to the
+       incoming bound, and makes the attach fail outright if one does. It
+       also forbids ``DETACH PARTITION ... CONCURRENTLY``. Partition
+       management tests should use :func:`partitioned_db` instead.
+    """
+    with database_engine.connect() as conn:
+        for table in PARTITIONED_TABLES:
+            conn.execute(
+                sa.text(
+                    f"CREATE TABLE IF NOT EXISTS {table}_default "
+                    f"PARTITION OF {table} DEFAULT"
+                )
             )
-        )
-        conn.execute(
-            sa.text(
-                "CREATE TABLE IF NOT EXISTS target_specific_time_default "
-                "PARTITION OF target_specific_time DEFAULT"
-            )
-        )
-        conn.execute(
-            sa.text(
-                "CREATE TABLE IF NOT EXISTS datasethierarchy_default "
-                "PARTITION OF datasethierarchy DEFAULT"
-            )
-        )
         conn.commit()
 
+
+@pytest.fixture
+def _bound_session(database_engine):
+    """Session on the worker database, with the id=0 sentinels present.
+
+    Also rebinds the global ``LCDB_Session`` so code reaching for the
+    module-level session lands on the test database.
+    """
     Session = sessionmaker()
-    Session.configure(bind=engine)
+    Session.configure(bind=database_engine)
 
     # Configure global lightcurvedb sessionmaker
     from lightcurvedb.core.connection import LCDB_Session
 
-    LCDB_Session.configure(bind=engine)
+    LCDB_Session.configure(bind=database_engine)
+
+    session = Session()
+
+    # Create sentinel records for composite key support
+    from lightcurvedb.models import PhotometricSource, ProcessingMethod
+
+    PhotometricSource.get_or_create_unspecified(session)
+    ProcessingMethod.get_or_create_unspecified(session)
+    session.commit()
 
     try:
-        session = Session()
-
-        # Create sentinel records for composite key support
-        from lightcurvedb.models import PhotometricSource, ProcessingMethod
-
-        PhotometricSource.get_or_create_unspecified(session)
-        ProcessingMethod.get_or_create_unspecified(session)
-        session.commit()
-
         yield session
-        session.close()
     finally:
-        # Clean up tables after test
-        LCDBModel.metadata.drop_all(bind=engine)
-        engine.dispose()
+        session.close()
+
+
+@pytest.fixture
+def v2_db(_bound_session, default_partitions):
+    """Schema, DEFAULT partitions and sentinels -- the general-purpose DB.
+
+    Argument order is load-bearing: pytest resolves fixtures left to
+    right, so ``_bound_session`` runs ``create_all`` before
+    ``default_partitions`` tries to create partitions of those tables.
+    """
+    return _bound_session
+
+
+@pytest.fixture
+def partitioned_db(_bound_session):
+    """Schema and sentinels, deliberately *without* DEFAULT partitions.
+
+    For partition-management tests, where a DEFAULT partition would make
+    ``ATTACH`` scan it -- or fail outright. Provision real partitions
+    explicitly instead.
+    """
+    return _bound_session
+
+
+@pytest.fixture
+def orm_session(v2_db):
+    """Session the ``sample_*`` fixtures build against.
+
+    Indirection so a module can point the shared object graph at a
+    different database without redefining every fixture::
+
+        @pytest.fixture
+        def orm_session(partitioned_db):
+            return partitioned_db
+    """
+    return v2_db
+
+
+@pytest.fixture
+def sample_mission(orm_session):
+    """Create a sample mission for tests."""
+    from lightcurvedb.models import Mission
+
+    mission = Mission(
+        name="Test Mission",
+        description="A test mission",
+        time_epoch=2457000,
+        time_epoch_scale="tdb",
+        time_epoch_format="jd",
+        time_format_name="test_time",
+    )
+    orm_session.add(mission)
+    orm_session.flush()
+    return mission
+
+
+@pytest.fixture
+def sample_catalog(orm_session, sample_mission):
+    """Create a sample catalog for tests."""
+    from lightcurvedb.models import MissionCatalog
+
+    catalog = MissionCatalog(
+        name="Test Catalog",
+        description="A test catalog",
+        host_mission=sample_mission,
+    )
+    orm_session.add(catalog)
+    orm_session.flush()
+    return catalog
+
+
+@pytest.fixture
+def sample_target(orm_session, sample_catalog):
+    """Create a sample target for tests."""
+    from lightcurvedb.models import Target
+
+    target = Target(catalog=sample_catalog, name=123456789)
+    orm_session.add(target)
+    orm_session.flush()
+    return target
+
+
+@pytest.fixture
+def sample_instrument(orm_session):
+    """Create a sample instrument for tests."""
+    from lightcurvedb.models import Instrument
+
+    instrument = Instrument(
+        name="Test Instrument", properties={"type": "test"}
+    )
+    orm_session.add(instrument)
+    orm_session.flush()
+    return instrument
+
+
+@pytest.fixture
+def sample_observation(orm_session, sample_instrument):
+    """Create a sample observation for tests."""
+    from lightcurvedb.models import Observation
+
+    observation = Observation(
+        instrument=sample_instrument,
+        cadence_reference=np.arange(100),
+    )
+    orm_session.add(observation)
+    orm_session.flush()
+    return observation
+
+
+@pytest.fixture
+def sample_photometric_source(orm_session):
+    """Create a named photometric source (not sentinel)."""
+    from lightcurvedb.models import PhotometricSource
+
+    source = PhotometricSource(
+        id=100, name="Test Aperture", description="Test aperture"
+    )
+    orm_session.add(source)
+    orm_session.flush()
+    return source
+
+
+@pytest.fixture
+def sample_processing_method(orm_session):
+    """Create a named processing method (not sentinel)."""
+    from lightcurvedb.models import ProcessingMethod
+
+    method = ProcessingMethod(
+        id=100, name="Test Method", description="Test processing method"
+    )
+    orm_session.add(method)
+    orm_session.flush()
+    return method
 
 
 @pytest.fixture
