@@ -208,6 +208,16 @@ class DataSetHierarchy(LCDBModel):
 
     The composite primary key consists of all 8 columns to ensure unique
     source-child relationships.
+
+    Lineage is constrained to a single observation: a
+    ``CheckConstraint`` enforces ``source_observation_id ==
+    child_observation_id``, so a dataset can never be derived from one in
+    a different observation. This is a modelling restriction, not only an
+    integrity nicety. The table is partitioned on ``source_observation_id``,
+    so the invariant keeps a hierarchy row in the same partition as every
+    dataset row it references, which is what allows ``dataset`` and
+    ``datasethierarchy`` to be detached and reattached as a single unit
+    when an observation's data is replaced.
     """
 
     __tablename__ = "datasethierarchy"
@@ -269,6 +279,16 @@ class DataSetHierarchy(LCDBModel):
             "child_target_id",
             "child_photometric_method_id",
             "child_processing_method_id",
+        ),
+        # Lineage never spans observations. Because the table is
+        # partitioned on source_observation_id, this makes the partition
+        # key functionally determine child_observation_id, so a hierarchy
+        # row and every dataset row it references always live in the same
+        # observation -- which is what lets dataset and datasethierarchy
+        # be detached and reattached as one unit.
+        sa.CheckConstraint(
+            "source_observation_id = child_observation_id",
+            name="ck_datasethierarchy_intra_orbit",
         ),
         {"postgresql_partition_by": "LIST (source_observation_id)"},
     )

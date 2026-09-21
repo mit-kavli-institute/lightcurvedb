@@ -1434,3 +1434,36 @@ class TestDataSetHierarchySchema:
         ).scalar_one()
         assert stored.source_target_id == big_id
         assert stored.child_target_id == big_id
+
+    def test_cross_orbit_lineage_rejected(
+        self,
+        v2_db: orm.Session,
+        sample_target: Target,
+        sample_observation: Observation,
+    ):
+        """Lineage may not span observations.
+
+        The check is what makes (dataset, datasethierarchy) a closed unit
+        per observation: without it a row could sit in the hierarchy
+        partition for one observation while referencing dataset rows in
+        another.
+
+        Built directly rather than through ``add_derived_dataset``, which
+        cannot produce a mismatched pair from two datasets in the same
+        observation.
+        """
+        link = DataSetHierarchy(
+            source_observation_id=sample_observation.id,
+            source_target_id=sample_target.id,
+            source_photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            source_processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+            child_observation_id=sample_observation.id + 1,
+            child_target_id=sample_target.id,
+            child_photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            child_processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+        )
+        v2_db.add(link)
+
+        with pytest.raises(IntegrityError):
+            v2_db.commit()
+        v2_db.rollback()

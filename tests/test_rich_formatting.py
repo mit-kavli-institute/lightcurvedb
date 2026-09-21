@@ -222,7 +222,9 @@ class TestRichReprOverrides:
             source_target_id=10,
             source_photometric_method_id=0,
             source_processing_method_id=0,
-            child_observation_id=2,
+            # Lineage is intra-orbit: child_observation_id must match
+            # source_observation_id (ck_datasethierarchy_intra_orbit).
+            child_observation_id=1,
             child_target_id=20,
             child_photometric_method_id=0,
             child_processing_method_id=0,
@@ -231,7 +233,7 @@ class TestRichReprOverrides:
         assert pairs == [
             ("source_obs", 1),
             ("source_target", 10),
-            ("child_obs", 2),
+            ("child_obs", 1),
             ("child_target", 20),
         ]
 

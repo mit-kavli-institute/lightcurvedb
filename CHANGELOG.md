@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProcessingMethod.get_or_create_unspecified()` class methods
 
 ### Changed
+- **BREAKING**: `DataSetHierarchy` now enforces intra-orbit lineage via
+  `ck_datasethierarchy_intra_orbit`
+  (`source_observation_id = child_observation_id`). A dataset can no
+  longer be derived from one in a different observation. The table is
+  partitioned on `source_observation_id`, so the invariant keeps a
+  hierarchy row in the same partition as every DataSet row it
+  references -- which is what allows `dataset` and `datasethierarchy` to
+  be detached and reattached as one unit when an observation's data is
+  replaced.
 - **BREAKING**: `DataSetHierarchy.source_target_id` and `child_target_id`
   widened from `INTEGER` to `BIGINT` to match `target.id`. SQLAlchemy only
   infers a column's type from its referent when the `ForeignKey` sits on
@@ -86,6 +95,8 @@ For existing code:
   - Create PostgreSQL LIST partitions for each observation_id
   - Widen `datasethierarchy.source_target_id` / `child_target_id` to
     `BIGINT` (see Database Administration Notes for the procedure)
+  - Add `ck_datasethierarchy_intra_orbit` to `datasethierarchy` (see
+    Database Administration Notes; verify the invariant holds first)
 
 ### Database Administration Notes
 
@@ -112,6 +123,29 @@ ALTER TABLE datasethierarchy
     ALTER COLUMN source_target_id TYPE bigint,
     ALTER COLUMN child_target_id  TYPE bigint;
 COMMIT;
+```
+
+#### Enforcing intra-orbit lineage
+
+Step 0 is a stop condition, not a formality: a non-zero count means
+lineage does span observations, the invariant is wrong for this database,
+and the constraint must not be applied until that is resolved.
+
+```sql
+-- 0. PRE-FLIGHT. Must return 0.
+SELECT count(*) AS cross_orbit_rows
+  FROM datasethierarchy
+ WHERE source_observation_id <> child_observation_id;
+
+-- 1. Add the constraint. NOT VALID is a catalog-only change; VALIDATE
+--    scans but takes only SHARE UPDATE EXCLUSIVE, so it blocks neither
+--    reads nor writes.
+ALTER TABLE datasethierarchy
+    ADD CONSTRAINT ck_datasethierarchy_intra_orbit
+    CHECK (source_observation_id = child_observation_id) NOT VALID;
+
+ALTER TABLE datasethierarchy
+    VALIDATE CONSTRAINT ck_datasethierarchy_intra_orbit;
 ```
 
 #### Partition management

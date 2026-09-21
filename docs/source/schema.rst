@@ -535,3 +535,13 @@ The schema enforces several important constraints:
    - DataSet table is partitioned by LIST on ``observation_id``
    - Partitions must be created by DBA before inserting data for new observations
    - A default partition handles unexpected observation IDs
+
+6. **Check Constraints**:
+
+   - **Alias**: ``target_id <> counterpart_id`` prevents a target aliasing itself
+   - **DataSetHierarchy**: ``source_observation_id = child_observation_id``
+     (``ck_datasethierarchy_intra_orbit``) restricts lineage to a single
+     observation. Since the table is partitioned on ``source_observation_id``,
+     this keeps a hierarchy row in the same partition as every DataSet row it
+     references, which is what allows ``dataset`` and ``datasethierarchy`` to be
+     detached and reattached as one unit when an observation's data is replaced.
