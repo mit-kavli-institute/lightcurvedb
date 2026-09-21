@@ -183,7 +183,8 @@ class DataSetHierarchy(LCDBModel):
     source_observation_id : int
         Observation ID of the parent/source dataset
     source_target_id : int
-        Target ID of the parent/source dataset
+        Target ID of the parent/source dataset. Stored as BigInteger to
+        match :attr:`Target.id`.
     source_photometric_method_id : int
         Photometric method ID of the parent/source dataset
     source_processing_method_id : int
@@ -191,7 +192,8 @@ class DataSetHierarchy(LCDBModel):
     child_observation_id : int
         Observation ID of the child/derived dataset
     child_target_id : int
-        Target ID of the child/derived dataset
+        Target ID of the child/derived dataset. Stored as BigInteger to
+        match :attr:`Target.id`.
     child_photometric_method_id : int
         Photometric method ID of the child/derived dataset
     child_processing_method_id : int
@@ -273,7 +275,13 @@ class DataSetHierarchy(LCDBModel):
 
     # Source dataset composite key columns
     source_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    source_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    # BigInteger is explicit because the foreign key is declared at table
+    # level: SQLAlchemy only infers a column's type from its referent when
+    # the ForeignKey sits on the column itself, so a bare Mapped[int] here
+    # would render INTEGER and overflow on TIC-scale target ids.
+    source_target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.BigInteger, nullable=False
+    )
     source_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
         nullable=False
     )
@@ -283,7 +291,9 @@ class DataSetHierarchy(LCDBModel):
 
     # Child dataset composite key columns
     child_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    child_target_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
+    child_target_id: orm.Mapped[int] = orm.mapped_column(
+        sa.BigInteger, nullable=False
+    )
     child_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
         nullable=False
     )

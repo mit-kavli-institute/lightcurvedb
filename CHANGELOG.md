@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProcessingMethod.get_or_create_unspecified()` class methods
 
 ### Changed
+- **BREAKING**: `DataSetHierarchy.source_target_id` and `child_target_id`
+  widened from `INTEGER` to `BIGINT` to match `target.id`. SQLAlchemy only
+  infers a column's type from its referent when the `ForeignKey` sits on
+  the column, so these table-level composite-key columns silently rendered
+  `INTEGER`; a target id above 2^31 could hold a lightcurve but raised
+  `integer out of range` when recording lineage. Requires a table rewrite
+  on provisioned databases -- see Database Administration Notes.
 - **BREAKING**: Refactored dataset processing model architecture
 - **BREAKING**: Replaced `ProcessingGroup` model with direct relationships
   in `DataSet`
@@ -77,8 +84,38 @@ For existing code:
   - Create sentinel records (id=0) in `photometric_source` and
     `processing_method` tables
   - Create PostgreSQL LIST partitions for each observation_id
+  - Widen `datasethierarchy.source_target_id` / `child_target_id` to
+    `BIGINT` (see Database Administration Notes for the procedure)
 
 ### Database Administration Notes
+
+#### Widening `datasethierarchy` target ids
+
+Required on any provisioned database. Step 2 rewrites the table and its
+indexes under `ACCESS EXCLUSIVE`, cascading to every partition, so its cost
+is proportional to table size -- size it first and schedule off-peak.
+
+```sql
+-- 1. Size the rewrite.
+SELECT c.relname,
+       c.reltuples::bigint                           AS est_rows,
+       pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size
+  FROM pg_inherits i
+  JOIN pg_class c ON c.oid = i.inhrelid
+ WHERE i.inhparent = to_regclass('datasethierarchy')
+ ORDER BY pg_total_relation_size(c.oid) DESC;
+
+-- 2. Widen. Cascades to all partitions.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+ALTER TABLE datasethierarchy
+    ALTER COLUMN source_target_id TYPE bigint,
+    ALTER COLUMN child_target_id  TYPE bigint;
+COMMIT;
+```
+
+#### Partition management
+
 The DataSet table requires partition management:
 ```sql
 -- Create partitions for each observation

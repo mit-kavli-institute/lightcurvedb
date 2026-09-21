@@ -1357,3 +1357,80 @@ class TestCompositeKeyQueries:
         with pytest.raises(IntegrityError):
             v2_db.commit()
         v2_db.rollback()
+
+
+class TestDataSetHierarchySchema:
+    """Schema-level guards for the DataSetHierarchy table.
+
+    These pin two defects that were silent in the rendered DDL: the
+    composite foreign key does not propagate column types, and the
+    partition key did not constrain the child side to the same
+    observation.
+    """
+
+    def test_target_id_columns_are_bigint(self):
+        """Composite-FK columns must be widened explicitly.
+
+        ``dataset.target_id`` inherits BigInteger from ``target.id``
+        because its ForeignKey sits on the column. The hierarchy columns
+        declare their key at table level, so SQLAlchemy keeps the bare
+        ``Mapped[int]`` annotation and would render INTEGER unless the
+        type is given explicitly.
+        """
+        columns = DataSetHierarchy.__table__.c
+        assert isinstance(columns["source_target_id"].type, sa.BigInteger)
+        assert isinstance(columns["child_target_id"].type, sa.BigInteger)
+        # The observation columns reference observation.id, which is a
+        # plain SERIAL, so they are correctly narrow.
+        assert isinstance(columns["source_observation_id"].type, sa.Integer)
+        assert not isinstance(
+            columns["source_observation_id"].type, sa.BigInteger
+        )
+
+    def test_lineage_accepts_target_ids_above_int32(
+        self,
+        v2_db: orm.Session,
+        sample_catalog: MissionCatalog,
+        sample_observation: Observation,
+    ):
+        """A TIC-scale target must be able to carry lineage.
+
+        Before the widening this raised ``integer out of range``: the
+        dataset row inserted fine as BIGINT while the hierarchy row
+        overflowed INTEGER.
+        """
+        big_id = 10_005_000_540  # a real TIC-scale id, > 2**31
+        target = Target(id=big_id, catalog=sample_catalog, name=big_id)
+        v2_db.add(target)
+        v2_db.flush()
+
+        source = DataSet(
+            values=np.random.normal(0, 1, 100),
+            target=target,
+            observation=sample_observation,
+            photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+        )
+        derived = DataSet(
+            values=np.random.normal(0, 1, 100),
+            target=target,
+            observation=sample_observation,
+            photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            processing_method_id=510,
+        )
+        method = ProcessingMethod(
+            id=510, name="BigIdMethod", description="Big id"
+        )
+        v2_db.add_all([method, source, derived])
+        v2_db.flush()
+
+        source.add_derived_dataset(derived, v2_db)
+        v2_db.commit()
+
+        stored = v2_db.execute(
+            sa.select(DataSetHierarchy).where(
+                DataSetHierarchy.source_target_id == big_id
+            )
+        ).scalar_one()
+        assert stored.source_target_id == big_id
+        assert stored.child_target_id == big_id
