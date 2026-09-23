@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Partition naming**: `lightcurvedb.core.partitions` with `PartitionName`,
+  the canonical `<base>_obs_<observation_id>_v<revision>` scheme (revision
+  0 is the legacy `<base>_obs_<id>` form), a 63-byte identifier check on
+  every derived object name, and the `PartitionError` exception hierarchy
 - **Dataset Hierarchy**: New `DataSetHierarchy` model for tracking data
   lineage and processing provenance
 - DataSet now supports hierarchical relationships via `source_datasets` and
