@@ -23,3 +23,29 @@ class PartitionNameTooLongError(PartitionNameError):
     confusing "relation already exists". Raising here keeps that failure at
     the point the name is formed.
     """
+
+
+class RelationNotFoundError(PartitionError):
+    """A named relation does not exist in the database."""
+
+
+class NotPartitionedError(PartitionError):
+    """The relation exists but is not a partitioned table."""
+
+
+class UnsupportedPartitionStrategyError(PartitionError):
+    """The table is partitioned in a way this package does not handle.
+
+    Supported: LIST partitioning on a single plain column. RANGE, HASH,
+    multi-column keys and expression keys are refused rather than
+    guessed at.
+    """
+
+
+class NotAttachableError(PartitionError):
+    """A candidate table cannot be attached as a partition cleanly.
+
+    Raised by :meth:`AttachabilityReport.raise_for_status`; the message
+    lists every finding, split into what would make ``ATTACH`` fail and
+    what would make it scan or build while holding ``ACCESS EXCLUSIVE``.
+    """

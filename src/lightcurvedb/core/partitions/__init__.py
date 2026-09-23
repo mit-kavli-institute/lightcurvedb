@@ -11,10 +11,28 @@ table in the metadata.
    do with PostgreSQL.
 """
 
+from lightcurvedb.core.partitions.catalog import (
+    AttachabilityReport,
+    PartitionInfo,
+    PartitionStrategy,
+    check_attachable,
+    default_partition_of,
+    find_partition_for_value,
+    list_table_partitions,
+    parse_list_bound,
+    partition_strategy,
+    relation_kind,
+    require_list_partitioned,
+    resolve_table_name,
+)
 from lightcurvedb.core.partitions.errors import (
+    NotAttachableError,
+    NotPartitionedError,
     PartitionError,
     PartitionNameError,
     PartitionNameTooLongError,
+    RelationNotFoundError,
+    UnsupportedPartitionStrategyError,
 )
 from lightcurvedb.core.partitions.naming import (
     MAX_IDENTIFIER_BYTES,
@@ -25,8 +43,24 @@ from lightcurvedb.core.partitions.naming import (
 __all__ = [
     "MAX_IDENTIFIER_BYTES",
     "OBJECT_SUFFIXES",
+    "AttachabilityReport",
+    "NotAttachableError",
+    "NotPartitionedError",
     "PartitionError",
+    "PartitionInfo",
     "PartitionName",
     "PartitionNameError",
     "PartitionNameTooLongError",
+    "PartitionStrategy",
+    "RelationNotFoundError",
+    "UnsupportedPartitionStrategyError",
+    "check_attachable",
+    "default_partition_of",
+    "find_partition_for_value",
+    "list_table_partitions",
+    "parse_list_bound",
+    "partition_strategy",
+    "relation_kind",
+    "require_list_partitioned",
+    "resolve_table_name",
 ]
