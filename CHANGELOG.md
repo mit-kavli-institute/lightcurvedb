@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the canonical `<base>_obs_<observation_id>_v<revision>` scheme (revision
   0 is the legacy `<base>_obs_<id>` form), a 63-byte identifier check on
   every derived object name, and the `PartitionError` exception hierarchy
+- **Partition introspection**: `lightcurvedb.core.partitions.catalog` reads
+  `pg_catalog` for a table's partition strategy and key, its attached
+  partitions with bounds and sizes, and the partition holding a given
+  value. `check_attachable` predicts -- without taking a lock -- whether
+  `ATTACH PARTITION` would fail, or succeed only by scanning or building
+  under `ACCESS EXCLUSIVE`
 - **Dataset Hierarchy**: New `DataSetHierarchy` model for tracking data
   lineage and processing provenance
 - DataSet now supports hierarchical relationships via `source_datasets` and
