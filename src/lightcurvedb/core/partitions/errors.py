@@ -49,3 +49,24 @@ class NotAttachableError(PartitionError):
     lists every finding, split into what would make ``ATTACH`` fail and
     what would make it scan or build while holding ``ACCESS EXCLUSIVE``.
     """
+
+
+class StagingShapeMismatchError(PartitionError):
+    """A staging table's columns do not match the parent's.
+
+    ``CREATE TABLE IF NOT EXISTS`` accepts a table built from an older
+    definition of the parent without complaint, so a stale staging table
+    would otherwise be discovered at attach time, under
+    ``ACCESS EXCLUSIVE``. Comparing the two column sets up front moves
+    that failure to the cheapest possible moment.
+    """
+
+
+class AutocommitRequiredError(PartitionError):
+    """An operation was attempted inside a transaction that forbids one.
+
+    ``ALTER TABLE ... DETACH PARTITION ... CONCURRENTLY`` cannot run in a
+    transaction block. SQLAlchemy opens one implicitly, so the connection
+    must carry ``isolation_level="AUTOCOMMIT"``. Checking before the
+    statement is issued keeps the caller's transaction unpoisoned.
+    """
