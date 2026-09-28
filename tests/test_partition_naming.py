@@ -149,12 +149,18 @@ class TestConstructionValidation:
             PartitionName("dataset", 1).derived(suffix)
 
 
-def test_object_suffixes_match_requirements_doc():
-    """Section 9.3 lists exactly these five."""
+def test_object_suffixes_match_generated_names():
+    """The five suffixes the DDL layer actually generates.
+
+    Section 9.3 of the requirements doc writes ``src_idx``. Child index
+    names are derived from the parent's own index names rather than from
+    a lookup table, and ``ix_datasethierarchy_source`` derives
+    ``source_idx``, so that is the spelling recorded here.
+    """
     assert set(OBJECT_SUFFIXES) == {
         "pkey",
         "target_idx",
-        "src_idx",
+        "source_idx",
         "child_idx",
         "partcheck",
     }

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping
 from typing import Any, Final, Literal
 
 import sqlalchemy as sa
@@ -96,8 +96,28 @@ def resolve_table_name(table: TableRef) -> str:
     )
 
 
-def _resolve(table: TableRef, schema: str | None) -> tuple[str, str]:
-    """Return ``(schema, name)``, preferring an explicit schema argument."""
+def resolve_qualified_name(
+    table: TableRef, *, schema: str | None = None
+) -> tuple[str, str]:
+    """Split a table reference into ``(schema, name)``.
+
+    Every function in this package begins with this call, so that a
+    mapped class, a :class:`sqlalchemy.Table` and a bare string all
+    reach the catalog the same way.
+
+    Parameters
+    ----------
+    table : str or sqlalchemy.Table or object with ``__table__``
+        The relation to resolve.
+    schema : str, optional
+        Overrides the schema carried by ``table``. When neither supplies
+        one, ``public`` is assumed.
+
+    Returns
+    -------
+    tuple of (str, str)
+        The schema and the relation name, neither quoted.
+    """
     name = resolve_table_name(table)
     if schema is None:
         tbl = table if isinstance(table, sa.Table) else None
@@ -137,7 +157,7 @@ def relation_kind(
         on; the raw ``relkind`` letter for anything unrecognised; ``None``
         if no such relation exists.
     """
-    schema, name = _resolve(table, schema)
+    schema, name = resolve_qualified_name(table, schema=schema)
     kind = conn.execute(
         sa.text(
             "SELECT c.relkind FROM pg_class c "
@@ -207,7 +227,7 @@ def partition_strategy(
     UnsupportedPartitionStrategyError
         If any partition key is an expression rather than a column.
     """
-    schema, name = _resolve(table, schema)
+    schema, name = resolve_qualified_name(table, schema=schema)
     oid = _require_oid(conn, schema, name)
     row = conn.execute(
         sa.text(
@@ -251,7 +271,7 @@ def require_list_partitioned(
     UnsupportedPartitionStrategyError
         If it is partitioned by RANGE or HASH.
     """
-    schema, name = _resolve(table, schema)
+    schema, name = resolve_qualified_name(table, schema=schema)
     strategy = partition_strategy(conn, name, schema=schema)
     if strategy is None:
         raise NotPartitionedError(f"{schema}.{name} is not partitioned")
@@ -353,7 +373,7 @@ def list_table_partitions(
     RelationNotFoundError
         If ``table`` does not exist.
     """
-    schema, name = _resolve(table, schema)
+    schema, name = resolve_qualified_name(table, schema=schema)
     parent_oid = _require_oid(conn, schema, name)
     rows = conn.execute(
         sa.text(
@@ -417,6 +437,310 @@ def default_partition_of(
         if info.is_default:
             return info
     return None
+
+
+# ---------------------------------------------------------------------------
+# Column signatures
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ColumnSpec:
+    """One column of a relation, as PostgreSQL reports it.
+
+    Attributes
+    ----------
+    name : str
+        Column name.
+    type_name : str
+        Type as ``format_type`` renders it, so ``bigint`` and
+        ``double precision[]`` compare as written rather than by OID.
+    not_null : bool
+        Whether the column carries ``NOT NULL``.
+    ordinal : int
+        ``attnum``, the column's physical position.
+    """
+
+    name: str
+    type_name: str
+    not_null: bool
+    ordinal: int
+
+
+def column_signature(
+    conn: sa.Connection, table: TableRef, *, schema: str | None = None
+) -> dict[str, ColumnSpec]:
+    """Describe every live column of ``table``, keyed by name.
+
+    Parameters
+    ----------
+    conn : sqlalchemy.Connection
+        Connection to read with. Nothing is committed.
+    table : str or sqlalchemy.Table or object with ``__table__``
+        Relation to describe.
+    schema : str, optional
+        Schema to look in. Defaults to the table's own schema, else
+        ``public``.
+
+    Returns
+    -------
+    dict of str to ColumnSpec
+        System and dropped columns are omitted.
+
+    Raises
+    ------
+    RelationNotFoundError
+        If the relation does not exist.
+    """
+    schema, name = resolve_qualified_name(table, schema=schema)
+    return _columns(conn, _require_oid(conn, schema, name))
+
+
+def column_mismatches(
+    parent: Mapping[str, ColumnSpec],
+    candidate: Mapping[str, ColumnSpec],
+    *,
+    compare_ordinals: bool = False,
+) -> tuple[str, ...]:
+    """Differences between two :func:`column_signature` results.
+
+    Parameters
+    ----------
+    parent, candidate : mapping of str to ColumnSpec
+        Signatures to compare. Findings are phrased from the parent's
+        point of view.
+    compare_ordinals : bool, default False
+        Also report columns whose physical position differs.
+        ``ATTACH PARTITION`` matches columns by name and is indifferent
+        to their order, so this stays off for attachability; it is worth
+        turning on to prove a staging table was built from the parent's
+        current definition rather than an older one.
+
+    Returns
+    -------
+    tuple of str
+        One human-readable finding per difference, empty when the two
+        agree.
+    """
+    found: list[str] = []
+    for col, spec in parent.items():
+        other = candidate.get(col)
+        if other is None:
+            found.append(f"{col} missing from candidate")
+            continue
+        if spec.type_name != other.type_name:
+            found.append(
+                f"{col} is {spec.type_name} on parent, "
+                f"{other.type_name} on candidate"
+            )
+        elif spec.not_null and not other.not_null:
+            found.append(f"{col} is NOT NULL on parent, nullable on candidate")
+        if compare_ordinals and spec.ordinal != other.ordinal:
+            found.append(
+                f"{col} is column {spec.ordinal} on parent, "
+                f"{other.ordinal} on candidate"
+            )
+    found.extend(
+        f"{col} on candidate but not on parent"
+        for col in candidate
+        if col not in parent
+    )
+    return tuple(found)
+
+
+def _columns(conn: sa.Connection, oid: int) -> dict[str, ColumnSpec]:
+    rows = conn.execute(
+        sa.text(
+            "SELECT a.attname AS name, "
+            "       format_type(a.atttypid, a.atttypmod) AS type_name, "
+            "       a.attnotnull AS not_null, "
+            "       a.attnum AS ordinal "
+            "FROM pg_attribute a "
+            "WHERE a.attrelid = :oid AND a.attnum > 0 AND NOT a.attisdropped "
+            "ORDER BY a.attnum"
+        ),
+        {"oid": oid},
+    ).all()
+    return {
+        r.name: ColumnSpec(r.name, r.type_name, bool(r.not_null), r.ordinal)
+        for r in rows
+    }
+
+
+# ---------------------------------------------------------------------------
+# Indexes and foreign keys
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class IndexSpec:
+    """One index on a relation, with the constraint behind it if any.
+
+    Attributes
+    ----------
+    name : str
+        Index relation name.
+    definition : str
+        ``pg_get_indexdef`` output, naming the index and its table.
+    valid : bool
+        ``indisvalid``. A false one is debris from a failed
+        ``CREATE INDEX CONCURRENTLY`` and is ignored by the planner.
+    constraint_type : str or None
+        ``p`` when a PRIMARY KEY stands behind this index, ``u`` for a
+        UNIQUE constraint, ``None`` for a plain index.
+    constraint_name : str or None
+        Name of that constraint.
+    constraint_definition : str or None
+        ``pg_get_constraintdef`` output for it, ready to re-emit after
+        ``ADD CONSTRAINT``.
+
+    Notes
+    -----
+    Whether an index is constraint-backed decides what ``ATTACH
+    PARTITION`` does with it. ``AttachPartitionEnsureIndexes`` adopts a
+    child index only when the parent's is constraint-backed and the
+    child's is too; a matching-but-constraintless unique index is
+    rejected and rebuilt while ``ACCESS EXCLUSIVE`` is held.
+    """
+
+    name: str
+    definition: str
+    valid: bool
+    constraint_type: str | None
+    constraint_name: str | None
+    constraint_definition: str | None
+
+    @property
+    def constraint_backed(self) -> bool:
+        """Whether a PRIMARY KEY or UNIQUE constraint owns this index."""
+        return self.constraint_type is not None
+
+    @property
+    def key(self) -> str:
+        """The definition stripped of index and table names.
+
+        Two indexes with the same key are structurally the same index on
+        different relations, which is what makes a parent's index set
+        comparable with a candidate's.
+        """
+        match = _INDEXDEF.match(self.definition)
+        if match is None:
+            return self.definition
+        return (match.group("unique") or "") + match.group("body")
+
+    @property
+    def unique(self) -> bool:
+        """Whether the index enforces uniqueness."""
+        match = _INDEXDEF.match(self.definition)
+        return bool(match and match.group("unique"))
+
+    @property
+    def body(self) -> str | None:
+        """Everything after the table name, ``USING`` onwards.
+
+        Re-emitting this under a new index name on a new table
+        reproduces the index exactly, including operator classes,
+        collations, ``INCLUDE`` columns and partial predicates, none of
+        which survive being rebuilt from a column list.
+        """
+        match = _INDEXDEF.match(self.definition)
+        return None if match is None else match.group("body")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ForeignKeySpec:
+    """One outbound foreign key, with what it points at.
+
+    Attributes
+    ----------
+    name : str
+        Constraint name. Per-partition names are auto-generated,
+        truncated and numerically suffixed, so never hardcode one.
+    definition : str
+        ``pg_get_constraintdef`` output, re-emittable verbatim after
+        ``ADD CONSTRAINT``.
+    validated : bool
+        ``convalidated``. Only a validated constraint can be adopted at
+        attach time instead of re-checked.
+    columns : tuple of str
+        The constrained columns, in key order.
+    referenced_schema, referenced_table : str
+        The relation this key points at.
+    referenced_columns : tuple of str
+        The columns it points at, in the same order as ``columns``.
+    referenced_is_partitioned : bool
+        Whether that relation is itself partitioned. Mirroring such a
+        key onto a staging table makes the staging table pin the
+        referent's current partitions, which is what blocks a swap.
+    """
+
+    name: str
+    definition: str
+    validated: bool
+    columns: tuple[str, ...]
+    referenced_schema: str
+    referenced_table: str
+    referenced_columns: tuple[str, ...]
+    referenced_is_partitioned: bool
+
+
+def index_definitions(
+    conn: sa.Connection, table: TableRef, *, schema: str | None = None
+) -> tuple[IndexSpec, ...]:
+    """Every index on ``table``, ordered by name.
+
+    Parameters
+    ----------
+    conn : sqlalchemy.Connection
+        Connection to read with. Nothing is committed.
+    table : str or sqlalchemy.Table or object with ``__table__``
+        Relation to inspect.
+    schema : str, optional
+        Schema to look in. Defaults to the table's own schema, else
+        ``public``.
+
+    Returns
+    -------
+    tuple of IndexSpec
+
+    Raises
+    ------
+    RelationNotFoundError
+        If the relation does not exist.
+    """
+    schema, name = resolve_qualified_name(table, schema=schema)
+    return _index_specs(conn, _require_oid(conn, schema, name))
+
+
+def foreign_key_definitions(
+    conn: sa.Connection, table: TableRef, *, schema: str | None = None
+) -> tuple[ForeignKeySpec, ...]:
+    """Every outbound foreign key on ``table``, ordered by name.
+
+    Inbound keys -- other tables referencing this one -- are not
+    reported.
+
+    Parameters
+    ----------
+    conn : sqlalchemy.Connection
+        Connection to read with. Nothing is committed.
+    table : str or sqlalchemy.Table or object with ``__table__``
+        Relation to inspect.
+    schema : str, optional
+        Schema to look in. Defaults to the table's own schema, else
+        ``public``.
+
+    Returns
+    -------
+    tuple of ForeignKeySpec
+
+    Raises
+    ------
+    RelationNotFoundError
+        If the relation does not exist.
+    """
+    schema, name = resolve_qualified_name(table, schema=schema)
+    return _foreign_key_specs(conn, _require_oid(conn, schema, name))
 
 
 # ---------------------------------------------------------------------------
@@ -555,75 +879,78 @@ class AttachabilityReport:
             )
 
 
-def _columns(conn: sa.Connection, oid: int) -> dict[str, tuple[str, bool]]:
+def _index_specs(conn: sa.Connection, oid: int) -> tuple[IndexSpec, ...]:
     rows = conn.execute(
-        sa.text(
-            "SELECT a.attname, format_type(a.atttypid, a.atttypmod), "
-            "       a.attnotnull "
-            "FROM pg_attribute a "
-            "WHERE a.attrelid = :oid AND a.attnum > 0 AND NOT a.attisdropped"
-        ),
-        {"oid": oid},
-    ).all()
-    return {r[0]: (r[1], bool(r[2])) for r in rows}
-
-
-def _column_mismatches(
-    parent: dict[str, tuple[str, bool]],
-    candidate: dict[str, tuple[str, bool]],
-) -> tuple[str, ...]:
-    found: list[str] = []
-    for col, (ptype, pnotnull) in parent.items():
-        if col not in candidate:
-            found.append(f"{col} missing from candidate")
-            continue
-        ctype, cnotnull = candidate[col]
-        if ptype != ctype:
-            found.append(f"{col} is {ptype} on parent, {ctype} on candidate")
-        elif pnotnull and not cnotnull:
-            found.append(f"{col} is NOT NULL on parent, nullable on candidate")
-    found.extend(
-        f"{col} on candidate but not on parent"
-        for col in candidate
-        if col not in parent
-    )
-    return tuple(found)
-
-
-def _indexes(conn: sa.Connection, oid: int) -> Sequence[sa.Row[Any]]:
-    """Each index on ``oid`` with its normalised definition."""
-    return conn.execute(
         sa.text(
             "SELECT ic.relname AS name, "
             "       pg_get_indexdef(i.indexrelid) AS definition, "
-            "       i.indisvalid, "
-            "       EXISTS (SELECT 1 FROM pg_constraint k "
-            "               WHERE k.conindid = i.indexrelid "
-            "                 AND k.contype IN ('p', 'u')) AS backed "
-            "FROM pg_index i JOIN pg_class ic ON ic.oid = i.indexrelid "
+            "       i.indisvalid AS valid, "
+            "       k.contype AS constraint_type, "
+            "       k.conname AS constraint_name, "
+            "       CASE WHEN k.oid IS NULL THEN NULL "
+            "            ELSE pg_get_constraintdef(k.oid) END "
+            "         AS constraint_definition "
+            "FROM pg_index i "
+            "JOIN pg_class ic ON ic.oid = i.indexrelid "
+            "LEFT JOIN pg_constraint k ON k.conindid = i.indexrelid "
+            "     AND k.contype IN ('p', 'u') "
             "WHERE i.indrelid = :oid ORDER BY ic.relname"
         ),
         {"oid": oid},
     ).all()
+    return tuple(
+        IndexSpec(
+            name=r.name,
+            definition=r.definition,
+            valid=bool(r.valid),
+            constraint_type=r.constraint_type,
+            constraint_name=r.constraint_name,
+            constraint_definition=r.constraint_definition,
+        )
+        for r in rows
+    )
 
 
-def _index_key(indexdef: str) -> str:
-    match = _INDEXDEF.match(indexdef)
-    if match is None:
-        return indexdef
-    return (match.group("unique") or "") + match.group("body")
-
-
-def _foreign_keys(conn: sa.Connection, oid: int) -> Sequence[sa.Row[Any]]:
-    return conn.execute(
+def _foreign_key_specs(
+    conn: sa.Connection, oid: int
+) -> tuple[ForeignKeySpec, ...]:
+    rows = conn.execute(
         sa.text(
-            "SELECT conname, pg_get_constraintdef(oid) AS definition, "
-            "       convalidated "
-            "FROM pg_constraint "
-            "WHERE conrelid = :oid AND contype = 'f' ORDER BY conname"
+            "SELECT c.conname AS name, "
+            "       pg_get_constraintdef(c.oid) AS definition, "
+            "       c.convalidated AS validated, "
+            "       (SELECT array_agg(a.attname ORDER BY k.ord) "
+            "          FROM unnest(c.conkey) WITH ORDINALITY AS k(num, ord) "
+            "          JOIN pg_attribute a ON a.attrelid = c.conrelid "
+            "               AND a.attnum = k.num) AS columns, "
+            "       rn.nspname AS referenced_schema, "
+            "       rc.relname AS referenced_table, "
+            "       (SELECT array_agg(a.attname ORDER BY k.ord) "
+            "          FROM unnest(c.confkey) WITH ORDINALITY AS k(num, ord) "
+            "          JOIN pg_attribute a ON a.attrelid = c.confrelid "
+            "               AND a.attnum = k.num) AS referenced_columns, "
+            "       (rc.relkind = 'p') AS referenced_is_partitioned "
+            "FROM pg_constraint c "
+            "JOIN pg_class rc ON rc.oid = c.confrelid "
+            "JOIN pg_namespace rn ON rn.oid = rc.relnamespace "
+            "WHERE c.conrelid = :oid AND c.contype = 'f' "
+            "ORDER BY c.conname"
         ),
         {"oid": oid},
     ).all()
+    return tuple(
+        ForeignKeySpec(
+            name=r.name,
+            definition=r.definition,
+            validated=bool(r.validated),
+            columns=tuple(r.columns or ()),
+            referenced_schema=r.referenced_schema,
+            referenced_table=r.referenced_table,
+            referenced_columns=tuple(r.referenced_columns or ()),
+            referenced_is_partitioned=bool(r.referenced_is_partitioned),
+        )
+        for r in rows
+    )
 
 
 def _has_valid_partition_check(
@@ -690,7 +1017,7 @@ def check_attachable(
     NotPartitionedError, UnsupportedPartitionStrategyError
         If the parent is not LIST-partitioned on a single column.
     """
-    schema, parent = _resolve(table, schema)
+    schema, parent = resolve_qualified_name(table, schema=schema)
     parent_oid = _require_oid(conn, schema, parent)
     strategy = require_list_partitioned(conn, parent, schema=schema)
     key_column = strategy.key_column
@@ -727,27 +1054,27 @@ def check_attachable(
             default_partition_conflicts=default_conflicts,
         )
 
-    parent_indexes = _indexes(conn, parent_oid)
-    candidate_indexes = _indexes(conn, candidate_oid)
-    candidate_by_key = {_index_key(r.definition): r for r in candidate_indexes}
+    parent_indexes = _index_specs(conn, parent_oid)
+    candidate_indexes = _index_specs(conn, candidate_oid)
+    candidate_by_key = {idx.key: idx for idx in candidate_indexes}
     missing: list[str] = []
     unbacked: list[str] = []
     for pidx in parent_indexes:
-        match = candidate_by_key.get(_index_key(pidx.definition))
+        match = candidate_by_key.get(pidx.key)
         if match is None:
             missing.append(pidx.name)
-        elif pidx.backed and not match.backed:
+        elif pidx.constraint_backed and not match.constraint_backed:
             unbacked.append(match.name)
 
     candidate_fks = {
-        r.definition
-        for r in _foreign_keys(conn, candidate_oid)
-        if r.convalidated
+        fk.definition
+        for fk in _foreign_key_specs(conn, candidate_oid)
+        if fk.validated
     }
     missing_fks = tuple(
-        r.conname + ": " + r.definition
-        for r in _foreign_keys(conn, parent_oid)
-        if r.definition not in candidate_fks
+        fk.name + ": " + fk.definition
+        for fk in _foreign_key_specs(conn, parent_oid)
+        if fk.definition not in candidate_fks
     )
 
     return AttachabilityReport(
@@ -756,12 +1083,12 @@ def check_attachable(
         key_column=key_column,
         key_value=key_value,
         candidate_kind=candidate_kind,
-        column_mismatches=_column_mismatches(
+        column_mismatches=column_mismatches(
             _columns(conn, parent_oid), _columns(conn, candidate_oid)
         ),
         missing_indexes=tuple(missing),
         invalid_indexes=tuple(
-            r.name for r in candidate_indexes if not r.indisvalid
+            idx.name for idx in candidate_indexes if not idx.valid
         ),
         unbacked_constraint_indexes=tuple(unbacked),
         has_valid_partition_check=_has_valid_partition_check(
