@@ -16,10 +16,10 @@ from sqlalchemy import orm
 from lightcurvedb.core.partitions import (
     LEGAL_TRANSITIONS,
     IllegalStateTransitionError,
-    OrbitState,
     PartitionName,
     PartitionNameError,
     RevisionSkewError,
+    RevisionState,
     assert_paired_revisions,
     build_partition_indexes,
     create_staging_table,
@@ -35,14 +35,14 @@ from lightcurvedb.core.partitions import (
 )
 from lightcurvedb.models import Observation, Target
 
-states = st.sampled_from(list(OrbitState))
+states = st.sampled_from(list(RevisionState))
 
 
 class TestTransitionMap:
     """Pure; no database."""
 
     def test_every_state_has_an_entry(self):
-        assert set(LEGAL_TRANSITIONS) == set(OrbitState)
+        assert set(LEGAL_TRANSITIONS) == set(RevisionState)
 
     def test_gone_is_the_only_terminal_state(self):
         terminal = {
@@ -50,29 +50,29 @@ class TestTransitionMap:
             for state, targets in LEGAL_TRANSITIONS.items()
             if not targets
         }
-        assert terminal == {OrbitState.GONE}
+        assert terminal == {RevisionState.GONE}
 
     def test_every_state_is_reachable_from_absent(self):
-        reached = {OrbitState.ABSENT}
-        frontier = [OrbitState.ABSENT]
+        reached = {RevisionState.ABSENT}
+        frontier = [RevisionState.ABSENT]
         while frontier:
             for target in LEGAL_TRANSITIONS[frontier.pop()]:
                 if target not in reached:
                     reached.add(target)
                     frontier.append(target)
-        assert reached == set(OrbitState)
+        assert reached == set(RevisionState)
 
     @given(states)
-    def test_staying_put_is_always_legal(self, state: OrbitState):
+    def test_staying_put_is_always_legal(self, state: RevisionState):
         validate_transition(state, state)
 
     @given(states)
-    def test_no_state_lists_itself(self, state: OrbitState):
+    def test_no_state_lists_itself(self, state: RevisionState):
         assert state not in LEGAL_TRANSITIONS[state]
 
     @given(states, states)
     def test_illegal_edges_raise(
-        self, current: OrbitState, target: OrbitState
+        self, current: RevisionState, target: RevisionState
     ):
         if current is target or target in LEGAL_TRANSITIONS[current]:
             validate_transition(current, target)
@@ -82,7 +82,7 @@ class TestTransitionMap:
 
     def test_the_message_says_what_was_allowed(self):
         with pytest.raises(IllegalStateTransitionError, match="created"):
-            validate_transition(OrbitState.ABSENT, OrbitState.LIVE)
+            validate_transition(RevisionState.ABSENT, RevisionState.LIVE)
 
 
 @pytest.mark.partitioning
@@ -101,10 +101,10 @@ class TestDeriveState:
         key = sample_observation.id
         name = PartitionName("dataset", key, 1).table
 
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.ABSENT
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.ABSENT
 
         create_staging_table(conn, "dataset", name, key)
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.CREATED
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.CREATED
 
         partitioned_db.execute(
             sa.text(
@@ -114,13 +114,13 @@ class TestDeriveState:
             ),
             {"obs": key, "target": sample_target.id},
         )
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.LOADED
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.LOADED
 
         build_partition_indexes(conn, "dataset", name)
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.INDEXED
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.INDEXED
 
         mirror_outbound_foreign_keys(conn, "dataset", name)
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.FK_READY
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.FK_READY
 
     def test_an_attached_partition_is_live(
         self, partitioned_db: orm.Session, sample_observation: Observation
@@ -129,7 +129,7 @@ class TestDeriveState:
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=1)
 
-        assert derive_state(conn, "dataset", key, 1) is OrbitState.LIVE
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.LIVE
 
     def test_hierarchy_reaches_fk_ready_with_no_keys_to_mirror(
         self, partitioned_db: orm.Session
@@ -143,7 +143,8 @@ class TestDeriveState:
         build_partition_indexes(conn, "datasethierarchy", name)
 
         assert (
-            derive_state(conn, "datasethierarchy", 7, 1) is OrbitState.FK_READY
+            derive_state(conn, "datasethierarchy", 7, 1)
+            is RevisionState.FK_READY
         )
 
 
