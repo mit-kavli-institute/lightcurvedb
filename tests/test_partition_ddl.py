@@ -28,6 +28,7 @@ from lightcurvedb.core.partitions import (
     ensure_partition,
     ensure_staging_table,
     find_partition_for_value,
+    foreign_key_definitions,
     has_bound_check,
     index_definitions,
     lock_tables,
@@ -394,6 +395,39 @@ class TestMirrorOutboundForeignKeys:
         )
 
         assert created == ()
+
+    def test_ignores_the_clones_postgresql_makes_per_partition(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """A referenced partition adds keys that are not the table's own.
+
+        Attaching a partition to ``dataset`` makes PostgreSQL clone
+        ``datasethierarchy``'s keys once per partition, each pointing at
+        the concrete partition rather than at the partitioned parent.
+        Those clones read as unpartitioned, so without the
+        ``conparentid`` filter they are mirrored -- which pins the very
+        partition a swap has to detach, and overflows the 63-byte
+        identifier limit on the way, since their auto-generated names are
+        already at it.
+
+        The plain skip test above passes without the filter only because
+        no partition of ``dataset`` exists there.
+        """
+        conn = partitioned_db.connection()
+        key = sample_observation.id
+        ensure_partition(conn, "dataset", key)
+
+        assert {
+            spec.name
+            for spec in foreign_key_definitions(conn, "datasethierarchy")
+        } == {"fk_datasethierarchy_source", "fk_datasethierarchy_child"}
+
+        staged = f"datasethierarchy_obs_{key}_v1"
+        create_staging_table(conn, "datasethierarchy", staged, key)
+        assert (
+            mirror_outbound_foreign_keys(conn, "datasethierarchy", staged)
+            == ()
+        )
 
     def test_can_be_forced_for_partitioned_referents(
         self, partitioned_db: orm.Session, sample_observation: Observation

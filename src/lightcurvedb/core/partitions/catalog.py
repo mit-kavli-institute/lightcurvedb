@@ -957,7 +957,18 @@ def _foreign_key_specs(
             "FROM pg_constraint c "
             "JOIN pg_class rc ON rc.oid = c.confrelid "
             "JOIN pg_namespace rn ON rn.oid = rc.relnamespace "
+            # conparentid = 0 keeps this to the table's *own* declared
+            # keys. When a partition is attached to a referenced
+            # partitioned table, PostgreSQL clones the referencing
+            # table's key once per partition, each clone pointing at a
+            # concrete partition and carrying conparentid. Those are its
+            # bookkeeping, not the table's declarations: their referent
+            # reads as unpartitioned, so mirroring them onto a staging
+            # table would pin the very partition a swap has to detach --
+            # and their auto-generated names are already at the 63-byte
+            # limit, so re-deriving one for a partition overflows it.
             "WHERE c.conrelid = :oid AND c.contype = 'f' "
+            "  AND c.conparentid = 0 "
             "ORDER BY c.conname"
         ),
         {"oid": oid},

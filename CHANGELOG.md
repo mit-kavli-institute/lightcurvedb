@@ -115,6 +115,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated model exports in `__init__.py` to reflect new architecture
 
 ### Fixed
+- `foreign_key_definitions` reported the foreign keys PostgreSQL clones
+  onto a referencing table, one per partition of a referenced partitioned
+  table, as if they were that table's own. Each clone points at a
+  concrete partition, so it reads as unpartitioned and escaped the
+  partitioned-referent skip: `mirror_outbound_foreign_keys` then tried to
+  copy it onto a staging table, which would pin the partition a swap has
+  to detach, and failed first on the 63-byte identifier limit because the
+  clones' generated names are already at it. Only constraints with
+  `conparentid = 0` -- a table's own declarations -- are reported now.
+  This bit `datasethierarchy` as soon as any partition of `dataset`
+  existed, which is to say always
 - `check_attachable` probed the DEFAULT partition in its *parent's* schema
   rather than its own. The partition's name is resolved by oid, so
   re-qualifying it with the parent's schema named a relation that does not
