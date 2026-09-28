@@ -663,7 +663,11 @@ def detach_partition(
     Raises
     ------
     AutocommitRequiredError
-        If ``concurrently=True`` on a connection inside a transaction.
+        If ``concurrently=True`` on a connection that is not in
+        autocommit. The check reads the connection's execution options:
+        :meth:`~sqlalchemy.engine.Connection.get_isolation_level`
+        reports the server's traditional isolation level even under
+        autocommit, so it cannot answer this.
     ValueError
         If ``concurrently`` and ``finalize`` are both set.
 
@@ -684,7 +688,8 @@ def detach_partition(
     """
     if concurrently and finalize:
         raise ValueError("concurrently and finalize are mutually exclusive")
-    if concurrently and conn.get_isolation_level() != "AUTOCOMMIT":
+    autocommit = conn.get_execution_options().get("isolation_level")
+    if concurrently and autocommit != "AUTOCOMMIT":
         raise AutocommitRequiredError(
             "DETACH PARTITION ... CONCURRENTLY cannot run inside a "
             "transaction block; open the connection with "

@@ -47,6 +47,7 @@ from lightcurvedb.core.partitions.catalog import (
     check_attachable,
     find_partition_for_value,
     foreign_key_definitions,
+    has_bound_check,
     relation_kind,
     require_list_partitioned,
     resolve_qualified_name,
@@ -184,12 +185,18 @@ class SwapPreflightReport:
         Backend PIDs already holding a lock on a parent. Our ``ACCESS
         EXCLUSIVE`` request queues behind them -- and every reader
         arriving afterwards queues behind us.
+    unprotected_retirements : tuple of str
+        Partitions about to be retired that carry no validated bound
+        CHECK. The swap itself does not care; a later rollback would
+        have to re-read all their rows under lock.
+        :func:`prepare_retirement` fixes this beforehand.
     """
 
     plan: SwapPlan
     attachability: tuple[AttachabilityReport, ...]
     orphans: tuple[str, ...]
     holders: tuple[int, ...]
+    unprotected_retirements: tuple[str, ...]
 
     @property
     def blocking(self) -> tuple[str, ...]:
@@ -211,6 +218,12 @@ class SwapPreflightReport:
                 f"{report.candidate}: {finding}"
                 for finding in report.expensive
             )
+        found.extend(
+            f"{relation}: no validated bound CHECK, so rolling this swap "
+            "back would rescan it under lock. Run prepare_retirement "
+            "first."
+            for relation in self.unprotected_retirements
+        )
         return tuple(found)
 
     @property
@@ -286,10 +299,14 @@ def plan_swap(
     Raises
     ------
     ValueError
-        If no pairs are given, or they do not all share a schema.
+        If no pairs are given, if a parent appears twice, or if they do
+        not all share a schema.
     PartitionError
         If the parents' foreign keys form a cycle, leaving no order in
-        which every intermediate state is legal.
+        which every intermediate state is legal, or if a partition
+        being retired holds more LIST values than the one being
+        replaced -- attaching its successor would silently strip the
+        others of their partition.
     RelationNotFoundError
         If a parent does not exist.
 
@@ -314,8 +331,21 @@ def plan_swap(
 
     unordered: dict[str, SwapPair] = {}
     for _, parent, incoming in resolved:
+        if parent in unordered:
+            raise ValueError(
+                f"{parent} appears twice in the same swap, promoting "
+                f"{unordered[parent].incoming} and {incoming}. Only one "
+                "relation can hold a bound, so the plan is ambiguous."
+            )
         require_list_partitioned(conn, parent, schema=schema)
         live = find_partition_for_value(conn, parent, key_value, schema=schema)
+        if live is not None and live.list_values != (key_value,):
+            raise PartitionError(
+                f"{live.name} is attached FOR VALUES IN "
+                f"{list(live.list_values)}, so replacing it for "
+                f"{key_value} alone would strip the other values of "
+                "their partition. Split the bound first."
+            )
         unordered[parent] = SwapPair(
             parent=parent,
             incoming=incoming,
@@ -384,6 +414,7 @@ def preflight(
         attachability=reports,
         orphans=orphans,
         holders=blocking_pids(conn, plan.parents, schema=plan.schema),
+        unprotected_retirements=_unprotected_retirements(conn, plan),
     )
 
 
@@ -416,14 +447,22 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
     -----
     The sequence is: bound both timeouts, take every lock up front in
     one canonical order, re-check what is live, detach
-    referencing-side-first, attach referenced-side-first, then give each
-    retired relation its bound constraint back.
+    referencing-side-first, attach referenced-side-first. Nothing here
+    reads a row, so the critical section is O(1) in table size apart
+    from foreign-key validation on a referencing side that could not
+    pre-create its keys.
 
-    That last step matters more than it looks. A plain detach leaves no
-    CHECK behind, so without it a rollback would re-read every row of
-    the retired partition while holding ``ACCESS EXCLUSIVE``. Adding it
-    now, while the rows are already known to satisfy it, keeps the undo
-    as cheap as the promotion.
+    In particular this does **not** add a bound CHECK to the relations
+    it retires, though a retired relation wants one: without it a
+    rollback re-reads every row. Validating a CHECK means scanning, and
+    scanning here would happen with every parent still locked --
+    turning a bounded swap into an outage proportional to the data.
+    Partitions created by
+    :func:`~lightcurvedb.core.partitions.bootstrap.ensure_partition` and
+    staging tables carry the constraint from birth, so they need
+    nothing; for a partition created by hand, run
+    :func:`prepare_retirement` before the swap transaction.
+    :func:`preflight` says when that applies.
 
     No integrity gate is needed inside the transaction. PostgreSQL
     refuses to detach a partition whose rows another table's foreign key
@@ -476,19 +515,6 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
             preflight=False,
         )
 
-    for pair in plan.pairs:
-        if pair.retiring is not None:
-            strategy = require_list_partitioned(
-                conn, pair.parent, schema=plan.schema
-            )
-            ddl.add_bound_check(
-                conn,
-                pair.retiring,
-                strategy.key_column,
-                plan.key_value,
-                schema=plan.schema,
-            )
-
     return SwapResult(
         key_value=plan.key_value,
         schema=plan.schema,
@@ -501,6 +527,65 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
             for pair in plan.pairs
         ),
     )
+
+
+def prepare_retirement(conn: sa.Connection, plan: SwapPlan) -> tuple[str, ...]:
+    """Give each partition about to be retired its bound CHECK.
+
+    Run this **before** the swap transaction, not inside it. Validating
+    a CHECK means reading every row, and the swap holds ``ACCESS
+    EXCLUSIVE`` on every parent -- so doing it there would block every
+    reader of every partition for as long as the scan takes. Done here
+    the scan locks one partition, briefly, while the rest of the table
+    carries on.
+
+    A partition that already carries the constraint is skipped, so this
+    is a no-op for anything
+    :func:`~lightcurvedb.core.partitions.bootstrap.ensure_partition`
+    created. It exists for partitions created by hand, which have only
+    the implicit bound PostgreSQL derives from ``FOR VALUES IN`` -- and
+    that is not kept when the partition is detached.
+
+    Parameters
+    ----------
+    conn : sqlalchemy.Connection
+        Connection to emit on. Nothing is committed.
+    plan : SwapPlan
+        The plan whose retiring partitions to prepare.
+
+    Returns
+    -------
+    tuple of str
+        Names of the constraints added, empty when there was nothing to
+        do.
+
+    Notes
+    -----
+    Why a retired relation needs a constraint it no longer has to
+    satisfy: a plain ``DETACH`` leaves no CHECK behind, so re-attaching
+    the relation later -- which is exactly what a rollback does -- makes
+    PostgreSQL prove the bound by reading the whole table. Measured at
+    300k rows that is the difference between roughly 10 ms and 1 ms,
+    and it scales with the data while everything else in the swap does
+    not.
+    """
+    added: list[str] = []
+    for pair in plan.pairs:
+        if pair.retiring is None:
+            continue
+        strategy = require_list_partitioned(
+            conn, pair.parent, schema=plan.schema
+        )
+        name = ddl.add_bound_check(
+            conn,
+            pair.retiring,
+            strategy.key_column,
+            plan.key_value,
+            schema=plan.schema,
+        )
+        if name is not None:
+            added.append(name)
+    return tuple(added)
 
 
 def rollback_swap(
@@ -697,6 +782,28 @@ def is_lock_not_available(error: BaseException) -> bool:
         if getattr(original, attribute, None) == LOCK_NOT_AVAILABLE:
             return True
     return False
+
+
+def _unprotected_retirements(
+    conn: sa.Connection, plan: SwapPlan
+) -> tuple[str, ...]:
+    """Retiring partitions with no validated bound CHECK of their own."""
+    found: list[str] = []
+    for pair in plan.pairs:
+        if pair.retiring is None:
+            continue
+        strategy = require_list_partitioned(
+            conn, pair.parent, schema=plan.schema
+        )
+        if not has_bound_check(
+            conn,
+            pair.retiring,
+            strategy.key_column,
+            plan.key_value,
+            schema=plan.schema,
+        ):
+            found.append(pair.retiring)
+    return tuple(found)
 
 
 def _order_by_references(

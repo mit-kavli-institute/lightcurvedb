@@ -42,8 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `plan_swap` derives the detach/attach order from foreign keys in the
   catalog, `preflight` predicts the cost without taking a lock, `swap`
   bounds both timeouts and re-checks under lock what it is retiring,
-  `rollback_swap` performs the mirror swap while the retired relations
-  still exist, and `drop_retired` is dry-run by default
+  `prepare_retirement` gives a hand-made partition its bound `CHECK`
+  before the swap rather than during it, `rollback_swap` performs the
+  mirror swap while the retired relations still exist, and
+  `drop_retired` is dry-run by default
 - **Dataset Hierarchy**: New `DataSetHierarchy` model for tracking data
   lineage and processing provenance
 - DataSet now supports hierarchical relationships via `source_datasets` and

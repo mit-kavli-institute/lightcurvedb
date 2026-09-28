@@ -458,7 +458,13 @@ class ColumnSpec:
     not_null : bool
         Whether the column carries ``NOT NULL``.
     ordinal : int
-        ``attnum``, the column's physical position.
+        Position among the live columns, counting from 1.
+
+        Deliberately not the raw ``attnum``. Dropping a column leaves a
+        hole in a table's ``attnum`` sequence, but ``CREATE TABLE ...
+        LIKE`` numbers the copy contiguously, so comparing raw values
+        would report every column after the hole as misplaced on a
+        staging table that is in fact correct.
     """
 
     name: str
@@ -554,7 +560,7 @@ def _columns(conn: sa.Connection, oid: int) -> dict[str, ColumnSpec]:
             "SELECT a.attname AS name, "
             "       format_type(a.atttypid, a.atttypmod) AS type_name, "
             "       a.attnotnull AS not_null, "
-            "       a.attnum AS ordinal "
+            "       row_number() OVER (ORDER BY a.attnum) AS ordinal "
             "FROM pg_attribute a "
             "WHERE a.attrelid = :oid AND a.attnum > 0 AND NOT a.attisdropped "
             "ORDER BY a.attnum"
@@ -988,6 +994,52 @@ def _default_holds(
             {"value": key_value},
         ).scalar()
     )
+
+
+def has_bound_check(
+    conn: sa.Connection,
+    relation: str,
+    key_column: str,
+    key_value: int,
+    *,
+    schema: str | None = None,
+) -> bool:
+    """Whether a relation carries a validated ``<key> = <value>`` CHECK.
+
+    Such a constraint is what lets ``ATTACH PARTITION`` skip reading
+    every row. It is worth knowing about a *detached* relation too: one
+    without it can still be re-attached, but only by paying for a full
+    scan while the parent is locked.
+
+    Parameters
+    ----------
+    conn : sqlalchemy.Connection
+        Connection to read with. Nothing is committed.
+    relation : str
+        The relation to inspect.
+    key_column : str
+        The parent's partition key column.
+    key_value : int
+        The value the relation should be constrained to.
+    schema : str, optional
+        Schema to look in. Defaults to ``public``.
+
+    Returns
+    -------
+    bool
+        False if the relation does not exist.
+
+    Notes
+    -----
+    Only validated constraints count. ``ConstraintImpliedByRelConstraint``
+    skips anything ``NOT VALID``, so an unvalidated CHECK is invisible
+    to the prover and buys nothing.
+    """
+    schema = schema or "public"
+    oid = _relation_oid(conn, schema, relation)
+    if oid is None:
+        return False
+    return _has_valid_partition_check(conn, oid, key_column, key_value)
 
 
 def check_attachable(

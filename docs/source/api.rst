@@ -244,6 +244,9 @@ canonical reference, with usage, is :doc:`partitioning`.
 .. autofunction:: lightcurvedb.core.partitions.check_attachable
    :no-index:
 
+.. autofunction:: lightcurvedb.core.partitions.has_bound_check
+   :no-index:
+
 .. autofunction:: lightcurvedb.core.partitions.relation_kind
    :no-index:
 
@@ -305,6 +308,9 @@ canonical reference, with usage, is :doc:`partitioning`.
    :no-index:
 
 .. autofunction:: lightcurvedb.core.partitions.preflight
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.prepare_retirement
    :no-index:
 
 .. autofunction:: lightcurvedb.core.partitions.swap

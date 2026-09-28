@@ -21,11 +21,13 @@ from lightcurvedb.core.partitions import (
     ensure_partition,
     ensure_staging_table,
     find_partition_for_value,
+    has_bound_check,
     is_lock_not_available,
     mirror_outbound_foreign_keys,
     next_revision,
     plan_swap,
     preflight,
+    prepare_retirement,
     revisions_of,
     rollback_swap,
     swap,
@@ -172,6 +174,34 @@ class TestPlanning:
             f"dataset_obs_{key}",
             f"datasethierarchy_obs_{key}",
         ]
+
+    def test_it_refuses_the_same_parent_twice(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """Keyed by parent, a duplicate would silently drop a promotion."""
+        conn = partitioned_db.connection()
+        with pytest.raises(ValueError, match="appears twice"):
+            plan_swap(
+                conn,
+                [("dataset", "dataset_v1"), ("dataset", "dataset_v2")],
+                sample_observation.id,
+            )
+
+    def test_it_refuses_to_narrow_a_multi_value_bound(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """Replacing IN (5, 6) for 5 alone would strand 6."""
+        key = sample_observation.id
+        partitioned_db.execute(
+            sa.text(
+                "CREATE TABLE dataset_obs_pair PARTITION OF dataset "
+                f"FOR VALUES IN ({key}, {key + 1})"
+            )
+        )
+        conn = partitioned_db.connection()
+
+        with pytest.raises(PartitionError, match="Split the bound"):
+            plan_swap(conn, [("dataset", "dataset_obs_9_v1")], key)
 
     def test_referenced_tables_are_collected_for_locking(
         self, partitioned_db: orm.Session, sample_observation: Observation
@@ -384,13 +414,13 @@ class TestSwap:
         assert _first_value(partitioned_db, f"dataset_obs_{key}", key) == 1.0
         assert _first_value(partitioned_db, first[0], key) == 9.9
 
-    def test_retired_relations_get_their_bound_check_back(
+    def test_retired_relations_still_carry_their_bound_check(
         self,
         partitioned_db: orm.Session,
         sample_observation: Observation,
         sample_target: Target,
     ):
-        """Without it a rollback would re-validate every row."""
+        """Kept from provisioning, not added under the lock."""
         key = sample_observation.id
         targets = (
             sample_target.id,
@@ -402,15 +432,107 @@ class TestSwap:
 
         result = swap(conn, plan_swap(conn, list(zip(PAIR, staged)), key))
 
-        for retired in result.retired:
-            definition = partitioned_db.execute(
-                sa.text(
-                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-                    "WHERE conname = :name"
-                ),
-                {"name": f"{retired}_partcheck"},
-            ).scalar()
-            assert definition is not None
+        for parent, retired in zip(PAIR, result.retired):
+            key_column = (
+                "observation_id"
+                if parent == "dataset"
+                else "source_observation_id"
+            )
+            assert has_bound_check(conn, retired, key_column, key)
+
+    def test_the_swap_adds_no_constraint_of_its_own(
+        self,
+        partitioned_db: orm.Session,
+        sample_observation: Observation,
+        sample_target: Target,
+    ):
+        """Validating a CHECK is a scan, and every parent is locked.
+
+        A hand-made partition carries no bound CHECK. The swap must not
+        quietly add one: that would read every row while holding ACCESS
+        EXCLUSIVE on every parent, which is the outage this design
+        exists to avoid. Preflight says so instead.
+        """
+        key = sample_observation.id
+        targets = (
+            sample_target.id,
+            _extra_target(partitioned_db, sample_target, 1),
+        )
+        partitioned_db.execute(
+            sa.text(
+                f"CREATE TABLE dataset_obs_{key} PARTITION OF dataset "
+                f"FOR VALUES IN ({key})"
+            )
+        )
+        _dataset_row(
+            partitioned_db, f"dataset_obs_{key}", key, targets[0], 1.0
+        )
+        conn = partitioned_db.connection()
+        dataset = ensure_staging_table(conn, "dataset", key, 1).table
+        _dataset_row(partitioned_db, dataset, key, targets[0], 9.9)
+        build_partition_indexes(conn, "dataset", dataset)
+        mirror_outbound_foreign_keys(conn, "dataset", dataset)
+
+        plan = plan_swap(conn, [("dataset", dataset)], key)
+        report = preflight(conn, plan)
+        assert report.unprotected_retirements == (f"dataset_obs_{key}",)
+        assert any("prepare_retirement" in f for f in report.expensive)
+
+        swap(conn, plan)
+        assert not has_bound_check(
+            conn, f"dataset_obs_{key}", "observation_id", key
+        )
+
+    def test_prepare_retirement_protects_a_hand_made_partition(
+        self,
+        partitioned_db: orm.Session,
+        sample_observation: Observation,
+        sample_target: Target,
+    ):
+        key = sample_observation.id
+        targets = (
+            sample_target.id,
+            _extra_target(partitioned_db, sample_target, 1),
+        )
+        partitioned_db.execute(
+            sa.text(
+                f"CREATE TABLE dataset_obs_{key} PARTITION OF dataset "
+                f"FOR VALUES IN ({key})"
+            )
+        )
+        _dataset_row(
+            partitioned_db, f"dataset_obs_{key}", key, targets[0], 1.0
+        )
+        conn = partitioned_db.connection()
+        dataset = ensure_staging_table(conn, "dataset", key, 1).table
+        build_partition_indexes(conn, "dataset", dataset)
+        mirror_outbound_foreign_keys(conn, "dataset", dataset)
+        plan = plan_swap(conn, [("dataset", dataset)], key)
+
+        added = prepare_retirement(conn, plan)
+
+        assert added == (f"dataset_obs_{key}_partcheck",)
+        assert preflight(conn, plan).unprotected_retirements == ()
+        assert prepare_retirement(conn, plan) == ()
+
+    def test_prepare_retirement_is_a_no_op_for_provisioned_partitions(
+        self,
+        partitioned_db: orm.Session,
+        sample_observation: Observation,
+        sample_target: Target,
+    ):
+        key = sample_observation.id
+        targets = (
+            sample_target.id,
+            _extra_target(partitioned_db, sample_target, 1),
+        )
+        _provision_live(partitioned_db, key, targets, 1.0)
+        staged = _stage(partitioned_db, key, 1, targets, 9.9)
+        conn = partitioned_db.connection()
+        plan = plan_swap(conn, list(zip(PAIR, staged)), key)
+
+        assert preflight(conn, plan).unprotected_retirements == ()
+        assert prepare_retirement(conn, plan) == ()
 
     def test_rolling_back_the_transaction_undoes_everything(
         self,
