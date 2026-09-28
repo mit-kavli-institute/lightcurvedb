@@ -137,10 +137,17 @@ a migration:
    session.commit()
 
 This emits ``CREATE TABLE ... PARTITION OF``, which creates the child
-indexes itself and needs no validation scan. It is the right tool for an
-*empty* slot and only for that: if some other relation already holds the
-value, it raises rather than adopting or replacing it, because replacing
-a populated partition is a swap and needs the rest of this page.
+indexes itself and needs no validation scan, and then adds a bound
+``CHECK`` while the table is still empty -- the only moment that
+constraint is free. It matters later: a partition keeps its ``CHECK``
+when detached, and a detached partition that has one can be re-attached
+without PostgreSQL re-reading every row. That is what makes rolling a
+replacement back cheap.
+
+It is the right tool for an *empty* slot and only for that: if some
+other relation already holds the value, it raises rather than adopting
+or replacing it, because replacing a populated partition is a swap and
+needs the rest of this page.
 
 This supersedes the manual ``CREATE TABLE ... PARTITION OF`` recipe in
 the CHANGELOG. There is no DEFAULT partition in production and there
@@ -301,9 +308,24 @@ Two details in that sequence are worth stating plainly:
   Setting only the first is a trap: a swap that eventually acquires
   ``ACCESS EXCLUSIVE`` can then hold it indefinitely, with every reader
   that arrived meanwhile queued behind it.
-* **Re-adding the ``CHECK`` to the retired relation is not cosmetic.** A
-  plain detach leaves none behind, so without it a rollback would
-  re-validate every row of the partition it is restoring.
+* **The swap adds no constraints.** A retired partition wants a bound
+  ``CHECK`` -- without one, re-attaching it during a rollback re-reads
+  every row -- but validating a ``CHECK`` *is* a scan, and doing it here
+  would mean scanning with every parent locked. Partitions this package
+  provisioned already carry the constraint. For one created by hand,
+  :func:`~lightcurvedb.core.partitions.prepare_retirement` adds it
+  beforehand, outside the swap's transaction, where the scan locks only
+  that partition:
+
+  .. code-block:: python
+
+     from lightcurvedb.core.partitions import prepare_retirement
+
+     prepare_retirement(conn, plan)   # own transaction, before the swap
+     session.commit()
+
+  ``report.unprotected_retirements`` names the partitions that need it,
+  and the same finding appears in ``report.expensive``.
 
 If the lock cannot be taken in time PostgreSQL raises SQLSTATE
 ``55P03`` and the transaction is dead.

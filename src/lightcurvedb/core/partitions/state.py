@@ -178,6 +178,14 @@ def derive_state(
 
     Notes
     -----
+    Emptiness separates ``CREATED`` from ``LOADED`` and nothing else.
+    A revision can legitimately hold no rows -- a reprocessing that
+    produces no lineage, or an observation with nothing in it -- and
+    such a revision still reaches ``FK_READY`` and is still promotable.
+    The catalog cannot tell "the load has not run" from "the load ran
+    and produced nothing", so preparation is judged by the indexes and
+    keys that are present rather than by row count.
+
     ``FK_READY`` counts only the foreign keys that *can* be pre-created:
     those pointing at unpartitioned tables. A key pointing at a
     partitioned table is deliberately never mirrored onto a staging
@@ -198,31 +206,31 @@ def derive_state(
             else RevisionState.LIVE
         )
 
-    if not _has_rows(conn, schema, name):
-        return RevisionState.CREATED
-
     parent_indexes = {
         spec.key for spec in index_definitions(conn, parent, schema=schema)
     }
     candidate_indexes = {
         spec.key for spec in index_definitions(conn, name, schema=schema)
     }
-    if not parent_indexes <= candidate_indexes:
-        return RevisionState.LOADED
 
-    wanted = {
-        spec.definition
-        for spec in foreign_key_definitions(conn, parent, schema=schema)
-        if not spec.referenced_is_partitioned
-    }
-    present = {
-        spec.definition
-        for spec in foreign_key_definitions(conn, name, schema=schema)
-        if spec.validated
-    }
-    return (
-        RevisionState.FK_READY if wanted <= present else RevisionState.INDEXED
-    )
+    if parent_indexes <= candidate_indexes:
+        wanted = {
+            spec.definition
+            for spec in foreign_key_definitions(conn, parent, schema=schema)
+            if not spec.referenced_is_partitioned
+        }
+        present = {
+            spec.definition
+            for spec in foreign_key_definitions(conn, name, schema=schema)
+            if spec.validated
+        }
+        if wanted <= present:
+            return RevisionState.FK_READY
+        return RevisionState.INDEXED
+
+    if _has_rows(conn, schema, name):
+        return RevisionState.LOADED
+    return RevisionState.CREATED
 
 
 def live_revision(
@@ -396,11 +404,28 @@ def assert_paired_revisions(
     ------
     RevisionSkewError
         If they disagree, naming each table and its revision.
+
+    Notes
+    -----
+    A parent with no relation at all for the key is skipped rather than
+    counted as disagreeing: nothing was ever provisioned there, which
+    is ordinary. A parent that *has* relations for the key but none
+    attached is a different matter -- something was detached and not
+    put back -- and does count as skew.
     """
     seen: dict[str, int | None] = {}
     for table in tables:
         _, name = resolve_qualified_name(table, schema=schema)
-        seen[name] = live_revision(conn, table, key_value, schema=schema)
+        live = live_revision(conn, table, key_value, schema=schema)
+        if live is None and not revisions_of(
+            conn, table, key_value, schema=schema
+        ):
+            # No relation of any revision exists for this key, so this
+            # parent was never provisioned here. That is an ordinary
+            # state -- a table with no rows for the observation -- not
+            # the residue of a half-finished swap.
+            continue
+        seen[name] = live
 
     distinct = set(seen.values())
     if len(distinct) > 1:

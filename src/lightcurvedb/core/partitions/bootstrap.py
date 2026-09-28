@@ -32,6 +32,7 @@ from lightcurvedb.core.partitions.catalog import (
     resolve_qualified_name,
 )
 from lightcurvedb.core.partitions.ddl import (
+    add_bound_check,
     create_staging_table,
     key_literal,
     quoted_relation,
@@ -90,7 +91,7 @@ def ensure_partition(
         the name.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
-    require_list_partitioned(conn, parent, schema=schema)
+    strategy = require_list_partitioned(conn, parent, schema=schema)
     name = PartitionName(parent, key_value, revision)
 
     live = find_partition_for_value(conn, parent, key_value, schema=schema)
@@ -118,6 +119,17 @@ def ensure_partition(
             f"FOR VALUES IN ({key_literal(key_value)})"
         )
     )
+    # While the table is empty this costs nothing, and it is the only
+    # moment it is free: validating the same constraint later means
+    # reading every row. It survives a detach, which is what keeps a
+    # future re-attach -- a rollback -- cheap.
+    add_bound_check(
+        conn,
+        name.table,
+        strategy.key_column,
+        key_value,
+        schema=schema,
+    )
     return name
 
 
@@ -129,10 +141,14 @@ def ensure_staging_table(
     *,
     schema: str | None = None,
 ) -> PartitionName:
-    """Make sure an empty, detached staging table exists for a revision.
+    """Make sure a detached staging table exists for a revision.
 
     Creates the table if it is absent and, either way, proves its
-    columns still match the parent's before returning.
+    columns still match the parent's before returning. It does **not**
+    look at the contents: a table left half-written by an interrupted
+    run is returned as it stands, because emptying it is the loader's
+    job -- loading is ``TRUNCATE`` then ``COPY`` in one transaction,
+    precisely so that a crashed load leaves nothing to clean up here.
 
     Parameters
     ----------
@@ -152,7 +168,8 @@ def ensure_staging_table(
     Returns
     -------
     PartitionName
-        The staging table's name.
+        The staging table's name, whether this call created it or found
+        it.
 
     Raises
     ------

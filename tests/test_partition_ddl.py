@@ -28,6 +28,7 @@ from lightcurvedb.core.partitions import (
     ensure_partition,
     ensure_staging_table,
     find_partition_for_value,
+    has_bound_check,
     index_definitions,
     lock_tables,
     mirror_outbound_foreign_keys,
@@ -210,6 +211,26 @@ class TestEnsureStagingTable:
 
         with pytest.raises(StagingShapeMismatchError, match="errors missing"):
             ensure_staging_table(conn, "dataset", 7, 1)
+
+    def test_a_dropped_column_on_the_parent_is_not_a_mismatch(
+        self, partitioned_db: orm.Session
+    ):
+        """``LIKE`` renumbers columns, so raw attnums would disagree."""
+        _sql(
+            partitioned_db,
+            "CREATE TABLE widget (obs int NOT NULL, doomed int, keep int) "
+            "PARTITION BY LIST (obs)",
+        )
+        _sql(partitioned_db, "ALTER TABLE widget DROP COLUMN doomed")
+        conn = partitioned_db.connection()
+
+        name = ensure_staging_table(conn, "widget", 1, 1).table
+
+        assert not column_mismatches(
+            column_signature(conn, "widget"),
+            column_signature(conn, name),
+            compare_ordinals=True,
+        )
 
     def test_verify_relation_shape_reports_type_drift(
         self, partitioned_db: orm.Session
@@ -484,32 +505,96 @@ class TestAttachAndDetach:
         assert report.unbacked_constraint_indexes == ("dataset_obs_7_v1_pkey",)
         assert not report.ok
 
-    def test_plain_detach_leaves_no_bound_check(
+    def test_plain_detach_adds_no_check_of_its_own(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
-        """Characterisation, PostgreSQL 14: hence add_bound_check."""
+        """Characterisation, PostgreSQL 14.
+
+        A partition created by hand carries only the bound PostgreSQL
+        derives from ``FOR VALUES IN``, and a plain detach does not
+        turn that into a constraint. Re-attaching such a relation means
+        re-reading every row -- which is why provisioning adds a real
+        CHECK up front.
+        """
         conn = partitioned_db.connection()
         key = sample_observation.id
-        name = ensure_partition(conn, "dataset", key).table
+        name = f"dataset_obs_{key}"
+        _sql(
+            partitioned_db,
+            f"CREATE TABLE {name} PARTITION OF dataset "
+            f"FOR VALUES IN ({key})",
+        )
         detach_partition(conn, "dataset", name)
 
         assert "c" not in _constraints(partitioned_db, name).values()
+        assert not check_attachable(
+            conn, "dataset", name, key
+        ).has_valid_partition_check
 
         added = add_bound_check(conn, name, "observation_id", key)
         assert added == f"{name}_partcheck"
-        report = check_attachable(conn, "dataset", name, key)
-        assert report.has_valid_partition_check
+        assert check_attachable(
+            conn, "dataset", name, key
+        ).has_valid_partition_check
+
+    def test_a_provisioned_partition_keeps_its_check_through_detach(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """So a rollback never pays for a validation scan."""
+        conn = partitioned_db.connection()
+        key = sample_observation.id
+        name = ensure_partition(conn, "dataset", key).table
+        assert has_bound_check(conn, name, "observation_id", key)
+
+        detach_partition(conn, "dataset", name)
+
+        assert has_bound_check(conn, name, "observation_id", key)
+        assert check_attachable(
+            conn, "dataset", name, key
+        ).has_valid_partition_check
 
     def test_add_bound_check_is_idempotent(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
         conn = partitioned_db.connection()
         key = sample_observation.id
-        name = ensure_partition(conn, "dataset", key).table
+        name = f"dataset_obs_{key}"
+        _sql(
+            partitioned_db,
+            f"CREATE TABLE {name} PARTITION OF dataset "
+            f"FOR VALUES IN ({key})",
+        )
         detach_partition(conn, "dataset", name)
 
         assert add_bound_check(conn, name, "observation_id", key) is not None
         assert add_bound_check(conn, name, "observation_id", key) is None
+
+    def test_detach_concurrently_works_on_an_autocommit_connection(
+        self,
+        partitioned_db: orm.Session,
+        database_engine: sa.Engine,
+        sample_observation: Observation,
+    ):
+        """The positive half of the autocommit guard.
+
+        ``Connection.get_isolation_level()`` reports the server's
+        traditional level even under autocommit, so a guard written
+        against it would reject every connection and this path would
+        be unreachable.
+        """
+        key = sample_observation.id
+        name = ensure_partition(
+            partitioned_db.connection(), "dataset", key
+        ).table
+        partitioned_db.commit()
+        partitioned_db.close()
+
+        with database_engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as conn:
+            detach_partition(conn, "dataset", name, concurrently=True)
+            assert find_partition_for_value(conn, "dataset", key) is None
+            assert relation_kind(conn, name) == "table"
 
     def test_detach_concurrently_refuses_inside_a_transaction(
         self, partitioned_db: orm.Session, sample_observation: Observation

@@ -122,6 +122,23 @@ class TestDeriveState:
         mirror_outbound_foreign_keys(conn, "dataset", name)
         assert derive_state(conn, "dataset", key, 1) is RevisionState.FK_READY
 
+    def test_an_empty_revision_still_reaches_fk_ready(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """A reprocessing may legitimately produce no rows at all.
+
+        Emptiness cannot mean "not loaded yet": the catalog cannot tell
+        that from "loaded, and there was nothing to load", and treating
+        it as unfinished would make such a revision unpromotable.
+        """
+        conn = partitioned_db.connection()
+        key = sample_observation.id
+        name = ensure_staging_table(conn, "dataset", key, 1).table
+        build_partition_indexes(conn, "dataset", name)
+        mirror_outbound_foreign_keys(conn, "dataset", name)
+
+        assert derive_state(conn, "dataset", key, 1) is RevisionState.FK_READY
+
     def test_an_attached_partition_is_live(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
@@ -269,12 +286,30 @@ class TestPairedRevisions:
         with pytest.raises(RevisionSkewError, match="dataset at 4"):
             assert_paired_revisions(conn, ["dataset", "datasethierarchy"], key)
 
-    def test_one_side_missing_is_skew(
+    def test_a_parent_never_provisioned_here_is_not_skew(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
+        """An observation with no lineage rows is an ordinary state."""
         conn = partitioned_db.connection()
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=1)
+
+        found = assert_paired_revisions(
+            conn, ["dataset", "datasethierarchy"], key
+        )
+        assert found == 1
+
+    def test_a_parent_left_detached_is_skew(
+        self, partitioned_db: orm.Session, sample_observation: Observation
+    ):
+        """Relations exist for the key but none is attached."""
+        conn = partitioned_db.connection()
+        key = sample_observation.id
+        ensure_partition(conn, "dataset", key, revision=1)
+        hierarchy = ensure_partition(
+            conn, "datasethierarchy", key, revision=1
+        ).table
+        detach_partition(conn, "datasethierarchy", hierarchy)
 
         with pytest.raises(RevisionSkewError, match="nothing"):
             assert_paired_revisions(conn, ["dataset", "datasethierarchy"], key)
