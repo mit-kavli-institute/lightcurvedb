@@ -207,3 +207,51 @@ Constants
 
 .. autodata:: lightcurvedb.util.constants.DEFAULT_CONFIG_PATH
    :no-index:
+
+Partitions
+----------
+
+Naming and read-only introspection of the LIST-partitioned tables. The
+canonical reference, with usage, is :doc:`partitioning`.
+
+.. autoclass:: lightcurvedb.core.partitions.PartitionName
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.PartitionStrategy
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.PartitionInfo
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.AttachabilityReport
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.partition_strategy
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.require_list_partitioned
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.list_table_partitions
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.find_partition_for_value
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.default_partition_of
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.check_attachable
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.relation_kind
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.resolve_table_name
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.parse_list_bound
+   :no-index:
+
+.. autoexception:: lightcurvedb.core.partitions.PartitionError
+   :no-index:
