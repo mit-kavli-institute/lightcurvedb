@@ -17,7 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partitions with bounds and sizes, and the partition holding a given
   value. `check_attachable` predicts -- without taking a lock -- whether
   `ATTACH PARTITION` would fail, or succeed only by scanning or building
-  under `ACCESS EXCLUSIVE`
+  under `ACCESS EXCLUSIVE`. Also exposes `column_signature`,
+  `index_definitions` and `foreign_key_definitions` for comparing a
+  candidate against its parent
+- **Partition DDL**: `lightcurvedb.core.partitions.ddl` emits the
+  statements a replacement needs -- `create_staging_table` (a `LIKE ...
+  INCLUDING ALL EXCLUDING INDEXES` copy carrying an inline, already-valid
+  bound `CHECK`), `build_partition_indexes` (primary keys as real
+  constraints, so `ATTACH` adopts them instead of rebuilding under
+  `ACCESS EXCLUSIVE`), `mirror_outbound_foreign_keys`, `attach_partition`,
+  `detach_partition`, `add_bound_check`, `drop_relation`, plus
+  `set_local_timeouts`, `lock_tables` and `referenced_tables`
+- **Idempotent provisioning**: `lightcurvedb.core.partitions.bootstrap`
+  with `ensure_partition`, `ensure_staging_table` and
+  `verify_relation_shape`. Safe to call on every process start -- this is
+  what replaces a migration tool for partition creation
+- **Partition lifecycle**: `lightcurvedb.core.partitions.state` derives a
+  revision's state from `pg_catalog` (`derive_state`), reports which
+  revision is live (`live_revision`, `revisions_of`), allocates the next
+  one (`next_revision`, monotonic per observation across campaigns), and
+  refuses paired tables drifting apart (`assert_paired_revisions`)
+- **Atomic multi-table swap**: `lightcurvedb.core.partitions.swap`
+  promotes staged partitions for several tables in one transaction.
+  `plan_swap` derives the detach/attach order from foreign keys in the
+  catalog, `preflight` predicts the cost without taking a lock, `swap`
+  bounds both timeouts and re-checks under lock what it is retiring,
+  `rollback_swap` performs the mirror swap while the retired relations
+  still exist, and `drop_retired` is dry-run by default
 - **Dataset Hierarchy**: New `DataSetHierarchy` model for tracking data
   lineage and processing provenance
 - DataSet now supports hierarchical relationships via `source_datasets` and
@@ -160,12 +186,44 @@ ALTER TABLE datasethierarchy
 
 #### Partition management
 
-The DataSet table requires partition management:
-```sql
--- Create partitions for each observation
-CREATE TABLE dataset_obs_1 PARTITION OF dataset FOR VALUES IN (1);
-CREATE TABLE dataset_obs_2 PARTITION OF dataset FOR VALUES IN (2);
+Partitions are now created from Python, and the call is idempotent, so it
+belongs at the start of an ingestion run rather than in a DBA checklist:
 
--- Default partition for unexpected values
-CREATE TABLE dataset_default PARTITION OF dataset DEFAULT;
+```python
+from lightcurvedb.core.partitions import ensure_partition
+
+for table in ("dataset", "datasethierarchy", "target_specific_time"):
+    ensure_partition(session.connection(), table, observation_id)
+session.commit()
 ```
+
+That emits the SQL below, which is what the manual recipe always was:
+
+```sql
+CREATE TABLE dataset_obs_1 PARTITION OF dataset FOR VALUES IN (1);
+```
+
+**Default partitions should be dropped from provisioned databases.**
+They were previously recommended here as a catch-all. While one exists,
+every `ATTACH PARTITION` must scan it under `ACCESS EXCLUSIVE` to prove
+none of its rows belong in the incoming partition -- and fails outright
+if any do -- and `DETACH PARTITION ... CONCURRENTLY` is refused entirely.
+Check for accumulated rows before dropping:
+
+```sql
+-- 0. Anything in here has no partition of its own. Resolve it first.
+SELECT observation_id, count(*)
+  FROM dataset_default GROUP BY observation_id ORDER BY 2 DESC;
+
+DROP TABLE dataset_default;
+```
+
+#### Replacing an observation's data
+
+See `docs/source/partitioning.rst` for the full procedure. In outline: a
+replacement is staged as a standalone table alongside the live
+partition, loaded, indexed and analysed, then promoted by detaching the
+old partitions and attaching the new ones for `dataset` and
+`datasethierarchy` together, inside one transaction. Both revisions stay
+on disk until `drop_retired` is called explicitly, which is what makes
+the change reviewable and reversible.
