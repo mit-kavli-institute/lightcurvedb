@@ -255,3 +255,63 @@ canonical reference, with usage, is :doc:`partitioning`.
 
 .. autoexception:: lightcurvedb.core.partitions.PartitionError
    :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.ensure_partition
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.ensure_staging_table
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.create_staging_table
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.build_partition_indexes
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.mirror_outbound_foreign_keys
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.attach_partition
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.detach_partition
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.add_bound_check
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.OrbitState
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.derive_state
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.live_revision
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.next_revision
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.assert_paired_revisions
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.SwapPlan
+   :no-index:
+
+.. autoclass:: lightcurvedb.core.partitions.SwapResult
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.plan_swap
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.preflight
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.swap
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.rollback_swap
+   :no-index:
+
+.. autofunction:: lightcurvedb.core.partitions.drop_retired
+   :no-index:

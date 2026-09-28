@@ -532,9 +532,21 @@ The schema enforces several important constraints:
 
 5. **Partitioning**:
 
-   - DataSet table is partitioned by LIST on ``observation_id``
-   - Partitions must be created by DBA before inserting data for new observations
-   - A default partition handles unexpected observation IDs
+   - DataSet, DataSetHierarchy and TargetSpecificTime are partitioned by
+     LIST on their observation id
+   - A partition must exist before data for an observation can be
+     inserted. Call
+     :func:`lightcurvedb.core.partitions.ensure_partition` at the start
+     of an ingestion run -- it is idempotent, so no DBA step and no
+     migration is involved. See :doc:`partitioning`.
+   - Production databases should have **no default partition**. While
+     one exists, attaching any partition requires scanning it under
+     ``ACCESS EXCLUSIVE``, detaching concurrently is refused outright,
+     and rows that land in it are invisible to the replacement
+     machinery, which works one observation at a time.
+   - An observation's data is replaced by building a new partition
+     alongside the live one and swapping them atomically, so both
+     revisions coexist until the new one is accepted
 
 6. **Check Constraints**:
 
