@@ -70,3 +70,32 @@ class AutocommitRequiredError(PartitionError):
     must carry ``isolation_level="AUTOCOMMIT"``. Checking before the
     statement is issued keeps the caller's transaction unpoisoned.
     """
+
+
+class IllegalStateTransitionError(PartitionError):
+    """A revision was moved between two states with no legal edge.
+
+    The lifecycle is a small directed graph, not a set of independent
+    flags; refusing an unlisted edge catches bookkeeping mistakes -- such
+    as accepting a revision that was never swapped in -- before they are
+    written down.
+    """
+
+
+class SwapRaceError(PartitionError):
+    """The live partition changed between planning and swapping.
+
+    A plan names the relation it expects to retire. If another session
+    promoted a different revision in the meantime, continuing would
+    detach something the plan never inspected, so the swap aborts with
+    its transaction intact.
+    """
+
+
+class RevisionSkewError(PartitionError):
+    """Paired tables are live at different revisions for one key.
+
+    ``dataset`` at revision 4 while ``datasethierarchy`` is still at 3
+    means a swap was not atomic. Nothing in normal operation can produce
+    it, so it is reported rather than repaired.
+    """
