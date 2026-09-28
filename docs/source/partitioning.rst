@@ -211,7 +211,6 @@ Naming
 
 .. automodule:: lightcurvedb.core.partitions.naming
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Catalog
@@ -219,7 +218,6 @@ Catalog
 
 .. automodule:: lightcurvedb.core.partitions.catalog
    :members:
-   :undoc-members:
    :show-inheritance:
 
 Errors
