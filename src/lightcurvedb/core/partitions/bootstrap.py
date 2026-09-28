@@ -51,6 +51,7 @@ def ensure_partition(
     *,
     revision: int = 0,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> PartitionName:
     """Make sure a live partition holds ``key_value``, creating one if not.
 
@@ -74,7 +75,11 @@ def ensure_partition(
         Revision to name the partition with. The default produces the
         unversioned ``<base>_obs_<id>`` form a DBA would write by hand.
     schema : str, optional
-        Schema to work in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -91,27 +96,30 @@ def ensure_partition(
         the name.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     strategy = require_list_partitioned(conn, parent, schema=schema)
     name = PartitionName(parent, key_value, revision)
 
     live = find_partition_for_value(conn, parent, key_value, schema=schema)
     if live is not None:
-        if live.name != name.table:
+        # Compare where it is as well as what it is called: the same
+        # relation name in two schemas is two different relations.
+        if (live.name, live.schema) != (name.table, partition_schema):
             raise PartitionError(
-                f"{parent} already has {live.name} attached for "
-                f"{key_value}. Promoting {name.table} in its place is a "
-                "swap, not a provisioning step"
+                f"{parent} already has {live.qualified_name} attached for "
+                f"{key_value}. Promoting {partition_schema}.{name.table} "
+                "in its place is a swap, not a provisioning step"
             )
         return name
 
-    if relation_kind(conn, name.table, schema=schema) is not None:
+    if relation_kind(conn, name.table, schema=partition_schema) is not None:
         raise PartitionError(
-            f"{schema}.{name.table} exists but is not attached to "
-            f"{parent}. It is a staged or retired relation, and "
+            f"{partition_schema}.{name.table} exists but is not attached "
+            f"to {parent}. It is a staged or retired relation, and "
             "attaching it is a swap, not a provisioning step"
         )
 
-    child = quoted_relation(conn, name.table, schema=schema)
+    child = quoted_relation(conn, name.table, schema=partition_schema)
     conn.execute(
         sa.text(
             f"CREATE TABLE {child} PARTITION OF "
@@ -128,7 +136,7 @@ def ensure_partition(
         name.table,
         strategy.key_column,
         key_value,
-        schema=schema,
+        schema=partition_schema,
     )
     return name
 
@@ -140,6 +148,7 @@ def ensure_staging_table(
     revision: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> PartitionName:
     """Make sure a detached staging table exists for a revision.
 
@@ -163,7 +172,11 @@ def ensure_staging_table(
         :func:`~lightcurvedb.core.partitions.state.next_revision` rather
         than guessing, so repeat campaigns never collide.
     schema : str, optional
-        Schema to work in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -188,22 +201,37 @@ def ensure_staging_table(
     committed to the swap.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     require_list_partitioned(conn, parent, schema=schema)
     name = PartitionName(parent, key_value, revision)
 
-    if relation_kind(conn, name.table, schema=schema) is not None:
+    if relation_kind(conn, name.table, schema=partition_schema) is not None:
         live = find_partition_for_value(conn, parent, key_value, schema=schema)
-        if live is not None and live.name == name.table:
+        if live is not None and (live.name, live.schema) == (
+            name.table,
+            partition_schema,
+        ):
             raise PartitionError(
-                f"{schema}.{name.table} is attached to {parent} and holds "
-                f"live data for {key_value}"
+                f"{partition_schema}.{name.table} is attached to {parent} "
+                f"and holds live data for {key_value}"
             )
     else:
         create_staging_table(
-            conn, parent, name.table, key_value, schema=schema
+            conn,
+            parent,
+            name.table,
+            key_value,
+            schema=schema,
+            partition_schema=partition_schema,
         )
 
-    verify_relation_shape(conn, parent, name.table, schema=schema)
+    verify_relation_shape(
+        conn,
+        parent,
+        name.table,
+        schema=schema,
+        partition_schema=partition_schema,
+    )
     return name
 
 
@@ -213,6 +241,7 @@ def verify_relation_shape(
     candidate: str,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> None:
     """Prove ``candidate`` still has the parent's columns.
 
@@ -231,7 +260,11 @@ def verify_relation_shape(
     candidate : str
         The relation to check against it.
     schema : str, optional
-        Schema for both. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Raises
     ------
@@ -241,20 +274,25 @@ def verify_relation_shape(
         If either relation is missing.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     findings = column_mismatches(
         column_signature(conn, parent, schema=schema),
-        column_signature(conn, candidate, schema=schema),
+        column_signature(conn, candidate, schema=partition_schema),
         compare_ordinals=True,
     )
     if findings:
         raise StagingShapeMismatchError(
-            f"{schema}.{candidate} does not match {schema}.{parent}: "
-            + "; ".join(findings)
+            f"{partition_schema}.{candidate} does not match "
+            f"{schema}.{parent}: " + "; ".join(findings)
         )
 
 
 def ensure_default_partition(
-    conn: sa.Connection, table: TableRef, *, schema: str | None = None
+    conn: sa.Connection,
+    table: TableRef,
+    *,
+    schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> str:
     """Make sure ``table`` has a DEFAULT partition. Development only.
 
@@ -265,7 +303,11 @@ def ensure_default_partition(
     table : str or sqlalchemy.Table or object with ``__table__``
         The partitioned parent.
     schema : str, optional
-        Schema to work in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -283,13 +325,14 @@ def ensure_default_partition(
     works one bound at a time.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     require_list_partitioned(conn, parent, schema=schema)
     existing = default_partition_of(conn, parent, schema=schema)
     if existing is not None:
         return existing.name
 
     name = f"{parent}_default"
-    child = quoted_relation(conn, name, schema=schema)
+    child = quoted_relation(conn, name, schema=partition_schema)
     conn.execute(
         sa.text(
             f"CREATE TABLE {child} PARTITION OF "

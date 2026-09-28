@@ -33,6 +33,13 @@ attached; nothing is renamed. Consequently the name tells you *which
 revision a table is*, never *whether it is live* -- ask the catalog for
 that.
 
+**A partition need not live with its parent.** ``schema`` names the
+partitioned parent; ``partition_schema`` names where its children go, and
+defaults to the parent's. A deployment that keeps every child in a schema
+of its own -- so ``\dt`` stays readable -- passes ``partition_schema`` and
+nothing else changes: the read paths walk ``pg_inherits`` and report each
+child's real schema themselves.
+
 **Nothing commits.** Every function takes a
 :class:`sqlalchemy.engine.Connection` and leaves the transaction open.
 For the reads that is merely tidy; for the swap it is the whole design,
@@ -81,6 +88,40 @@ constructed. A name that constructs can therefore name every object it
 owns; one that cannot raises
 :class:`~lightcurvedb.core.partitions.PartitionNameTooLongError` at that
 point rather than letting ``CREATE INDEX`` silently truncate later.
+
+Where partitions live
+---------------------
+
+By default a partition is created in its parent's schema, which is what
+PostgreSQL does unless a schema is named. Pass ``partition_schema`` to put
+the children somewhere else:
+
+.. code-block:: python
+
+   ensure_partition(conn, "dataset", 5, partition_schema="_partitions")
+   # CREATE TABLE _partitions.dataset_obs_5 PARTITION OF public.dataset ...
+
+   find_partition_for_value(conn, "dataset", 5).schema   # '_partitions'
+
+Two rules follow from that, and they are the ones worth holding on to:
+
+* **Reading needs no argument.** Every read walks ``pg_inherits`` from the
+  parent's oid, which is schema-blind, and
+  :class:`~lightcurvedb.core.partitions.PartitionInfo` carries the child's
+  real ``schema``. Only the functions that *write* a name into a statement
+  -- or sweep ``pg_class`` for one, such as
+  :func:`~lightcurvedb.core.partitions.revisions_of` -- have to be told.
+* **A name is not an address.**
+  :class:`~lightcurvedb.core.partitions.PartitionName` is schema-free by
+  design: the same relation name in two schemas is two different
+  relations, and which one you mean is an argument, not part of the name.
+
+A swap is the one place the two sides can differ. ``partition_schema`` on
+:func:`~lightcurvedb.core.partitions.plan_swap` says where the *incoming*
+relations are; each retiring relation is found in the catalog and carries
+its own ``retiring_schema``, so a deployment part-way through moving its
+partitions can promote ``_partitions.dataset_obs_5_v1`` over a live
+``public.dataset_obs_5`` in one step.
 
 Reading what is attached
 ------------------------
@@ -136,6 +177,12 @@ a migration:
        ensure_partition(conn, table, observation_id)
    session.commit()
 
+   # ... or, keeping the children in a schema of their own:
+   for table in ("dataset", "datasethierarchy", "target_specific_time"):
+       ensure_partition(
+           conn, table, observation_id, partition_schema="_partitions"
+       )
+
 This emits ``CREATE TABLE ... PARTITION OF``, which creates the child
 indexes itself and needs no validation scan, and then adds a bound
 ``CHECK`` while the table is still empty -- the only moment that
@@ -176,6 +223,10 @@ parent.
    revision = next_revision(conn, "dataset", 5)      # 1, if v0 is live
    staged = ensure_staging_table(conn, "dataset", 5, revision)
    staged.table                                      # 'dataset_obs_5_v1'
+
+   # Every function on this page takes ``partition_schema`` alongside
+   # ``schema``; pass it consistently or the sweeps disagree about which
+   # revisions exist.
 
    # ... bulk load into staged.table ...
 
@@ -274,6 +325,7 @@ changes all at once.
        [("dataset", "dataset_obs_5_v1"),
         ("datasethierarchy", "datasethierarchy_obs_5_v1")],
        5,
+       # partition_schema="_partitions",   # where the incoming relations are
    )
 
    report = preflight(conn, plan)
@@ -371,8 +423,8 @@ takes an explicit list:
 
    from lightcurvedb.core.partitions import drop_retired
 
-   drop_retired(conn, result.retired)                   # lists, drops nothing
-   drop_retired(conn, result.retired, dry_run=False)    # irreversible
+   drop_retired(conn, result.retired, schema=result.partition_schema)
+   # lists, drops nothing; add dry_run=False to make it irreversible
 
 Nothing drops a retired partition automatically, and nothing here knows
 whether a revision was signed off -- that record belongs in a registry,
@@ -486,6 +538,10 @@ Several refusals exist specifically to stop a plausible-looking mistake:
   promotion would be discarded.
 * :class:`~lightcurvedb.core.partitions.RevisionSkewError` -- paired
   tables are live at different revisions.
+* :class:`~lightcurvedb.core.partitions.PartitionError` from
+  :func:`~lightcurvedb.core.partitions.rollback_swap` -- the relations a
+  swap retired are spread across two schemas, and one plan carries one
+  ``partition_schema``, so no single rollback can address them all.
 
 .. warning::
    A DEFAULT partition is convenient in a test database and harmful in a

@@ -771,6 +771,11 @@ class AttachabilityReport:
 
     Attributes
     ----------
+    parent_schema, candidate_schema : str
+        Where each relation lives. They differ when a deployment keeps
+        its partitions in a schema of their own, so every message naming
+        a relation qualifies it -- see :attr:`qualified_parent` and
+        :attr:`qualified_candidate`.
     column_mismatches : tuple of str
         Columns missing, extra, mistyped, or nullable where the parent's
         is ``NOT NULL``. Blocking.
@@ -799,7 +804,9 @@ class AttachabilityReport:
     """
 
     parent: str
+    parent_schema: str
     candidate: str
+    candidate_schema: str
     key_column: str
     key_value: int
     candidate_kind: str | None
@@ -813,12 +820,22 @@ class AttachabilityReport:
     default_partition_conflicts: bool
 
     @property
+    def qualified_parent(self) -> str:
+        """``<parent_schema>.<parent>``."""
+        return f"{self.parent_schema}.{self.parent}"
+
+    @property
+    def qualified_candidate(self) -> str:
+        """``<candidate_schema>.<candidate>``."""
+        return f"{self.candidate_schema}.{self.candidate}"
+
+    @property
     def blocking(self) -> tuple[str, ...]:
         """Findings that would make ``ATTACH`` fail."""
         found: list[str] = []
         if self.candidate_kind != "table":
             found.append(
-                f"candidate {self.candidate} is "
+                f"candidate {self.qualified_candidate} is "
                 + (self.candidate_kind or "absent")
                 + ", not a plain table"
             )
@@ -878,7 +895,8 @@ class AttachabilityReport:
             problems.extend(self.expensive)
         if problems:
             raise NotAttachableError(
-                f"{self.candidate} cannot be attached to {self.parent} "
+                f"{self.qualified_candidate} cannot be attached to "
+                f"{self.qualified_parent} "
                 f"for {self.key_column} = {self.key_value}"
                 + ":\n  "
                 + "\n  ".join(problems)
@@ -1022,7 +1040,8 @@ def has_bound_check(
     key_value : int
         The value the relation should be constrained to.
     schema : str, optional
-        Schema to look in. Defaults to ``public``.
+        Schema ``relation`` lives in -- the partition schema, which is
+        not necessarily the parent's. Defaults to ``public``.
 
     Returns
     -------
@@ -1049,6 +1068,7 @@ def check_attachable(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> AttachabilityReport:
     """Predict what ``ATTACH PARTITION candidate FOR VALUES IN (key_value)``
     would do, without taking any lock.
@@ -1060,6 +1080,12 @@ def check_attachable(
     that is a real scan, but it is a plain read rather than one under
     ``ACCESS EXCLUSIVE``.
 
+    ``schema`` names the parent; ``partition_schema`` names where
+    ``candidate`` lives, and defaults to the parent's schema, which is the
+    layout PostgreSQL produces unless a schema is named. The DEFAULT
+    partition is found by oid and probed wherever it actually is, so it
+    needs neither.
+
     Raises
     ------
     RelationNotFoundError
@@ -1070,12 +1096,13 @@ def check_attachable(
         If the parent is not LIST-partitioned on a single column.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     parent_oid = _require_oid(conn, schema, parent)
     strategy = require_list_partitioned(conn, parent, schema=schema)
     key_column = strategy.key_column
 
-    candidate_kind = relation_kind(conn, candidate, schema=schema)
-    candidate_oid = _relation_oid(conn, schema, candidate)
+    candidate_kind = relation_kind(conn, candidate, schema=partition_schema)
+    candidate_oid = _relation_oid(conn, partition_schema, candidate)
 
     default_name: str | None = None
     default_conflicts = False
@@ -1092,11 +1119,12 @@ def check_attachable(
             {"oid": strategy.default_partition_oid},
         ).one_or_none()
         if default_row is not None:
-            default_name = default_row.relname
+            found: str = default_row.relname
+            default_name = found
             default_conflicts = _default_holds(
                 conn,
                 default_row.nspname,
-                default_name,
+                found,
                 key_column,
                 key_value,
             )
@@ -1104,7 +1132,9 @@ def check_attachable(
     if candidate_oid is None or candidate_kind != "table":
         return AttachabilityReport(
             parent=parent,
+            parent_schema=schema,
             candidate=candidate,
+            candidate_schema=partition_schema,
             key_column=key_column,
             key_value=key_value,
             candidate_kind=candidate_kind,
@@ -1143,7 +1173,9 @@ def check_attachable(
 
     return AttachabilityReport(
         parent=parent,
+        parent_schema=schema,
         candidate=candidate,
+        candidate_schema=partition_schema,
         key_column=key_column,
         key_value=key_value,
         candidate_kind=candidate_kind,

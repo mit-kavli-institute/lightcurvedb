@@ -215,6 +215,7 @@ def create_staging_table(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     if_not_exists: bool = False,
 ) -> None:
     """Create a standalone table shaped like a partition of ``table``.
@@ -237,8 +238,11 @@ def create_staging_table(
         The LIST value this table will hold, written into a bound
         constraint named ``<candidate>_partcheck``.
     schema : str, optional
-        Schema for both relations. Defaults to the parent's, else
-        ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
     if_not_exists : bool, default False
         Suppress the error when the table already exists. See the
         warning below before turning this on.
@@ -272,13 +276,15 @@ def create_staging_table(
        which follows up with a column comparison.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     strategy = require_list_partitioned(conn, parent, schema=schema)
     quote = conn.dialect.identifier_preparer.quote
     check = _derived(candidate, "partcheck")
     guard = "IF NOT EXISTS " if if_not_exists else ""
     conn.execute(
         sa.text(
-            f"CREATE TABLE {guard}{_qualified(conn, schema, candidate)} ("
+            f"CREATE TABLE {guard}"
+            f"{_qualified(conn, partition_schema, candidate)} ("
             f"LIKE {_qualified(conn, schema, parent)} "
             f"INCLUDING ALL EXCLUDING INDEXES, "
             f"CONSTRAINT {quote(check)} CHECK ("
@@ -352,6 +358,7 @@ def build_partition_indexes(
     candidate: str,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     maintenance_work_mem: str | None = None,
     max_parallel_maintenance_workers: int | None = None,
 ) -> tuple[str, ...]:
@@ -371,7 +378,11 @@ def build_partition_indexes(
     candidate : str
         The standalone table to build them on.
     schema : str, optional
-        Schema for both. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
     maintenance_work_mem : str, optional
         ``SET LOCAL maintenance_work_mem`` for the duration, e.g.
         ``"4GB"``. Index builds spill to disk without it.
@@ -411,8 +422,9 @@ def build_partition_indexes(
     behind if it fails.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     quote = conn.dialect.identifier_preparer.quote
-    target = _qualified(conn, schema, candidate)
+    target = _qualified(conn, partition_schema, candidate)
 
     if maintenance_work_mem is not None:
         if not _MEMORY.match(maintenance_work_mem):
@@ -441,7 +453,7 @@ def build_partition_indexes(
                 + "_key"
             )
             name = _derived(candidate, _unique_suffix(taken, stem))
-            if _constraint_exists(conn, schema, candidate, name):
+            if _constraint_exists(conn, partition_schema, candidate, name):
                 continue
             conn.execute(
                 sa.text(
@@ -459,7 +471,7 @@ def build_partition_indexes(
             unique = "UNIQUE " if spec.unique else ""
             suffix = _unique_suffix(taken, _index_suffix(spec.name, parent))
             name = _derived(candidate, suffix)
-            if relation_kind(conn, name, schema=schema) is not None:
+            if relation_kind(conn, name, schema=partition_schema) is not None:
                 continue
             conn.execute(
                 sa.text(
@@ -476,6 +488,7 @@ def mirror_outbound_foreign_keys(
     candidate: str,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     include_partitioned_referents: bool = False,
 ) -> tuple[str, ...]:
     """Copy the parent's outbound foreign keys onto ``candidate``.
@@ -494,7 +507,11 @@ def mirror_outbound_foreign_keys(
     candidate : str
         The standalone table to put them on.
     schema : str, optional
-        Schema for both. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
     include_partitioned_referents : bool, default False
         Also mirror keys pointing at partitioned tables. See the warning.
 
@@ -517,8 +534,9 @@ def mirror_outbound_foreign_keys(
     that verification has to happen inside the swap window.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     quote = conn.dialect.identifier_preparer.quote
-    target = _qualified(conn, schema, candidate)
+    target = _qualified(conn, partition_schema, candidate)
 
     created: list[str] = []
     taken: set[str] = set()
@@ -532,7 +550,7 @@ def mirror_outbound_foreign_keys(
             continue
         stem = spec.name.removeprefix(f"{parent}_") or f"fk{index}"
         name = _derived(candidate, _unique_suffix(taken, stem))
-        if _constraint_exists(conn, schema, candidate, name):
+        if _constraint_exists(conn, partition_schema, candidate, name):
             continue
         conn.execute(
             sa.text(
@@ -572,6 +590,7 @@ def attach_partition(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     preflight: bool = True,
     allow_expensive: bool = True,
 ) -> None:
@@ -594,7 +613,11 @@ def attach_partition(
     key_value : int
         The LIST value it will hold.
     schema : str, optional
-        Schema for both. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
     preflight : bool, default True
         Run :func:`~lightcurvedb.core.partitions.check_attachable` first
         and refuse on findings that would make the statement fail.
@@ -613,14 +636,21 @@ def attach_partition(
         If the pre-flight found something disqualifying.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     if preflight:
         check_attachable(
-            conn, parent, candidate, key_value, schema=schema
+            conn,
+            parent,
+            candidate,
+            key_value,
+            schema=schema,
+            partition_schema=partition_schema,
         ).raise_for_status(allow_expensive=allow_expensive)
     conn.execute(
         sa.text(
             f"ALTER TABLE {_qualified(conn, schema, parent)} "
-            f"ATTACH PARTITION {_qualified(conn, schema, candidate)} "
+            "ATTACH PARTITION "
+            f"{_qualified(conn, partition_schema, candidate)} "
             f"FOR VALUES IN ({key_literal(key_value)})"
         )
     )
@@ -632,6 +662,7 @@ def detach_partition(
     partition: str,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     concurrently: bool = False,
     finalize: bool = False,
 ) -> None:
@@ -652,7 +683,11 @@ def detach_partition(
     partition : str
         The attached partition to detach.
     schema : str, optional
-        Schema for both. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
     concurrently : bool, default False
         Use ``DETACH PARTITION ... CONCURRENTLY``, which takes only
         ``SHARE UPDATE EXCLUSIVE`` and so does not block readers.
@@ -696,15 +731,17 @@ def detach_partition(
             'execution_options(isolation_level="AUTOCOMMIT")'
         )
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     suffix = ""
     if concurrently:
         suffix = " CONCURRENTLY"
     elif finalize:
         suffix = " FINALIZE"
+    detached = _qualified(conn, partition_schema, partition)
     conn.execute(
         sa.text(
             f"ALTER TABLE {_qualified(conn, schema, parent)} "
-            f"DETACH PARTITION {_qualified(conn, schema, partition)}{suffix}"
+            f"DETACH PARTITION {detached}{suffix}"
         )
     )
 

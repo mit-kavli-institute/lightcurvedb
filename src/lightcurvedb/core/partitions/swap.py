@@ -76,11 +76,16 @@ class SwapPair:
     retiring : str or None
         The relation currently attached for the key, or ``None`` when
         the slot is empty and this is a first provisioning.
+    retiring_schema : str or None
+        Where ``retiring`` actually lives, read from the catalog rather
+        than assumed, so a partition outside its parent's schema is
+        detached where it is. ``None`` exactly when ``retiring`` is.
     """
 
     parent: str
     incoming: str
     retiring: str | None
+    retiring_schema: str | None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -92,7 +97,11 @@ class SwapPlan:
     key_value : int
         The LIST value being replaced across every parent.
     schema : str
-        Schema all the relations live in.
+        Schema the partitioned parents live in.
+    partition_schema : str
+        Schema the *incoming* relations live in. Defaults to the
+        parents' schema. Each retiring relation carries its own, which
+        may differ while a deployment is moving its partitions.
     pairs : tuple of SwapPair
         Ordered so that a parent comes before any parent that
         references it. Attaches run in this order and detaches in
@@ -106,6 +115,7 @@ class SwapPlan:
 
     key_value: int
     schema: str
+    partition_schema: str
     pairs: tuple[SwapPair, ...]
     referenced: tuple[str, ...]
     lock_timeout: str | None
@@ -129,11 +139,15 @@ class SwapStep:
         The relation now attached.
     retired : str or None
         The relation detached to make room, still on disk.
+    retired_schema : str or None
+        Where ``retired`` was, and still is. ``None`` exactly when
+        ``retired`` is.
     """
 
     parent: str
     promoted: str
     retired: str | None
+    retired_schema: str | None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -145,13 +159,17 @@ class SwapResult:
     key_value : int
         The LIST value replaced.
     schema : str
-        Schema the relations live in.
+        Schema the partitioned parents live in.
+    partition_schema : str
+        Schema the promoted relations live in. Each retired relation
+        carries its own on its :class:`SwapStep`.
     steps : tuple of SwapStep
         One per parent, in the order they were attached.
     """
 
     key_value: int
     schema: str
+    partition_schema: str
     steps: tuple[SwapStep, ...]
 
     @property
@@ -269,6 +287,7 @@ def plan_swap(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
     lock_timeout: str | None = "5s",
     statement_timeout: str | None = "120s",
 ) -> SwapPlan:
@@ -287,8 +306,12 @@ def plan_swap(
     key_value : int
         The LIST value being replaced.
     schema : str, optional
-        Schema for everything involved. Defaults to the first parent's,
-        else ``public``.
+        Schema of the partitioned parents. Defaults to the first
+        parent's, else ``public``.
+    partition_schema : str, optional
+        Schema the *incoming* relations live in. Defaults to the
+        parents'. The retiring side is not covered by this: each one is
+        found in the catalog and detached wherever it actually is.
     lock_timeout, statement_timeout : str or None
         Recorded on the plan and applied by :func:`swap`.
 
@@ -328,6 +351,7 @@ def plan_swap(
     if len(schemas) > 1:
         raise ValueError(f"all parents must share one schema, got {schemas}")
     schema = schemas.pop()
+    partition_schema = partition_schema or schema
 
     unordered: dict[str, SwapPair] = {}
     for _, parent, incoming in resolved:
@@ -350,6 +374,7 @@ def plan_swap(
             parent=parent,
             incoming=incoming,
             retiring=None if live is None else live.name,
+            retiring_schema=None if live is None else live.schema,
         )
 
     ordered = _order_by_references(conn, unordered, schema)
@@ -357,6 +382,7 @@ def plan_swap(
     return SwapPlan(
         key_value=key_value,
         schema=schema,
+        partition_schema=partition_schema,
         pairs=tuple(ordered.values()),
         referenced=referenced,
         lock_timeout=lock_timeout,
@@ -396,7 +422,11 @@ def preflight(
         would cause, so it stops the swap rather than being reported.
     """
     assert_paired_revisions(
-        conn, plan.parents, plan.key_value, schema=plan.schema
+        conn,
+        plan.parents,
+        plan.key_value,
+        schema=plan.schema,
+        partition_schema=plan.partition_schema,
     )
     reports = tuple(
         check_attachable(
@@ -405,6 +435,7 @@ def preflight(
             pair.incoming,
             plan.key_value,
             schema=plan.schema,
+            partition_schema=plan.partition_schema,
         )
         for pair in plan.pairs
     )
@@ -469,6 +500,13 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
     still references, so a swap that would strand data fails loudly on
     its own rather than being caught by a check that has to be
     remembered.
+
+    The retiring partitions are not named in the up-front lock, and do
+    not need to be: ``LOCK TABLE`` without ``ONLY`` recurses to every
+    descendant, and ``pg_inherits`` does not care about schemas, so
+    locking the parents already takes ``ACCESS EXCLUSIVE`` on every
+    attached partition wherever it lives. The incoming relations are not
+    descendants of anything, so they take their lock at ``ATTACH``.
     """
     ddl.set_local_timeouts(
         conn,
@@ -490,19 +528,30 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
         live = find_partition_for_value(
             conn, pair.parent, plan.key_value, schema=plan.schema
         )
-        current = None if live is None else live.name
-        if current != pair.retiring:
+        # Compare where as well as what: the same relation name in two
+        # schemas is two different relations.
+        current = None if live is None else (live.schema, live.name)
+        expected = (
+            None
+            if pair.retiring is None
+            else (str(pair.retiring_schema), pair.retiring)
+        )
+        if current != expected:
             raise SwapRaceError(
                 f"{pair.parent} now has "
-                f"{current or 'nothing'} attached for {plan.key_value}, "
-                f"but the plan expected {pair.retiring or 'nothing'}. "
+                f"{_render(current)} attached for {plan.key_value}, "
+                f"but the plan expected {_render(expected)}. "
                 "Re-plan against the current state."
             )
 
     for pair in reversed(plan.pairs):
         if pair.retiring is not None:
             ddl.detach_partition(
-                conn, pair.parent, pair.retiring, schema=plan.schema
+                conn,
+                pair.parent,
+                pair.retiring,
+                schema=plan.schema,
+                partition_schema=pair.retiring_schema,
             )
 
     for pair in plan.pairs:
@@ -512,17 +561,20 @@ def swap(conn: sa.Connection, plan: SwapPlan) -> SwapResult:
             pair.incoming,
             plan.key_value,
             schema=plan.schema,
+            partition_schema=plan.partition_schema,
             preflight=False,
         )
 
     return SwapResult(
         key_value=plan.key_value,
         schema=plan.schema,
+        partition_schema=plan.partition_schema,
         steps=tuple(
             SwapStep(
                 parent=pair.parent,
                 promoted=pair.incoming,
                 retired=pair.retiring,
+                retired_schema=pair.retiring_schema,
             )
             for pair in plan.pairs
         ),
@@ -581,7 +633,7 @@ def prepare_retirement(conn: sa.Connection, plan: SwapPlan) -> tuple[str, ...]:
             pair.retiring,
             strategy.key_column,
             plan.key_value,
-            schema=plan.schema,
+            schema=pair.retiring_schema,
         )
         if name is not None:
             added.append(name)
@@ -634,17 +686,29 @@ def rollback_swap(
             "so there is no earlier revision to restore"
         )
 
+    # The two sides cross over, so the schemas do too: what was retired
+    # becomes incoming, and what was promoted becomes retiring.
+    retired_schemas = {str(step.retired_schema) for step in result.steps}
+    if len(retired_schemas) > 1:
+        raise PartitionError(
+            "the retired relations are spread across "
+            + ", ".join(sorted(retired_schemas))
+            + ", so one rollback plan cannot address them all"
+        )
+
     pairs = tuple(
         SwapPair(
             parent=step.parent,
             incoming=str(step.retired),
             retiring=step.promoted,
+            retiring_schema=result.partition_schema,
         )
         for step in result.steps
     )
     plan = SwapPlan(
         key_value=result.key_value,
         schema=result.schema,
+        partition_schema=retired_schemas.pop(),
         pairs=pairs,
         referenced=ddl.referenced_tables(
             conn, [pair.parent for pair in pairs], schema=result.schema
@@ -784,6 +848,11 @@ def is_lock_not_available(error: BaseException) -> bool:
     return False
 
 
+def _render(target: tuple[str, str] | None) -> str:
+    """``schema.relation``, or ``"nothing"`` for an empty slot."""
+    return "nothing" if target is None else f"{target[0]}.{target[1]}"
+
+
 def _unprotected_retirements(
     conn: sa.Connection, plan: SwapPlan
 ) -> tuple[str, ...]:
@@ -800,7 +869,7 @@ def _unprotected_retirements(
             pair.retiring,
             strategy.key_column,
             plan.key_value,
-            schema=plan.schema,
+            schema=pair.retiring_schema,
         ):
             found.append(pair.retiring)
     return tuple(found)
@@ -853,7 +922,7 @@ def _orphan_findings(conn: sa.Connection, plan: SwapPlan) -> tuple[str, ...]:
                 continue
             orphans = _count_orphans(
                 conn,
-                plan.schema,
+                plan.partition_schema,
                 pair.incoming,
                 spec.columns,
                 target.incoming,

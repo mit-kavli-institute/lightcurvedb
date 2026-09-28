@@ -152,6 +152,7 @@ def derive_state(
     revision: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> RevisionState:
     """Read one revision's physical state out of ``pg_catalog``.
 
@@ -166,7 +167,11 @@ def derive_state(
     revision : int
         Which revision to ask about.
     schema : str, optional
-        Schema to look in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -193,13 +198,17 @@ def derive_state(
     the swap, so its absence is not an unfinished step.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     name = PartitionName(parent, key_value, revision).table
 
-    if relation_kind(conn, name, schema=schema) is None:
+    if relation_kind(conn, name, schema=partition_schema) is None:
         return RevisionState.ABSENT
 
     live = find_partition_for_value(conn, parent, key_value, schema=schema)
-    if live is not None and live.name == name:
+    if live is not None and (live.name, live.schema) == (
+        name,
+        partition_schema,
+    ):
         return (
             RevisionState.DETACH_PENDING
             if live.detach_pending
@@ -210,7 +219,8 @@ def derive_state(
         spec.key for spec in index_definitions(conn, parent, schema=schema)
     }
     candidate_indexes = {
-        spec.key for spec in index_definitions(conn, name, schema=schema)
+        spec.key
+        for spec in index_definitions(conn, name, schema=partition_schema)
     }
 
     if parent_indexes <= candidate_indexes:
@@ -221,14 +231,16 @@ def derive_state(
         }
         present = {
             spec.definition
-            for spec in foreign_key_definitions(conn, name, schema=schema)
+            for spec in foreign_key_definitions(
+                conn, name, schema=partition_schema
+            )
             if spec.validated
         }
         if wanted <= present:
             return RevisionState.FK_READY
         return RevisionState.INDEXED
 
-    if _has_rows(conn, schema, name):
+    if _has_rows(conn, partition_schema, name):
         return RevisionState.LOADED
     return RevisionState.CREATED
 
@@ -286,12 +298,20 @@ def revisions_of(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> dict[int, str]:
-    """Every relation in the schema that names a revision of this slot.
+    """Every relation naming a revision of this slot, in one schema.
 
     Attached, staged and retired relations all appear: they are
     indistinguishable by name, which is the point -- the name says which
     revision a table *is*, never whether it is live.
+
+    Exactly one schema is scanned -- ``partition_schema``. A deployment
+    part-way through moving its children into a schema of their own can
+    therefore hold the same revision twice, once on each side, and this
+    reports whichever side it was asked about. That is deliberate: the
+    return type maps a revision to one relation, so a revision claimed in
+    two places has no honest answer here.
 
     Parameters
     ----------
@@ -302,7 +322,11 @@ def revisions_of(
     key_value : int
         The LIST value.
     schema : str, optional
-        Schema to look in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -310,6 +334,7 @@ def revisions_of(
         Revision number to relation name.
     """
     schema, parent = resolve_qualified_name(table, schema=schema)
+    partition_schema = partition_schema or schema
     prefix = _like_prefix(f"{parent}_obs_{int(key_value)}")
     rows = conn.execute(
         sa.text(
@@ -318,7 +343,7 @@ def revisions_of(
             "WHERE n.nspname = :schema AND c.relkind IN ('r', 'p') "
             "  AND c.relname LIKE :prefix ESCAPE '\\'"
         ),
-        {"schema": schema, "prefix": prefix + "%"},
+        {"schema": partition_schema, "prefix": prefix + "%"},
     ).scalars()
 
     found: dict[int, str] = {}
@@ -339,6 +364,7 @@ def next_revision(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> int:
     """The revision number a new staging table for this slot should take.
 
@@ -357,7 +383,11 @@ def next_revision(
     key_value : int
         The LIST value.
     schema : str, optional
-        Schema to look in. Defaults to the parent's, else ``public``.
+        Schema of the partitioned parent. Defaults to the parent's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parent's,
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -365,7 +395,13 @@ def next_revision(
         ``0`` for an unprovisioned slot, so the first partition gets the
         unversioned name a DBA would have written by hand.
     """
-    existing = revisions_of(conn, table, key_value, schema=schema)
+    existing = revisions_of(
+        conn,
+        table,
+        key_value,
+        schema=schema,
+        partition_schema=partition_schema,
+    )
     return max(existing) + 1 if existing else 0
 
 
@@ -375,6 +411,7 @@ def assert_paired_revisions(
     key_value: int,
     *,
     schema: str | None = None,
+    partition_schema: str | None = None,
 ) -> int | None:
     """Require several parents to be live at the same revision.
 
@@ -391,8 +428,11 @@ def assert_paired_revisions(
     key_value : int
         The LIST value they share.
     schema : str, optional
-        Schema to look in. Defaults to each table's own, else
-        ``public``.
+        Schema of the partitioned parents. Defaults to each table's own,
+        else ``public``.
+    partition_schema : str, optional
+        Schema the child partitions live in. Defaults to the parents',
+        which is the layout PostgreSQL produces unless a schema is named.
 
     Returns
     -------
@@ -418,7 +458,11 @@ def assert_paired_revisions(
         _, name = resolve_qualified_name(table, schema=schema)
         live = live_revision(conn, table, key_value, schema=schema)
         if live is None and not revisions_of(
-            conn, table, key_value, schema=schema
+            conn,
+            table,
+            key_value,
+            schema=schema,
+            partition_schema=partition_schema,
         ):
             # No relation of any revision exists for this key, so this
             # parent was never provisioned here. That is an ordinary

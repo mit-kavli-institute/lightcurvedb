@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision is live (`live_revision`, `revisions_of`), allocates the next
   one (`next_revision`, monotonic per observation across campaigns), and
   refuses paired tables drifting apart (`assert_paired_revisions`)
+- **Partitions in a schema of their own**: every partition-addressing
+  function takes `partition_schema` alongside `schema`, defaulting to the
+  parent's, so a deployment can keep its children in a dedicated schema
+  while the partitioned parents stay where they are. Reads need no
+  argument -- they walk `pg_inherits`, and `PartitionInfo` reports each
+  child's real schema. `SwapPlan` and `SwapResult` record where the
+  incoming and promoted relations live; each `SwapPair` carries the
+  schema of the relation it retires, read from the catalog, so a swap can
+  promote a partition in one schema over a live one in another
 - **Atomic multi-table swap**: `lightcurvedb.core.partitions.swap`
   promotes staged partitions for several tables in one transaction.
   `plan_swap` derives the detach/attach order from foreign keys in the
