@@ -46,7 +46,7 @@ from lightcurvedb.core.partitions.errors import (
 from lightcurvedb.core.partitions.naming import PartitionName
 
 
-class OrbitState(enum.Enum):
+class RevisionState(enum.Enum):
     """Where one revision of one slot has got to.
 
     Members
@@ -91,32 +91,38 @@ class OrbitState(enum.Enum):
 #: The only moves allowed between states. Staying put is always legal
 #: and is not listed. Abandoning a staged revision -- dropping it before
 #: it ever went live -- is the edge back to ``ABSENT``.
-LEGAL_TRANSITIONS: Final[dict[OrbitState, frozenset[OrbitState]]] = {
-    OrbitState.ABSENT: frozenset({OrbitState.CREATED}),
-    OrbitState.CREATED: frozenset({OrbitState.LOADED, OrbitState.ABSENT}),
-    OrbitState.LOADED: frozenset({OrbitState.INDEXED, OrbitState.ABSENT}),
-    OrbitState.INDEXED: frozenset(
-        {OrbitState.FK_READY, OrbitState.VERIFIED, OrbitState.ABSENT}
+LEGAL_TRANSITIONS: Final[dict[RevisionState, frozenset[RevisionState]]] = {
+    RevisionState.ABSENT: frozenset({RevisionState.CREATED}),
+    RevisionState.CREATED: frozenset(
+        {RevisionState.LOADED, RevisionState.ABSENT}
     ),
-    OrbitState.FK_READY: frozenset(
-        {OrbitState.VERIFIED, OrbitState.LIVE, OrbitState.ABSENT}
+    RevisionState.LOADED: frozenset(
+        {RevisionState.INDEXED, RevisionState.ABSENT}
     ),
-    OrbitState.VERIFIED: frozenset({OrbitState.LIVE, OrbitState.ABSENT}),
-    OrbitState.LIVE: frozenset(
-        {OrbitState.RETIRED, OrbitState.DETACH_PENDING}
+    RevisionState.INDEXED: frozenset(
+        {RevisionState.FK_READY, RevisionState.VERIFIED, RevisionState.ABSENT}
     ),
-    OrbitState.DETACH_PENDING: frozenset({OrbitState.RETIRED}),
-    OrbitState.RETIRED: frozenset({OrbitState.LIVE, OrbitState.GONE}),
-    OrbitState.GONE: frozenset(),
+    RevisionState.FK_READY: frozenset(
+        {RevisionState.VERIFIED, RevisionState.LIVE, RevisionState.ABSENT}
+    ),
+    RevisionState.VERIFIED: frozenset(
+        {RevisionState.LIVE, RevisionState.ABSENT}
+    ),
+    RevisionState.LIVE: frozenset(
+        {RevisionState.RETIRED, RevisionState.DETACH_PENDING}
+    ),
+    RevisionState.DETACH_PENDING: frozenset({RevisionState.RETIRED}),
+    RevisionState.RETIRED: frozenset({RevisionState.LIVE, RevisionState.GONE}),
+    RevisionState.GONE: frozenset(),
 }
 
 
-def validate_transition(current: OrbitState, target: OrbitState) -> None:
+def validate_transition(current: RevisionState, target: RevisionState) -> None:
     """Refuse a move the lifecycle does not allow.
 
     Parameters
     ----------
-    current, target : OrbitState
+    current, target : RevisionState
         Where the revision is and where it is being moved to. Moving a
         revision to the state it is already in is always allowed, so
         that recording the same step twice is a no-op rather than an
@@ -146,7 +152,7 @@ def derive_state(
     revision: int,
     *,
     schema: str | None = None,
-) -> OrbitState:
+) -> RevisionState:
     """Read one revision's physical state out of ``pg_catalog``.
 
     Parameters
@@ -164,7 +170,7 @@ def derive_state(
 
     Returns
     -------
-    OrbitState
+    RevisionState
         One of ``ABSENT``, ``CREATED``, ``LOADED``, ``INDEXED``,
         ``FK_READY``, ``LIVE`` or ``DETACH_PENDING``. Never
         ``VERIFIED``, ``RETIRED`` or ``GONE`` -- see the module
@@ -182,18 +188,18 @@ def derive_state(
     name = PartitionName(parent, key_value, revision).table
 
     if relation_kind(conn, name, schema=schema) is None:
-        return OrbitState.ABSENT
+        return RevisionState.ABSENT
 
     live = find_partition_for_value(conn, parent, key_value, schema=schema)
     if live is not None and live.name == name:
         return (
-            OrbitState.DETACH_PENDING
+            RevisionState.DETACH_PENDING
             if live.detach_pending
-            else OrbitState.LIVE
+            else RevisionState.LIVE
         )
 
     if not _has_rows(conn, schema, name):
-        return OrbitState.CREATED
+        return RevisionState.CREATED
 
     parent_indexes = {
         spec.key for spec in index_definitions(conn, parent, schema=schema)
@@ -202,7 +208,7 @@ def derive_state(
         spec.key for spec in index_definitions(conn, name, schema=schema)
     }
     if not parent_indexes <= candidate_indexes:
-        return OrbitState.LOADED
+        return RevisionState.LOADED
 
     wanted = {
         spec.definition
@@ -214,7 +220,9 @@ def derive_state(
         for spec in foreign_key_definitions(conn, name, schema=schema)
         if spec.validated
     }
-    return OrbitState.FK_READY if wanted <= present else OrbitState.INDEXED
+    return (
+        RevisionState.FK_READY if wanted <= present else RevisionState.INDEXED
+    )
 
 
 def live_revision(

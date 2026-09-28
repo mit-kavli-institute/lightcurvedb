@@ -354,8 +354,9 @@ takes an explicit list:
 
 Nothing drops a retired partition automatically, and nothing here knows
 whether a revision was signed off -- that record belongs in a registry,
-and this package does not read one. An orbit under replacement therefore
-uses roughly twice its usual storage until somebody decides otherwise.
+and this package does not read one. An observation under replacement
+therefore uses roughly twice its usual storage until somebody decides
+otherwise.
 
 The lifecycle
 -------------

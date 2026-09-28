@@ -85,7 +85,7 @@ from lightcurvedb.core.partitions.naming import (
 )
 from lightcurvedb.core.partitions.state import (
     LEGAL_TRANSITIONS,
-    OrbitState,
+    RevisionState,
     assert_paired_revisions,
     derive_state,
     live_revision,
@@ -122,7 +122,6 @@ __all__ = [
     "IndexSpec",
     "NotAttachableError",
     "NotPartitionedError",
-    "OrbitState",
     "PartitionError",
     "PartitionInfo",
     "PartitionName",
@@ -131,6 +130,7 @@ __all__ = [
     "PartitionStrategy",
     "RelationNotFoundError",
     "RevisionSkewError",
+    "RevisionState",
     "StagingShapeMismatchError",
     "SwapPair",
     "SwapPlan",

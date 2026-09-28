@@ -280,7 +280,7 @@ canonical reference, with usage, is :doc:`partitioning`.
 .. autofunction:: lightcurvedb.core.partitions.add_bound_check
    :no-index:
 
-.. autoclass:: lightcurvedb.core.partitions.OrbitState
+.. autoclass:: lightcurvedb.core.partitions.RevisionState
    :no-index:
 
 .. autofunction:: lightcurvedb.core.partitions.derive_state
