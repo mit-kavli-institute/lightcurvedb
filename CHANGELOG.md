@@ -105,6 +105,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are now `viewonly=True`; use helper methods to create links
 - Updated model exports in `__init__.py` to reflect new architecture
 
+### Fixed
+- `check_attachable` probed the DEFAULT partition in its *parent's* schema
+  rather than its own. The partition's name is resolved by oid, so
+  re-qualifying it with the parent's schema named a relation that does not
+  exist wherever the two differ, and the probe raised `UndefinedTable`
+  instead of reporting whether the default holds conflicting rows
+
 ### Removed
 - **BREAKING**: Removed `ProcessingGroup` model (use DataSet direct
   relationships instead)

@@ -1080,13 +1080,25 @@ def check_attachable(
     default_name: str | None = None
     default_conflicts = False
     if strategy.default_partition_oid is not None:
-        default_name = conn.execute(
-            sa.text("SELECT relname FROM pg_class WHERE oid = :oid"),
+        # The DEFAULT partition is a child, and a child need not live in
+        # its parent's schema. Read where it actually is rather than
+        # re-qualifying its name with the parent's.
+        default_row = conn.execute(
+            sa.text(
+                "SELECT n.nspname, c.relname FROM pg_class c "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE c.oid = :oid"
+            ),
             {"oid": strategy.default_partition_oid},
-        ).scalar()
-        if default_name is not None:
+        ).one_or_none()
+        if default_row is not None:
+            default_name = default_row.relname
             default_conflicts = _default_holds(
-                conn, schema, default_name, key_column, key_value
+                conn,
+                default_row.nspname,
+                default_name,
+                key_column,
+                key_value,
             )
 
     if candidate_oid is None or candidate_kind != "table":

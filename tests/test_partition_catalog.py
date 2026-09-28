@@ -441,6 +441,33 @@ class TestCheckAttachable:
         assert any("default partition" in e for e in report.expensive)
         assert not report.blocking
 
+    def test_default_partition_probed_in_its_own_schema(
+        self, partitioned_db: orm.Session
+    ):
+        """A DEFAULT partition need not live in its parent's schema.
+
+        Its name is resolved by oid, so re-qualifying that name with the
+        parent's schema names a relation that does not exist and the
+        probe raises ``UndefinedTable`` instead of answering.
+        """
+        _sql(partitioned_db, 'CREATE SCHEMA "elsewhere"')
+        try:
+            _sql(
+                partitioned_db,
+                "CREATE TABLE elsewhere.dataset_default "
+                "PARTITION OF dataset DEFAULT",
+            )
+            name = _staged_candidate(partitioned_db, 5)
+            report = check_attachable(
+                partitioned_db.connection(), "dataset", name, 5
+            )
+            assert report.default_partition == "dataset_default"
+            assert not report.default_partition_conflicts
+            assert any("default partition" in e for e in report.expensive)
+        finally:
+            partitioned_db.rollback()
+            _sql(partitioned_db, 'DROP SCHEMA "elsewhere" CASCADE')
+
     def test_conflicting_default_row_blocks(self, v2_db: orm.Session):
         """The failure PostgreSQL reports as 'updated partition constraint
         for default partition ... would be violated by some row'."""
