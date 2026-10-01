@@ -12,6 +12,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the canonical `<base>_obs_<observation_id>_v<revision>` scheme (revision
   0 is the legacy `<base>_obs_<id>` form), a 63-byte identifier check on
   every derived object name, and the `PartitionError` exception hierarchy
+- **Partition introspection**: `lightcurvedb.core.partitions.catalog` reads
+  `pg_catalog` for a table's partition strategy and key, its attached
+  partitions with bounds and sizes, and the partition holding a given
+  value. `check_attachable` predicts -- without taking a lock -- whether
+  `ATTACH PARTITION` would fail, or succeed only by scanning or building
+  under `ACCESS EXCLUSIVE`. Also exposes `column_signature`,
+  `index_definitions` and `foreign_key_definitions` for comparing a
+  candidate against its parent
+- **Partition DDL**: `lightcurvedb.core.partitions.ddl` emits the
+  statements a replacement needs -- `create_staging_table` (a `LIKE ...
+  INCLUDING ALL EXCLUDING INDEXES` copy carrying an inline, already-valid
+  bound `CHECK`), `build_partition_indexes` (primary keys as real
+  constraints, so `ATTACH` adopts them instead of rebuilding under
+  `ACCESS EXCLUSIVE`), `mirror_outbound_foreign_keys`, `attach_partition`,
+  `detach_partition`, `add_bound_check`, `drop_relation`, plus
+  `set_local_timeouts`, `lock_tables` and `referenced_tables`
+- **Idempotent provisioning**: `lightcurvedb.core.partitions.bootstrap`
+  with `ensure_partition`, `ensure_staging_table` and
+  `verify_relation_shape`. Safe to call on every process start -- this is
+  what replaces a migration tool for partition creation
+- **Partition lifecycle**: `lightcurvedb.core.partitions.state` derives a
+  revision's state from `pg_catalog` (`derive_state`), reports which
+  revision is live (`live_revision`, `revisions_of`), allocates the next
+  one (`next_revision`, monotonic per observation across campaigns), and
+  refuses paired tables drifting apart (`assert_paired_revisions`)
+- **Partitions in a schema of their own**: every partition-addressing
+  function takes `partition_schema` alongside `schema`, defaulting to the
+  parent's, so a deployment can keep its children in a dedicated schema
+  while the partitioned parents stay where they are. Reads need no
+  argument -- they walk `pg_inherits`, and `PartitionInfo` reports each
+  child's real schema. `SwapPlan` and `SwapResult` record where the
+  incoming and promoted relations live; each `SwapPair` carries the
+  schema of the relation it retires, read from the catalog, so a swap can
+  promote a partition in one schema over a live one in another
+- **Atomic multi-table swap**: `lightcurvedb.core.partitions.swap`
+  promotes staged partitions for several tables in one transaction.
+  `plan_swap` derives the detach/attach order from foreign keys in the
+  catalog, `preflight` predicts the cost without taking a lock, `swap`
+  bounds both timeouts and re-checks under lock what it is retiring,
+  `prepare_retirement` gives a hand-made partition its bound `CHECK`
+  before the swap rather than during it, `rollback_swap` performs the
+  mirror swap while the retired relations still exist, and
+  `drop_retired` is dry-run by default
 - **Dataset Hierarchy**: New `DataSetHierarchy` model for tracking data
   lineage and processing provenance
 - DataSet now supports hierarchical relationships via `source_datasets` and
@@ -70,6 +113,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DataSet hierarchy relationships (`source_datasets`, `derived_datasets`)
   are now `viewonly=True`; use helper methods to create links
 - Updated model exports in `__init__.py` to reflect new architecture
+
+### Fixed
+- `foreign_key_definitions` reported the foreign keys PostgreSQL clones
+  onto a referencing table, one per partition of a referenced partitioned
+  table, as if they were that table's own. Each clone points at a
+  concrete partition, so it reads as unpartitioned and escaped the
+  partitioned-referent skip: `mirror_outbound_foreign_keys` then tried to
+  copy it onto a staging table, which would pin the partition a swap has
+  to detach, and failed first on the 63-byte identifier limit because the
+  clones' generated names are already at it. Only constraints with
+  `conparentid = 0` -- a table's own declarations -- are reported now.
+  This bit `datasethierarchy` as soon as any partition of `dataset`
+  existed, which is to say always
+- `check_attachable` probed the DEFAULT partition in its *parent's* schema
+  rather than its own. The partition's name is resolved by oid, so
+  re-qualifying it with the parent's schema named a relation that does not
+  exist wherever the two differ, and the probe raised `UndefinedTable`
+  instead of reporting whether the default holds conflicting rows
 
 ### Removed
 - **BREAKING**: Removed `ProcessingGroup` model (use DataSet direct
@@ -154,12 +215,44 @@ ALTER TABLE datasethierarchy
 
 #### Partition management
 
-The DataSet table requires partition management:
-```sql
--- Create partitions for each observation
-CREATE TABLE dataset_obs_1 PARTITION OF dataset FOR VALUES IN (1);
-CREATE TABLE dataset_obs_2 PARTITION OF dataset FOR VALUES IN (2);
+Partitions are now created from Python, and the call is idempotent, so it
+belongs at the start of an ingestion run rather than in a DBA checklist:
 
--- Default partition for unexpected values
-CREATE TABLE dataset_default PARTITION OF dataset DEFAULT;
+```python
+from lightcurvedb.core.partitions import ensure_partition
+
+for table in ("dataset", "datasethierarchy", "target_specific_time"):
+    ensure_partition(session.connection(), table, observation_id)
+session.commit()
 ```
+
+That emits the SQL below, which is what the manual recipe always was:
+
+```sql
+CREATE TABLE dataset_obs_1 PARTITION OF dataset FOR VALUES IN (1);
+```
+
+**Default partitions should be dropped from provisioned databases.**
+They were previously recommended here as a catch-all. While one exists,
+every `ATTACH PARTITION` must scan it under `ACCESS EXCLUSIVE` to prove
+none of its rows belong in the incoming partition -- and fails outright
+if any do -- and `DETACH PARTITION ... CONCURRENTLY` is refused entirely.
+Check for accumulated rows before dropping:
+
+```sql
+-- 0. Anything in here has no partition of its own. Resolve it first.
+SELECT observation_id, count(*)
+  FROM dataset_default GROUP BY observation_id ORDER BY 2 DESC;
+
+DROP TABLE dataset_default;
+```
+
+#### Replacing an observation's data
+
+See `docs/source/partitioning.rst` for the full procedure. In outline: a
+replacement is staged as a standalone table alongside the live
+partition, loaded, indexed and analysed, then promoted by detaching the
+old partitions and attaching the new ones for `dataset` and
+`datasethierarchy` together, inside one transaction. Both revisions stay
+on disk until `drop_retired` is called explicitly, which is what makes
+the change reviewable and reversible.

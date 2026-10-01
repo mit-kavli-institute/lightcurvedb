@@ -41,7 +41,7 @@ MAX_IDENTIFIER_BYTES: Final[int] = 63
 OBJECT_SUFFIXES: Final[tuple[str, ...]] = (
     "pkey",
     "target_idx",
-    "src_idx",
+    "source_idx",
     "child_idx",
     "partcheck",
 )

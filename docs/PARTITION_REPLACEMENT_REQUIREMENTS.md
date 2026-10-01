@@ -505,7 +505,9 @@ relationships raise).
 ```
 
 Legacy `<base>_obs_<id>` = revision 0. Object names all explicit:
-`..._pkey`, `..._target_idx`, `..._src_idx`, `..._child_idx`, `..._partcheck`.
+`..._pkey`, `..._target_idx`, `..._source_idx`, `..._child_idx`,
+`..._partcheck` — derived from the parent's own index names rather than
+listed.
 Longest possible is `datasethierarchy_obs_2147483647_v999_child_idx` = 46 bytes,
 safely under `NAMEDATALEN-1 = 63`. **This is a real constraint** —
 auto-generated names from the 4- and 8-column index definitions would exceed 63
