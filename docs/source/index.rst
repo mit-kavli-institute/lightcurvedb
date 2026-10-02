@@ -93,6 +93,7 @@ Submodule Documentation
     connecting
     bulk_parameters
     schema
+    partitioning
     models
     api
     db/db

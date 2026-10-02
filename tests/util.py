@@ -86,3 +86,56 @@ def isolated_database() -> Generator[sa.orm.Session, None, None]:
             isolation_level="AUTOCOMMIT"
         ) as conn:
             conn.execute(sa.text(f"DROP DATABASE {db_name}"))
+
+
+def partitioned_table_names() -> tuple[str, ...]:
+    """Names of every partitioned table in the shared metadata.
+
+    Derived from the ``postgresql_partition_by`` dialect option rather than
+    hardcoded, so a newly partitioned model is picked up without editing
+    the fixtures. Read at call time because test modules add models to the
+    metadata when they are imported.
+    """
+    return tuple(
+        table.name
+        for table in LCDBModel.metadata.sorted_tables
+        if table.dialect_kwargs.get("postgresql_partition_by")
+    )
+
+
+def drop_unmanaged_relations(engine: sa.Engine) -> list[str]:
+    """Drop public tables that ``metadata.drop_all`` will not, returning them.
+
+    ``drop_all`` only knows about mapped tables. A partition attached to a
+    mapped parent is dropped with it, but a *detached* one -- a staging or
+    retired partition left behind by a partition-management test -- is an
+    ordinary standalone table and survives. Partition names are
+    deterministic, so the next test in the same worker database would hit
+    "relation already exists"; worse, a leftover carrying a foreign key to
+    ``observation`` makes ``DROP TABLE observation`` fail and cascades into
+    unrelated failures.
+
+    The managed set is read at call time, not at import: some test modules
+    declare models against the shared metadata when imported, so a set
+    captured earlier would classify them as unmanaged and drop them.
+    """
+    managed = set(LCDBModel.metadata.tables)
+    quote = engine.dialect.identifier_preparer.quote
+    with engine.connect() as conn:
+        leftovers = [
+            name
+            for name in conn.execute(
+                sa.text(
+                    "SELECT c.relname FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')"
+                )
+            ).scalars()
+            if name not in managed
+        ]
+        for name in leftovers:
+            conn.execute(
+                sa.text(f"DROP TABLE IF EXISTS {quote(name)} CASCADE")
+            )
+        conn.commit()
+    return leftovers

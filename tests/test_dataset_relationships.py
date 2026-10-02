@@ -16,98 +16,10 @@ from lightcurvedb.models.observation import TargetSpecificTime
 from lightcurvedb.models.target import Mission, MissionCatalog, Target
 
 # -----------------------------------------------------------------------------
-# Test Fixtures
+# Module-local models
+#
+# The sample_* object graph these tests use now lives in conftest.py.
 # -----------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_mission(v2_db: orm.Session) -> Mission:
-    """Create a sample mission for tests."""
-    mission = Mission(
-        name="Test Mission",
-        description="A test mission",
-        time_unit="day",
-        time_epoch=2457000,
-        time_epoch_scale="tdb",
-        time_epoch_format="jd",
-        time_format_name="test_time",
-    )
-    v2_db.add(mission)
-    v2_db.flush()
-    return mission
-
-
-@pytest.fixture
-def sample_catalog(
-    v2_db: orm.Session, sample_mission: Mission
-) -> MissionCatalog:
-    """Create a sample catalog for tests."""
-    catalog = MissionCatalog(
-        name="Test Catalog",
-        description="A test catalog",
-        host_mission=sample_mission,
-    )
-    v2_db.add(catalog)
-    v2_db.flush()
-    return catalog
-
-
-@pytest.fixture
-def sample_target(
-    v2_db: orm.Session, sample_catalog: MissionCatalog
-) -> Target:
-    """Create a sample target for tests."""
-    target = Target(catalog=sample_catalog, name=123456789)
-    v2_db.add(target)
-    v2_db.flush()
-    return target
-
-
-@pytest.fixture
-def sample_instrument(v2_db: orm.Session) -> Instrument:
-    """Create a sample instrument for tests."""
-    instrument = Instrument(
-        name="Test Instrument", properties={"type": "test"}
-    )
-    v2_db.add(instrument)
-    v2_db.flush()
-    return instrument
-
-
-@pytest.fixture
-def sample_observation(
-    v2_db: orm.Session, sample_instrument: Instrument
-) -> Observation:
-    """Create a sample observation for tests."""
-    observation = Observation(
-        instrument=sample_instrument,
-        cadence_reference=np.arange(100),
-    )
-    v2_db.add(observation)
-    v2_db.flush()
-    return observation
-
-
-@pytest.fixture
-def sample_photometric_source(v2_db: orm.Session) -> PhotometricSource:
-    """Create a named photometric source (not sentinel)."""
-    source = PhotometricSource(
-        id=100, name="Test Aperture", description="Test aperture"
-    )
-    v2_db.add(source)
-    v2_db.flush()
-    return source
-
-
-@pytest.fixture
-def sample_processing_method(v2_db: orm.Session) -> ProcessingMethod:
-    """Create a named processing method (not sentinel)."""
-    method = ProcessingMethod(
-        id=100, name="Test Method", description="Test processing method"
-    )
-    v2_db.add(method)
-    v2_db.flush()
-    return method
 
 
 class Orbit(LCDBModel):
@@ -1353,6 +1265,116 @@ class TestCompositeKeyQueries:
             processing_method=method,
         )
         v2_db.add(ds2)
+
+        with pytest.raises(IntegrityError):
+            v2_db.commit()
+        v2_db.rollback()
+
+
+class TestDataSetHierarchySchema:
+    """Schema-level guards for the DataSetHierarchy table.
+
+    These pin two defects that were silent in the rendered DDL: the
+    composite foreign key does not propagate column types, and the
+    partition key did not constrain the child side to the same
+    observation.
+    """
+
+    def test_target_id_columns_are_bigint(self):
+        """Composite-FK columns must be widened explicitly.
+
+        ``dataset.target_id`` inherits BigInteger from ``target.id``
+        because its ForeignKey sits on the column. The hierarchy columns
+        declare their key at table level, so SQLAlchemy keeps the bare
+        ``Mapped[int]`` annotation and would render INTEGER unless the
+        type is given explicitly.
+        """
+        columns = DataSetHierarchy.__table__.c
+        assert isinstance(columns["source_target_id"].type, sa.BigInteger)
+        assert isinstance(columns["child_target_id"].type, sa.BigInteger)
+        # The observation columns reference observation.id, which is a
+        # plain SERIAL, so they are correctly narrow.
+        assert isinstance(columns["source_observation_id"].type, sa.Integer)
+        assert not isinstance(
+            columns["source_observation_id"].type, sa.BigInteger
+        )
+
+    def test_lineage_accepts_target_ids_above_int32(
+        self,
+        v2_db: orm.Session,
+        sample_catalog: MissionCatalog,
+        sample_observation: Observation,
+    ):
+        """A TIC-scale target must be able to carry lineage.
+
+        Before the widening this raised ``integer out of range``: the
+        dataset row inserted fine as BIGINT while the hierarchy row
+        overflowed INTEGER.
+        """
+        big_id = 10_005_000_540  # a real TIC-scale id, > 2**31
+        target = Target(id=big_id, catalog=sample_catalog, name=big_id)
+        v2_db.add(target)
+        v2_db.flush()
+
+        source = DataSet(
+            values=np.random.normal(0, 1, 100),
+            target=target,
+            observation=sample_observation,
+            photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+        )
+        derived = DataSet(
+            values=np.random.normal(0, 1, 100),
+            target=target,
+            observation=sample_observation,
+            photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            processing_method_id=510,
+        )
+        method = ProcessingMethod(
+            id=510, name="BigIdMethod", description="Big id"
+        )
+        v2_db.add_all([method, source, derived])
+        v2_db.flush()
+
+        source.add_derived_dataset(derived, v2_db)
+        v2_db.commit()
+
+        stored = v2_db.execute(
+            sa.select(DataSetHierarchy).where(
+                DataSetHierarchy.source_target_id == big_id
+            )
+        ).scalar_one()
+        assert stored.source_target_id == big_id
+        assert stored.child_target_id == big_id
+
+    def test_cross_orbit_lineage_rejected(
+        self,
+        v2_db: orm.Session,
+        sample_target: Target,
+        sample_observation: Observation,
+    ):
+        """Lineage may not span observations.
+
+        The check is what makes (dataset, datasethierarchy) a closed unit
+        per observation: without it a row could sit in the hierarchy
+        partition for one observation while referencing dataset rows in
+        another.
+
+        Built directly rather than through ``add_derived_dataset``, which
+        cannot produce a mismatched pair from two datasets in the same
+        observation.
+        """
+        link = DataSetHierarchy(
+            source_observation_id=sample_observation.id,
+            source_target_id=sample_target.id,
+            source_photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            source_processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+            child_observation_id=sample_observation.id + 1,
+            child_target_id=sample_target.id,
+            child_photometric_method_id=PhotometricSource.UNSPECIFIED_ID,
+            child_processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
+        )
+        v2_db.add(link)
 
         with pytest.raises(IntegrityError):
             v2_db.commit()
