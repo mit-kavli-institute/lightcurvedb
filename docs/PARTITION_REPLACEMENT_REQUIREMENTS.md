@@ -8,6 +8,12 @@
 > consequentially: FK catalog growth is linear (so the composite FKs stay), and
 > a detach of a referenced partition is *blocked*, not silently dangling.
 > §8.1 records the one finding that changed the design.
+>
+> **Superseded in part (3.3.0):** `datasethierarchy` has been removed. It was
+> populated but never read downstream. Everything below that pairs it with
+> `dataset` describes the design as it was planned. The partition package
+> itself stays table-agnostic, and the §8.1 behaviour is still exercised by a
+> test-only table of the same shape.
 
 ---
 
@@ -505,7 +511,9 @@ relationships raise).
 ```
 
 Legacy `<base>_obs_<id>` = revision 0. Object names all explicit:
-`..._pkey`, `..._target_idx`, `..._src_idx`, `..._child_idx`, `..._partcheck`.
+`..._pkey`, `..._target_idx`, `..._source_idx`, `..._child_idx`,
+`..._partcheck` — derived from the parent's own index names rather than
+listed.
 Longest possible is `datasethierarchy_obs_2147483647_v999_child_idx` = 46 bytes,
 safely under `NAMEDATALEN-1 = 63`. **This is a real constraint** —
 auto-generated names from the 4- and 8-column index definitions would exceed 63

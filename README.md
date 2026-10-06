@@ -65,24 +65,3 @@ different combinations of photometry and processing.
 | processing_method_id | Foreign key to ProcessingMethod (nullable) |
 | values | Array of photometric measurements (flux or magnitude) |
 | errors | Array of measurement uncertainties |
-| source_datasets | Parent datasets this was derived from (for lineage) |
-| derived_datasets | Child datasets derived from this one |
-
-#### Dataset Hierarchy
-DataSets support hierarchical relationships for tracking data lineage and
-processing provenance. A raw photometry dataset can have multiple derived
-datasets (e.g., different detrending methods), and a processed dataset can
-reference its source datasets. This enables full traceability of data
-processing pipelines.
-
-```python
-# Example: Track processing lineage
-raw_dataset = session.query(DataSet).filter_by(
-    target=target,
-    processing_method=None
-).first()
-
-# View all derived products
-for derived in raw_dataset.derived_datasets:
-    print(f"Derived: {derived.processing_method.name}")
-```

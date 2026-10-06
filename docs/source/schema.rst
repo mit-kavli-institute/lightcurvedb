@@ -13,7 +13,6 @@ The database schema consists of several interconnected model groups:
 3. **Observation System**: Polymorphic observation models with FITS frame support
 4. **Processing Pipeline**: PhotometricSource and ProcessingMethod (with sentinel values for "unspecified")
 5. **Data Products**: DataSet (lightcurves), TargetSpecificTime, and QualityFlagArray
-6. **Data Lineage**: DataSetHierarchy for tracking processing provenance (composite foreign keys)
 
 **Key Design Features**:
 
@@ -65,8 +64,6 @@ Entity Relationship Diagram
 
        PhotometricSource ||--o{ DataSet : "extracts data for"
        ProcessingMethod ||--o{ DataSet : "processes data for"
-       DataSet ||--o{ DataSetHierarchy : "source"
-       DataSet ||--o{ DataSetHierarchy : "derived"
 
        Mission {
            UUID id PK
@@ -135,22 +132,11 @@ Entity Relationship Diagram
 
        DataSet {
            int observation_id PK "partition key, FK"
-           int target_id PK "FK"
+           bigint target_id PK "FK"
            int photometric_method_id PK "FK, 0=unspecified"
            int processing_method_id PK "FK, 0=unspecified"
            array values
            array errors
-       }
-
-       DataSetHierarchy {
-           int source_observation_id PK "FK"
-           int source_target_id PK "FK"
-           int source_photometric_method_id PK "FK"
-           int source_processing_method_id PK "FK"
-           int child_observation_id PK "FK"
-           int child_target_id PK "FK"
-           int child_photometric_method_id PK "FK"
-           int child_processing_method_id PK "FK"
        }
 
        TargetSpecificTime {
@@ -237,11 +223,6 @@ Data Product Models
 ~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: lightcurvedb.models.DataSet
-   :members:
-   :show-inheritance:
-   :no-index:
-
-.. autoclass:: lightcurvedb.models.DataSetHierarchy
    :members:
    :show-inheritance:
    :no-index:
@@ -370,18 +351,15 @@ Key Relationships
 **Many-to-Many** (via junction tables):
 
 - Target ↔ Observation (via TargetSpecificTime)
-- DataSet ↔ DataSet (via DataSetHierarchy for lineage tracking)
 
 **Self-Referential**:
 
 - Instrument parent/child hierarchy for complex instrument configurations
-- DataSet hierarchy via DataSetHierarchy (source_datasets ↔ derived_datasets)
 
 **Central Hub**:
 
 - DataSet connects Target + Observation + PhotometricSource + ProcessingMethod
 - This is where the actual lightcurve data resides
-- Supports hierarchical relationships for tracking data provenance
 
 Usage Examples
 --------------
@@ -450,7 +428,7 @@ Working with quality flags:
        saturation_mask = (quality_flags.quality_flags & 2) != 0
        print(f"Saturated in {np.sum(saturation_mask)} cadences")
 
-Tracking data lineage with dataset hierarchy:
+Storing raw and processed datasets for the same target:
 
 .. code-block:: python
 
@@ -469,7 +447,7 @@ Tracking data lineage with dataset hierarchy:
    session.add(raw_dataset)
    session.flush()
 
-   # Create detrended dataset derived from raw
+   # Create a detrended dataset alongside it
    detrended_flux = raw_flux - np.polyval([0.001, 0], range(1000))
    detrended_dataset = DataSet(
        target=target,
@@ -479,15 +457,7 @@ Tracking data lineage with dataset hierarchy:
        values=detrended_flux
    )
    session.add(detrended_dataset)
-   session.flush()
-
-   # Establish hierarchical relationship using helper method
-   raw_dataset.add_derived_dataset(detrended_dataset, session)
    session.commit()
-
-   # Query the hierarchy
-   print(f"Raw dataset has {len(raw_dataset.derived_datasets)} derived products")
-   print(f"Detrended dataset has {len(detrended_dataset.source_datasets)} sources")
 
    # Filter using hybrid properties
    raw_datasets = session.query(DataSet).filter(
@@ -503,7 +473,6 @@ The schema enforces several important constraints:
 
    - Most tables use auto-increment integer or UUID primary keys
    - **DataSet**: Composite primary key ``(observation_id, target_id, photometric_method_id, processing_method_id)``
-   - **DataSetHierarchy**: Composite primary key of all 8 foreign key columns
    - **PhotometricSource/ProcessingMethod**: Non-autoincrement ID (explicit IDs required; id=0 reserved for sentinel)
 
 2. **Unique Constraints**:
@@ -520,18 +489,32 @@ The schema enforces several important constraints:
 
    - Deleting an Observation cascades to FITSFrame, TargetSpecificTime, DataSet, and QualityFlagArray
    - Deleting a Target cascades to DataSet
-   - Deleting a DataSet cascades to DataSetHierarchy entries
    - PhotometricSource/ProcessingMethod use RESTRICT (cannot delete if DataSets reference them)
 
 4. **Referential Integrity**:
 
    - All foreign keys are enforced at the database level
    - Orphaned records are prevented through proper relationships
-   - DataSetHierarchy maintains referential integrity via composite foreign keys
    - Sentinel records (id=0) must exist before creating DataSets
 
 5. **Partitioning**:
 
-   - DataSet table is partitioned by LIST on ``observation_id``
-   - Partitions must be created by DBA before inserting data for new observations
-   - A default partition handles unexpected observation IDs
+   - DataSet and TargetSpecificTime are partitioned by LIST on their
+     observation id
+   - A partition must exist before data for an observation can be
+     inserted. Call
+     :func:`lightcurvedb.core.partitions.ensure_partition` at the start
+     of an ingestion run -- it is idempotent, so no DBA step and no
+     migration is involved. See :doc:`partitioning`.
+   - Production databases should have **no default partition**. While
+     one exists, attaching any partition requires scanning it under
+     ``ACCESS EXCLUSIVE``, detaching concurrently is refused outright,
+     and rows that land in it are invisible to the replacement
+     machinery, which works one observation at a time.
+   - An observation's data is replaced by building a new partition
+     alongside the live one and swapping them atomically, so both
+     revisions coexist until the new one is accepted
+
+6. **Check Constraints**:
+
+   - **Alias**: ``target_id <> counterpart_id`` prevents a target aliasing itself
