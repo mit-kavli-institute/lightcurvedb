@@ -293,21 +293,20 @@ class TestBuildPartitionIndexes:
         assert pkey.constraint_backed
         assert pkey.constraint_type == "p"
 
-    def test_handles_the_eight_column_hierarchy_indexes(
+    @pytest.mark.usefixtures("dataset_link")
+    def test_handles_the_eight_column_link_indexes(
         self, partitioned_db: orm.Session
     ):
         conn = partitioned_db.connection()
-        create_staging_table(
-            conn, "datasethierarchy", "datasethierarchy_obs_7_v1", 7
-        )
+        create_staging_table(conn, "datasetlink", "datasetlink_obs_7_v1", 7)
         created = build_partition_indexes(
-            conn, "datasethierarchy", "datasethierarchy_obs_7_v1"
+            conn, "datasetlink", "datasetlink_obs_7_v1"
         )
 
         assert set(created) == {
-            "datasethierarchy_obs_7_v1_pkey",
-            "datasethierarchy_obs_7_v1_source_idx",
-            "datasethierarchy_obs_7_v1_child_idx",
+            "datasetlink_obs_7_v1_pkey",
+            "datasetlink_obs_7_v1_source_idx",
+            "datasetlink_obs_7_v1_child_idx",
         }
 
     def test_second_call_creates_nothing(self, partitioned_db: orm.Session):
@@ -382,27 +381,27 @@ class TestMirrorOutboundForeignKeys:
         report = check_attachable(conn, "dataset", "dataset_obs_7_v1", 7)
         assert report.missing_foreign_keys == ()
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_skips_keys_pointing_at_a_partitioned_table(
         self, partitioned_db: orm.Session
     ):
         """Section 8.1: pre-creating these would block the swap itself."""
         conn = partitioned_db.connection()
-        create_staging_table(
-            conn, "datasethierarchy", "datasethierarchy_obs_7_v1", 7
-        )
+        create_staging_table(conn, "datasetlink", "datasetlink_obs_7_v1", 7)
         created = mirror_outbound_foreign_keys(
-            conn, "datasethierarchy", "datasethierarchy_obs_7_v1"
+            conn, "datasetlink", "datasetlink_obs_7_v1"
         )
 
         assert created == ()
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_ignores_the_clones_postgresql_makes_per_partition(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
         """A referenced partition adds keys that are not the table's own.
 
         Attaching a partition to ``dataset`` makes PostgreSQL clone
-        ``datasethierarchy``'s keys once per partition, each pointing at
+        ``datasetlink``'s keys once per partition, each pointing at
         the concrete partition rather than at the partitioned parent.
         Those clones read as unpartitioned, so without the
         ``conparentid`` filter they are mirrored -- which pins the very
@@ -418,28 +417,23 @@ class TestMirrorOutboundForeignKeys:
         ensure_partition(conn, "dataset", key)
 
         assert {
-            spec.name
-            for spec in foreign_key_definitions(conn, "datasethierarchy")
-        } == {"fk_datasethierarchy_source", "fk_datasethierarchy_child"}
+            spec.name for spec in foreign_key_definitions(conn, "datasetlink")
+        } == {"fk_datasetlink_source", "fk_datasetlink_child"}
 
-        staged = f"datasethierarchy_obs_{key}_v1"
-        create_staging_table(conn, "datasethierarchy", staged, key)
-        assert (
-            mirror_outbound_foreign_keys(conn, "datasethierarchy", staged)
-            == ()
-        )
+        staged = f"datasetlink_obs_{key}_v1"
+        create_staging_table(conn, "datasetlink", staged, key)
+        assert mirror_outbound_foreign_keys(conn, "datasetlink", staged) == ()
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_can_be_forced_for_partitioned_referents(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
         conn = partitioned_db.connection()
-        create_staging_table(
-            conn, "datasethierarchy", "datasethierarchy_obs_7_v1", 7
-        )
+        create_staging_table(conn, "datasetlink", "datasetlink_obs_7_v1", 7)
         created = mirror_outbound_foreign_keys(
             conn,
-            "datasethierarchy",
-            "datasethierarchy_obs_7_v1",
+            "datasetlink",
+            "datasetlink_obs_7_v1",
             include_partitioned_referents=True,
         )
 
@@ -714,25 +708,27 @@ class TestLocksAndTimeouts:
         with pytest.raises(ValueError, match="unknown lock mode"):
             lock_tables(partitioned_db.connection(), ["dataset"], "TOTAL")
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_locks_several_tables_at_once(self, partitioned_db: orm.Session):
         conn = partitioned_db.connection()
-        lock_tables(conn, ["dataset", "datasethierarchy"], "ACCESS EXCLUSIVE")
+        lock_tables(conn, ["dataset", "datasetlink"], "ACCESS EXCLUSIVE")
 
         held = conn.execute(
             sa.text(
                 "SELECT count(*) FROM pg_locks l "
                 "JOIN pg_class c ON c.oid = l.relation "
-                "WHERE c.relname IN ('dataset', 'datasethierarchy') "
+                "WHERE c.relname IN ('dataset', 'datasetlink') "
                 "  AND l.mode = 'AccessExclusiveLock' AND l.granted"
             )
         ).scalar()
         assert held == 2
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_referenced_tables_are_the_unpartitioned_referents(
         self, partitioned_db: orm.Session
     ):
         found = referenced_tables(
-            partitioned_db.connection(), ["dataset", "datasethierarchy"]
+            partitioned_db.connection(), ["dataset", "datasetlink"]
         )
         assert found == (
             "observation",

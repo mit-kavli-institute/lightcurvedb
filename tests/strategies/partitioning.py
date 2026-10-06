@@ -11,9 +11,9 @@ from lightcurvedb.core.partitions import OBJECT_SUFFIXES, PartitionName
 
 from . import tess
 
-#: The two parents partitioned today, plus generated identifiers so the
+#: The parents partitioned today, plus generated identifiers so the
 #: tests do not quietly depend on the current schema.
-KNOWN_BASES = ("dataset", "datasethierarchy", "target_specific_time")
+KNOWN_BASES = ("dataset", "target_specific_time")
 
 
 def bases():

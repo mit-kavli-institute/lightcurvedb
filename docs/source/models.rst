@@ -37,10 +37,6 @@ Data Product Models
    :members:
    :show-inheritance:
 
-.. autoclass:: lightcurvedb.models.DataSetHierarchy
-   :members:
-   :show-inheritance:
-
 Observation Models
 ------------------
 

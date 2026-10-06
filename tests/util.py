@@ -139,3 +139,59 @@ def drop_unmanaged_relations(engine: sa.Engine) -> list[str]:
             )
         conn.commit()
     return leftovers
+
+
+#: A test-only partitioned table whose foreign keys point at the
+#: partitioned ``dataset``. The schema no longer has such a table, but the
+#: partition package must still handle one: a key onto a partitioned
+#: referent cannot be mirrored onto a staging table (§8.1), and its
+#: presence is what forces ``plan_swap`` to order a multi-table swap.
+#: Created with plain DDL rather than a model so it never enters the
+#: shared metadata; :func:`drop_unmanaged_relations` sweeps it.
+DATASET_LINK = "datasetlink"
+
+_KEY_COLUMNS = (
+    "observation_id",
+    "target_id",
+    "photometric_method_id",
+    "processing_method_id",
+)
+
+
+def create_dataset_link(engine: sa.Engine) -> str:
+    """Create :data:`DATASET_LINK`, returning its name."""
+    keys = ", ".join(_KEY_COLUMNS)
+    source = ", ".join(f"source_{c}" for c in _KEY_COLUMNS)
+    child = ", ".join(f"child_{c}" for c in _KEY_COLUMNS)
+    columns = [
+        f"{side}_{column} {'bigint' if column == 'target_id' else 'integer'}"
+        " NOT NULL"
+        for side in ("source", "child")
+        for column in _KEY_COLUMNS
+    ]
+    constraints = [
+        f"CONSTRAINT pk_{DATASET_LINK} PRIMARY KEY ({source}, {child})",
+        f"CONSTRAINT fk_{DATASET_LINK}_source FOREIGN KEY ({source}) "
+        f"REFERENCES dataset ({keys}) ON DELETE CASCADE",
+        f"CONSTRAINT fk_{DATASET_LINK}_child FOREIGN KEY ({child}) "
+        f"REFERENCES dataset ({keys}) ON DELETE CASCADE",
+        f"CONSTRAINT ck_{DATASET_LINK}_intra_orbit "
+        "CHECK (source_observation_id = child_observation_id)",
+    ]
+    body = ", ".join(columns + constraints)
+    with engine.connect() as conn:
+        conn.execute(
+            sa.text(
+                f"CREATE TABLE {DATASET_LINK} ({body}) "
+                "PARTITION BY LIST (source_observation_id)"
+            )
+        )
+        for side, columns_ in (("source", source), ("child", child)):
+            conn.execute(
+                sa.text(
+                    f"CREATE INDEX ix_{DATASET_LINK}_{side} "
+                    f"ON {DATASET_LINK} ({columns_})"
+                )
+            )
+        conn.commit()
+    return DATASET_LINK

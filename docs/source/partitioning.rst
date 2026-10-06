@@ -1,8 +1,8 @@
 Partition Management
 ====================
 
-``dataset``, ``datasethierarchy`` and ``target_specific_time`` are
-PostgreSQL LIST-partitioned tables keyed on an observation id, so one
+``dataset`` and ``target_specific_time`` are PostgreSQL
+LIST-partitioned tables keyed on an observation id, so one
 observation's data lives in one partition of each. The
 :mod:`lightcurvedb.core.partitions` package works with those partitions
 directly: naming them, reading what is attached, building replacements
@@ -12,7 +12,7 @@ tables at once.
 The package knows nothing about lightcurves. It operates on relation
 names and a :class:`sqlalchemy.engine.Connection`, so it works against
 any LIST-partitioned table in the metadata; ``dataset`` and
-``datasethierarchy`` are simply the pair this project swaps together.
+``target_specific_time`` are simply the pair this project swaps together.
 
 Concepts
 --------
@@ -173,12 +173,12 @@ a migration:
 
    from lightcurvedb.core.partitions import ensure_partition
 
-   for table in ("dataset", "datasethierarchy", "target_specific_time"):
+   for table in ("dataset", "target_specific_time"):
        ensure_partition(conn, table, observation_id)
    session.commit()
 
    # ... or, keeping the children in a schema of their own:
-   for table in ("dataset", "datasethierarchy", "target_specific_time"):
+   for table in ("dataset", "target_specific_time"):
        ensure_partition(
            conn, table, observation_id, partition_schema="_partitions"
        )
@@ -266,10 +266,10 @@ Each step is doing something specific and slightly counter-intuitive:
    partitions: PostgreSQL then refuses to detach the partition being
    replaced, and the swap cannot proceed. Since PostgreSQL 14 also
    rejects ``NOT VALID`` foreign keys on partitioned tables, there is no
-   way to pre-validate them either. For ``datasethierarchy``, whose only
-   keys point at ``dataset``, that validation therefore happens inside
-   the swap window and dominates it -- budget roughly 0.8 microseconds
-   per row.
+   way to pre-validate them either. For a table whose keys point at
+   ``dataset``, that validation therefore happens inside the swap window
+   and dominates it -- budget roughly 0.8 microseconds per row. No table
+   in the current schema has such keys.
 
 Pre-flighting an attach
 -----------------------
@@ -323,21 +323,21 @@ changes all at once.
    plan = plan_swap(
        conn,
        [("dataset", "dataset_obs_5_v1"),
-        ("datasethierarchy", "datasethierarchy_obs_5_v1")],
+        ("target_specific_time", "target_specific_time_obs_5_v1")],
        5,
        # partition_schema="_partitions",   # where the incoming relations are
    )
 
    report = preflight(conn, plan)
    report.blocking          # must be empty
-   report.expensive         # read this; the hierarchy attach is always here
+   report.expensive         # read this before swapping
    report.holders           # backends already holding a lock on a parent
 
    result = swap(conn, plan)
    session.commit()         # nothing is durable until you do this
 
-   result.promoted          # ('dataset_obs_5_v1', 'datasethierarchy_obs_5_v1')
-   result.retired           # ('dataset_obs_5',    'datasethierarchy_obs_5')
+   result.promoted  # ('dataset_obs_5_v1', 'target_specific_time_obs_5_v1')
+   result.retired   # ('dataset_obs_5',    'target_specific_time_obs_5')
 
 :func:`~lightcurvedb.core.partitions.plan_swap` resolves what is live and
 **derives the order from foreign keys in the catalog**: a parent that
@@ -351,7 +351,8 @@ every lock up front in one canonical order, re-checks under that lock
 that the partitions it plans to retire are still the live ones, performs
 the four statements, and finally gives each retired relation its bound
 ``CHECK`` back. The whole critical section is O(1) in row count apart
-from the hierarchy's foreign-key validation.
+from validating any foreign key that points at a partitioned table, and
+the current schema has none.
 
 Two details in that sequence are worth stating plainly:
 
@@ -503,8 +504,8 @@ drops it buys.
 
 **Tables swapped together must stay together.**
 :func:`~lightcurvedb.core.partitions.assert_paired_revisions` raises if
-``dataset`` is live at one revision while ``datasethierarchy`` is live at
-another. Nothing in normal operation can produce that -- it means a swap
+``dataset`` is live at one revision while ``target_specific_time`` is
+live at another. Nothing in normal operation can produce that -- it means a swap
 was not atomic -- so it is reported loudly rather than repaired.
 :func:`~lightcurvedb.core.partitions.preflight` checks it before every
 promotion.

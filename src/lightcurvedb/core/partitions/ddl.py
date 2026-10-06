@@ -160,7 +160,7 @@ def _index_suffix(index_name: str, parent: str) -> str:
     """Derive a child index suffix from the parent's index name.
 
     ``ix_dataset_target_id`` on ``dataset`` gives ``target_idx``, and
-    ``ix_datasethierarchy_source`` gives ``source_idx``. Deriving beats
+    ``ix_<table>_source`` gives ``source_idx``. Deriving beats
     a lookup table: an index a DBA adds out of band gets a sensible
     child name without this module being taught about it.
     """
@@ -624,11 +624,12 @@ def attach_partition(
     allow_expensive : bool, default True
         Tolerate findings that make the attach slow rather than
         impossible. On by default because the expensive path is
-        sometimes the only one available -- a partition of
-        ``datasethierarchy`` cannot carry pre-validated foreign keys
-        without blocking the very swap it is part of, so its attach is
-        necessarily a clone-and-validate. Pass ``False`` where a purely
-        catalog-level attach is the requirement.
+        sometimes the only one available -- a partition of a table whose
+        foreign keys point at a partitioned table cannot carry
+        pre-validated foreign keys without blocking the very swap it is
+        part of, so its attach is necessarily a clone-and-validate.
+        Pass ``False`` where a purely catalog-level attach is the
+        requirement.
 
     Raises
     ------

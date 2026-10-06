@@ -89,8 +89,8 @@ class PartitionName:
     'dataset_obs_5'
     >>> PartitionName("dataset", 5, revision=3).table
     'dataset_obs_5_v3'
-    >>> PartitionName("datasethierarchy", 5, 3).derived("child_idx")
-    'datasethierarchy_obs_5_v3_child_idx'
+    >>> PartitionName("dataset", 5, 3).derived("target_idx")
+    'dataset_obs_5_v3_target_idx'
     >>> PartitionName.parse("dataset_obs_5_v3")
     PartitionName(base='dataset', observation_id=5, revision=3)
     """

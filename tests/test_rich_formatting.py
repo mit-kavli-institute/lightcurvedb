@@ -12,7 +12,6 @@ from rich.console import Console
 from lightcurvedb.core.base_model import LCDBModel, _format_array_summary
 from lightcurvedb.models import (
     DataSet,
-    DataSetHierarchy,
     FITSFrame,
     Instrument,
     Mission,
@@ -215,27 +214,6 @@ class TestRichReprOverrides:
         )
         pairs = list(pm.__rich_repr__())
         assert pairs == [("id", 1), ("name", "detrend-v1")]
-
-    def test_dataset_hierarchy(self):
-        dsh = DataSetHierarchy(
-            source_observation_id=1,
-            source_target_id=10,
-            source_photometric_method_id=0,
-            source_processing_method_id=0,
-            # Lineage is intra-orbit: child_observation_id must match
-            # source_observation_id (ck_datasethierarchy_intra_orbit).
-            child_observation_id=1,
-            child_target_id=20,
-            child_photometric_method_id=0,
-            child_processing_method_id=0,
-        )
-        pairs = list(dsh.__rich_repr__())
-        assert pairs == [
-            ("source_obs", 1),
-            ("source_target", 10),
-            ("child_obs", 1),
-            ("child_target", 20),
-        ]
 
     def test_dataset(self):
         ds = DataSet(

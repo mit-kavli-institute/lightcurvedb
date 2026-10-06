@@ -144,6 +144,7 @@ class TestRelationKind:
 
 
 class TestPartitionStrategy:
+    @pytest.mark.usefixtures("dataset_link")
     def test_list_partitioned_tables(self, partitioned_db: orm.Session):
         conn = partitioned_db.connection()
         ds = partition_strategy(conn, "dataset")
@@ -153,7 +154,7 @@ class TestPartitionStrategy:
         assert ds.key_column == "observation_id"
         assert ds.default_partition_oid is None
 
-        dh = partition_strategy(conn, "datasethierarchy")
+        dh = partition_strategy(conn, "datasetlink")
         assert dh is not None
         assert dh.key_columns == ("source_observation_id",)
 
@@ -514,9 +515,10 @@ class TestCheckAttachable:
         assert report.candidate_kind is None
         assert any("absent" in b for b in report.blocking)
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_partitioned_candidate_blocks(self, partitioned_db: orm.Session):
         report = check_attachable(
-            partitioned_db.connection(), "dataset", "datasethierarchy", 5
+            partitioned_db.connection(), "dataset", "datasetlink", 5
         )
         assert report.candidate_kind == "partitioned table"
         assert report.blocking

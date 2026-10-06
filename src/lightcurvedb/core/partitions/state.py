@@ -416,7 +416,7 @@ def assert_paired_revisions(
     """Require several parents to be live at the same revision.
 
     Tables swapped together must stay together. ``dataset`` live at
-    revision 4 while ``datasethierarchy`` is still at 3 means a swap was
+    revision 4 while ``target_specific_time`` is still at 3 means a swap was
     not atomic, and no ordinary operation can produce it.
 
     Parameters

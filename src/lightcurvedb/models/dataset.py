@@ -168,175 +168,6 @@ class ProcessingMethod(LCDBModel, NameAndDescriptionMixin):
         yield "name", self.name
 
 
-class DataSetHierarchy(LCDBModel):
-    """
-    Association table for creating hierarchical relationships between
-    DataSets using composite foreign keys.
-
-    This table enables a tree structure where datasets can be derived from
-    other datasets, allowing tracking of data processing lineage and
-    provenance. For example, a detrended lightcurve dataset might be
-    derived from a raw photometry dataset.
-
-    Attributes
-    ----------
-    source_observation_id : int
-        Observation ID of the parent/source dataset
-    source_target_id : int
-        Target ID of the parent/source dataset. Stored as BigInteger to
-        match :attr:`Target.id`.
-    source_photometric_method_id : int
-        Photometric method ID of the parent/source dataset
-    source_processing_method_id : int
-        Processing method ID of the parent/source dataset
-    child_observation_id : int
-        Observation ID of the child/derived dataset
-    child_target_id : int
-        Target ID of the child/derived dataset. Stored as BigInteger to
-        match :attr:`Target.id`.
-    child_photometric_method_id : int
-        Photometric method ID of the child/derived dataset
-    child_processing_method_id : int
-        Processing method ID of the child/derived dataset
-
-    Notes
-    -----
-    This is an association table for a many-to-many self-referential
-    relationship using composite keys. A dataset can have multiple parents
-    (e.g., combining data from multiple sources) and multiple children
-    (e.g., different processing methods applied to the same source).
-
-    The composite primary key consists of all 8 columns to ensure unique
-    source-child relationships.
-
-    Lineage is constrained to a single observation: a
-    ``CheckConstraint`` enforces ``source_observation_id ==
-    child_observation_id``, so a dataset can never be derived from one in
-    a different observation. This is a modelling restriction, not only an
-    integrity nicety. The table is partitioned on ``source_observation_id``,
-    so the invariant keeps a hierarchy row in the same partition as every
-    dataset row it references, which is what allows ``dataset`` and
-    ``datasethierarchy`` to be detached and reattached as a single unit
-    when an observation's data is replaced.
-    """
-
-    __tablename__ = "datasethierarchy"
-
-    __table_args__ = (
-        sa.PrimaryKeyConstraint(
-            "source_observation_id",
-            "source_target_id",
-            "source_photometric_method_id",
-            "source_processing_method_id",
-            "child_observation_id",
-            "child_target_id",
-            "child_photometric_method_id",
-            "child_processing_method_id",
-            name="pk_datasethierarchy",
-        ),
-        sa.ForeignKeyConstraint(
-            [
-                "source_observation_id",
-                "source_target_id",
-                "source_photometric_method_id",
-                "source_processing_method_id",
-            ],
-            [
-                "dataset.observation_id",
-                "dataset.target_id",
-                "dataset.photometric_method_id",
-                "dataset.processing_method_id",
-            ],
-            name="fk_datasethierarchy_source",
-            ondelete="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            [
-                "child_observation_id",
-                "child_target_id",
-                "child_photometric_method_id",
-                "child_processing_method_id",
-            ],
-            [
-                "dataset.observation_id",
-                "dataset.target_id",
-                "dataset.photometric_method_id",
-                "dataset.processing_method_id",
-            ],
-            name="fk_datasethierarchy_child",
-            ondelete="CASCADE",
-        ),
-        sa.Index(
-            "ix_datasethierarchy_source",
-            "source_observation_id",
-            "source_target_id",
-            "source_photometric_method_id",
-            "source_processing_method_id",
-        ),
-        sa.Index(
-            "ix_datasethierarchy_child",
-            "child_observation_id",
-            "child_target_id",
-            "child_photometric_method_id",
-            "child_processing_method_id",
-        ),
-        # Lineage never spans observations. Because the table is
-        # partitioned on source_observation_id, this makes the partition
-        # key functionally determine child_observation_id, so a hierarchy
-        # row and every dataset row it references always live in the same
-        # observation -- which is what lets dataset and datasethierarchy
-        # be detached and reattached as one unit.
-        sa.CheckConstraint(
-            "source_observation_id = child_observation_id",
-            name="ck_datasethierarchy_intra_orbit",
-        ),
-        {"postgresql_partition_by": "LIST (source_observation_id)"},
-    )
-
-    # Source dataset composite key columns
-    source_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    # BigInteger is explicit because the foreign key is declared at table
-    # level: SQLAlchemy only infers a column's type from its referent when
-    # the ForeignKey sits on the column itself, so a bare Mapped[int] here
-    # would render INTEGER and overflow on TIC-scale target ids.
-    source_target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.BigInteger, nullable=False
-    )
-    source_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
-        nullable=False
-    )
-    source_processing_method_id: orm.Mapped[int] = orm.mapped_column(
-        nullable=False
-    )
-
-    # Child dataset composite key columns
-    child_observation_id: orm.Mapped[int] = orm.mapped_column(nullable=False)
-    child_target_id: orm.Mapped[int] = orm.mapped_column(
-        sa.BigInteger, nullable=False
-    )
-    child_photometric_method_id: orm.Mapped[int] = orm.mapped_column(
-        nullable=False
-    )
-    child_processing_method_id: orm.Mapped[int] = orm.mapped_column(
-        nullable=False
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<DataSetHierarchy("
-            f"source=(obs={self.source_observation_id}, "
-            f"target={self.source_target_id}) -> "
-            f"child=(obs={self.child_observation_id}, "
-            f"target={self.child_target_id}))>"
-        )
-
-    def __rich_repr__(self):
-        yield "source_obs", self.source_observation_id
-        yield "source_target", self.source_target_id
-        yield "child_obs", self.child_observation_id
-        yield "child_target", self.child_target_id
-
-
 class DataSet(LCDBModel):
     """
     A processed lightcurve for a specific target and observation.
@@ -375,12 +206,6 @@ class DataSet(LCDBModel):
         The photometric extraction method used
     processing_method : ProcessingMethod
         The processing operation applied
-    source_datasets : list[DataSet]
-        Parent datasets that this dataset was derived from. Enables tracking
-        of data lineage and processing provenance.
-    derived_datasets : list[DataSet]
-        Child datasets that were derived from this dataset. Allows viewing
-        all downstream processing results.
 
     Notes
     -----
@@ -391,31 +216,16 @@ class DataSet(LCDBModel):
     observation containing millions of rows as a natural partition boundary.
     Partitions are managed by database administrators.
 
-    The hierarchical relationships (source_datasets, derived_datasets) enable
-    tracking data processing lineage. These relationships are read-only; use
-    the add_derived_dataset() and add_source_dataset() helper methods to
-    create hierarchy links.
-
     Examples
     --------
-    >>> # Create a hierarchical relationship
-    >>> raw_dataset = DataSet(
+    >>> dataset = DataSet(
     ...     target=target,
     ...     observation=obs,
-    ...     values=raw_flux,
+    ...     values=flux,
     ...     photometric_method_id=source.id,
     ...     processing_method_id=ProcessingMethod.UNSPECIFIED_ID,
     ... )
-    >>> detrended_dataset = DataSet(
-    ...     target=target,
-    ...     observation=obs,
-    ...     values=detrended_flux,
-    ...     photometric_method_id=source.id,
-    ...     processing_method_id=detrend_method.id,
-    ... )
-    >>> session.add_all([raw_dataset, detrended_dataset])
-    >>> session.flush()
-    >>> raw_dataset.add_derived_dataset(detrended_dataset, session)
+    >>> session.add(dataset)
     >>> session.commit()
     """
 
@@ -471,65 +281,6 @@ class DataSet(LCDBModel):
         foreign_keys=[processing_method_id],
     )
 
-    # Self-referential hierarchical relationships (viewonly due to composite)
-    source_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
-        "DataSet",
-        secondary="datasethierarchy",
-        primaryjoin=(
-            "and_("
-            "DataSet.observation_id == "
-            "DataSetHierarchy.child_observation_id, "
-            "DataSet.target_id == DataSetHierarchy.child_target_id, "
-            "DataSet.photometric_method_id == "
-            "DataSetHierarchy.child_photometric_method_id, "
-            "DataSet.processing_method_id == "
-            "DataSetHierarchy.child_processing_method_id"
-            ")"
-        ),
-        secondaryjoin=(
-            "and_("
-            "DataSet.observation_id == "
-            "DataSetHierarchy.source_observation_id, "
-            "DataSet.target_id == DataSetHierarchy.source_target_id, "
-            "DataSet.photometric_method_id == "
-            "DataSetHierarchy.source_photometric_method_id, "
-            "DataSet.processing_method_id == "
-            "DataSetHierarchy.source_processing_method_id"
-            ")"
-        ),
-        back_populates="derived_datasets",
-        viewonly=True,
-    )
-
-    derived_datasets: orm.Mapped[list["DataSet"]] = orm.relationship(
-        "DataSet",
-        secondary="datasethierarchy",
-        primaryjoin=(
-            "and_("
-            "DataSet.observation_id == "
-            "DataSetHierarchy.source_observation_id, "
-            "DataSet.target_id == DataSetHierarchy.source_target_id, "
-            "DataSet.photometric_method_id == "
-            "DataSetHierarchy.source_photometric_method_id, "
-            "DataSet.processing_method_id == "
-            "DataSetHierarchy.source_processing_method_id"
-            ")"
-        ),
-        secondaryjoin=(
-            "and_("
-            "DataSet.observation_id == "
-            "DataSetHierarchy.child_observation_id, "
-            "DataSet.target_id == DataSetHierarchy.child_target_id, "
-            "DataSet.photometric_method_id == "
-            "DataSetHierarchy.child_photometric_method_id, "
-            "DataSet.processing_method_id == "
-            "DataSetHierarchy.child_processing_method_id"
-            ")"
-        ),
-        back_populates="source_datasets",
-        viewonly=True,
-    )
-
     @hybrid_property
     def has_photometric_source(self) -> bool:
         """Return True if a specific photometric source is set."""
@@ -549,61 +300,6 @@ class DataSet(LCDBModel):
     def has_processing_method(cls):
         """SQL expression for filtering datasets with processing method."""
         return cls.processing_method_id != ProcessingMethod.UNSPECIFIED_ID
-
-    def add_derived_dataset(
-        self,
-        derived: "DataSet",
-        session: orm.Session,
-    ) -> DataSetHierarchy:
-        """
-        Create a hierarchy link from this dataset to a derived dataset.
-
-        Parameters
-        ----------
-        derived : DataSet
-            The child dataset derived from this one.
-        session : orm.Session
-            Active database session.
-
-        Returns
-        -------
-        DataSetHierarchy
-            The created hierarchy record.
-        """
-        hierarchy = DataSetHierarchy(
-            source_observation_id=self.observation_id,
-            source_target_id=self.target_id,
-            source_photometric_method_id=self.photometric_method_id,
-            source_processing_method_id=self.processing_method_id,
-            child_observation_id=derived.observation_id,
-            child_target_id=derived.target_id,
-            child_photometric_method_id=derived.photometric_method_id,
-            child_processing_method_id=derived.processing_method_id,
-        )
-        session.add(hierarchy)
-        return hierarchy
-
-    def add_source_dataset(
-        self,
-        source: "DataSet",
-        session: orm.Session,
-    ) -> DataSetHierarchy:
-        """
-        Create a hierarchy link from a source dataset to this dataset.
-
-        Parameters
-        ----------
-        source : DataSet
-            The parent dataset this one is derived from.
-        session : orm.Session
-            Active database session.
-
-        Returns
-        -------
-        DataSetHierarchy
-            The created hierarchy record.
-        """
-        return source.add_derived_dataset(self, session)
 
     def align_to_observation(
         self,

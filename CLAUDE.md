@@ -45,8 +45,6 @@ docker-compose run test
 1. **SQLAlchemy Models** (`src/lightcurvedb/models/`)
    - Database entities: Frame, Instrument, Observation, Target, DataSet,
      PhotometricSource, ProcessingMethod
-   - DataSetHierarchy: Self-referential model for tracking data lineage
-     and processing provenance (uses composite foreign keys)
    - Uses SQLAlchemy 2.0+ with PostgreSQL backend
    - Models define relationships between astronomical observations and
      their metadata
@@ -86,16 +84,14 @@ Recent refactoring has removed:
 - Ingestor functionality
 
 Recent feature additions (feature/dataset-partitioning branch):
-- Dataset hierarchy system for tracking data lineage
 - Refactored processing model: replaced ProcessingGroup with direct
   relationships
 - Renamed DetrendingMethod to ProcessingMethod for broader scope
-- DataSet now supports source_datasets and derived_datasets relationships
 - **PostgreSQL LIST partitioning** by observation_id for scale
 - **Composite primary key** replacing auto-increment id
 - **Sentinel values** (id=0) for unspecified photometric/processing methods
-- Helper methods for managing dataset hierarchy (add_derived_dataset,
-  add_source_dataset)
+- DataSetHierarchy (dataset lineage) was removed in 3.3.0: the table was
+  populated but never read downstream
 
 The project uses property-based testing with Hypothesis and includes
 extensive TESS test data including FITS files and ephemeris data from
