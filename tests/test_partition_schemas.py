@@ -42,9 +42,12 @@ from lightcurvedb.core.partitions import (
 )
 from lightcurvedb.models import Observation, Target
 
-pytestmark = pytest.mark.partitioning
+pytestmark = [
+    pytest.mark.partitioning,
+    pytest.mark.usefixtures("dataset_link"),
+]
 
-PAIR = ("dataset", "datasethierarchy")
+PAIR = ("dataset", "datasetlink")
 SCHEMA = "_partitions"
 
 
@@ -97,7 +100,7 @@ def _dataset_row(
     )
 
 
-def _hierarchy_row(
+def _link_row(
     session: orm.Session, relation: str, key: int, source: int, child: int
 ) -> None:
     session.execute(
@@ -135,7 +138,7 @@ def _provision_live(
     )
     for target in targets:
         _dataset_row(session, f"{where}.{names[0]}", key, target, value)
-    _hierarchy_row(session, f"{where}.{names[1]}", key, *targets)
+    _link_row(session, f"{where}.{names[1]}", key, *targets)
     return names
 
 
@@ -160,7 +163,7 @@ def _stage(
         _dataset_row(
             session, f"{partition_schema}.{names[0]}", key, target, value
         )
-    _hierarchy_row(session, f"{partition_schema}.{names[1]}", key, *targets)
+    _link_row(session, f"{partition_schema}.{names[1]}", key, *targets)
 
     for parent, name in zip(PAIR, names):
         build_partition_indexes(
@@ -645,9 +648,9 @@ class TestMigratingIntoASchema:
                     retired_schema="public",
                 ),
                 SwapStep(
-                    parent="datasethierarchy",
-                    promoted="datasethierarchy_obs_1_v1",
-                    retired="datasethierarchy_obs_1",
+                    parent="datasetlink",
+                    promoted="datasetlink_obs_1_v1",
+                    retired="datasetlink_obs_1",
                     retired_schema=SCHEMA,
                 ),
             ),

@@ -8,6 +8,12 @@
 > consequentially: FK catalog growth is linear (so the composite FKs stay), and
 > a detach of a referenced partition is *blocked*, not silently dangling.
 > §8.1 records the one finding that changed the design.
+>
+> **Superseded in part (3.3.0):** `datasethierarchy` has been removed. It was
+> populated but never read downstream. Everything below that pairs it with
+> `dataset` describes the design as it was planned. The partition package
+> itself stays table-agnostic, and the §8.1 behaviour is still exercised by a
+> test-only table of the same shape.
 
 ---
 

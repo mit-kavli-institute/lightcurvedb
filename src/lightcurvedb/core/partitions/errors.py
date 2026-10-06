@@ -95,7 +95,7 @@ class SwapRaceError(PartitionError):
 class RevisionSkewError(PartitionError):
     """Paired tables are live at different revisions for one key.
 
-    ``dataset`` at revision 4 while ``datasethierarchy`` is still at 3
+    ``dataset`` at revision 4 while ``target_specific_time`` is still at 3
     means a swap was not atomic. Nothing in normal operation can produce
     it, so it is reported rather than repaired.
     """

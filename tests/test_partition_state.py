@@ -148,20 +148,20 @@ class TestDeriveState:
 
         assert derive_state(conn, "dataset", key, 1) is RevisionState.LIVE
 
-    def test_hierarchy_reaches_fk_ready_with_no_keys_to_mirror(
+    @pytest.mark.usefixtures("dataset_link")
+    def test_link_reaches_fk_ready_with_no_keys_to_mirror(
         self, partitioned_db: orm.Session
     ):
         """Its only keys point at a partitioned table, so none are due."""
         conn = partitioned_db.connection()
-        name = ensure_staging_table(conn, "datasethierarchy", 7, 1).table
+        name = ensure_staging_table(conn, "datasetlink", 7, 1).table
         partitioned_db.execute(
             sa.text(f"INSERT INTO {name} VALUES (7, 1, 0, 0, 7, 2, 0, 0)")
         )
-        build_partition_indexes(conn, "datasethierarchy", name)
+        build_partition_indexes(conn, "datasetlink", name)
 
         assert (
-            derive_state(conn, "datasethierarchy", 7, 1)
-            is RevisionState.FK_READY
+            derive_state(conn, "datasetlink", 7, 1) is RevisionState.FK_READY
         )
 
 
@@ -252,28 +252,29 @@ class TestPairedRevisions:
     def orm_session(self, partitioned_db):
         return partitioned_db
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_agreement_returns_the_shared_revision(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
         conn = partitioned_db.connection()
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=3)
-        ensure_partition(conn, "datasethierarchy", key, revision=3)
+        ensure_partition(conn, "datasetlink", key, revision=3)
 
-        found = assert_paired_revisions(
-            conn, ["dataset", "datasethierarchy"], key
-        )
+        found = assert_paired_revisions(conn, ["dataset", "datasetlink"], key)
         assert found == 3
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_unprovisioned_on_both_sides_is_not_skew(
         self, partitioned_db: orm.Session
     ):
         conn = partitioned_db.connection()
         assert (
-            assert_paired_revisions(conn, ["dataset", "datasethierarchy"], 7)
+            assert_paired_revisions(conn, ["dataset", "datasetlink"], 7)
             is None
         )
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_skew_raises_and_names_both_sides(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
@@ -281,24 +282,24 @@ class TestPairedRevisions:
         conn = partitioned_db.connection()
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=4)
-        ensure_partition(conn, "datasethierarchy", key, revision=3)
+        ensure_partition(conn, "datasetlink", key, revision=3)
 
         with pytest.raises(RevisionSkewError, match="dataset at 4"):
-            assert_paired_revisions(conn, ["dataset", "datasethierarchy"], key)
+            assert_paired_revisions(conn, ["dataset", "datasetlink"], key)
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_a_parent_never_provisioned_here_is_not_skew(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
-        """An observation with no lineage rows is an ordinary state."""
+        """An observation with no link rows is an ordinary state."""
         conn = partitioned_db.connection()
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=1)
 
-        found = assert_paired_revisions(
-            conn, ["dataset", "datasethierarchy"], key
-        )
+        found = assert_paired_revisions(conn, ["dataset", "datasetlink"], key)
         assert found == 1
 
+    @pytest.mark.usefixtures("dataset_link")
     def test_a_parent_left_detached_is_skew(
         self, partitioned_db: orm.Session, sample_observation: Observation
     ):
@@ -306,10 +307,8 @@ class TestPairedRevisions:
         conn = partitioned_db.connection()
         key = sample_observation.id
         ensure_partition(conn, "dataset", key, revision=1)
-        hierarchy = ensure_partition(
-            conn, "datasethierarchy", key, revision=1
-        ).table
-        detach_partition(conn, "datasethierarchy", hierarchy)
+        link = ensure_partition(conn, "datasetlink", key, revision=1).table
+        detach_partition(conn, "datasetlink", link)
 
         with pytest.raises(RevisionSkewError, match="nothing"):
-            assert_paired_revisions(conn, ["dataset", "datasethierarchy"], key)
+            assert_paired_revisions(conn, ["dataset", "datasetlink"], key)

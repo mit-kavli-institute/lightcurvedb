@@ -121,12 +121,6 @@ Data Products
    :show-inheritance:
    :no-index:
 
-.. autoclass:: lightcurvedb.models.DataSetHierarchy
-   :members:
-   :exclude-members: metadata, registry
-   :show-inheritance:
-   :no-index:
-
 Quality Flags
 ~~~~~~~~~~~~~
 

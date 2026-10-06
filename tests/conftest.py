@@ -21,7 +21,11 @@ from lightcurvedb.models import (
     Target,
 )
 
-from .util import drop_unmanaged_relations, partitioned_table_names
+from .util import (
+    create_dataset_link,
+    drop_unmanaged_relations,
+    partitioned_table_names,
+)
 
 
 def get_test_database_name(request):
@@ -178,6 +182,17 @@ def default_partitions(database_engine):
                 )
             )
         conn.commit()
+
+
+@pytest.fixture
+def dataset_link(database_engine):
+    """The test-only :data:`tests.util.DATASET_LINK` table.
+
+    A partitioned table whose foreign keys point at the partitioned
+    ``dataset``, for partition tests that need one now that the schema has
+    none. Torn down by :func:`drop_unmanaged_relations`.
+    """
+    return create_dataset_link(database_engine)
 
 
 @pytest.fixture

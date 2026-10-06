@@ -58,12 +58,12 @@ class TestRendering:
     ):
         assert name.derived(suffix) == f"{name.table}_{suffix}"
 
-    def test_documented_worst_case_fits(self):
-        """The requirements doc computes this as 46 bytes; pin it."""
-        name = PartitionName("datasethierarchy", 2147483647, 999)
-        worst = name.derived("child_idx")
-        assert worst == "datasethierarchy_obs_2147483647_v999_child_idx"
-        assert len(worst.encode()) == 46 <= MAX_IDENTIFIER_BYTES
+    def test_schema_worst_case_fits(self):
+        """The longest partitioned parent, key, revision and suffix."""
+        name = PartitionName("target_specific_time", 2147483647, 999)
+        worst = name.derived("target_idx")
+        assert worst == "target_specific_time_obs_2147483647_v999_target_idx"
+        assert len(worst.encode()) == 51 <= MAX_IDENTIFIER_BYTES
 
     def test_is_frozen(self):
         name = PartitionName("dataset", 1)
@@ -154,7 +154,7 @@ def test_object_suffixes_match_generated_names():
 
     Section 9.3 of the requirements doc writes ``src_idx``. Child index
     names are derived from the parent's own index names rather than from
-    a lookup table, and ``ix_datasethierarchy_source`` derives
+    a lookup table, and an index named ``ix_<table>_source`` derives
     ``source_idx``, so that is the spelling recorded here.
     """
     assert set(OBJECT_SUFFIXES) == {

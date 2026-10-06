@@ -50,7 +50,6 @@ class TestPartitionedTableDiscovery:
         """The set is discovered, not hardcoded."""
         assert set(partitioned_table_names()) == {
             "dataset",
-            "datasethierarchy",
             "target_specific_time",
         }
         assert "observation" not in partitioned_table_names()

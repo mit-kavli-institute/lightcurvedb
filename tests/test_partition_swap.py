@@ -34,9 +34,12 @@ from lightcurvedb.core.partitions import (
 )
 from lightcurvedb.models import DataSet, Observation, Target
 
-pytestmark = pytest.mark.partitioning
+pytestmark = [
+    pytest.mark.partitioning,
+    pytest.mark.usefixtures("dataset_link"),
+]
 
-PAIR = ("dataset", "datasethierarchy")
+PAIR = ("dataset", "datasetlink")
 
 
 @pytest.fixture
@@ -57,7 +60,7 @@ def _dataset_row(
     )
 
 
-def _hierarchy_row(
+def _link_row(
     session: orm.Session, relation: str, key: int, source: int, child: int
 ) -> None:
     session.execute(
@@ -70,7 +73,7 @@ def _hierarchy_row(
 
 
 def _extra_target(session: orm.Session, target: Target, offset: int) -> int:
-    """Another target in the same catalog, so lineage has two ends."""
+    """Another target in the same catalog, so a link has two ends."""
     other = Target(catalog_id=target.catalog_id, name=target.name + offset)
     session.add(other)
     session.flush()
@@ -83,10 +86,10 @@ def _provision_live(
     """A live revision 0 for both parents, holding ``value``."""
     conn = session.connection()
     dataset = ensure_partition(conn, "dataset", key).table
-    hierarchy = ensure_partition(conn, "datasethierarchy", key).table
+    link = ensure_partition(conn, "datasetlink", key).table
     for target in targets:
         _dataset_row(session, dataset, key, target, value)
-    _hierarchy_row(session, hierarchy, key, *targets)
+    _link_row(session, link, key, *targets)
 
 
 def _stage(
@@ -99,19 +102,17 @@ def _stage(
     """A fully prepared revision, ready to attach."""
     conn = session.connection()
     dataset = ensure_staging_table(conn, "dataset", key, revision).table
-    hierarchy = ensure_staging_table(
-        conn, "datasethierarchy", key, revision
-    ).table
+    link = ensure_staging_table(conn, "datasetlink", key, revision).table
     for target in targets:
         _dataset_row(session, dataset, key, target, value)
-    _hierarchy_row(session, hierarchy, key, *targets)
+    _link_row(session, link, key, *targets)
 
     build_partition_indexes(conn, "dataset", dataset)
-    build_partition_indexes(conn, "datasethierarchy", hierarchy)
+    build_partition_indexes(conn, "datasetlink", link)
     mirror_outbound_foreign_keys(conn, "dataset", dataset)
     analyze_relation(conn, dataset)
-    analyze_relation(conn, hierarchy)
-    return dataset, hierarchy
+    analyze_relation(conn, link)
+    return dataset, link
 
 
 def _first_value(session: orm.Session, relation: str, key: int) -> float:
@@ -144,7 +145,7 @@ class TestPlanning:
         plan = plan_swap(
             conn,
             [
-                ("datasethierarchy", "datasethierarchy_obs_1_v1"),
+                ("datasetlink", "datasetlink_obs_1_v1"),
                 ("dataset", "dataset_obs_1_v1"),
             ],
             sample_observation.id,
@@ -172,7 +173,7 @@ class TestPlanning:
         )
         assert [pair.retiring for pair in plan.pairs] == [
             f"dataset_obs_{key}",
-            f"datasethierarchy_obs_{key}",
+            f"datasetlink_obs_{key}",
         ]
 
     def test_it_refuses_the_same_parent_twice(
@@ -241,7 +242,7 @@ class TestPreflight:
         assert report.blocking == ()
         report.raise_for_status(allow_expensive=True)
 
-    def test_the_hierarchy_attach_is_reported_as_expensive(
+    def test_the_link_attach_is_reported_as_expensive(
         self,
         partitioned_db: orm.Session,
         sample_observation: Observation,
@@ -260,33 +261,33 @@ class TestPreflight:
         report = preflight(conn, plan_swap(conn, list(zip(PAIR, staged)), key))
 
         assert any(
-            "datasethierarchy" in finding and "foreign key" in finding
+            "datasetlink" in finding and "foreign key" in finding
             for finding in report.expensive
         )
         assert not report.ok
         with pytest.raises(NotAttachableError, match="would not be clean"):
             report.raise_for_status()
 
-    def test_orphaned_lineage_is_found_before_any_lock(
+    def test_orphaned_links_are_found_before_any_lock(
         self,
         partitioned_db: orm.Session,
         sample_observation: Observation,
         sample_target: Target,
     ):
-        """A hierarchy row whose dataset row is not in the staged set."""
+        """A link row whose dataset row is not in the staged set."""
         key = sample_observation.id
         targets = (
             sample_target.id,
             _extra_target(partitioned_db, sample_target, 1),
         )
         _provision_live(partitioned_db, key, targets, 1.0)
-        dataset, hierarchy = _stage(partitioned_db, key, 1, targets, 9.9)
+        dataset, link = _stage(partitioned_db, key, 1, targets, 9.9)
         stranger = _extra_target(partitioned_db, sample_target, 2)
-        _hierarchy_row(partitioned_db, hierarchy, key, targets[0], stranger)
+        _link_row(partitioned_db, link, key, targets[0], stranger)
         conn = partitioned_db.connection()
 
         report = preflight(
-            conn, plan_swap(conn, list(zip(PAIR, (dataset, hierarchy))), key)
+            conn, plan_swap(conn, list(zip(PAIR, (dataset, link))), key)
         )
 
         assert len(report.orphans) == 1
@@ -317,7 +318,7 @@ class TestSwap:
         assert result.promoted == staged
         assert result.retired == (
             f"dataset_obs_{key}",
-            f"datasethierarchy_obs_{key}",
+            f"datasetlink_obs_{key}",
         )
 
     def test_the_retired_data_is_still_there_and_readable(
@@ -566,17 +567,17 @@ class TestSwap:
         sample_observation: Observation,
         sample_target: Target,
     ):
-        """An orphan makes the hierarchy attach fail, so nothing lands."""
+        """An orphan makes the link attach fail, so nothing lands."""
         key = sample_observation.id
         targets = (
             sample_target.id,
             _extra_target(partitioned_db, sample_target, 1),
         )
         _provision_live(partitioned_db, key, targets, 1.0)
-        dataset, hierarchy = _stage(partitioned_db, key, 1, targets, 9.9)
+        dataset, link = _stage(partitioned_db, key, 1, targets, 9.9)
         partitioned_db.execute(
             sa.text(
-                f"INSERT INTO {hierarchy} VALUES "
+                f"INSERT INTO {link} VALUES "
                 "(:key, :source, 0, 0, :key, 987654321, 0, 0)"
             ),
             {"key": key, "source": targets[0]},
@@ -587,7 +588,7 @@ class TestSwap:
         with pytest.raises(sa.exc.IntegrityError):
             swap(
                 conn,
-                plan_swap(conn, list(zip(PAIR, (dataset, hierarchy))), key),
+                plan_swap(conn, list(zip(PAIR, (dataset, link))), key),
             )
         partitioned_db.rollback()
 
@@ -614,9 +615,7 @@ class TestSwap:
         conn = partitioned_db.connection()
         plan = plan_swap(conn, list(zip(PAIR, staged)), key)
 
-        detach_partition(
-            conn, "datasethierarchy", f"datasethierarchy_obs_{key}"
-        )
+        detach_partition(conn, "datasetlink", f"datasetlink_obs_{key}")
         detach_partition(conn, "dataset", f"dataset_obs_{key}")
 
         with pytest.raises(SwapRaceError, match="Re-plan"):
